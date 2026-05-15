@@ -122,7 +122,14 @@ function initExpenses(existing: any): Expense[] {
 function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExpenses: number) {
   const uberTotal = Object.values(data.uber_amounts).reduce((a, b) => a + b, 0)
   const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount
-  const totalRevenue = data.pos_cash + platformTotal + data.handwrite_amount
+
+  // iChef 模式：pos_cash 是 iChef 結帳總金額（已含外送平台），直接就是總營業額
+  // 平台費只做扣除用，不再加到總收入
+  // 其他模式：總收 = 現金 + 平台 + 手寫
+  const totalRevenue = store.mode === 'ichef'
+    ? data.pos_cash
+    : data.pos_cash + platformTotal + data.handwrite_amount
+
   const deliveryFee = ckPrices.reduce((s, p) => s + p.unit_price * (data.ck_quantities[p.item_name] ?? 0), 0)
 
   // 應包進信封 = 總營業額 − 平台費 − 其他現金支出（央廚費不扣，包在信封裡）
@@ -145,7 +152,8 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
   // 誤差 = 實際包進信封 − 應包進信封
   const variance = actualRemit - shouldEnvelope
 
-  return { totalRevenue, platformTotal, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashTotal, actualRemit, variance }
+  const storeRevenue = totalRevenue - platformTotal
+  return { totalRevenue, platformTotal, storeRevenue, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashTotal, actualRemit, variance }
 }
 
 function fmt(n: number) {
@@ -339,7 +347,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         </CardHeader>
         <CardContent className="space-y-3">
           {store.mode !== 'handwrite' && (
-            <NumInput label="POS 現金（iChef）" value={data.pos_cash} onChange={v => set('pos_cash', v)} disabled={isSubmitted} />
+            <div className="space-y-1">
+              {store.mode === 'ichef' && (
+                <p className="text-[11px] text-blue-600 bg-blue-50 rounded-md px-2 py-1">
+                  輸入 iChef 結帳總金額（含外送平台）
+                </p>
+              )}
+              <NumInput
+                label={store.mode === 'ichef' ? 'iChef 結帳總金額' : 'POS 現金'}
+                value={data.pos_cash}
+                onChange={v => set('pos_cash', v)}
+                disabled={isSubmitted}
+              />
+            </div>
+          )}
+          {store.mode === 'ichef' && (
+            <p className="text-[11px] text-slate-400 -mt-1">↓ 輸入各平台金額（僅用於計算扣除，不加入總收）</p>
           )}
           {(store.uber_accounts ?? []).map(acc => (
             <NumInput key={acc} label={`Uber Eats（${acc}）`} value={data.uber_amounts[acc] ?? 0}
@@ -362,6 +385,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             <span className="text-sm font-medium text-slate-700">總營業額</span>
             <span className="text-lg font-bold tabular-nums">${fmt(s.totalRevenue)}</span>
           </div>
+          {store.mode === 'ichef' && s.platformTotal > 0 && (
+            <div className="flex justify-between items-center text-xs text-slate-500">
+              <span>店舖現金（iChef − 平台）</span>
+              <span className="tabular-nums">${fmt(s.storeRevenue)}</span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
