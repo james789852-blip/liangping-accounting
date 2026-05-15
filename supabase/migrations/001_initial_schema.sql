@@ -434,7 +434,7 @@ create policy "ck_prices_insert" on central_kitchen_prices
   for insert with check (get_my_role() = '總監');
 
 create policy "ck_prices_update" on central_kitchen_prices
-  for update using (get_my_role() = '總監');
+  for update using (get_my_role() in ('經理', '總監'));
 
 -- RLS policies: audit_logs（顧問以上可看）
 create policy "audit_logs_select" on audit_logs
