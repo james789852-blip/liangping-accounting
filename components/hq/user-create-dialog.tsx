@@ -54,10 +54,10 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="bg-blue-600 hover:bg-blue-700">
-          <Plus className="mr-2 h-4 w-4" /> 新增帳號
-        </Button>
+      <DialogTrigger
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
+      >
+        <Plus className="h-4 w-4" /> 新增帳號
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
@@ -78,7 +78,7 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
           </div>
           <div className="space-y-1.5">
             <Label>職務</Label>
-            <Select value={form.role} onValueChange={v => setForm(p => ({ ...p, role: v }))}>
+            <Select value={form.role} onValueChange={v => { if (v) setForm(p => ({ ...p, role: v })) }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
