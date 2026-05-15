@@ -191,7 +191,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           {!isManagerPath && hasStores && (
             <Link
               href="/manager/dashboard"
-              className="text-xs text-amber-400 border border-amber-600 rounded-md px-2 py-0.5 hover:bg-amber-900 transition-colors"
+              className="text-xs font-medium bg-amber-500 text-white rounded-md px-2.5 py-1 hover:bg-amber-400 transition-colors"
             >
               店長端
             </Link>
