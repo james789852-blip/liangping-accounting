@@ -41,7 +41,7 @@ export default async function ClosingPage() {
 
   const { data: existingClosing } = await supabase
     .from('daily_closings')
-    .select('*, revenue_items(*), cash_counts(*), order_items(*)')
+    .select('*, revenue_items(*), cash_counts(*), order_items(*), expense_items(*)')
     .eq('store_id', storeId)
     .eq('business_date', today)
     .maybeSingle()

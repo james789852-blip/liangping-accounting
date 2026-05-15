@@ -492,3 +492,20 @@ insert into role_settings (role, portal, permissions) values
   ('顧問',   'hq',      '{"view_all_stores":true,"review_receipts":true,"record_payouts":true,"view_audit":true,"export_all":true}'),
   ('經理',   'hq',      '{"view_all_stores":true,"review_receipts":true,"record_payouts":true,"view_audit":true,"export_all":true,"manage_uber":true}'),
   ('總監',   'hq',      '{"view_all_stores":true,"review_receipts":true,"record_payouts":true,"view_audit":true,"export_all":true,"manage_uber":true,"edit_commission":true,"manage_users":true,"manage_roles":true,"edit_ck_prices":true}');
+
+-- 當日現金支出（2026-05-15 新增）
+create table if not exists expense_items (
+  id uuid primary key default gen_random_uuid(),
+  closing_id uuid not null references daily_closings(id) on delete cascade,
+  description text not null default '',
+  amount numeric(10,2) not null default 0,
+  created_at timestamptz default now()
+);
+alter table expense_items enable row level security;
+create policy "expense_items_all" on expense_items
+  for all using (
+    closing_id in (
+      select id from daily_closings where store_id = any(get_my_store_ids())
+    )
+  );
+alter table daily_closings add column if not exists total_expenses numeric(10,2) not null default 0;

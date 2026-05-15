@@ -11,7 +11,7 @@ import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
-import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2 } from 'lucide-react'
+import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet } from 'lucide-react'
 
 interface Props {
   store: Store
@@ -37,6 +37,12 @@ interface FormData {
   coins_5: number
   coins_1: number
   note: string
+}
+
+interface Expense {
+  id: string
+  description: string
+  amount: number
 }
 
 function initFormData(store: Store, ckPrices: CKPrice[], existing: any): FormData {
@@ -81,17 +87,24 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any): FormDat
   }
 }
 
-function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[]) {
+function initExpenses(existing: any): Expense[] {
+  return (existing?.expense_items ?? []).map((e: any) => ({
+    id: e.id,
+    description: e.description,
+    amount: e.amount,
+  }))
+}
+
+function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExpenses: number) {
   const uberTotal = Object.values(data.uber_amounts).reduce((a, b) => a + b, 0)
   const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount
   const totalRevenue = data.pos_cash + platformTotal + data.handwrite_amount
   const deliveryFee = ckPrices.reduce((s, p) => s + p.unit_price * (data.ck_quantities[p.item_name] ?? 0), 0)
-  const expectedRemit = totalRevenue - platformTotal - deliveryFee
-  const shouldEnvelope = expectedRemit + deliveryFee
+  const shouldEnvelope = totalRevenue - platformTotal - deliveryFee - totalExpenses
   const cashTotal = data.bills_1000 * 1000 + data.bills_500 * 500 + data.bills_100 * 100 + data.coins_50 * 50 + data.coins_10 * 10 + data.coins_5 * 5 + data.coins_1
   const actualRemit = cashTotal - store.petty_cash
   const variance = actualRemit - shouldEnvelope
-  return { totalRevenue, platformTotal, deliveryFee, expectedRemit, shouldEnvelope, cashTotal, actualRemit, variance }
+  return { totalRevenue, platformTotal, deliveryFee, totalExpenses, shouldEnvelope, cashTotal, actualRemit, variance }
 }
 
 function fmt(n: number) {
@@ -114,12 +127,14 @@ function NumInput({ label, value, onChange, disabled }: { label: string; value: 
 
 export default function ClosingForm({ store, ckPrices, existingClosing, userId, today }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing))
+  const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing))
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [closingId, setClosingId] = useState<string | null>(existingClosing?.id ?? null)
   const [status, setStatus] = useState(existingClosing?.status ?? 'draft')
 
-  const s = calcSummary(data, store, ckPrices)
+  const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0)
+  const s = calcSummary(data, store, ckPrices, totalExpenses)
   const isSubmitted = status === 'submitted' || status === 'verified'
 
   const set = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) => {
@@ -130,7 +145,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (isSubmitted) return
     const t = setInterval(() => handleSave(true), 60000)
     return () => clearInterval(t)
-  }, [data, isSubmitted])
+  }, [data, expenses, isSubmitted])
+
+  function addExpense() {
+    setExpenses(prev => [...prev, { id: crypto.randomUUID(), description: '', amount: 0 }])
+  }
+
+  function updateExpense(id: string, field: 'description' | 'amount', value: string | number) {
+    setExpenses(prev => prev.map(e => e.id === id ? { ...e, [field]: value } : e))
+  }
+
+  function removeExpense(id: string) {
+    setExpenses(prev => prev.filter(e => e.id !== id))
+  }
 
   async function handleSave(silent = false) {
     setSaving(true)
@@ -141,7 +168,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       const payload = {
         store_id: store.id, manager_id: userId, business_date: today, status: 'draft',
         total_revenue: s.totalRevenue, total_cost: s.deliveryFee,
-        expected_remit: s.expectedRemit, actual_remit: s.actualRemit,
+        total_expenses: totalExpenses,
+        expected_remit: s.shouldEnvelope, actual_remit: s.actualRemit,
         should_include_delivery: s.shouldEnvelope, variance: s.variance, note: data.note,
       }
 
@@ -186,6 +214,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           excel_column: p.excel_column,
         }))
       if (ckItems.length) await supabase.from('order_items').insert(ckItems)
+
+      // Expense items
+      await supabase.from('expense_items').delete().eq('closing_id', cid)
+      const expItems = expenses
+        .filter(e => e.description.trim() || e.amount > 0)
+        .map(e => ({ closing_id: cid, description: e.description.trim() || '支出', amount: e.amount }))
+      if (expItems.length) await supabase.from('expense_items').insert(expItems)
 
       if (!silent) toast.success('草稿已儲存')
     } catch (err: any) {
@@ -305,7 +340,70 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         </CardContent>
       </Card>
 
-      {/* 3. 現金清點 */}
+      {/* 3. 當日現金支出 */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
+            <Wallet className="h-4 w-4 text-purple-500" /> 當日現金支出
+          </CardTitle>
+          <p className="text-xs text-slate-400">現金付款的進貨、雜費等</p>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {expenses.length === 0 && !isSubmitted && (
+            <p className="text-xs text-slate-400 text-center py-2">無當日現金支出</p>
+          )}
+          {expenses.map(e => (
+            <div key={e.id} className="flex items-center gap-2">
+              <Input
+                placeholder="說明（例：進貨款）"
+                className="flex-1 h-10 text-sm"
+                value={e.description}
+                disabled={isSubmitted}
+                onChange={ev => updateExpense(e.id, 'description', ev.target.value)}
+              />
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-slate-400">$</span>
+                <Input
+                  type="number" min="0" inputMode="numeric"
+                  className="w-24 h-10 text-right tabular-nums text-sm"
+                  value={e.amount || ''}
+                  placeholder="0"
+                  disabled={isSubmitted}
+                  onChange={ev => updateExpense(e.id, 'amount', parseFloat(ev.target.value) || 0)}
+                />
+              </div>
+              {!isSubmitted && (
+                <button
+                  onClick={() => removeExpense(e.id)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          ))}
+          {!isSubmitted && (
+            <button
+              onClick={addExpense}
+              className="flex items-center gap-1.5 text-xs text-purple-600 hover:text-purple-800 transition-colors mt-1"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              新增支出項目
+            </button>
+          )}
+          {expenses.length > 0 && (
+            <>
+              <Separator />
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium text-slate-700">支出合計</span>
+                <span className="text-base font-bold tabular-nums text-purple-700">${fmt(totalExpenses)}</span>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 4. 現金清點 */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
@@ -353,7 +451,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         </CardContent>
       </Card>
 
-      {/* 4. 結算摘要 */}
+      {/* 5. 結算摘要 */}
       <Card className={cn('border-2', varBg)}>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
@@ -373,6 +471,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             <span className="text-slate-500">− 央廚配送費</span>
             <span className="tabular-nums text-slate-400">−${fmt(s.deliveryFee)}</span>
           </div>
+          {totalExpenses > 0 && (
+            <div className="flex justify-between">
+              <span className="text-slate-500">− 當日現金支出</span>
+              <span className="tabular-nums text-slate-400">−${fmt(totalExpenses)}</span>
+            </div>
+          )}
           <Separator />
           <div className="flex justify-between font-medium">
             <span>應包進信封</span>

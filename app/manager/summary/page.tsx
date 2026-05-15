@@ -32,7 +32,7 @@ export default async function SummaryPage() {
 
   const [{ data: closing }, { data: store }] = await Promise.all([
     supabase.from('daily_closings')
-      .select('*, revenue_items(*), cash_counts(*), order_items(*)')
+      .select('*, revenue_items(*), cash_counts(*), order_items(*), expense_items(*)')
       .eq('store_id', storeId).eq('business_date', today).maybeSingle(),
     supabase.from('stores').select('name, petty_cash').eq('id', storeId).single(),
   ])
@@ -54,6 +54,7 @@ export default async function SummaryPage() {
   const rev = closing.revenue_items ?? []
   const cash = closing.cash_counts?.[0]
   const orders = closing.order_items ?? []
+  const expenseItems = closing.expense_items ?? []
   const st = statusMap[closing.status] ?? statusMap.draft
 
   const varColor = Math.abs(closing.variance) === 0 ? 'text-green-600' :
@@ -193,6 +194,30 @@ export default async function SummaryPage() {
         </Card>
       )}
 
+      {/* 當日現金支出 */}
+      {expenseItems.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
+              <Banknote className="h-4 w-4 text-purple-500" /> 當日現金支出
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {expenseItems.map((e: any) => (
+              <div key={e.id} className="flex justify-between text-sm">
+                <span className="text-slate-600">{e.description}</span>
+                <span className="tabular-nums">${fmt(e.amount)}</span>
+              </div>
+            ))}
+            <Separator />
+            <div className="flex justify-between font-semibold text-sm">
+              <span>支出合計</span>
+              <span className="tabular-nums text-purple-700">${fmt(closing.total_expenses ?? 0)}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* 計算說明 */}
       <Card>
         <CardHeader className="pb-2">
@@ -213,6 +238,12 @@ export default async function SummaryPage() {
             <span>− 央廚配送費</span>
             <span className="tabular-nums">−${fmt(closing.total_cost)}</span>
           </div>
+          {(closing.total_expenses ?? 0) > 0 && (
+            <div className="flex justify-between text-slate-400">
+              <span>− 當日現金支出</span>
+              <span className="tabular-nums">−${fmt(closing.total_expenses)}</span>
+            </div>
+          )}
           <Separator />
           <div className="flex justify-between font-medium">
             <span>應包進信封</span>
