@@ -152,10 +152,18 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
       {/* 手機頂部 */}
       <header className="lg:hidden fixed top-0 left-0 right-0 bg-slate-900 z-40 flex items-center justify-between px-4 h-12">
         <div className="flex items-center gap-2 min-w-0">
-          <Building2 className="h-4 w-4 text-blue-400 shrink-0" />
+          {isManagerPath && hasStores ? (
+            <Link href="/hq/dashboard" className="flex items-center gap-1.5 shrink-0 text-slate-400 hover:text-white transition-colors">
+              <Building2 className="h-4 w-4 text-blue-400" />
+              <span className="text-xs">總公司</span>
+            </Link>
+          ) : (
+            <Building2 className="h-4 w-4 text-blue-400 shrink-0" />
+          )}
           {isManagerPath && hasStores ? (
             <>
-              <span className="text-xs text-slate-400 shrink-0">店長端</span>
+              <span className="text-slate-600 text-xs">/</span>
+              <span className="text-xs text-slate-300 shrink-0">店長端</span>
               {allStores.length > 1 ? (
                 <StoreSwitcher
                   stores={allStores}
