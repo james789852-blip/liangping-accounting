@@ -48,5 +48,7 @@ export async function updateCKPrice(id: string, newPrice: number, reason: string
   })
 
   revalidatePath('/hq/settings')
+  revalidatePath('/manager/closing')
+  revalidatePath('/manager', 'layout')
   return { success: true }
 }
