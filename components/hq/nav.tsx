@@ -151,15 +151,25 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
 
       {/* 手機頂部 */}
       <header className="lg:hidden fixed top-0 left-0 right-0 bg-slate-900 z-40 flex items-center justify-between px-4 h-12">
-        <div className="flex items-center gap-2">
-          <Building2 className="h-4 w-4 text-blue-400" />
-          <span className="font-bold text-sm text-white">梁平作帳 · 總公司</span>
-          {hasStores && allStores.length > 1 && isManagerPath && (
-            <StoreSwitcher
-              stores={allStores}
-              currentStoreId={currentStoreId}
-              className="text-xs border border-slate-600 rounded-md px-1.5 py-0.5 bg-slate-800 text-slate-200 focus:outline-none disabled:opacity-50"
-            />
+        <div className="flex items-center gap-2 min-w-0">
+          <Building2 className="h-4 w-4 text-blue-400 shrink-0" />
+          {isManagerPath && hasStores ? (
+            <>
+              <span className="text-xs text-slate-400 shrink-0">店長端</span>
+              {allStores.length > 1 ? (
+                <StoreSwitcher
+                  stores={allStores}
+                  currentStoreId={currentStoreId}
+                  className="text-sm font-bold border border-slate-600 rounded-md px-2 py-0.5 bg-slate-800 text-white focus:outline-none disabled:opacity-50 max-w-[160px]"
+                />
+              ) : (
+                <span className="font-bold text-sm text-white truncate">
+                  {allStores[0]?.name}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="font-bold text-sm text-white">梁平作帳 · 總公司</span>
           )}
         </div>
         <button onClick={handleLogout} className="text-slate-300">
