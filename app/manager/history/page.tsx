@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import Link from 'next/link'
 import { ChevronRight, History } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getEffectiveStoreId } from '@/lib/get-effective-store'
 
 const statusLabel: Record<string, string> = {
   draft: '草稿', submitted: '已送出', verified: '已審核', disputed: '異議中'
@@ -26,9 +27,9 @@ export default async function HistoryPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('store_ids').eq('user_id', user.id).single()
+    .from('user_profiles').select('role, store_ids').eq('user_id', user.id).single()
 
-  const storeId = profile?.store_ids?.[0]
+  const storeId = await getEffectiveStoreId(profile)
   if (!storeId) {
     return <div className="p-6 text-slate-500">尚未指派店家</div>
   }

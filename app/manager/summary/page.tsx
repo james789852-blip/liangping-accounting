@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Clock, Banknote, Package, Calculator, BarChart3 } from 'lucide-react'
 import Link from 'next/link'
+import { getEffectiveStoreId } from '@/lib/get-effective-store'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -22,9 +23,9 @@ export default async function SummaryPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('store_ids').eq('user_id', user.id).single()
+    .from('user_profiles').select('role, store_ids').eq('user_id', user.id).single()
 
-  const storeId = profile?.store_ids?.[0]
+  const storeId = await getEffectiveStoreId(profile)
   if (!storeId) return <div className="p-6 text-slate-500">尚未指派店家</div>
 
   const today = format(new Date(), 'yyyy-MM-dd')

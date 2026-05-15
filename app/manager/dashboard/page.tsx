@@ -6,6 +6,7 @@ import { zhTW } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import { ClipboardList, CheckCircle2, Clock, AlertTriangle, ChevronRight, History } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
+import { getEffectiveStoreId } from '@/lib/get-effective-store'
 
 function fmt(n: number) {
   return Math.round(n).toLocaleString('zh-TW')
@@ -22,7 +23,7 @@ export default async function ManagerDashboard() {
     .eq('user_id', user.id)
     .single()
 
-  const storeId = profile?.store_ids?.[0]
+  const storeId = await getEffectiveStoreId(profile)
   const today = format(new Date(), 'yyyy-MM-dd')
   const todayLabel = format(new Date(), 'M 月 d 日（EEEE）', { locale: zhTW })
 

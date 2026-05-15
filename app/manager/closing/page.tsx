@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import ClosingForm from '@/components/manager/closing-form'
 import { Store, CKPrice } from '@/lib/types'
 import { format } from 'date-fns'
+import { getEffectiveStoreId } from '@/lib/get-effective-store'
 
 export default async function ClosingPage() {
   const supabase = await createClient()
@@ -15,7 +16,8 @@ export default async function ClosingPage() {
     .eq('user_id', user.id)
     .single()
 
-  if (!profile?.store_ids?.length) {
+  const storeId = await getEffectiveStoreId(profile)
+  if (!storeId) {
     return (
       <div className="p-6">
         <p className="text-red-500">您尚未被指派到任何店家，請聯絡系統管理員。</p>
@@ -26,7 +28,7 @@ export default async function ClosingPage() {
   const { data: store } = await supabase
     .from('stores')
     .select('*')
-    .eq('id', profile.store_ids[0])
+    .eq('id', storeId)
     .single()
 
   const { data: ckPrices } = await supabase
@@ -40,7 +42,7 @@ export default async function ClosingPage() {
   const { data: existingClosing } = await supabase
     .from('daily_closings')
     .select('*, revenue_items(*), cash_counts(*), order_items(*)')
-    .eq('store_id', profile.store_ids[0])
+    .eq('store_id', storeId)
     .eq('business_date', today)
     .maybeSingle()
 

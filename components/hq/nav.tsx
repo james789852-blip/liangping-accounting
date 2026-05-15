@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, CreditCard, CheckSquare, Video,
   Store, BarChart3, FileSpreadsheet, Shield,
-  Settings, Users, LogOut, Building2
+  Settings, Users, LogOut, Building2, ArrowRightLeft
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -76,6 +76,13 @@ export default function HQNav({ userName, role }: Props) {
             <p className="text-xs font-medium text-white truncate">{userName}</p>
             <p className="text-xs text-slate-400">{role}</p>
           </div>
+          <Link
+            href="/manager/dashboard"
+            className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-amber-300 hover:bg-slate-800 hover:text-amber-200 transition-colors"
+          >
+            <ArrowRightLeft className="h-4 w-4" />
+            查看店長端
+          </Link>
           <button
             onClick={handleLogout}
             className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
