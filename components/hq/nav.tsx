@@ -55,7 +55,14 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
     router.refresh()
   }
 
-  const mobileTabs = isManagerPath ? managerNavItems.slice(0, 5) : hqNavItems.slice(0, 5)
+  const mobileHQTabs = [
+    hqNavItems[0],  // 即時儀表板
+    hqNavItems[2],  // 審核中心
+    hqNavItems[5],  // 月度報表
+    hqNavItems[8],  // 系統設定
+    hqNavItems[9],  // 帳號管理
+  ]
+  const mobileTabs = isManagerPath ? managerNavItems.slice(0, 5) : mobileHQTabs
   const hasStores = allStores.length > 0
 
   return (
