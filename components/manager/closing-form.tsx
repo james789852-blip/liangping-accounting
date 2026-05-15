@@ -29,6 +29,7 @@ interface FormData {
   online_amount: number
   handwrite_amount: number
   ck_quantities: Record<string, number>
+  // 現金清點（個數）
   bills_1000: number
   bills_500: number
   bills_100: number
@@ -36,6 +37,14 @@ interface FormData {
   coins_10: number
   coins_5: number
   coins_1: number
+  // 整筆金額
+  lump_1000: number
+  lump_500: number
+  lump_100: number
+  lump_50: number
+  lump_10: number
+  lump_5: number
+  lump_1: number
   note: string
 }
 
@@ -52,7 +61,15 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any): FormDat
   ckPrices.forEach(p => { ck_quantities[p.item_name] = 0 })
 
   if (!existing) {
-    return { pos_cash: 0, uber_amounts, panda_amount: 0, twpay_amount: 0, online_amount: 0, handwrite_amount: 0, ck_quantities, bills_1000: 0, bills_500: 0, bills_100: 0, coins_50: 0, coins_10: 0, coins_5: 0, coins_1: 0, note: '' }
+    return {
+      pos_cash: 0, uber_amounts, panda_amount: 0, twpay_amount: 0,
+      online_amount: 0, handwrite_amount: 0, ck_quantities,
+      bills_1000: 0, bills_500: 0, bills_100: 0,
+      coins_50: 0, coins_10: 0, coins_5: 0, coins_1: 0,
+      lump_1000: 0, lump_500: 0, lump_100: 0,
+      lump_50: 0, lump_10: 0, lump_5: 0, lump_1: 0,
+      note: '',
+    }
   }
 
   const rev = existing.revenue_items ?? []
@@ -83,6 +100,13 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any): FormDat
     coins_10: cash.coins_10 ?? 0,
     coins_5: cash.coins_5 ?? 0,
     coins_1: cash.coins_1 ?? 0,
+    lump_1000: cash.lump_1000 ?? 0,
+    lump_500: cash.lump_500 ?? 0,
+    lump_100: cash.lump_100 ?? 0,
+    lump_50: cash.lump_50 ?? 0,
+    lump_10: cash.lump_10 ?? 0,
+    lump_5: cash.lump_5 ?? 0,
+    lump_1: cash.lump_1 ?? 0,
     note: existing.note ?? '',
   }
 }
@@ -100,11 +124,28 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
   const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount
   const totalRevenue = data.pos_cash + platformTotal + data.handwrite_amount
   const deliveryFee = ckPrices.reduce((s, p) => s + p.unit_price * (data.ck_quantities[p.item_name] ?? 0), 0)
-  const shouldEnvelope = totalRevenue - platformTotal - deliveryFee - totalExpenses
-  const cashTotal = data.bills_1000 * 1000 + data.bills_500 * 500 + data.bills_100 * 100 + data.coins_50 * 50 + data.coins_10 * 10 + data.coins_5 * 5 + data.coins_1
+
+  // 應包進信封 = 總營業額 − 平台費 − 其他現金支出（央廚費不扣，包在信封裡）
+  const shouldEnvelope = totalRevenue - platformTotal - totalExpenses
+
+  // 應匯入（HQ 淨收）= 應包進信封 − 央廚配送費
+  const netToHQ = shouldEnvelope - deliveryFee
+
+  // 現金清點 = 個數 × 面額 + 整筆金額
+  const cashTotal =
+    (data.bills_1000 * 1000 + data.lump_1000) +
+    (data.bills_500  * 500  + data.lump_500)  +
+    (data.bills_100  * 100  + data.lump_100)  +
+    (data.coins_50   * 50   + data.lump_50)   +
+    (data.coins_10   * 10   + data.lump_10)   +
+    (data.coins_5    * 5    + data.lump_5)    +
+    (data.coins_1    * 1    + data.lump_1)
+
   const actualRemit = cashTotal - store.petty_cash
+  // 誤差 = 實際包進信封 − 應包進信封
   const variance = actualRemit - shouldEnvelope
-  return { totalRevenue, platformTotal, deliveryFee, totalExpenses, shouldEnvelope, cashTotal, actualRemit, variance }
+
+  return { totalRevenue, platformTotal, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashTotal, actualRemit, variance }
 }
 
 function fmt(n: number) {
@@ -124,6 +165,16 @@ function NumInput({ label, value, onChange, disabled }: { label: string; value: 
     </div>
   )
 }
+
+const DENOMINATIONS = [
+  { label: '千元鈔', countKey: 'bills_1000' as const, lumpKey: 'lump_1000' as const, unit: 1000, unitLabel: '張' },
+  { label: '五百元', countKey: 'bills_500'  as const, lumpKey: 'lump_500'  as const, unit: 500,  unitLabel: '張' },
+  { label: '百元鈔', countKey: 'bills_100'  as const, lumpKey: 'lump_100'  as const, unit: 100,  unitLabel: '張' },
+  { label: '五十元', countKey: 'coins_50'   as const, lumpKey: 'lump_50'   as const, unit: 50,   unitLabel: '枚' },
+  { label: '十元',   countKey: 'coins_10'   as const, lumpKey: 'lump_10'   as const, unit: 10,   unitLabel: '枚' },
+  { label: '五元',   countKey: 'coins_5'    as const, lumpKey: 'lump_5'    as const, unit: 5,    unitLabel: '枚' },
+  { label: '一元',   countKey: 'coins_1'    as const, lumpKey: 'lump_1'    as const, unit: 1,    unitLabel: '枚' },
+]
 
 export default function ClosingForm({ store, ckPrices, existingClosing, userId, today }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing))
@@ -167,10 +218,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
       const payload = {
         store_id: store.id, manager_id: userId, business_date: today, status: 'draft',
-        total_revenue: s.totalRevenue, total_cost: s.deliveryFee,
+        total_revenue: s.totalRevenue,
+        total_cost: s.deliveryFee,
         total_expenses: totalExpenses,
-        expected_remit: s.shouldEnvelope, actual_remit: s.actualRemit,
-        should_include_delivery: s.shouldEnvelope, variance: s.variance, note: data.note,
+        expected_remit: s.netToHQ,
+        actual_remit: s.actualRemit,
+        should_include_delivery: s.shouldEnvelope,
+        variance: s.variance,
+        note: data.note,
       }
 
       if (!cid) {
@@ -195,12 +250,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       ]
       if (revItems.length) await supabase.from('revenue_items').insert(revItems)
 
-      // Cash count
+      // Cash count（含整筆金額）
       await supabase.from('cash_counts').delete().eq('closing_id', cid)
       await supabase.from('cash_counts').insert({
         closing_id: cid,
         bills_1000: data.bills_1000, bills_500: data.bills_500, bills_100: data.bills_100,
         coins_50: data.coins_50, coins_10: data.coins_10, coins_5: data.coins_5, coins_1: data.coins_1,
+        lump_1000: data.lump_1000, lump_500: data.lump_500, lump_100: data.lump_100,
+        lump_50: data.lump_50, lump_10: data.lump_10, lump_5: data.lump_5, lump_1: data.lump_1,
+        cash_total: s.cashTotal,
       })
 
       // CK order items
@@ -346,7 +404,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
             <Wallet className="h-4 w-4 text-purple-500" /> 當日現金支出
           </CardTitle>
-          <p className="text-xs text-slate-400">現金付款的進貨、雜費等</p>
+          <p className="text-xs text-slate-400">現金付款的進貨、雜費等（不含央廚）</p>
         </CardHeader>
         <CardContent className="space-y-2">
           {expenses.length === 0 && !isSubmitted && (
@@ -355,7 +413,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           {expenses.map(e => (
             <div key={e.id} className="flex items-center gap-2">
               <Input
-                placeholder="說明（例：進貨款）"
+                placeholder="說明（例：菜商、雜貨）"
                 className="flex-1 h-10 text-sm"
                 value={e.description}
                 disabled={isSubmitted}
@@ -366,29 +424,23 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <Input
                   type="number" min="0" inputMode="numeric"
                   className="w-24 h-10 text-right tabular-nums text-sm"
-                  value={e.amount || ''}
-                  placeholder="0"
+                  value={e.amount || ''} placeholder="0"
                   disabled={isSubmitted}
                   onChange={ev => updateExpense(e.id, 'amount', parseFloat(ev.target.value) || 0)}
                 />
               </div>
               {!isSubmitted && (
-                <button
-                  onClick={() => removeExpense(e.id)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-                >
+                <button onClick={() => removeExpense(e.id)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">
                   <Trash2 className="h-4 w-4" />
                 </button>
               )}
             </div>
           ))}
           {!isSubmitted && (
-            <button
-              onClick={addExpense}
-              className="flex items-center gap-1.5 text-xs text-purple-600 hover:text-purple-800 transition-colors mt-1"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              新增支出項目
+            <button onClick={addExpense}
+              className="flex items-center gap-1.5 text-xs text-purple-600 hover:text-purple-800 transition-colors mt-1">
+              <Plus className="h-3.5 w-3.5" /> 新增支出項目
             </button>
           )}
           {expenses.length > 0 && (
@@ -411,40 +463,54 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-            {([
-              ['千元鈔（張）', 'bills_1000', 1000],
-              ['五百元（張）', 'bills_500', 500],
-              ['百元鈔（張）', 'bills_100', 100],
-              ['五十元（枚）', 'coins_50', 50],
-              ['十元（枚）', 'coins_10', 10],
-              ['五元（枚）', 'coins_5', 5],
-              ['一元（枚）', 'coins_1', 1],
-            ] as const).map(([label, key, unit]) => (
-              <div key={key} className="space-y-1">
-                <Label className="text-xs text-slate-500">{label}</Label>
-                <div className="flex items-center gap-1">
+          <div className="space-y-2">
+            {/* 表頭 */}
+            <div className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 items-center">
+              <span />
+              <span className="text-[10px] text-slate-400 text-center">張 / 枚</span>
+              <span className="text-[10px] text-slate-400 text-center">整筆金額</span>
+              <span className="text-[10px] text-slate-400 text-right">小計</span>
+            </div>
+            {DENOMINATIONS.map(({ label, countKey, lumpKey, unit, unitLabel }) => {
+              const countVal = data[countKey] as number
+              const lumpVal = data[lumpKey] as number
+              const subtotal = countVal * unit + lumpVal
+              return (
+                <div key={countKey} className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 items-center">
+                  <span className="text-xs text-slate-500 shrink-0">{label}</span>
+                  <div className="flex items-center gap-0.5">
+                    <Input
+                      type="number" min="0" inputMode="numeric" disabled={isSubmitted}
+                      className="text-right tabular-nums h-9 text-sm px-2"
+                      value={countVal || ''} placeholder="0"
+                      onChange={e => set(countKey, parseInt(e.target.value) || 0)}
+                    />
+                    <span className="text-[10px] text-slate-400 shrink-0">{unitLabel}</span>
+                  </div>
                   <Input
                     type="number" min="0" inputMode="numeric" disabled={isSubmitted}
-                    className="text-right tabular-nums h-10"
-                    value={data[key] || ''} placeholder="0"
-                    onChange={e => set(key, parseInt(e.target.value) || 0)}
+                    className="text-right tabular-nums h-9 text-sm px-2"
+                    value={lumpVal || ''} placeholder="0"
+                    onChange={e => set(lumpKey, parseInt(e.target.value) || 0)}
                   />
-                  <span className="text-[10px] text-slate-400 w-14 text-right shrink-0 tabular-nums">
-                    ={fmt(data[key] * unit)}
+                  <span className={cn(
+                    'text-right text-xs tabular-nums shrink-0',
+                    subtotal > 0 ? 'text-slate-700 font-medium' : 'text-slate-300'
+                  )}>
+                    ${fmt(subtotal)}
                   </span>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
           <Separator className="my-3" />
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <div className="flex justify-between">
               <span className="text-sm text-slate-600">現金總額</span>
-              <span className="font-bold tabular-nums">${fmt(s.cashTotal)}</span>
+              <span className="font-bold tabular-nums text-lg">${fmt(s.cashTotal)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-sm text-slate-600">扣零用金（${fmt(store.petty_cash)}）</span>
+              <span className="text-sm text-slate-500">扣零用金（${fmt(store.petty_cash)}）</span>
               <span className="font-bold tabular-nums text-blue-700">${fmt(s.actualRemit)}</span>
             </div>
           </div>
@@ -464,26 +530,31 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             <span className="tabular-nums font-medium">${fmt(s.totalRevenue)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-slate-500">− 平台收款（Uber/熊貓等）</span>
+            <span className="text-slate-500">− 平台收款（Uber / 熊貓等）</span>
             <span className="tabular-nums text-slate-400">−${fmt(s.platformTotal)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-500">− 央廚配送費</span>
-            <span className="tabular-nums text-slate-400">−${fmt(s.deliveryFee)}</span>
           </div>
           {totalExpenses > 0 && (
             <div className="flex justify-between">
-              <span className="text-slate-500">− 當日現金支出</span>
+              <span className="text-slate-500">− 現金支出</span>
               <span className="tabular-nums text-slate-400">−${fmt(totalExpenses)}</span>
             </div>
           )}
           <Separator />
-          <div className="flex justify-between font-medium">
+          <div className="flex justify-between font-semibold">
             <span>應包進信封</span>
             <span className="tabular-nums">${fmt(s.shouldEnvelope)}</span>
           </div>
+          <div className="flex justify-between text-xs text-slate-500 pl-2">
+            <span>其中央廚配送費</span>
+            <span className="tabular-nums">${fmt(s.deliveryFee)}</span>
+          </div>
+          <div className="flex justify-between text-xs text-slate-500 pl-2">
+            <span>應匯入 HQ（淨）</span>
+            <span className="tabular-nums font-medium text-slate-700">${fmt(s.netToHQ)}</span>
+          </div>
+          <Separator />
           <div className="flex justify-between font-medium">
-            <span>實際可匯入</span>
+            <span>實際包進信封（現金 − 零用金）</span>
             <span className="tabular-nums">${fmt(s.actualRemit)}</span>
           </div>
           <Separator />

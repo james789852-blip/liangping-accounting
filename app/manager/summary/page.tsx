@@ -234,23 +234,28 @@ export default async function SummaryPage() {
             <span>− 平台收款</span>
             <span className="tabular-nums">−${fmt(platformTotal)}</span>
           </div>
-          <div className="flex justify-between text-slate-400">
-            <span>− 央廚配送費</span>
-            <span className="tabular-nums">−${fmt(closing.total_cost)}</span>
-          </div>
           {(closing.total_expenses ?? 0) > 0 && (
             <div className="flex justify-between text-slate-400">
-              <span>− 當日現金支出</span>
+              <span>− 現金支出</span>
               <span className="tabular-nums">−${fmt(closing.total_expenses)}</span>
             </div>
           )}
           <Separator />
-          <div className="flex justify-between font-medium">
+          <div className="flex justify-between font-semibold">
             <span>應包進信封</span>
             <span className="tabular-nums">${fmt(closing.should_include_delivery)}</span>
           </div>
+          <div className="flex justify-between text-xs text-slate-500 pl-2">
+            <span>其中央廚配送費</span>
+            <span className="tabular-nums">${fmt(closing.total_cost)}</span>
+          </div>
+          <div className="flex justify-between text-xs text-slate-500 pl-2">
+            <span>應匯入 HQ（淨）</span>
+            <span className="tabular-nums font-medium text-slate-700">${fmt(closing.expected_remit ?? 0)}</span>
+          </div>
+          <Separator />
           <div className="flex justify-between font-medium">
-            <span>實際可匯入</span>
+            <span>實際包進信封（現金 − 零用金）</span>
             <span className="tabular-nums">${fmt(closing.actual_remit)}</span>
           </div>
           <Separator />
