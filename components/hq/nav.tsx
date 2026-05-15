@@ -180,9 +180,19 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
             <span className="font-bold text-sm text-white">梁平作帳 · 總公司</span>
           )}
         </div>
-        <button onClick={handleLogout} className="text-slate-300">
-          <LogOut className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {!isManagerPath && hasStores && (
+            <Link
+              href="/manager/dashboard"
+              className="text-xs text-amber-400 border border-amber-600 rounded-md px-2 py-0.5 hover:bg-amber-900 transition-colors"
+            >
+              店長端
+            </Link>
+          )}
+          <button onClick={handleLogout} className="text-slate-300">
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
       </header>
 
       {/* 手機底部 Tab */}
