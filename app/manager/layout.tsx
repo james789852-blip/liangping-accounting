@@ -43,11 +43,15 @@ export default async function ManagerLayout({ children }: { children: React.Reac
     storeName = store?.name ?? ''
   }
 
-  // 給 HQ 用戶用的全店清單
+  // 給 HQ 用戶用的店家清單（只顯示被指派的店）
   let allStores: { id: string; name: string }[] = []
-  if (isHQ) {
+  if (isHQ && profile?.store_ids?.length) {
     const { data: stores } = await supabase
-      .from('stores').select('id, name').eq('active', true).order('name')
+      .from('stores')
+      .select('id, name')
+      .eq('active', true)
+      .in('id', profile.store_ids)
+      .order('name')
     allStores = stores ?? []
   }
 
