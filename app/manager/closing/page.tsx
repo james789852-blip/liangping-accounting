@@ -35,7 +35,7 @@ export default async function ClosingPage() {
     .from('central_kitchen_prices')
     .select('id, item_name, unit_price, excel_column')
     .eq('active', true)
-    .order('item_name')
+    .order('sort_order').order('item_name')
 
   const today = format(new Date(), 'yyyy-MM-dd')
 

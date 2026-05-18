@@ -23,7 +23,7 @@ export default async function SettingsPage() {
       .from('central_kitchen_prices')
       .select('id, item_name, unit_price, updated_at')
       .eq('active', true)
-      .order('item_name'),
+      .order('sort_order').order('item_name'),
     supabase
       .from('central_kitchen_price_history')
       .select('id, item_name, old_price, new_price, changed_at, reason')
