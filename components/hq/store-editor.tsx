@@ -107,6 +107,7 @@ export default function StoreEditor({ store, canEdit }: Props) {
     <div className="border border-slate-200 rounded-xl overflow-hidden">
       {/* 標題列 */}
       <button
+        type="button"
         onClick={() => setOpen(v => !v)}
         className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors"
       >
@@ -133,6 +134,7 @@ export default function StoreEditor({ store, canEdit }: Props) {
               {(['ichef', 'handwrite', 'mixed'] as const).map(m => (
                 <button
                   key={m}
+                  type="button"
                   disabled={!canEdit}
                   onClick={() => setMode(m)}
                   className={cn(
@@ -175,7 +177,7 @@ export default function StoreEditor({ store, canEdit }: Props) {
                     <span key={acc} className="flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded-lg text-sm text-slate-700">
                       {acc}
                       {canEdit && (
-                        <button onClick={() => removeAccount(acc)} className="text-slate-400 hover:text-red-500 transition-colors">
+                        <button type="button" onClick={() => removeAccount(acc)} className="text-slate-400 hover:text-red-500 transition-colors">
                           <X className="h-3 w-3" />
                         </button>
                       )}
@@ -189,9 +191,9 @@ export default function StoreEditor({ store, canEdit }: Props) {
                       className="h-8 text-sm flex-1"
                       value={newAccount}
                       onChange={e => setNewAccount(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && addAccount()}
                     />
                     <button
+                      type="button"
                       onClick={addAccount}
                       className="flex items-center gap-1 px-3 h-8 rounded-lg bg-blue-50 text-blue-600 text-sm hover:bg-blue-100 transition-colors"
                     >
@@ -233,6 +235,7 @@ export default function StoreEditor({ store, canEdit }: Props) {
           {/* 儲存按鈕 */}
           {canEdit && (
             <button
+              type="button"
               onClick={handleSave}
               disabled={saving}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
