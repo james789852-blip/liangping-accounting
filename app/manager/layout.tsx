@@ -4,8 +4,6 @@ import { cookies } from 'next/headers'
 import ManagerNav from '@/components/manager/nav'
 import HQNav from '@/components/hq/nav'
 
-const HQ_ROLES = ['顧問', '經理', '總監']
-
 export default async function ManagerLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -13,11 +11,11 @@ export default async function ManagerLayout({ children }: { children: React.Reac
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('name, role, store_ids')
+    .select('name, role, store_ids, is_hq')
     .eq('user_id', user.id)
     .single()
 
-  const isHQ = profile && HQ_ROLES.includes(profile.role)
+  const isHQ = profile && (profile.is_hq || profile.role === '老闆')
 
   let storeId: string | null = null
   let storeName = ''
@@ -26,19 +24,24 @@ export default async function ManagerLayout({ children }: { children: React.Reac
   if (isHQ) {
     const cookieStore = await cookies()
     const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
-    const allStoreIds: string[] = profile.store_ids ?? []
-    storeId = (cookieStoreId && allStoreIds.includes(cookieStoreId))
-      ? cookieStoreId
-      : allStoreIds[0] ?? null
 
-    if (allStoreIds.length) {
+    if (profile.role === '老闆') {
       const { data: stores } = await supabase
-        .from('stores')
-        .select('id, name')
-        .eq('active', true)
-        .in('id', allStoreIds)
-        .order('name')
+        .from('stores').select('id, name').eq('active', true).order('name')
       allStores = stores ?? []
+    } else {
+      const allStoreIds: string[] = profile.store_ids ?? []
+      if (allStoreIds.length) {
+        const { data: stores } = await supabase
+          .from('stores').select('id, name').eq('active', true).in('id', allStoreIds).order('name')
+        allStores = stores ?? []
+      }
+    }
+
+    if (allStores.length) {
+      storeId = (cookieStoreId && allStores.some(s => s.id === cookieStoreId))
+        ? cookieStoreId
+        : allStores[0].id
       storeName = allStores.find(s => s.id === storeId)?.name ?? ''
     }
   } else {

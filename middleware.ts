@@ -35,11 +35,11 @@ export async function middleware(request: NextRequest) {
   if (user && pathname === '/login') {
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('role')
+      .select('role, is_hq')
       .eq('user_id', user.id)
       .single()
 
-    const isHQ = profile && ['顧問', '經理', '總監'].includes(profile.role)
+    const isHQ = profile && (profile.is_hq || profile.role === '老闆')
     return NextResponse.redirect(new URL(isHQ ? '/hq/dashboard' : '/manager/dashboard', request.url))
   }
 

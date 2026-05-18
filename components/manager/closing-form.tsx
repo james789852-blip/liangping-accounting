@@ -123,10 +123,9 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
   const uberTotal = Object.values(data.uber_amounts).reduce((a, b) => a + b, 0)
   const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount
 
-  // iChef 模式：pos_cash 是 iChef 結帳總金額（已含外送平台），直接就是總營業額
-  // 平台費只做扣除用，不再加到總收入
-  // 其他模式：總收 = 現金 + 平台 + 手寫
-  const totalRevenue = store.mode === 'ichef'
+  // ichef_uber_linked：iChef 總金額已含外送平台，直接就是總營業額，平台費只做扣除
+  // 否則：總收 = POS現金 + 平台 + 手寫
+  const totalRevenue = store.ichef_uber_linked
     ? data.pos_cash
     : data.pos_cash + platformTotal + data.handwrite_amount
 
@@ -348,20 +347,20 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         <CardContent className="space-y-3">
           {store.mode !== 'handwrite' && (
             <div className="space-y-1">
-              {store.mode === 'ichef' && (
+              {store.ichef_uber_linked && (
                 <p className="text-[11px] text-blue-600 bg-blue-50 rounded-md px-2 py-1">
                   輸入 iChef 結帳總金額（含外送平台）
                 </p>
               )}
               <NumInput
-                label={store.mode === 'ichef' ? 'iChef 結帳總金額' : 'POS 現金'}
+                label={store.ichef_uber_linked ? 'iChef 結帳總金額' : 'POS 現金'}
                 value={data.pos_cash}
                 onChange={v => set('pos_cash', v)}
                 disabled={isSubmitted}
               />
             </div>
           )}
-          {store.mode === 'ichef' && (
+          {store.ichef_uber_linked && (
             <p className="text-[11px] text-slate-400 -mt-1">↓ 輸入各平台金額（僅用於計算扣除，不加入總收）</p>
           )}
           {(store.uber_accounts ?? []).map(acc => (
@@ -385,7 +384,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             <span className="text-sm font-medium text-slate-700">總營業額</span>
             <span className="text-lg font-bold tabular-nums">${fmt(s.totalRevenue)}</span>
           </div>
-          {store.mode === 'ichef' && s.platformTotal > 0 && (
+          {store.ichef_uber_linked && s.platformTotal > 0 && (
             <div className="flex justify-between items-center text-xs text-slate-500">
               <span>店舖現金（iChef − 平台）</span>
               <span className="tabular-nums">${fmt(s.storeRevenue)}</span>

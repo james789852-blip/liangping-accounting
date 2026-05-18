@@ -10,28 +10,38 @@ export default async function HQLayout({ children }: { children: React.ReactNode
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('name, role, store_ids')
+    .select('name, role, store_ids, is_hq')
     .eq('user_id', user.id)
     .single()
+
+  // 只有 is_hq 或老闆才能進總公司後台
+  if (!profile || (!profile.is_hq && profile.role !== '老闆')) {
+    redirect('/manager')
+  }
 
   let allStores: { id: string; name: string }[] = []
   let currentStoreId = ''
 
-  if (profile?.store_ids?.length) {
-    const cookieStore = await cookies()
-    const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
-    const storeIds: string[] = profile.store_ids
-    currentStoreId = (cookieStoreId && storeIds.includes(cookieStoreId))
-      ? cookieStoreId
-      : storeIds[0] ?? ''
+  const isOwner = profile.role === '老闆'
+  const cookieStore = await cookies()
+  const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
 
+  if (isOwner) {
+    // 老闆取得全部店
     const { data: stores } = await supabase
-      .from('stores')
-      .select('id, name')
-      .eq('active', true)
-      .in('id', storeIds)
-      .order('name')
+      .from('stores').select('id, name').eq('active', true).order('name')
     allStores = stores ?? []
+  } else if (profile.store_ids?.length) {
+    const storeIds: string[] = profile.store_ids
+    const { data: stores } = await supabase
+      .from('stores').select('id, name').eq('active', true).in('id', storeIds).order('name')
+    allStores = stores ?? []
+  }
+
+  if (allStores.length) {
+    currentStoreId = (cookieStoreId && allStores.some(s => s.id === cookieStoreId))
+      ? cookieStoreId
+      : allStores[0].id
   }
 
   return (

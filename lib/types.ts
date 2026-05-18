@@ -1,4 +1,4 @@
-export type Role = '店長' | '副店長' | '助理' | '顧問' | '經理' | '總監'
+export type Role = '店長' | '副店長' | '助理' | '顧問' | '經理' | '總監' | '老闆'
 export type StoreMode = 'ichef' | 'handwrite' | 'mixed'
 export type ClosingStatus = 'draft' | 'submitted' | 'verified' | 'disputed'
 
@@ -14,6 +14,7 @@ export interface Store {
   online_rate: number
   twpay_enabled: boolean
   twpay_rate: number
+  ichef_uber_linked: boolean
   petty_cash: number
 }
 
@@ -29,4 +30,5 @@ export interface UserProfile {
   name: string
   role: Role
   store_ids: string[]
+  is_hq: boolean
 }

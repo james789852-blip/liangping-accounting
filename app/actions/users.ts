@@ -18,6 +18,7 @@ export async function createUser(formData: {
   password: string
   role: string
   store_ids: string[]
+  is_hq?: boolean
 }) {
   const supabase = await createClient()
   const { data: { user: caller } } = await supabase.auth.getUser()
@@ -25,7 +26,7 @@ export async function createUser(formData: {
 
   const { data: callerProfile } = await supabase
     .from('user_profiles').select('role').eq('user_id', caller.id).single()
-  if (!callerProfile || !['經理', '總監'].includes(callerProfile.role)) {
+  if (!callerProfile || !['經理', '總監', '老闆'].includes(callerProfile.role)) {
     return { error: '權限不足' }
   }
 
@@ -43,6 +44,7 @@ export async function createUser(formData: {
     name: formData.name,
     role: formData.role,
     store_ids: formData.store_ids,
+    is_hq: formData.is_hq ?? false,
     active: true,
   })
   if (profileError) {
@@ -62,6 +64,27 @@ export async function updateUserStatus(userId: string, active: boolean) {
   const { error } = await supabase
     .from('user_profiles')
     .update({ active })
+    .eq('user_id', userId)
+
+  if (error) return { error: error.message }
+  revalidatePath('/hq/users')
+  return { success: true }
+}
+
+export async function updateUserHQ(userId: string, isHQ: boolean) {
+  const supabase = await createClient()
+  const { data: { user: caller } } = await supabase.auth.getUser()
+  if (!caller) return { error: '未登入' }
+
+  const { data: callerProfile } = await supabase
+    .from('user_profiles').select('role').eq('user_id', caller.id).single()
+  if (!callerProfile || !['總監', '老闆'].includes(callerProfile.role)) {
+    return { error: '權限不足' }
+  }
+
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({ is_hq: isHQ })
     .eq('user_id', userId)
 
   if (error) return { error: error.message }
