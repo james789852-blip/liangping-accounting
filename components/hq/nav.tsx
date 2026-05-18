@@ -58,7 +58,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const mobileHQTabs = [
     hqNavItems[0],  // 即時儀表板
     hqNavItems[2],  // 審核中心
-    hqNavItems[5],  // 月度報表
+    hqNavItems[4],  // 店家管理
     hqNavItems[8],  // 系統設定
     hqNavItems[9],  // 帳號管理
   ]
