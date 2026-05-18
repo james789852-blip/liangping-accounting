@@ -11,7 +11,7 @@ import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
-import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet } from 'lucide-react'
+import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X } from 'lucide-react'
 
 interface Props {
   store: Store
@@ -27,7 +27,6 @@ interface FormData {
   panda_amount: number
   twpay_amount: number
   online_amount: number
-  handwrite_amount: number
   ck_quantities: Record<string, number>
   // 現金清點（個數）
   bills_1000: number
@@ -54,6 +53,12 @@ interface Expense {
   amount: number
 }
 
+interface HandwriteOrder {
+  id: string
+  order_number: string
+  amount: number
+}
+
 function initFormData(store: Store, ckPrices: CKPrice[], existing: any): FormData {
   const uber_amounts: Record<string, number> = {}
   const ck_quantities: Record<string, number> = {}
@@ -63,7 +68,7 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any): FormDat
   if (!existing) {
     return {
       pos_cash: 0, uber_amounts, panda_amount: 0, twpay_amount: 0,
-      online_amount: 0, handwrite_amount: 0, ck_quantities,
+      online_amount: 0, ck_quantities,
       bills_1000: 0, bills_500: 0, bills_100: 0,
       coins_50: 0, coins_10: 0, coins_5: 0, coins_1: 0,
       lump_1000: 0, lump_500: 0, lump_100: 0,
@@ -91,7 +96,6 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any): FormDat
     panda_amount: rev.find((x: any) => x.channel === 'panda')?.gross_amount ?? 0,
     twpay_amount: rev.find((x: any) => x.channel === 'twpay')?.gross_amount ?? 0,
     online_amount: rev.find((x: any) => x.channel === 'online')?.gross_amount ?? 0,
-    handwrite_amount: rev.find((x: any) => x.channel === 'handwrite')?.gross_amount ?? 0,
     ck_quantities,
     bills_1000: cash.bills_1000 ?? 0,
     bills_500: cash.bills_500 ?? 0,
@@ -119,15 +123,23 @@ function initExpenses(existing: any): Expense[] {
   }))
 }
 
-function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExpenses: number) {
+function initHandwriteOrders(existing: any): HandwriteOrder[] {
+  return (existing?.handwrite_orders ?? []).map((o: any) => ({
+    id: o.id,
+    order_number: o.order_number,
+    amount: o.amount,
+  }))
+}
+
+function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExpenses: number, handwriteTotal: number) {
   const uberTotal = Object.values(data.uber_amounts).reduce((a, b) => a + b, 0)
   const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount
 
   // ichef_uber_linked：iChef 總金額已含外送平台，直接就是總營業額，平台費只做扣除
-  // 否則：總收 = POS現金 + 平台 + 手寫
+  // 否則：總收 = POS現金 + 手寫訂單 + 平台
   const totalRevenue = store.ichef_uber_linked
     ? data.pos_cash
-    : data.pos_cash + platformTotal + data.handwrite_amount
+    : data.pos_cash + handwriteTotal + platformTotal
 
   const deliveryFee = ckPrices.reduce((s, p) => s + p.unit_price * (data.ck_quantities[p.item_name] ?? 0), 0)
 
@@ -186,13 +198,17 @@ const DENOMINATIONS = [
 export default function ClosingForm({ store, ckPrices, existingClosing, userId, today }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing))
+  const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
+  const [newOrderNum, setNewOrderNum] = useState('')
+  const [newOrderAmt, setNewOrderAmt] = useState(0)
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [closingId, setClosingId] = useState<string | null>(existingClosing?.id ?? null)
   const [status, setStatus] = useState(existingClosing?.status ?? 'draft')
 
   const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0)
-  const s = calcSummary(data, store, ckPrices, totalExpenses)
+  const handwriteTotal = handwriteOrders.reduce((s, o) => s + (o.amount || 0), 0)
+  const s = calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal)
   const isSubmitted = status === 'submitted' || status === 'verified'
 
   const set = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) => {
@@ -203,7 +219,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (isSubmitted) return
     const t = setInterval(() => handleSave(true), 60000)
     return () => clearInterval(t)
-  }, [data, expenses, isSubmitted])
+  }, [data, expenses, handwriteOrders, isSubmitted])
 
   function addExpense() {
     setExpenses(prev => [...prev, { id: crypto.randomUUID(), description: '', amount: 0 }])
@@ -215,6 +231,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   function removeExpense(id: string) {
     setExpenses(prev => prev.filter(e => e.id !== id))
+  }
+
+  function addHandwriteOrder() {
+    const num = newOrderNum.trim()
+    if (!num) { toast.error('請填寫單號'); return }
+    if (newOrderAmt <= 0) { toast.error('請填寫金額'); return }
+    setHandwriteOrders(prev => [...prev, { id: crypto.randomUUID(), order_number: num, amount: newOrderAmt }])
+    setNewOrderNum('')
+    setNewOrderAmt(0)
+  }
+
+  function removeHandwriteOrder(id: string) {
+    setHandwriteOrders(prev => prev.filter(o => o.id !== id))
   }
 
   async function handleSave(silent = false) {
@@ -253,7 +282,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         ...(store.panda_enabled ? [{ closing_id: cid, channel: 'panda', gross_amount: data.panda_amount, is_cash: false }] : []),
         ...(store.twpay_enabled ? [{ closing_id: cid, channel: 'twpay', gross_amount: data.twpay_amount, is_cash: false }] : []),
         ...(store.online_enabled ? [{ closing_id: cid, channel: 'online', gross_amount: data.online_amount, is_cash: false }] : []),
-        ...(store.mode !== 'ichef' ? [{ closing_id: cid, channel: 'handwrite', gross_amount: data.handwrite_amount, is_cash: true }] : []),
+        ...(store.mode !== 'ichef' ? [{ closing_id: cid, channel: 'handwrite', gross_amount: handwriteTotal, is_cash: true }] : []),
       ]
       if (revItems.length) await supabase.from('revenue_items').insert(revItems)
 
@@ -286,6 +315,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         .filter(e => e.description.trim() || e.amount > 0)
         .map(e => ({ closing_id: cid, description: e.description.trim() || '支出', amount: e.amount }))
       if (expItems.length) await supabase.from('expense_items').insert(expItems)
+
+      // Handwrite orders
+      await supabase.from('handwrite_orders').delete().eq('closing_id', cid)
+      const hwItems = handwriteOrders
+        .filter(o => o.order_number.trim() && o.amount > 0)
+        .map(o => ({ closing_id: cid, order_number: o.order_number.trim(), amount: o.amount }))
+      if (hwItems.length) await supabase.from('handwrite_orders').insert(hwItems)
 
       if (!silent) toast.success('草稿已儲存')
     } catch (err: any) {
@@ -376,8 +412,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           {store.online_enabled && (
             <NumInput label="線上點餐" value={data.online_amount} onChange={v => set('online_amount', v)} disabled={isSubmitted} />
           )}
-          {store.mode !== 'ichef' && (
-            <NumInput label="手寫訂單合計" value={data.handwrite_amount} onChange={v => set('handwrite_amount', v)} disabled={isSubmitted} />
+          {store.mode !== 'ichef' && handwriteTotal > 0 && (
+            <div className="flex justify-between items-center text-xs text-slate-500">
+              <span>手寫訂單合計</span>
+              <span className="tabular-nums font-medium text-slate-700">${fmt(handwriteTotal)}</span>
+            </div>
           )}
           <Separator />
           <div className="flex justify-between items-center">
@@ -393,7 +432,86 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         </CardContent>
       </Card>
 
-      {/* 2. 央廚配送 */}
+      {/* 2. 手寫訂單（手寫 / 混合模式） */}
+      {store.mode !== 'ichef' && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
+              <Banknote className="h-4 w-4 text-emerald-500" /> 手寫訂單
+            </CardTitle>
+            <p className="text-xs text-slate-400">逐筆輸入菜單單號與金額</p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {/* 現有訂單列表 */}
+            {handwriteOrders.length > 0 && (
+              <div className="rounded-lg border border-slate-100 overflow-hidden">
+                <div className="grid grid-cols-[1fr_5rem_2rem] gap-2 px-3 py-1.5 bg-slate-50 text-[10px] text-slate-400 font-medium">
+                  <span>單號</span><span className="text-right">金額</span><span />
+                </div>
+                {handwriteOrders.map(o => (
+                  <div key={o.id} className="grid grid-cols-[1fr_5rem_2rem] gap-2 px-3 py-2 border-t border-slate-100 items-center">
+                    <span className="text-sm text-slate-700 font-mono">{o.order_number}</span>
+                    <span className="text-sm tabular-nums text-right font-medium">${fmt(o.amount)}</span>
+                    {!isSubmitted && (
+                      <button onClick={() => removeHandwriteOrder(o.id)}
+                        className="flex items-center justify-center text-slate-300 hover:text-red-500 transition-colors">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 新增輸入列 */}
+            {!isSubmitted && (
+              <div className="flex gap-2 items-end">
+                <div className="space-y-1 flex-1">
+                  <Label className="text-xs text-slate-500">單號</Label>
+                  <Input
+                    placeholder="例：A001"
+                    className="h-10 text-sm font-mono"
+                    value={newOrderNum}
+                    onChange={e => setNewOrderNum(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addHandwriteOrder()}
+                  />
+                </div>
+                <div className="space-y-1 w-28">
+                  <Label className="text-xs text-slate-500">金額</Label>
+                  <Input
+                    type="number" min="0" inputMode="numeric"
+                    placeholder="0"
+                    className="h-10 text-sm text-right tabular-nums"
+                    value={newOrderAmt || ''}
+                    onChange={e => setNewOrderAmt(parseInt(e.target.value) || 0)}
+                    onKeyDown={e => e.key === 'Enter' && addHandwriteOrder()}
+                  />
+                </div>
+                <button
+                  onClick={addHandwriteOrder}
+                  className="flex items-center gap-1 px-3 h-10 rounded-lg bg-emerald-50 text-emerald-600 text-sm hover:bg-emerald-100 transition-colors shrink-0">
+                  <Plus className="h-3.5 w-3.5" /> 新增
+                </button>
+              </div>
+            )}
+
+            {handwriteOrders.length > 0 && (
+              <>
+                <Separator />
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-slate-700">手寫訂單合計（{handwriteOrders.length} 筆）</span>
+                  <span className="text-base font-bold tabular-nums text-emerald-700">${fmt(handwriteTotal)}</span>
+                </div>
+              </>
+            )}
+            {handwriteOrders.length === 0 && !isSubmitted && (
+              <p className="text-xs text-slate-400 text-center py-2">尚無訂單，請逐筆新增</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 3. 央廚配送 */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">

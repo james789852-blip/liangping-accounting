@@ -32,7 +32,7 @@ export default async function SummaryPage() {
 
   const [{ data: closing }, { data: store }] = await Promise.all([
     supabase.from('daily_closings')
-      .select('*, revenue_items(*), cash_counts(*), order_items(*), expense_items(*)')
+      .select('*, revenue_items(*), cash_counts(*), order_items(*), expense_items(*), handwrite_orders(*)')
       .eq('store_id', storeId).eq('business_date', today).maybeSingle(),
     supabase.from('stores').select('name, petty_cash').eq('id', storeId).single(),
   ])
@@ -55,6 +55,7 @@ export default async function SummaryPage() {
   const cash = closing.cash_counts?.[0]
   const orders = closing.order_items ?? []
   const expenseItems = closing.expense_items ?? []
+  const handwriteOrders = closing.handwrite_orders ?? []
   const st = statusMap[closing.status] ?? statusMap.draft
 
   const varColor = Math.abs(closing.variance) === 0 ? 'text-green-600' :
@@ -133,6 +134,32 @@ export default async function SummaryPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* 手寫訂單明細 */}
+      {handwriteOrders.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
+              <Banknote className="h-4 w-4 text-emerald-500" /> 手寫訂單（{handwriteOrders.length} 筆）
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            {handwriteOrders.map((o: any) => (
+              <div key={o.id} className="flex justify-between text-sm">
+                <span className="text-slate-600 font-mono">{o.order_number}</span>
+                <span className="tabular-nums">${fmt(o.amount)}</span>
+              </div>
+            ))}
+            <Separator />
+            <div className="flex justify-between font-semibold text-sm">
+              <span>手寫訂單合計</span>
+              <span className="tabular-nums text-emerald-700">
+                ${fmt(handwriteOrders.reduce((s: number, o: any) => s + o.amount, 0))}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 央廚配送 */}
       {orders.length > 0 && (
