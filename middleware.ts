@@ -31,16 +31,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // 已登入者不需要看 /login
+  // 已登入者不需要看 /login，導向 manager（layout 會再判斷 HQ）
   if (user && pathname === '/login') {
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('role, is_hq')
-      .eq('user_id', user.id)
-      .single()
-
-    const isHQ = profile && (profile.is_hq || profile.role === '老闆')
-    return NextResponse.redirect(new URL(isHQ ? '/hq/dashboard' : '/manager/dashboard', request.url))
+    return NextResponse.redirect(new URL('/manager/dashboard', request.url))
   }
 
   return supabaseResponse
