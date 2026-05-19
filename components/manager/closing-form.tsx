@@ -14,6 +14,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, Video } from 'lucide-react'
 import VideoUploader from '@/components/manager/video-uploader'
+import { saveCashCounts } from '@/app/actions/closings'
 
 interface Props {
   store: Store
@@ -338,18 +339,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       ]
       if (revItems.length) await supabase.from('revenue_items').insert(revItems)
 
-      // Cash count（含整筆金額）
-      await supabase.from('cash_counts').delete().eq('closing_id', cid)
-      const cashPayload = {
-        closing_id: cid,
+      // Cash count（用 server action 繞過 RLS）
+      const cashResult = await saveCashCounts(cid, {
         bills_1000: data.bills_1000, bills_500: data.bills_500, bills_100: data.bills_100,
         coins_50: data.coins_50, coins_10: data.coins_10, coins_5: data.coins_5, coins_1: data.coins_1,
         lump_1000: data.lump_1000, lump_500: data.lump_500, lump_100: data.lump_100,
         lump_50: data.lump_50, lump_10: data.lump_10, lump_5: data.lump_5, lump_1: data.lump_1,
-      }
-      console.log('[cash_counts INSERT]', cashPayload)
-      const { error: cashErr } = await supabase.from('cash_counts').insert(cashPayload)
-      if (cashErr) throw new Error('現金清點儲存失敗：' + cashErr.message)
+      })
+      if (cashResult.error) throw new Error('現金清點儲存失敗：' + cashResult.error)
 
       // CK order items
       await supabase.from('order_items').delete().eq('closing_id', cid)
