@@ -340,13 +340,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
       // Cash count（含整筆金額）
       await supabase.from('cash_counts').delete().eq('closing_id', cid)
-      const { error: cashErr } = await supabase.from('cash_counts').insert({
+      const cashPayload = {
         closing_id: cid,
         bills_1000: data.bills_1000, bills_500: data.bills_500, bills_100: data.bills_100,
         coins_50: data.coins_50, coins_10: data.coins_10, coins_5: data.coins_5, coins_1: data.coins_1,
         lump_1000: data.lump_1000, lump_500: data.lump_500, lump_100: data.lump_100,
         lump_50: data.lump_50, lump_10: data.lump_10, lump_5: data.lump_5, lump_1: data.lump_1,
-      })
+      }
+      console.log('[cash_counts INSERT]', cashPayload)
+      const { error: cashErr } = await supabase.from('cash_counts').insert(cashPayload)
       if (cashErr) throw new Error('現金清點儲存失敗：' + cashErr.message)
 
       // CK order items
