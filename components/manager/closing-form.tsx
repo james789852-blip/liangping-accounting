@@ -350,7 +350,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         lump_1000: d.lump_1000, lump_500: d.lump_500, lump_100: d.lump_100,
         lump_50: d.lump_50, lump_10: d.lump_10, lump_5: d.lump_5, lump_1: d.lump_1,
       }
-      if (!silent) toast.info(`千元鈔 ${d.bills_1000} 張（診斷用）`)
       const cashResult = await saveCashCounts(cid, cashPayload)
       if (cashResult.error) throw new Error('現金清點儲存失敗：' + cashResult.error)
 
