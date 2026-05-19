@@ -218,6 +218,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const newOrderNumRef = useRef<HTMLInputElement>(null)
   const newOrderAmtRef = useRef<HTMLInputElement>(null)
   const amtRefsMap = useRef<Map<string, HTMLInputElement>>(new Map())
+  const dataRef = useRef(data)
+  dataRef.current = data
 
   const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0)
   const handwriteTotal = handwriteOrders.reduce((s, o) => s + (o.voided ? 0 : (o.amount || 0)), 0)
@@ -302,6 +304,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   async function handleSave(silent = false) {
     setSaving(true)
     const supabase = createClient()
+    const d = dataRef.current  // 永遠讀最新 data，避免 stale closure
     try {
       let cid = closingId
 
@@ -314,7 +317,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         actual_remit: s.actualRemit,
         should_include_delivery: s.shouldEnvelope,
         variance: s.variance,
-        note: data.note,
+        note: d.note,
       }
 
       if (!cid) {
@@ -330,33 +333,35 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       // Revenue items
       await supabase.from('revenue_items').delete().eq('closing_id', cid)
       const revItems = [
-        ...(store.mode !== 'handwrite' ? [{ closing_id: cid, channel: 'pos', gross_amount: data.pos_cash, is_cash: true }] : []),
-        ...(store.uber_accounts ?? []).map(acc => ({ closing_id: cid, channel: 'uber', account_name: acc, gross_amount: data.uber_amounts[acc] ?? 0, is_cash: false })),
-        ...(store.panda_enabled ? [{ closing_id: cid, channel: 'panda', gross_amount: data.panda_amount, is_cash: false }] : []),
-        ...(store.twpay_enabled ? [{ closing_id: cid, channel: 'twpay', gross_amount: data.twpay_amount, is_cash: false }] : []),
-        ...(store.online_enabled ? [{ closing_id: cid, channel: 'online', gross_amount: data.online_amount, is_cash: false }] : []),
+        ...(store.mode !== 'handwrite' ? [{ closing_id: cid, channel: 'pos', gross_amount: d.pos_cash, is_cash: true }] : []),
+        ...(store.uber_accounts ?? []).map(acc => ({ closing_id: cid, channel: 'uber', account_name: acc, gross_amount: d.uber_amounts[acc] ?? 0, is_cash: false })),
+        ...(store.panda_enabled ? [{ closing_id: cid, channel: 'panda', gross_amount: d.panda_amount, is_cash: false }] : []),
+        ...(store.twpay_enabled ? [{ closing_id: cid, channel: 'twpay', gross_amount: d.twpay_amount, is_cash: false }] : []),
+        ...(store.online_enabled ? [{ closing_id: cid, channel: 'online', gross_amount: d.online_amount, is_cash: false }] : []),
         ...(store.mode !== 'ichef' ? [{ closing_id: cid, channel: 'handwrite', gross_amount: handwriteTotal, is_cash: true }] : []),
       ]
       if (revItems.length) await supabase.from('revenue_items').insert(revItems)
 
-      // Cash count（用 server action 繞過 RLS）
+      // Cash count（用 server action + service role 繞過 RLS）
       if (!cid) throw new Error('無法取得帳目 ID')
-      const cashResult = await saveCashCounts(cid, {
-        bills_1000: data.bills_1000, bills_500: data.bills_500, bills_100: data.bills_100,
-        coins_50: data.coins_50, coins_10: data.coins_10, coins_5: data.coins_5, coins_1: data.coins_1,
-        lump_1000: data.lump_1000, lump_500: data.lump_500, lump_100: data.lump_100,
-        lump_50: data.lump_50, lump_10: data.lump_10, lump_5: data.lump_5, lump_1: data.lump_1,
-      })
+      const cashPayload = {
+        bills_1000: d.bills_1000, bills_500: d.bills_500, bills_100: d.bills_100,
+        coins_50: d.coins_50, coins_10: d.coins_10, coins_5: d.coins_5, coins_1: d.coins_1,
+        lump_1000: d.lump_1000, lump_500: d.lump_500, lump_100: d.lump_100,
+        lump_50: d.lump_50, lump_10: d.lump_10, lump_5: d.lump_5, lump_1: d.lump_1,
+      }
+      if (!silent) toast.info(`千元鈔 ${d.bills_1000} 張（診斷用）`)
+      const cashResult = await saveCashCounts(cid, cashPayload)
       if (cashResult.error) throw new Error('現金清點儲存失敗：' + cashResult.error)
 
       // CK order items
       await supabase.from('order_items').delete().eq('closing_id', cid)
       const ckItems = ckPrices
-        .filter(p => (data.ck_quantities[p.item_name] ?? 0) > 0)
+        .filter(p => (d.ck_quantities[p.item_name] ?? 0) > 0)
         .map(p => ({
           closing_id: cid, vendor: '央廚', item_name: p.item_name,
-          unit_price: p.unit_price, quantity: data.ck_quantities[p.item_name],
-          total_amount: p.unit_price * data.ck_quantities[p.item_name],
+          unit_price: p.unit_price, quantity: d.ck_quantities[p.item_name],
+          total_amount: p.unit_price * d.ck_quantities[p.item_name],
           excel_column: p.excel_column,
         }))
       if (ckItems.length) await supabase.from('order_items').insert(ckItems)
