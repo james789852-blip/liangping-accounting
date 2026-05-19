@@ -340,6 +340,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (revItems.length) await supabase.from('revenue_items').insert(revItems)
 
       // Cash count（用 server action 繞過 RLS）
+      if (!cid) throw new Error('無法取得帳目 ID')
       const cashResult = await saveCashCounts(cid, {
         bills_1000: data.bills_1000, bills_500: data.bills_500, bills_100: data.bills_100,
         coins_50: data.coins_50, coins_10: data.coins_10, coins_5: data.coins_5, coins_1: data.coins_1,
