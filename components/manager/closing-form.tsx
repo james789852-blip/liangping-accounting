@@ -819,19 +819,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <div key={countKey} className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 items-center">
                   <span className="text-xs text-slate-500 shrink-0">{label}</span>
                   <div className="flex items-center gap-0.5">
-                    <Input
+                    <input
                       type="number" min="0" inputMode="numeric" disabled={isLocked}
-                      className="text-right tabular-nums h-9 text-sm px-2"
-                      value={countVal || ''} placeholder="0"
+                      className="text-right tabular-nums h-9 text-sm px-2 w-full rounded-lg border border-slate-200 bg-transparent outline-none focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      value={countVal === 0 ? '' : countVal} placeholder="0"
                       onChange={e => set(countKey, parseInt(e.target.value) || 0)}
+                      onBlur={e => set(countKey, parseInt(e.target.value) || 0)}
                     />
                     <span className="text-[10px] text-slate-400 shrink-0">{unitLabel}</span>
                   </div>
-                  <Input
+                  <input
                     type="number" min="0" inputMode="numeric" disabled={isLocked}
-                    className="text-right tabular-nums h-9 text-sm px-2"
-                    value={lumpVal || ''} placeholder="0"
+                    className="text-right tabular-nums h-9 text-sm px-2 w-full rounded-lg border border-slate-200 bg-transparent outline-none focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    value={lumpVal === 0 ? '' : lumpVal} placeholder="0"
                     onChange={e => set(lumpKey, parseInt(e.target.value) || 0)}
+                    onBlur={e => set(lumpKey, parseInt(e.target.value) || 0)}
                   />
                   <span className={cn(
                     'text-right text-xs tabular-nums shrink-0',
