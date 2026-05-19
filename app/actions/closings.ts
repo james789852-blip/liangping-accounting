@@ -24,9 +24,13 @@ export async function saveCashCounts(closingId: string, counts: CashCountsPayloa
   // 用 service role 繞過 RLS，確保 INSERT 一定成功
   const admin = createAdminClient()
   await admin.from('cash_counts').delete().eq('closing_id', closingId)
-  const { error } = await admin.from('cash_counts').insert({ closing_id: closingId, ...counts })
+  const { data: inserted, error } = await admin
+    .from('cash_counts')
+    .insert({ closing_id: closingId, ...counts })
+    .select()
 
   if (error) return { error: error.message }
+  if (!inserted || inserted.length === 0) return { error: 'cash_counts RLS 阻擋了 INSERT（請至 Supabase 執行修復 SQL）' }
   return { success: true }
 }
 
