@@ -346,7 +346,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         coins_50: data.coins_50, coins_10: data.coins_10, coins_5: data.coins_5, coins_1: data.coins_1,
         lump_1000: data.lump_1000, lump_500: data.lump_500, lump_100: data.lump_100,
         lump_50: data.lump_50, lump_10: data.lump_10, lump_5: data.lump_5, lump_1: data.lump_1,
-        cash_total: s.cashTotal,
       })
       if (cashErr) throw new Error('現金清點儲存失敗：' + cashErr.message)
 
