@@ -340,7 +340,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
       // Cash count（含整筆金額）
       await supabase.from('cash_counts').delete().eq('closing_id', cid)
-      await supabase.from('cash_counts').insert({
+      const { error: cashErr } = await supabase.from('cash_counts').insert({
         closing_id: cid,
         bills_1000: data.bills_1000, bills_500: data.bills_500, bills_100: data.bills_100,
         coins_50: data.coins_50, coins_10: data.coins_10, coins_5: data.coins_5, coins_1: data.coins_1,
@@ -348,6 +348,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         lump_50: data.lump_50, lump_10: data.lump_10, lump_5: data.lump_5, lump_1: data.lump_1,
         cash_total: s.cashTotal,
       })
+      if (cashErr) throw new Error('現金清點儲存失敗：' + cashErr.message)
 
       // CK order items
       await supabase.from('order_items').delete().eq('closing_id', cid)
