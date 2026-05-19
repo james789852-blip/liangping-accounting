@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -11,7 +12,8 @@ import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
-import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X } from 'lucide-react'
+import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, Video } from 'lucide-react'
+import VideoUploader from '@/components/manager/video-uploader'
 
 interface Props {
   store: Store
@@ -57,6 +59,8 @@ interface HandwriteOrder {
   id: string
   order_number: string
   amount: number
+  voided: boolean
+  void_reason: string
 }
 
 function initFormData(store: Store, ckPrices: CKPrice[], existing: any): FormData {
@@ -128,6 +132,8 @@ function initHandwriteOrders(existing: any): HandwriteOrder[] {
     id: o.id,
     order_number: o.order_number,
     amount: o.amount,
+    voided: o.voided ?? false,
+    void_reason: o.void_reason ?? '',
   }))
 }
 
@@ -205,21 +211,29 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [submitting, setSubmitting] = useState(false)
   const [closingId, setClosingId] = useState<string | null>(existingClosing?.id ?? null)
   const [status, setStatus] = useState(existingClosing?.status ?? 'draft')
+  const [rangeStart, setRangeStart] = useState(0)
+  const [rangeEnd, setRangeEnd] = useState(0)
+  const router = useRouter()
+  const newOrderNumRef = useRef<HTMLInputElement>(null)
+  const newOrderAmtRef = useRef<HTMLInputElement>(null)
+  const amtRefsMap = useRef<Map<string, HTMLInputElement>>(new Map())
 
   const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0)
-  const handwriteTotal = handwriteOrders.reduce((s, o) => s + (o.amount || 0), 0)
+  const handwriteTotal = handwriteOrders.reduce((s, o) => s + (o.voided ? 0 : (o.amount || 0)), 0)
   const s = calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal)
-  const isSubmitted = status === 'submitted' || status === 'verified'
+  const isLocked = status === 'submitted' || status === 'verified'
+  const isDisputed = status === 'disputed'
+  const disputeNote = existingClosing?.dispute_note ?? ''
 
   const set = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) => {
     setData(prev => ({ ...prev, [key]: value }))
   }, [])
 
   useEffect(() => {
-    if (isSubmitted) return
+    if (isLocked) return
     const t = setInterval(() => handleSave(true), 60000)
     return () => clearInterval(t)
-  }, [data, expenses, handwriteOrders, isSubmitted])
+  }, [data, expenses, handwriteOrders, isLocked, isDisputed])
 
   function addExpense() {
     setExpenses(prev => [...prev, { id: crypto.randomUUID(), description: '', amount: 0 }])
@@ -237,9 +251,47 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const num = newOrderNum.trim()
     if (!num) { toast.error('請填寫單號'); return }
     if (newOrderAmt <= 0) { toast.error('請填寫金額'); return }
-    setHandwriteOrders(prev => [...prev, { id: crypto.randomUUID(), order_number: num, amount: newOrderAmt }])
+    if (handwriteOrders.some(o => o.order_number === num)) { toast.error('該單號已存在'); return }
+    setHandwriteOrders(prev => [...prev, { id: crypto.randomUUID(), order_number: num, amount: newOrderAmt, voided: false, void_reason: '' }])
     setNewOrderNum('')
     setNewOrderAmt(0)
+    setTimeout(() => newOrderNumRef.current?.focus(), 50)
+  }
+
+  function generateRange() {
+    if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) {
+      toast.error('請輸入有效的起始和結束單號')
+      return
+    }
+    if (rangeEnd - rangeStart > 200) {
+      toast.error('單次最多建立 200 筆')
+      return
+    }
+    const existingNums = new Set(handwriteOrders.map(o => o.order_number))
+    const newOrders: HandwriteOrder[] = []
+    for (let n = rangeStart; n <= rangeEnd; n++) {
+      if (!existingNums.has(String(n))) {
+        newOrders.push({ id: crypto.randomUUID(), order_number: String(n), amount: 0, voided: false, void_reason: '' })
+      }
+    }
+    if (newOrders.length === 0) {
+      toast.info('該範圍內的單號已全部存在')
+      return
+    }
+    setHandwriteOrders(prev => [...prev, ...newOrders])
+    toast.success(`已建立 ${newOrders.length} 筆單號`)
+  }
+
+  function updateHandwriteOrderAmount(id: string, amount: number) {
+    setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, amount } : o))
+  }
+
+  function toggleVoidOrder(id: string) {
+    setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, voided: !o.voided } : o))
+  }
+
+  function updateVoidReason(id: string, reason: string) {
+    setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, void_reason: reason } : o))
   }
 
   function removeHandwriteOrder(id: string) {
@@ -253,7 +305,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       let cid = closingId
 
       const payload = {
-        store_id: store.id, manager_id: userId, business_date: today, status: 'draft',
+        store_id: store.id, manager_id: userId, business_date: today, status: isDisputed ? 'disputed' : 'draft',
         total_revenue: s.totalRevenue,
         total_cost: s.deliveryFee,
         total_expenses: totalExpenses,
@@ -319,36 +371,47 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       // Handwrite orders
       await supabase.from('handwrite_orders').delete().eq('closing_id', cid)
       const hwItems = handwriteOrders
-        .filter(o => o.order_number.trim() && o.amount > 0)
-        .map(o => ({ closing_id: cid, order_number: o.order_number.trim(), amount: o.amount }))
+        .filter(o => o.order_number.trim())
+        .map(o => ({
+          closing_id: cid,
+          store_id: store.id,
+          order_number: o.order_number.trim(),
+          amount: o.voided ? 0 : o.amount,
+          voided: o.voided,
+          void_reason: o.void_reason || null,
+        }))
       if (hwItems.length) await supabase.from('handwrite_orders').insert(hwItems)
 
       if (!silent) toast.success('草稿已儲存')
+      return cid
     } catch (err: any) {
       toast.error('儲存失敗：' + err.message)
+      return null
     } finally {
       setSaving(false)
     }
   }
 
   async function handleSubmit() {
-    if (!closingId) await handleSave(true)
+    const cid = await handleSave(true)
+    if (!cid) return
     setSubmitting(true)
     const supabase = createClient()
     try {
       await supabase.from('daily_closings')
         .update({ status: 'submitted', submitted_at: new Date().toISOString() })
-        .eq('id', closingId)
+        .eq('id', cid)
       setStatus('submitted')
       toast.success('今日結帳已送出！')
       if (Math.abs(s.variance) > 200) {
         await supabase.from('audit_logs').insert({
           event_type: 'variance_alert', severity: 'error',
-          store_id: store.id, user_id: userId, closing_id: closingId,
+          store_id: store.id, user_id: userId, closing_id: cid,
           description: `${store.name} ${today} 誤差 ${Math.round(s.variance)} 元`,
           metadata: { variance: s.variance, business_date: today },
         })
       }
+      router.push('/manager/summary')
     } catch (err: any) {
       toast.error('送出失敗：' + err.message)
     } finally {
@@ -368,10 +431,23 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           <h1 className="text-xl font-bold text-slate-900">每日結帳</h1>
           <p className="text-sm text-slate-500">{store.name} · {today}</p>
         </div>
-        <Badge variant={isSubmitted ? 'default' : 'secondary'}>
-          {status === 'draft' ? '草稿' : status === 'submitted' ? '已送出' : status === 'verified' ? '已審核' : '異議中'}
+        <Badge variant={isLocked ? 'default' : isDisputed ? 'destructive' : 'secondary'}>
+          {status === 'draft' ? '草稿' : status === 'submitted' ? '已送出' : status === 'verified' ? '已審核' : '退回修改'}
         </Badge>
       </div>
+
+      {/* 退回修改提示 */}
+      {isDisputed && disputeNote && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 space-y-1">
+          <p className="text-sm font-semibold text-red-700">總公司已退回，請修正後重新送出</p>
+          <p className="text-sm text-red-600">{disputeNote}</p>
+        </div>
+      )}
+      {isDisputed && !disputeNote && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <p className="text-sm font-semibold text-red-700">總公司已退回此帳目，請修正後重新送出</p>
+        </div>
+      )}
 
       {/* 1. 營收 */}
       <Card>
@@ -392,7 +468,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 label={store.ichef_uber_linked ? 'iChef 結帳總金額' : 'POS 現金'}
                 value={data.pos_cash}
                 onChange={v => set('pos_cash', v)}
-                disabled={isSubmitted}
+                disabled={isLocked}
               />
             </div>
           )}
@@ -401,16 +477,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           )}
           {(store.uber_accounts ?? []).map(acc => (
             <NumInput key={acc} label={`Uber Eats（${acc}）`} value={data.uber_amounts[acc] ?? 0}
-              onChange={v => set('uber_amounts', { ...data.uber_amounts, [acc]: v })} disabled={isSubmitted} />
+              onChange={v => set('uber_amounts', { ...data.uber_amounts, [acc]: v })} disabled={isLocked} />
           ))}
           {store.panda_enabled && (
-            <NumInput label="熊貓 foodpanda" value={data.panda_amount} onChange={v => set('panda_amount', v)} disabled={isSubmitted} />
+            <NumInput label="熊貓 foodpanda" value={data.panda_amount} onChange={v => set('panda_amount', v)} disabled={isLocked} />
           )}
           {store.twpay_enabled && (
-            <NumInput label="台灣Pay" value={data.twpay_amount} onChange={v => set('twpay_amount', v)} disabled={isSubmitted} />
+            <NumInput label="台灣Pay" value={data.twpay_amount} onChange={v => set('twpay_amount', v)} disabled={isLocked} />
           )}
           {store.online_enabled && (
-            <NumInput label="線上點餐" value={data.online_amount} onChange={v => set('online_amount', v)} disabled={isSubmitted} />
+            <NumInput label="線上點餐" value={data.online_amount} onChange={v => set('online_amount', v)} disabled={isLocked} />
           )}
           {store.mode !== 'ichef' && handwriteTotal > 0 && (
             <div className="flex justify-between items-center text-xs text-slate-500">
@@ -439,55 +515,152 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
               <Banknote className="h-4 w-4 text-emerald-500" /> 手寫訂單
             </CardTitle>
-            <p className="text-xs text-slate-400">逐筆輸入菜單單號與金額</p>
+            <p className="text-xs text-slate-400">金額為 0 的單號不計入合計</p>
           </CardHeader>
-          <CardContent className="space-y-2">
-            {/* 現有訂單列表 */}
-            {handwriteOrders.length > 0 && (
-              <div className="rounded-lg border border-slate-100 overflow-hidden">
-                <div className="grid grid-cols-[1fr_5rem_2rem] gap-2 px-3 py-1.5 bg-slate-50 text-[10px] text-slate-400 font-medium">
-                  <span>單號</span><span className="text-right">金額</span><span />
+          <CardContent className="space-y-3">
+            {/* 批量建立單號範圍 */}
+            {!isLocked && (
+              <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+                <p className="text-[11px] font-semibold text-slate-500">批量建立單號範圍</p>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    type="number" min="1" inputMode="numeric"
+                    placeholder="起始"
+                    className="h-9 text-sm text-center w-24"
+                    value={rangeStart || ''}
+                    onChange={e => setRangeStart(parseInt(e.target.value) || 0)}
+                  />
+                  <span className="text-slate-400 text-sm shrink-0">—</span>
+                  <Input
+                    type="number" min="1" inputMode="numeric"
+                    placeholder="結束"
+                    className="h-9 text-sm text-center w-24"
+                    value={rangeEnd || ''}
+                    onChange={e => setRangeEnd(parseInt(e.target.value) || 0)}
+                  />
+                  <button
+                    type="button"
+                    onClick={generateRange}
+                    className="flex items-center gap-1 px-3 h-9 rounded-lg bg-slate-700 text-white text-xs font-medium hover:bg-slate-600 transition-colors shrink-0"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> 建立
+                  </button>
                 </div>
-                {handwriteOrders.map(o => (
-                  <div key={o.id} className="grid grid-cols-[1fr_5rem_2rem] gap-2 px-3 py-2 border-t border-slate-100 items-center">
-                    <span className="text-sm text-slate-700 font-mono">{o.order_number}</span>
-                    <span className="text-sm tabular-nums text-right font-medium">${fmt(o.amount)}</span>
-                    {!isSubmitted && (
-                      <button onClick={() => removeHandwriteOrder(o.id)}
-                        className="flex items-center justify-center text-slate-300 hover:text-red-500 transition-colors">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                <p className="text-[10px] text-slate-400">已存在的單號不重複建立 · 最多 200 筆</p>
+              </div>
+            )}
+
+            {/* 訂單列表（含可編輯金額與作廢） */}
+            {handwriteOrders.length > 0 && (
+              <div className="rounded-lg border border-slate-100 overflow-hidden divide-y divide-slate-100">
+                {/* 表頭 */}
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 text-[10px] text-slate-400 font-medium">
+                  <span className="flex-1">單號</span>
+                  <span className="w-20 text-right">金額</span>
+                  {!isLocked && <span className="w-8" />}
+                  {!isLocked && <span className="w-5" />}
+                </div>
+                {handwriteOrders.map((o, idx) => (
+                  <div key={o.id} className={cn(o.voided ? 'bg-red-50/60' : '')}>
+                    {/* 主列 */}
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <span className={cn('flex-1 text-sm font-mono min-w-0 truncate', o.voided ? 'text-slate-400 line-through' : 'text-slate-700')}>
+                        {o.order_number}
+                      </span>
+                      {isLocked ? (
+                        o.voided
+                          ? <span className="w-20 text-right text-xs font-medium text-red-400 shrink-0">作廢</span>
+                          : <span className={cn('w-20 text-sm tabular-nums text-right font-medium shrink-0', o.amount === 0 ? 'text-slate-300' : '')}>
+                              ${fmt(o.amount)}
+                            </span>
+                      ) : (
+                        <Input
+                          type="number" min="0" inputMode="numeric"
+                          className={cn('h-8 w-20 text-sm text-right tabular-nums px-2 shrink-0', o.voided && 'opacity-30')}
+                          value={o.voided ? '' : (o.amount || '')}
+                          placeholder="0"
+                          disabled={o.voided}
+                          ref={el => { if (el) amtRefsMap.current.set(o.id, el); else amtRefsMap.current.delete(o.id) }}
+                          onChange={e => updateHandwriteOrderAmount(o.id, parseInt(e.target.value) || 0)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              const next = handwriteOrders[idx + 1]
+                              if (next) amtRefsMap.current.get(next.id)?.focus()
+                              else newOrderNumRef.current?.focus()
+                            }
+                          }}
+                        />
+                      )}
+                      {!isLocked && (
+                        <button
+                          type="button"
+                          onClick={() => toggleVoidOrder(o.id)}
+                          className={cn(
+                            'shrink-0 h-7 w-8 text-[10px] rounded border font-semibold transition-colors',
+                            o.voided
+                              ? 'bg-red-100 text-red-500 border-red-300'
+                              : 'bg-white text-slate-400 border-slate-200 hover:border-red-300 hover:text-red-400'
+                          )}
+                        >
+                          廢
+                        </button>
+                      )}
+                      {!isLocked && (
+                        <button type="button" onClick={() => removeHandwriteOrder(o.id)}
+                          className="shrink-0 text-slate-300 hover:text-red-500 transition-colors">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    {/* 作廢原因 */}
+                    {o.voided && (
+                      <div className="px-3 pb-2">
+                        {isLocked ? (
+                          <p className="text-xs text-slate-400">{o.void_reason || '未填原因'}</p>
+                        ) : (
+                          <Input
+                            placeholder="作廢原因（選填，如：廚房失誤、客人取消）"
+                            className="h-7 text-xs border-red-200 focus-visible:ring-red-300"
+                            value={o.void_reason}
+                            onChange={e => updateVoidReason(o.id, e.target.value)}
+                          />
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}
               </div>
             )}
 
-            {/* 新增輸入列 */}
-            {!isSubmitted && (
+            {/* 手動新增單筆 */}
+            {!isLocked && (
               <div className="flex gap-2 items-end">
                 <div className="space-y-1 flex-1">
-                  <Label className="text-xs text-slate-500">單號</Label>
+                  <Label className="text-xs text-slate-500">手動新增</Label>
                   <Input
-                    placeholder="例：A001"
+                    ref={newOrderNumRef}
+                    placeholder="單號"
                     className="h-10 text-sm font-mono"
                     value={newOrderNum}
                     onChange={e => setNewOrderNum(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && addHandwriteOrder()}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); newOrderAmtRef.current?.focus() } }}
                   />
                 </div>
                 <div className="space-y-1 w-28">
-                  <Label className="text-xs text-slate-500">金額</Label>
+                  <Label className="text-xs text-slate-500 invisible">金額</Label>
                   <Input
+                    ref={newOrderAmtRef}
                     type="number" min="0" inputMode="numeric"
-                    placeholder="0"
+                    placeholder="金額"
                     className="h-10 text-sm text-right tabular-nums"
                     value={newOrderAmt || ''}
                     onChange={e => setNewOrderAmt(parseInt(e.target.value) || 0)}
-                    onKeyDown={e => e.key === 'Enter' && addHandwriteOrder()}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addHandwriteOrder() } }}
                   />
                 </div>
                 <button
+                  type="button"
                   onClick={addHandwriteOrder}
                   className="flex items-center gap-1 px-3 h-10 rounded-lg bg-emerald-50 text-emerald-600 text-sm hover:bg-emerald-100 transition-colors shrink-0">
                   <Plus className="h-3.5 w-3.5" /> 新增
@@ -495,18 +668,34 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </div>
             )}
 
-            {handwriteOrders.length > 0 && (
+            {handwriteOrders.filter(o => o.amount > 0).length > 0 ? (
               <>
                 <Separator />
                 <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-slate-700">手寫訂單合計（{handwriteOrders.length} 筆）</span>
+                  <span className="text-sm font-medium text-slate-700">
+                    合計（{handwriteOrders.filter(o => o.amount > 0).length} 筆有效）
+                  </span>
                   <span className="text-base font-bold tabular-nums text-emerald-700">${fmt(handwriteTotal)}</span>
                 </div>
               </>
-            )}
-            {handwriteOrders.length === 0 && !isSubmitted && (
-              <p className="text-xs text-slate-400 text-center py-2">尚無訂單，請逐筆新增</p>
-            )}
+            ) : handwriteOrders.length === 0 && !isLocked ? (
+              <p className="text-xs text-slate-400 text-center py-2">請使用批量建立或手動新增訂單</p>
+            ) : null}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 2b. 今日菜單影片 */}
+      {store.mode !== 'ichef' && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
+              <Video className="h-4 w-4 text-blue-500" /> 今日菜單影片
+            </CardTitle>
+            <p className="text-xs text-slate-400">上傳今日菜單影片（選填）</p>
+          </CardHeader>
+          <CardContent>
+            <VideoUploader storeId={store.id} businessDate={today} userId={userId} disabled={isLocked} />
           </CardContent>
         </Card>
       )}
@@ -524,7 +713,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               <div className="flex-1 space-y-1">
                 <Label className="text-xs text-slate-500">{p.item_name}</Label>
                 <Input
-                  type="number" min="0" step="0.5" inputMode="decimal" disabled={isSubmitted}
+                  type="number" min="0" step="0.5" inputMode="decimal" disabled={isLocked}
                   className="text-right tabular-nums h-11"
                   value={data.ck_quantities[p.item_name] || ''} placeholder="0"
                   onChange={e => set('ck_quantities', { ...data.ck_quantities, [p.item_name]: parseFloat(e.target.value) || 0 })}
@@ -553,7 +742,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           <p className="text-xs text-slate-400">現金付款的進貨、雜費等（不含央廚）</p>
         </CardHeader>
         <CardContent className="space-y-2">
-          {expenses.length === 0 && !isSubmitted && (
+          {expenses.length === 0 && !isLocked && (
             <p className="text-xs text-slate-400 text-center py-2">無當日現金支出</p>
           )}
           {expenses.map(e => (
@@ -562,7 +751,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 placeholder="說明（例：菜商、雜貨）"
                 className="flex-1 h-10 text-sm"
                 value={e.description}
-                disabled={isSubmitted}
+                disabled={isLocked}
                 onChange={ev => updateExpense(e.id, 'description', ev.target.value)}
               />
               <div className="flex items-center gap-1">
@@ -571,11 +760,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   type="number" min="0" inputMode="numeric"
                   className="w-24 h-10 text-right tabular-nums text-sm"
                   value={e.amount || ''} placeholder="0"
-                  disabled={isSubmitted}
+                  disabled={isLocked}
                   onChange={ev => updateExpense(e.id, 'amount', parseFloat(ev.target.value) || 0)}
                 />
               </div>
-              {!isSubmitted && (
+              {!isLocked && (
                 <button onClick={() => removeExpense(e.id)}
                   className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">
                   <Trash2 className="h-4 w-4" />
@@ -583,7 +772,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               )}
             </div>
           ))}
-          {!isSubmitted && (
+          {!isLocked && (
             <button onClick={addExpense}
               className="flex items-center gap-1.5 text-xs text-purple-600 hover:text-purple-800 transition-colors mt-1">
               <Plus className="h-3.5 w-3.5" /> 新增支出項目
@@ -626,7 +815,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   <span className="text-xs text-slate-500 shrink-0">{label}</span>
                   <div className="flex items-center gap-0.5">
                     <Input
-                      type="number" min="0" inputMode="numeric" disabled={isSubmitted}
+                      type="number" min="0" inputMode="numeric" disabled={isLocked}
                       className="text-right tabular-nums h-9 text-sm px-2"
                       value={countVal || ''} placeholder="0"
                       onChange={e => set(countKey, parseInt(e.target.value) || 0)}
@@ -634,7 +823,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     <span className="text-[10px] text-slate-400 shrink-0">{unitLabel}</span>
                   </div>
                   <Input
-                    type="number" min="0" inputMode="numeric" disabled={isSubmitted}
+                    type="number" min="0" inputMode="numeric" disabled={isLocked}
                     className="text-right tabular-nums h-9 text-sm px-2"
                     value={lumpVal || ''} placeholder="0"
                     onChange={e => set(lumpKey, parseInt(e.target.value) || 0)}
@@ -720,7 +909,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       <div className="space-y-1">
         <Label className="text-sm text-slate-600">備註</Label>
         <textarea
-          disabled={isSubmitted}
+          disabled={isLocked}
           className="w-full min-h-[72px] px-3 py-2 text-sm border border-slate-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50 disabled:text-slate-400"
           placeholder="如有異常情況請說明..."
           value={data.note}
@@ -729,20 +918,25 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       </div>
 
       {/* 操作按鈕 */}
-      {!isSubmitted ? (
+      {!isLocked ? (
         <div className="fixed bottom-16 left-0 right-0 lg:static lg:bottom-auto bg-white lg:bg-transparent border-t lg:border-0 p-4 lg:p-0 flex gap-3">
           <Button variant="outline" className="flex-1" onClick={() => handleSave()} disabled={saving || submitting}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             儲存草稿
           </Button>
-          <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={handleSubmit} disabled={saving || submitting}>
+          <Button
+            className={cn('flex-1', isDisputed ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-600 hover:bg-blue-700')}
+            onClick={handleSubmit} disabled={saving || submitting}
+          >
             {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-            送出今日結帳
+            {isDisputed ? '修正後重新送出' : '送出今日結帳'}
           </Button>
         </div>
       ) : (
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-center">
-          <p className="text-slate-600 font-medium text-sm">今日結帳已送出，如需修改請聯絡管理員</p>
+          <p className="text-slate-600 font-medium text-sm">
+            {status === 'verified' ? '此帳目已核准，如需修改請聯絡總公司' : '帳目已送出，等待總公司審核'}
+          </p>
         </div>
       )}
     </div>

@@ -5,6 +5,8 @@ import { Store, CKPrice } from '@/lib/types'
 import { format } from 'date-fns'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 
+export const dynamic = 'force-dynamic'
+
 export default async function ClosingPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -37,7 +39,8 @@ export default async function ClosingPage() {
     .eq('active', true)
     .order('sort_order').order('item_name')
 
-  const today = format(new Date(), 'yyyy-MM-dd')
+  // UTC+8 直接加偏移，不依賴 ICU timezone 資料
+  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
 
   const { data: existingClosing } = await supabase
     .from('daily_closings')
@@ -45,6 +48,15 @@ export default async function ClosingPage() {
     .eq('store_id', storeId)
     .eq('business_date', today)
     .maybeSingle()
+
+  if (existingClosing) {
+    if (['submitted', 'verified'].includes(existingClosing.status)) {
+      redirect('/manager/summary')
+    }
+    if (existingClosing.status === 'disputed') {
+      redirect(`/manager/edit/${existingClosing.id}`)
+    }
+  }
 
   return (
     <ClosingForm

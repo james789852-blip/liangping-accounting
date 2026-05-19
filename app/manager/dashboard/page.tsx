@@ -24,8 +24,9 @@ export default async function ManagerDashboard() {
     .single()
 
   const storeId = await getEffectiveStoreId(profile)
-  const today = format(new Date(), 'yyyy-MM-dd')
-  const todayLabel = format(new Date(), 'M 月 d 日（EEEE）', { locale: zhTW })
+  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+  const todayDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
+  const todayLabel = format(todayDate, 'M 月 d 日（EEEE）', { locale: zhTW })
 
   let store = null
   let todayClosing = null
@@ -96,38 +97,39 @@ export default async function ManagerDashboard() {
           </div>
 
           {todayClosing && (
-            <div className="mt-3 pt-3 border-t border-current/10 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-500">誤差</p>
-                <p className={cn('text-lg font-bold tabular-nums', varColor)}>
-                  {todayClosing.variance >= 0 ? '+' : ''}{fmt(todayClosing.variance)} 元
-                </p>
-              </div>
-              <Link
-                href={`/manager/summary`}
-                className="flex items-center gap-1 text-sm text-blue-600 hover:underline"
-              >
-                查看明細 <ChevronRight className="h-4 w-4" />
-              </Link>
+            <div className="mt-3 pt-3 border-t border-current/10">
+              <p className="text-xs text-slate-500">誤差</p>
+              <p className={cn('text-lg font-bold tabular-nums', varColor)}>
+                {todayClosing.variance >= 0 ? '+' : ''}{fmt(todayClosing.variance)} 元
+              </p>
             </div>
           )}
         </CardContent>
       </Card>
 
       {/* 主要行動按鈕 */}
-      <Link href="/manager/closing">
-        <div className="flex items-center gap-4 p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors">
+      <Link href={
+        !todayClosing || todayClosing.status === 'draft' ? '/manager/closing' :
+        todayClosing.status === 'disputed' ? `/manager/edit/${todayClosing.id}` :
+        '/manager/summary'
+      }>
+        <div className={cn(
+          'flex items-center gap-4 p-4 rounded-xl transition-colors text-white',
+          todayClosing?.status === 'disputed'
+            ? 'bg-orange-500 hover:bg-orange-600'
+            : 'bg-blue-600 hover:bg-blue-700'
+        )}>
           <ClipboardList className="h-6 w-6 shrink-0" />
           <div className="flex-1">
             <p className="font-semibold">
               {!todayClosing ? '開始今日結帳' :
-               todayClosing.status === 'draft' ? '繼續填寫結帳' : '查看今日結帳'}
+               todayClosing.status === 'draft' ? '繼續填寫結帳' :
+               todayClosing.status === 'disputed' ? '修正退回帳目' :
+               '查看今日結帳'}
             </p>
-            <p className="text-blue-200 text-xs mt-0.5">
-              {today}
-            </p>
+            <p className="text-xs mt-0.5 opacity-70">{today}</p>
           </div>
-          <ChevronRight className="h-5 w-5 text-blue-300" />
+          <ChevronRight className="h-5 w-5 opacity-60" />
         </div>
       </Link>
 

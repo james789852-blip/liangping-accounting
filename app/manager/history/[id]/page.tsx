@@ -1,12 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { format } from 'date-fns'
-
-export const dynamic = 'force-dynamic'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { Clock, Banknote, Package, Calculator, BarChart3, AlertTriangle, Video } from 'lucide-react'
+import { Banknote, Package, Calculator, BarChart3, AlertTriangle, ArrowLeft, Video } from 'lucide-react'
 import Link from 'next/link'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 
@@ -15,11 +12,12 @@ function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 const statusMap: Record<string, { label: string; color: string }> = {
   draft:     { label: '草稿',    color: 'bg-slate-100 text-slate-600' },
   submitted: { label: '已送出',  color: 'bg-blue-100 text-blue-700' },
-  verified:  { label: '已審核',  color: 'bg-green-100 text-green-700' },
+  verified:  { label: '已核准',  color: 'bg-green-100 text-green-700' },
   disputed:  { label: '退回修改', color: 'bg-orange-100 text-orange-700' },
 }
 
-export default async function SummaryPage() {
+export default async function HistoryDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -30,28 +28,14 @@ export default async function SummaryPage() {
   const storeId = await getEffectiveStoreId(profile)
   if (!storeId) return <div className="p-6 text-slate-500">尚未指派店家</div>
 
-  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+  const { data: closing } = await supabase
+    .from('daily_closings')
+    .select('*, revenue_items(*), cash_counts(*), order_items(*), expense_items(*), handwrite_orders(*), stores(name, petty_cash)')
+    .eq('id', id)
+    .eq('store_id', storeId)
+    .single()
 
-  const [{ data: closing }, { data: store }] = await Promise.all([
-    supabase.from('daily_closings')
-      .select('*, revenue_items(*), cash_counts(*), order_items(*), expense_items(*), handwrite_orders(*)')
-      .eq('store_id', storeId).eq('business_date', today).maybeSingle(),
-    supabase.from('stores').select('name, petty_cash').eq('id', storeId).single(),
-  ])
-
-  if (!closing) {
-    return (
-      <div className="max-w-xl mx-auto px-4 py-12 text-center space-y-4">
-        <Clock className="h-12 w-12 text-slate-300 mx-auto" />
-        <h1 className="text-lg font-bold text-slate-700">今日尚未結帳</h1>
-        <p className="text-slate-400 text-sm">請先完成今日結帳再查看結算結果</p>
-        <Link href="/manager/closing"
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-          前往每日結帳
-        </Link>
-      </div>
-    )
-  }
+  if (!closing) return <div className="p-6 text-slate-500">找不到此帳目</div>
 
   // 菜單影片
   let videoUrl: string | null = null
@@ -61,7 +45,7 @@ export default async function SummaryPage() {
       .from('menu_videos')
       .select('id, file_path, file_name')
       .eq('store_id', storeId)
-      .eq('business_date', today)
+      .eq('business_date', closing.business_date)
       .maybeSingle()
     if (mv) {
       const { data: signed } = await supabase.storage.from('menu-videos').createSignedUrl(mv.file_path, 3600)
@@ -70,6 +54,7 @@ export default async function SummaryPage() {
     }
   } catch { /* menu_videos table may not exist yet */ }
 
+  const store = closing.stores as any
   const rev = closing.revenue_items ?? []
   const cash = closing.cash_counts?.[0]
   const orders = closing.order_items ?? []
@@ -86,18 +71,21 @@ export default async function SummaryPage() {
     pos: 'POS 現金', uber: 'Uber Eats', panda: '熊貓',
     twpay: '台灣Pay', online: '線上點餐', handwrite: '手寫訂單',
   }
-
   const platformTotal = rev
     .filter((r: any) => ['uber','panda','twpay','online'].includes(r.channel))
     .reduce((s: number, r: any) => s + r.gross_amount, 0)
 
   return (
     <div className="max-w-xl mx-auto px-4 py-4 space-y-4 pb-8">
-      {/* 標題列 */}
+      <Link href="/manager/history" className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition-colors">
+        <ArrowLeft className="h-4 w-4" /> 歷史紀錄
+      </Link>
+
+      {/* 標題 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">今日結帳</h1>
-          <p className="text-sm text-slate-500">{store?.name} · {closing.business_date}</p>
+          <h1 className="text-xl font-bold text-slate-900">{closing.business_date}</h1>
+          <p className="text-sm text-slate-500">{store?.name}</p>
         </div>
         <span className={cn('px-2.5 py-1 rounded-full text-xs font-medium', st.color)}>
           {st.label}
@@ -111,8 +99,8 @@ export default async function SummaryPage() {
             <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />
             <p className="text-sm font-semibold text-orange-700">總公司已退回，請修正後重新送出</p>
           </div>
-          {(closing as any).dispute_note && (
-            <p className="text-sm text-orange-600">{(closing as any).dispute_note}</p>
+          {closing.dispute_note && (
+            <p className="text-sm text-orange-600">{closing.dispute_note}</p>
           )}
           <Link
             href={`/manager/edit/${closing.id}`}
@@ -133,7 +121,7 @@ export default async function SummaryPage() {
             </p>
             <p className={cn('text-xs mt-1', varColor)}>
               {Math.abs(closing.variance) === 0 ? '金額完全正確' :
-               Math.abs(closing.variance) <= 200 ? '差距微小' : '差距過大，請核查'}
+               Math.abs(closing.variance) <= 200 ? '差距微小' : '差距過大'}
             </p>
           </div>
           <div className="text-right space-y-2">
@@ -287,13 +275,9 @@ export default async function SummaryPage() {
           </CardHeader>
           <CardContent className="space-y-1.5 text-sm">
             {([
-              ['千元鈔', cash.bills_1000, 1000],
-              ['五百元', cash.bills_500, 500],
-              ['百元鈔', cash.bills_100, 100],
-              ['五十元', cash.coins_50, 50],
-              ['十元', cash.coins_10, 10],
-              ['五元', cash.coins_5, 5],
-              ['一元', cash.coins_1, 1],
+              ['千元鈔', cash.bills_1000, 1000], ['五百元', cash.bills_500, 500],
+              ['百元鈔', cash.bills_100, 100], ['五十元', cash.coins_50, 50],
+              ['十元', cash.coins_10, 10], ['五元', cash.coins_5, 5], ['一元', cash.coins_1, 1],
             ] as [string, number, number][]).filter(([, c]) => c > 0).map(([label, count, unit]) => (
               <div key={label} className="flex justify-between text-slate-600">
                 <span>{label} × {count}</span>
@@ -301,7 +285,7 @@ export default async function SummaryPage() {
               </div>
             ))}
             <Separator />
-            <div className="flex justify-between font-medium text-sm">
+            <div className="flex justify-between font-medium">
               <span>現金總額</span>
               <span className="tabular-nums">${fmt(cash.cash_total)}</span>
             </div>
@@ -322,27 +306,22 @@ export default async function SummaryPage() {
         </CardHeader>
         <CardContent className="space-y-1.5 text-sm">
           <div className="flex justify-between text-slate-600">
-            <span>總營業額</span>
-            <span className="tabular-nums">${fmt(closing.total_revenue)}</span>
+            <span>總營業額</span><span className="tabular-nums">${fmt(closing.total_revenue)}</span>
           </div>
           <div className="flex justify-between text-slate-400">
-            <span>− 平台收款</span>
-            <span className="tabular-nums">−${fmt(platformTotal)}</span>
+            <span>− 平台收款</span><span className="tabular-nums">−${fmt(platformTotal)}</span>
           </div>
           {(closing.total_expenses ?? 0) > 0 && (
             <div className="flex justify-between text-slate-400">
-              <span>− 現金支出</span>
-              <span className="tabular-nums">−${fmt(closing.total_expenses)}</span>
+              <span>− 現金支出</span><span className="tabular-nums">−${fmt(closing.total_expenses)}</span>
             </div>
           )}
           <Separator />
           <div className="flex justify-between font-semibold">
-            <span>應包進信封</span>
-            <span className="tabular-nums">${fmt(closing.should_include_delivery)}</span>
+            <span>應包進信封</span><span className="tabular-nums">${fmt(closing.should_include_delivery)}</span>
           </div>
           <div className="flex justify-between text-xs text-slate-500 pl-2">
-            <span>其中央廚配送費</span>
-            <span className="tabular-nums">${fmt(closing.total_cost)}</span>
+            <span>其中央廚費</span><span className="tabular-nums">${fmt(closing.total_cost)}</span>
           </div>
           <div className="flex justify-between text-xs text-slate-500 pl-2">
             <span>應匯入 HQ（淨）</span>
@@ -370,17 +349,6 @@ export default async function SummaryPage() {
             <p className="text-sm text-slate-700">{closing.note}</p>
           </CardContent>
         </Card>
-      )}
-
-      {/* 底部按鈕 */}
-      {(closing.status === 'draft' || closing.status === 'disputed') && (
-        <div className="flex gap-3">
-          <Link
-            href={closing.status === 'draft' ? '/manager/closing' : `/manager/edit/${closing.id}`}
-            className="flex-1 text-center py-3 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">
-            {closing.status === 'draft' ? '繼續填寫' : '修改帳目'}
-          </Link>
-        </div>
       )}
     </div>
   )
