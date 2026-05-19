@@ -31,8 +31,9 @@ export async function deleteClosing(closingId: string) {
     .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
   if (!profile || (!profile.is_hq && profile.role !== '老闆')) return { error: '權限不足' }
 
-  // 先刪子表，再刪主表
+  // 先刪子表（含 audit_logs），再刪主表
   await Promise.all([
+    supabase.from('audit_logs').delete().eq('closing_id', closingId),
     supabase.from('revenue_items').delete().eq('closing_id', closingId),
     supabase.from('cash_counts').delete().eq('closing_id', closingId),
     supabase.from('order_items').delete().eq('closing_id', closingId),
