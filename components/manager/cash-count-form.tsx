@@ -15,30 +15,38 @@ interface Props {
 }
 
 const DENOMS = [
-  { label: '千元鈔', key: 'bills_1000', unit: 1000, unitLabel: '張' },
-  { label: '五百元', key: 'bills_500',  unit: 500,  unitLabel: '張' },
-  { label: '百元鈔', key: 'bills_100',  unit: 100,  unitLabel: '張' },
-  { label: '五十元', key: 'coins_50',   unit: 50,   unitLabel: '枚' },
-  { label: '十元',   key: 'coins_10',   unit: 10,   unitLabel: '枚' },
-  { label: '五元',   key: 'coins_5',    unit: 5,    unitLabel: '枚' },
-  { label: '一元',   key: 'coins_1',    unit: 1,    unitLabel: '枚' },
+  { label: '千元鈔', countKey: 'bills_1000', lumpKey: 'lump_1000', unit: 1000, unitLabel: '張' },
+  { label: '五百元', countKey: 'bills_500',  lumpKey: 'lump_500',  unit: 500,  unitLabel: '張' },
+  { label: '百元鈔', countKey: 'bills_100',  lumpKey: 'lump_100',  unit: 100,  unitLabel: '張' },
+  { label: '五十元', countKey: 'coins_50',   lumpKey: 'lump_50',   unit: 50,   unitLabel: '枚' },
+  { label: '十元',   countKey: 'coins_10',   lumpKey: 'lump_10',   unit: 10,   unitLabel: '枚' },
+  { label: '五元',   countKey: 'coins_5',    lumpKey: 'lump_5',    unit: 5,    unitLabel: '枚' },
+  { label: '一元',   countKey: 'coins_1',    lumpKey: 'lump_1',    unit: 1,    unitLabel: '枚' },
 ]
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
-function initCounts(saved: any): Record<string, number> {
+function initValues(saved: any): Record<string, number> {
   const init: Record<string, number> = {}
-  DENOMS.forEach(d => { init[d.key] = saved?.[d.key] ?? 0 })
+  DENOMS.forEach(d => {
+    init[d.countKey] = saved?.[d.countKey] ?? 0
+    init[d.lumpKey]  = saved?.[d.lumpKey]  ?? 0
+  })
   return init
 }
 
 export default function CashCountForm({ storeName, pettyCash, today, closing, savedCashCounts }: Props) {
-  const [counts, setCounts] = useState<Record<string, number>>(() => initCounts(savedCashCounts))
+  const [values, setValues] = useState<Record<string, number>>(() => initValues(savedCashCounts))
 
-  const total = DENOMS.reduce((s, d) => s + (counts[d.key] || 0) * d.unit, 0)
+  const set = (key: string, val: number) => setValues(prev => ({ ...prev, [key]: val }))
+
+  const total = DENOMS.reduce((s, d) => {
+    return s + (values[d.countKey] || 0) * d.unit + (values[d.lumpKey] || 0)
+  }, 0)
+
   const diff = total - pettyCash
-  const isExact = diff === 0
-  const isClose = Math.abs(diff) <= 50 && !isExact
+  const isExact = diff === 0 && total > 0
+  const isClose = Math.abs(diff) <= 50 && !isExact && total > 0
 
   const statusLabel: Record<string, string> = {
     draft: '草稿', submitted: '已送出', verified: '已審核', disputed: '退回修改'
@@ -77,32 +85,43 @@ export default function CashCountForm({ storeName, pettyCash, today, closing, sa
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold text-slate-700">逐項清點</CardTitle>
-          <div className="grid grid-cols-[3.5rem_1fr_1fr_3rem] gap-x-2 text-[10px] text-slate-400 mt-1">
+          {/* 表頭 */}
+          <div className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 text-[10px] text-slate-400 mt-1">
             <span />
-            <span className="text-center">張 / 枚數</span>
-            <span className="text-center">面額</span>
+            <span className="text-center">張 / 枚</span>
+            <span className="text-center">整筆金額</span>
             <span className="text-right">小計</span>
           </div>
         </CardHeader>
         <CardContent className="space-y-2">
-          {DENOMS.map(({ label, key, unit, unitLabel }) => {
-            const count = counts[key] || 0
-            const subtotal = count * unit
+          {DENOMS.map(({ label, countKey, lumpKey, unit, unitLabel }) => {
+            const countVal = values[countKey] || 0
+            const lumpVal  = values[lumpKey]  || 0
+            const subtotal = countVal * unit + lumpVal
             return (
-              <div key={key} className="grid grid-cols-[3.5rem_1fr_1fr_3rem] gap-x-2 items-center">
-                <span className="text-xs text-slate-500">{label}</span>
+              <div key={countKey} className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 items-center">
+                <span className="text-xs text-slate-500 shrink-0">{label}</span>
                 <div className="flex items-center gap-0.5">
                   <input
                     type="number" min="0" inputMode="numeric"
-                    className="text-right tabular-nums h-10 text-sm px-2 w-full rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-500"
-                    value={count === 0 ? '' : count} placeholder="0"
-                    onChange={e => setCounts(prev => ({ ...prev, [key]: parseInt(e.target.value) || 0 }))}
-                    onBlur={e => setCounts(prev => ({ ...prev, [key]: parseInt(e.target.value) || 0 }))}
+                    className="text-right tabular-nums h-9 text-sm px-2 w-full rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-500"
+                    value={countVal === 0 ? '' : countVal} placeholder="0"
+                    onChange={e => set(countKey, parseInt(e.target.value) || 0)}
+                    onBlur={e => set(countKey, parseInt(e.target.value) || 0)}
                   />
                   <span className="text-[10px] text-slate-400 shrink-0">{unitLabel}</span>
                 </div>
-                <div className="text-center text-xs text-slate-400">× ${fmt(unit)}</div>
-                <span className={cn('text-right text-xs tabular-nums', subtotal > 0 ? 'text-slate-700 font-medium' : 'text-slate-300')}>
+                <input
+                  type="number" min="0" inputMode="numeric"
+                  className="text-right tabular-nums h-9 text-sm px-2 w-full rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-500"
+                  value={lumpVal === 0 ? '' : lumpVal} placeholder="0"
+                  onChange={e => set(lumpKey, parseInt(e.target.value) || 0)}
+                  onBlur={e => set(lumpKey, parseInt(e.target.value) || 0)}
+                />
+                <span className={cn(
+                  'text-right text-xs tabular-nums shrink-0',
+                  subtotal > 0 ? 'text-slate-700 font-medium' : 'text-slate-300'
+                )}>
                   ${fmt(subtotal)}
                 </span>
               </div>
@@ -111,7 +130,6 @@ export default function CashCountForm({ storeName, pettyCash, today, closing, sa
 
           <Separator className="my-1" />
 
-          {/* 合計 */}
           <div className="flex justify-between items-center">
             <span className="text-sm font-semibold text-slate-700">清點總額</span>
             <span className="text-xl font-bold tabular-nums">${fmt(total)}</span>
@@ -120,12 +138,16 @@ export default function CashCountForm({ storeName, pettyCash, today, closing, sa
       </Card>
 
       {/* 零用金比對結果 */}
-      <Card className={cn('border-2', isExact ? 'border-green-300 bg-green-50' : isClose ? 'border-yellow-300 bg-yellow-50' : diff !== 0 || total > 0 ? 'border-red-300 bg-red-50' : 'border-slate-200')}>
+      <Card className={cn('border-2',
+        isExact  ? 'border-green-300 bg-green-50' :
+        isClose  ? 'border-yellow-300 bg-yellow-50' :
+        total > 0 ? 'border-red-300 bg-red-50' : 'border-slate-200'
+      )}>
         <CardContent className="p-4 space-y-3">
           <div className="flex items-center gap-2">
             {isExact ? (
               <CheckCircle2 className="h-5 w-5 text-green-600" />
-            ) : (total > 0 || diff !== 0) ? (
+            ) : total > 0 ? (
               <AlertTriangle className="h-5 w-5 text-red-500" />
             ) : (
               <Calculator className="h-5 w-5 text-slate-400" />
@@ -150,13 +172,19 @@ export default function CashCountForm({ storeName, pettyCash, today, closing, sa
             <span className="font-bold text-slate-900">差額</span>
             <div className="text-right">
               <p className={cn('text-3xl font-bold tabular-nums',
-                isExact ? 'text-green-600' : isClose ? 'text-yellow-600' : total > 0 ? 'text-red-600' : 'text-slate-400'
+                isExact  ? 'text-green-600' :
+                isClose  ? 'text-yellow-600' :
+                total > 0 ? 'text-red-600' : 'text-slate-400'
               )}>
                 {total === 0 ? '—' : (diff >= 0 ? '+' : '') + fmt(diff)}
               </p>
               {total > 0 && (
-                <p className={cn('text-xs mt-0.5', isExact ? 'text-green-600' : isClose ? 'text-yellow-600' : 'text-red-600')}>
-                  {isExact ? '零用金正確 ✓' : isClose ? '差距微小，請再確認' : diff > 0 ? `多 $${fmt(Math.abs(diff))}` : `少 $${fmt(Math.abs(diff))}`}
+                <p className={cn('text-xs mt-0.5',
+                  isExact ? 'text-green-600' : isClose ? 'text-yellow-600' : 'text-red-600'
+                )}>
+                  {isExact ? '零用金正確 ✓' :
+                   isClose ? '差距微小，請再確認' :
+                   diff > 0 ? `多 $${fmt(Math.abs(diff))}` : `少 $${fmt(Math.abs(diff))}`}
                 </p>
               )}
             </div>
@@ -164,11 +192,10 @@ export default function CashCountForm({ storeName, pettyCash, today, closing, sa
         </CardContent>
       </Card>
 
-      {/* 重設按鈕 */}
       {total > 0 && (
         <button
           type="button"
-          onClick={() => setCounts(initCounts(null))}
+          onClick={() => setValues(initValues(null))}
           className="w-full py-2.5 border border-slate-200 rounded-xl text-sm text-slate-500 hover:bg-slate-50 transition-colors"
         >
           清除重填
