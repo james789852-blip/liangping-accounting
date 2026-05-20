@@ -74,6 +74,42 @@ export async function deleteReceipt(receiptId: string) {
   return { success: true }
 }
 
+export async function updateReceipt(
+  receiptId: string,
+  payload: Omit<SaveReceiptPayload, 'storeId'>
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+
+  const admin = createAdminClient()
+  const { error: rErr } = await admin
+    .from('receipts')
+    .update({
+      business_date: payload.businessDate,
+      vendor_name: payload.vendorName,
+      receipt_type: payload.receiptType,
+      total_amount: payload.totalAmount,
+      tax_amount: payload.taxAmount,
+      notes: payload.notes,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', receiptId)
+
+  if (rErr) return { error: rErr.message }
+
+  await admin.from('receipt_items').delete().eq('receipt_id', receiptId)
+  if (payload.items.length > 0) {
+    await admin.from('receipt_items').insert(
+      payload.items.map(item => ({ ...item, receipt_id: receiptId }))
+    )
+  }
+
+  revalidatePath('/manager/receipts')
+  revalidatePath('/manager/order')
+  return { success: true }
+}
+
 export async function updateReceiptStatus(receiptId: string, status: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
