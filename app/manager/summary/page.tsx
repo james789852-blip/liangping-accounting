@@ -293,20 +293,35 @@ export default async function SummaryPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1.5 text-sm">
+            {/* 表頭 */}
+            <div className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 text-[10px] text-slate-400">
+              <span />
+              <span className="text-center">張 / 枚</span>
+              <span className="text-center">整筆金額</span>
+              <span className="text-right">小計</span>
+            </div>
             {([
-              ['千元鈔', cash.bills_1000, 1000],
-              ['五百元', cash.bills_500, 500],
-              ['百元鈔', cash.bills_100, 100],
-              ['五十元', cash.coins_50, 50],
-              ['十元', cash.coins_10, 10],
-              ['五元', cash.coins_5, 5],
-              ['一元', cash.coins_1, 1],
-            ] as [string, number, number][]).filter(([, c]) => c > 0).map(([label, count, unit]) => (
-              <div key={label} className="flex justify-between text-slate-600">
-                <span>{label} × {count}</span>
-                <span className="tabular-nums">${fmt(count * unit)}</span>
-              </div>
-            ))}
+              { label: '千元鈔', ck: 'bills_1000', lk: 'lump_1000', unit: 1000, ul: '張' },
+              { label: '五百元', ck: 'bills_500',  lk: 'lump_500',  unit: 500,  ul: '張' },
+              { label: '百元鈔', ck: 'bills_100',  lk: 'lump_100',  unit: 100,  ul: '張' },
+              { label: '五十元', ck: 'coins_50',   lk: 'lump_50',   unit: 50,   ul: '枚' },
+              { label: '十元',   ck: 'coins_10',   lk: 'lump_10',   unit: 10,   ul: '枚' },
+              { label: '五元',   ck: 'coins_5',    lk: 'lump_5',    unit: 5,    ul: '枚' },
+              { label: '一元',   ck: 'coins_1',    lk: 'lump_1',    unit: 1,    ul: '枚' },
+            ]).map(({ label, ck, lk, unit, ul }) => {
+              const count = (cash as any)[ck] ?? 0
+              const lump  = (cash as any)[lk] ?? 0
+              const sub   = count * unit + lump
+              if (sub === 0) return null
+              return (
+                <div key={label} className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 items-baseline text-slate-600">
+                  <span className="text-xs">{label}</span>
+                  <span className="text-xs text-center">{count > 0 ? `${count} ${ul}` : '—'}</span>
+                  <span className="text-xs text-center tabular-nums">{lump > 0 ? `$${fmt(lump)}` : '—'}</span>
+                  <span className="text-xs text-right tabular-nums font-medium">${fmt(sub)}</span>
+                </div>
+              )
+            })}
             <Separator />
             <div className="flex justify-between font-medium text-sm">
               <span>現金總額</span>
