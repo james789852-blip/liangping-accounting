@@ -9,6 +9,7 @@ import { savePettyCashCount } from '@/app/actions/petty-cash'
 
 interface HistoryRow {
   count_date: string
+  updated_at?: string
   bills_1000: number; bills_500: number; bills_100: number
   coins_50: number; coins_10: number; coins_5: number; coins_1: number
   lump_1000: number; lump_500: number; lump_100: number
@@ -53,6 +54,15 @@ function initValues(saved: any): Record<string, number> {
 function formatDate(dateStr: string) {
   const d = new Date(dateStr + 'T00:00:00+08:00')
   return `${d.getMonth() + 1}/${d.getDate()}（${['日','一','二','三','四','五','六'][d.getDay()]}）`
+}
+
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleString('zh-TW', {
+    timeZone: 'Asia/Taipei',
+    month: 'numeric', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  })
 }
 
 export default function CashCountForm({
@@ -300,6 +310,9 @@ export default function CashCountForm({
                     )}>
                       {rowExact ? '正確 ✓' : (rowDiff >= 0 ? '+' : '') + fmt(rowDiff)}
                     </p>
+                    {row.updated_at && (
+                      <p className="text-[10px] text-slate-400 mt-0.5">{formatTime(row.updated_at)}</p>
+                    )}
                   </div>
                 </div>
               )

@@ -24,7 +24,13 @@ export async function savePettyCashCount(
   const { error } = await admin
     .from('petty_cash_counts')
     .upsert(
-      { store_id: storeId, count_date: countDate, created_by: user.id, ...counts },
+      {
+        store_id: storeId,
+        count_date: countDate,
+        created_by: user.id,
+        updated_at: new Date().toISOString(),
+        ...counts,
+      },
       { onConflict: 'store_id,count_date' },
     )
 

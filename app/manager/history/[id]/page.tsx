@@ -10,6 +10,15 @@ import { getEffectiveStoreId } from '@/lib/get-effective-store'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
+function fmtTs(iso: string) {
+  return new Date(iso).toLocaleString('zh-TW', {
+    timeZone: 'Asia/Taipei',
+    month: 'numeric', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  })
+}
+
 const statusMap: Record<string, { label: string; color: string }> = {
   draft:     { label: '草稿',    color: 'bg-slate-100 text-slate-600' },
   submitted: { label: '已送出',  color: 'bg-blue-100 text-blue-700' },
@@ -115,6 +124,20 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
           </Link>
         </div>
       )}
+
+      {/* 操作時間 */}
+      <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-500 space-y-1">
+        <div className="flex justify-between">
+          <span>建立時間</span>
+          <span className="tabular-nums font-medium text-slate-700">{fmtTs(closing.created_at)}</span>
+        </div>
+        {closing.updated_at && closing.updated_at !== closing.created_at && (
+          <div className="flex justify-between">
+            <span>最後儲存</span>
+            <span className="tabular-nums font-medium text-slate-700">{fmtTs(closing.updated_at)}</span>
+          </div>
+        )}
+      </div>
 
       {/* 誤差摘要 */}
       <Card className={cn('border-2', varBg)}>
