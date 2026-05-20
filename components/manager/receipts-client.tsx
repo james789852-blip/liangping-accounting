@@ -27,11 +27,14 @@ interface Receipt {
   receipt_items: ReceiptItem[]
 }
 
+interface MappingMap { [k: string]: { excel_column: string; item_category: string } }
+
 interface Props {
   storeId: string
   storeName: string
   today: string
   receipts: Receipt[]
+  mappings: MappingMap
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -159,7 +162,7 @@ function ReceiptCard({ receipt, onDelete }: { receipt: Receipt; onDelete: () => 
   )
 }
 
-export default function ReceiptsClient({ storeId, storeName, today, receipts: initial }: Props) {
+export default function ReceiptsClient({ storeId, storeName, today, receipts: initial, mappings }: Props) {
   const [receipts, setReceipts] = useState(initial)
   const [showUpload, setShowUpload] = useState(false)
   const router = useRouter()
@@ -221,6 +224,7 @@ export default function ReceiptsClient({ storeId, storeName, today, receipts: in
           <ReceiptUpload
             storeId={storeId}
             today={today}
+            mappings={mappings}
             onSaved={handleSaved}
             onCancel={() => setShowUpload(false)}
           />

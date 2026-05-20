@@ -37,8 +37,14 @@ export default async function ReceiptsPage() {
     .order('business_date', { ascending: false })
     .order('created_at', { ascending: false })
 
-  const { data: store } = await supabase
-    .from('stores').select('name').eq('id', storeId).single()
+  const [{ data: store }, { data: mappingRows }] = await Promise.all([
+    supabase.from('stores').select('name').eq('id', storeId).single(),
+    admin.from('item_column_mappings').select('item_name, excel_column, item_category'),
+  ])
+
+  const mappings = Object.fromEntries(
+    (mappingRows ?? []).map(r => [r.item_name, { excel_column: r.excel_column, item_category: r.item_category }])
+  )
 
   return (
     <ReceiptsClient
@@ -46,6 +52,7 @@ export default async function ReceiptsPage() {
       storeName={store?.name ?? ''}
       today={today}
       receipts={receipts ?? []}
+      mappings={mappings}
     />
   )
 }

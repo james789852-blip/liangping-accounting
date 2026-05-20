@@ -41,6 +41,7 @@ const hqNavItems = [
   { href: '/hq/audit', label: '稽核中心', icon: Shield },
   { href: '/hq/settings', label: '系統設定', icon: Settings },
   { href: '/hq/users', label: '帳號管理', icon: Users },
+  { href: '/hq/item-mappings', label: '品項對應', icon: FileText },
 ]
 
 const managerNavItems = [
