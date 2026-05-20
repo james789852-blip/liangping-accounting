@@ -2,12 +2,30 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, ClipboardList, Wallet, ShoppingCart,
   FileText, BarChart3, History, Download, LogOut, Store
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+
+function useClock() {
+  const [time, setTime] = useState('')
+  useEffect(() => {
+    function tick() {
+      setTime(new Date().toLocaleTimeString('zh-TW', {
+        timeZone: 'Asia/Taipei',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false,
+      }))
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [])
+  return time
+}
 
 const navItems = [
   { href: '/manager/dashboard', label: '今日狀態', icon: LayoutDashboard },
@@ -29,6 +47,7 @@ interface Props {
 export default function ManagerNav({ userName, storeName, role }: Props) {
   const pathname = usePathname()
   const router = useRouter()
+  const time = useClock()
 
   async function handleLogout() {
     const supabase = createClient()
@@ -47,6 +66,9 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
             <Store className="h-3.5 w-3.5 text-slate-400" />
             <span className="text-xs text-slate-600">{storeName || '未指派店家'}</span>
           </div>
+          {time && (
+            <p className="text-lg font-bold tabular-nums text-slate-800 mt-2 tracking-wide">{time}</p>
+          )}
         </div>
 
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
@@ -88,6 +110,9 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
           <span className="font-bold text-sm text-slate-900">梁平作帳</span>
           {storeName && <span className="text-xs text-slate-500 ml-2">{storeName}</span>}
         </div>
+        {time && (
+          <span className="text-sm font-bold tabular-nums text-slate-700 tracking-wide">{time}</span>
+        )}
         <button onClick={handleLogout} className="text-slate-500">
           <LogOut className="h-4 w-4" />
         </button>
