@@ -1,17 +1,28 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useTransition } from 'react'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { Calculator, CheckCircle2, AlertTriangle, Info } from 'lucide-react'
+import { Calculator, CheckCircle2, AlertTriangle, Info, Save, History } from 'lucide-react'
+import { savePettyCashCount } from '@/app/actions/petty-cash'
+
+interface HistoryRow {
+  count_date: string
+  bills_1000: number; bills_500: number; bills_100: number
+  coins_50: number; coins_10: number; coins_5: number; coins_1: number
+  lump_1000: number; lump_500: number; lump_100: number
+  lump_50: number; lump_10: number; lump_5: number; lump_1: number
+}
 
 interface Props {
   storeName: string
   pettyCash: number
+  storeId: string
   today: string
   closing: { id: string; status: string; actual_remit: number; total_revenue: number; variance: number } | null
-  savedCashCounts: any
+  savedPettyCashCount: any
+  history: HistoryRow[]
 }
 
 const DENOMS = [
@@ -26,6 +37,10 @@ const DENOMS = [
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
+function calcTotal(vals: Record<string, number>) {
+  return DENOMS.reduce((s, d) => s + (vals[d.countKey] || 0) * d.unit + (vals[d.lumpKey] || 0), 0)
+}
+
 function initValues(saved: any): Record<string, number> {
   const init: Record<string, number> = {}
   DENOMS.forEach(d => {
@@ -35,21 +50,52 @@ function initValues(saved: any): Record<string, number> {
   return init
 }
 
-export default function CashCountForm({ storeName, pettyCash, today, closing, savedCashCounts }: Props) {
-  const [values, setValues] = useState<Record<string, number>>(() => initValues(savedCashCounts))
+function formatDate(dateStr: string) {
+  const d = new Date(dateStr + 'T00:00:00+08:00')
+  return `${d.getMonth() + 1}/${d.getDate()}（${['日','一','二','三','四','五','六'][d.getDay()]}）`
+}
 
-  const set = (key: string, val: number) => setValues(prev => ({ ...prev, [key]: val }))
+export default function CashCountForm({
+  storeName, pettyCash, storeId, today, closing, savedPettyCashCount, history,
+}: Props) {
+  const [values, setValues] = useState<Record<string, number>>(() => initValues(savedPettyCashCount))
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')
+  const [saveError, setSaveError] = useState('')
+  const [isPending, startTransition] = useTransition()
+  const valuesRef = useRef(values)
+  valuesRef.current = values
 
-  const total = DENOMS.reduce((s, d) => {
-    return s + (values[d.countKey] || 0) * d.unit + (values[d.lumpKey] || 0)
-  }, 0)
+  const set = (key: string, val: number) => {
+    setSaveStatus('idle')
+    setValues(prev => ({ ...prev, [key]: val }))
+  }
 
+  const total = calcTotal(values)
   const diff = total - pettyCash
   const isExact = diff === 0 && total > 0
   const isClose = Math.abs(diff) <= 50 && !isExact && total > 0
 
   const statusLabel: Record<string, string> = {
     draft: '草稿', submitted: '已送出', verified: '已審核', disputed: '退回修改'
+  }
+
+  function handleSave() {
+    const v = valuesRef.current
+    startTransition(async () => {
+      const counts = {
+        bills_1000: v.bills_1000 || 0, bills_500: v.bills_500 || 0, bills_100: v.bills_100 || 0,
+        coins_50: v.coins_50 || 0, coins_10: v.coins_10 || 0, coins_5: v.coins_5 || 0, coins_1: v.coins_1 || 0,
+        lump_1000: v.lump_1000 || 0, lump_500: v.lump_500 || 0, lump_100: v.lump_100 || 0,
+        lump_50: v.lump_50 || 0, lump_10: v.lump_10 || 0, lump_5: v.lump_5 || 0, lump_1: v.lump_1 || 0,
+      }
+      const result = await savePettyCashCount(storeId, today, counts)
+      if (result?.error) {
+        setSaveError(result.error)
+        setSaveStatus('error')
+      } else {
+        setSaveStatus('saved')
+      }
+    })
   }
 
   return (
@@ -85,7 +131,6 @@ export default function CashCountForm({ storeName, pettyCash, today, closing, sa
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold text-slate-700">逐項清點</CardTitle>
-          {/* 表頭 */}
           <div className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 text-[10px] text-slate-400 mt-1">
             <span />
             <span className="text-center">張 / 枚</span>
@@ -192,14 +237,75 @@ export default function CashCountForm({ storeName, pettyCash, today, closing, sa
         </CardContent>
       </Card>
 
-      {total > 0 && (
+      {/* 儲存 / 清除按鈕 */}
+      <div className="space-y-2">
         <button
           type="button"
-          onClick={() => setValues(initValues(null))}
-          className="w-full py-2.5 border border-slate-200 rounded-xl text-sm text-slate-500 hover:bg-slate-50 transition-colors"
+          disabled={isPending || total === 0}
+          onClick={handleSave}
+          className={cn(
+            'w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors',
+            total === 0
+              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              : saveStatus === 'saved'
+              ? 'bg-green-500 text-white'
+              : 'bg-blue-600 text-white active:bg-blue-700',
+          )}
         >
-          清除重填
+          {isPending ? (
+            <span className="animate-pulse">儲存中…</span>
+          ) : saveStatus === 'saved' ? (
+            <><CheckCircle2 className="h-4 w-4" /> 已儲存</>
+          ) : (
+            <><Save className="h-4 w-4" /> 儲存清點紀錄</>
+          )}
         </button>
+
+        {saveStatus === 'error' && (
+          <p className="text-xs text-red-500 text-center">{saveError}</p>
+        )}
+
+        {total > 0 && (
+          <button
+            type="button"
+            onClick={() => { setValues(initValues(null)); setSaveStatus('idle') }}
+            className="w-full py-2.5 border border-slate-200 rounded-xl text-sm text-slate-500 hover:bg-slate-50 transition-colors"
+          >
+            清除重填
+          </button>
+        )}
+      </div>
+
+      {/* 近期紀錄 */}
+      {history.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+            <History className="h-4 w-4" /> 近期清點紀錄
+          </div>
+          <div className="space-y-1.5">
+            {history.map(row => {
+              const rowTotal = calcTotal(row as any)
+              const rowDiff  = rowTotal - pettyCash
+              const rowExact = rowDiff === 0
+              const rowClose = Math.abs(rowDiff) <= 50 && !rowExact
+              return (
+                <div key={row.count_date}
+                  className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-2.5"
+                >
+                  <span className="text-sm text-slate-600">{formatDate(row.count_date)}</span>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold tabular-nums text-slate-800">${fmt(rowTotal)}</p>
+                    <p className={cn('text-xs tabular-nums',
+                      rowExact ? 'text-green-600' : rowClose ? 'text-yellow-600' : 'text-red-500'
+                    )}>
+                      {rowExact ? '正確 ✓' : (rowDiff >= 0 ? '+' : '') + fmt(rowDiff)}
+                    </p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       )}
     </div>
   )

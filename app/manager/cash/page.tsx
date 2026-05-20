@@ -24,30 +24,34 @@ export default async function CashPage() {
   }
 
   const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+  const sevenDaysAgo = new Date(Date.now() + 8 * 3600000 - 7 * 86400000).toISOString().slice(0, 10)
 
-  const [{ data: store }, { data: closing }] = await Promise.all([
+  const admin = createAdminClient()
+
+  const [{ data: store }, { data: closing }, { data: todayPetty }, { data: historyRows }] = await Promise.all([
     supabase.from('stores').select('name, petty_cash').eq('id', storeId).single(),
     supabase.from('daily_closings')
       .select('id, status, actual_remit, total_revenue, variance')
       .eq('store_id', storeId).eq('business_date', today).maybeSingle(),
+    admin.from('petty_cash_counts').select('*')
+      .eq('store_id', storeId).eq('count_date', today).maybeSingle(),
+    admin.from('petty_cash_counts').select('*')
+      .eq('store_id', storeId)
+      .gte('count_date', sevenDaysAgo)
+      .lt('count_date', today)
+      .order('count_date', { ascending: false })
+      .limit(7),
   ])
-
-  // 取今日已儲存的現金清點（若有）
-  let savedCashCounts: any = null
-  if (closing) {
-    const admin = createAdminClient()
-    const { data: cashCounts } = await admin
-      .from('cash_counts').select('*').eq('closing_id', closing.id)
-    savedCashCounts = cashCounts?.[0] ?? null
-  }
 
   return (
     <CashCountForm
       storeName={store?.name ?? ''}
       pettyCash={store?.petty_cash ?? 0}
+      storeId={storeId}
       today={today}
       closing={closing ?? null}
-      savedCashCounts={savedCashCounts}
+      savedPettyCashCount={todayPetty ?? null}
+      history={historyRows ?? []}
     />
   )
 }
