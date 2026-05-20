@@ -2,7 +2,25 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
+
+function useClock() {
+  const [time, setTime] = useState('')
+  useEffect(() => {
+    function tick() {
+      setTime(new Date().toLocaleTimeString('zh-TW', {
+        timeZone: 'Asia/Taipei',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false,
+      }))
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [])
+  return time
+}
 import {
   LayoutDashboard, CreditCard, CheckSquare, Video,
   Store, BarChart3, FileSpreadsheet, Shield,
@@ -47,6 +65,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const pathname = usePathname()
   const router = useRouter()
   const isManagerPath = pathname.startsWith('/manager')
+  const time = useClock()
 
   async function handleLogout() {
     const supabase = createClient()
@@ -77,6 +96,9 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               <p className="text-xs text-slate-400">總公司端</p>
             </div>
           </div>
+          {time && (
+            <p className="text-lg font-bold tabular-nums text-white mt-2 tracking-wide">{time}</p>
+          )}
         </div>
 
         <nav className="flex-1 p-2 overflow-y-auto">
@@ -187,7 +209,10 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
             <span className="font-bold text-sm text-white">梁平作帳 · 總公司</span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {time && (
+            <span className="text-sm font-bold tabular-nums text-white tracking-wide">{time}</span>
+          )}
           {!isManagerPath && hasStores && (
             <Link
               href="/manager/dashboard"
