@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
+import { getBusinessDate } from '@/lib/business-date'
 import CashCountForm from '@/components/manager/cash-count-form'
 
 export const dynamic = 'force-dynamic'
@@ -23,8 +24,8 @@ export default async function CashPage() {
     )
   }
 
-  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
-  const sevenDaysAgo = new Date(Date.now() + 8 * 3600000 - 7 * 86400000).toISOString().slice(0, 10)
+  const today = getBusinessDate()
+  const sevenDaysAgo = new Date(new Date(today + 'T00:00:00+08:00').getTime() - 7 * 86400000).toISOString().slice(0, 10)
 
   const admin = createAdminClient()
 

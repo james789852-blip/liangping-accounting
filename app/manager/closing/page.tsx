@@ -5,6 +5,7 @@ import ClosingForm from '@/components/manager/closing-form'
 import { Store, CKPrice } from '@/lib/types'
 import { format } from 'date-fns'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
+import { getBusinessDate } from '@/lib/business-date'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,7 +42,7 @@ export default async function ClosingPage() {
     .order('sort_order').order('item_name')
 
   // UTC+8 直接加偏移，不依賴 ICU timezone 資料
-  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+  const today = getBusinessDate()
 
   const { data: existingClosing } = await supabase
     .from('daily_closings')

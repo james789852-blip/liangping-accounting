@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { ClipboardList, CheckCircle2, Clock, AlertTriangle, ChevronRight, History } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
+import { getBusinessDate } from '@/lib/business-date'
 
 function fmt(n: number) {
   return Math.round(n).toLocaleString('zh-TW')
@@ -24,7 +25,7 @@ export default async function ManagerDashboard() {
     .single()
 
   const storeId = await getEffectiveStoreId(profile)
-  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+  const today = getBusinessDate()
   const todayDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
   const todayLabel = format(todayDate, 'M 月 d 日（EEEE）', { locale: zhTW })
 

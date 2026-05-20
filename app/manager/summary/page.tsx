@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { format } from 'date-fns'
+import { getBusinessDate } from '@/lib/business-date'
 
 export const dynamic = 'force-dynamic'
 import { cn } from '@/lib/utils'
@@ -31,7 +32,7 @@ export default async function SummaryPage() {
   const storeId = await getEffectiveStoreId(profile)
   if (!storeId) return <div className="p-6 text-slate-500">尚未指派店家</div>
 
-  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+  const today = getBusinessDate()
 
   const [{ data: closing }, { data: store }] = await Promise.all([
     supabase.from('daily_closings')
