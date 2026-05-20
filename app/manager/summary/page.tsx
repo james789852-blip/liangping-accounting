@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { format } from 'date-fns'
 
@@ -34,10 +35,16 @@ export default async function SummaryPage() {
 
   const [{ data: closing }, { data: store }] = await Promise.all([
     supabase.from('daily_closings')
-      .select('*, revenue_items(*), cash_counts(*), order_items(*), expense_items(*), handwrite_orders(*)')
+      .select('*, revenue_items(*), order_items(*), expense_items(*), handwrite_orders(*)')
       .eq('store_id', storeId).eq('business_date', today).maybeSingle(),
     supabase.from('stores').select('name, petty_cash').eq('id', storeId).single(),
   ])
+
+  if (closing) {
+    const admin = createAdminClient()
+    const { data: cashCounts } = await admin.from('cash_counts').select('*').eq('closing_id', closing.id)
+    ;(closing as any).cash_counts = cashCounts ?? []
+  }
 
   if (!closing) {
     return (

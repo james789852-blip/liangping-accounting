@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -30,12 +31,16 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
 
   const { data: closing } = await supabase
     .from('daily_closings')
-    .select('*, revenue_items(*), cash_counts(*), order_items(*), expense_items(*), handwrite_orders(*), stores(name, petty_cash)')
+    .select('*, revenue_items(*), order_items(*), expense_items(*), handwrite_orders(*), stores(name, petty_cash)')
     .eq('id', id)
     .eq('store_id', storeId)
     .single()
 
   if (!closing) return <div className="p-6 text-slate-500">找不到此帳目</div>
+
+  const admin = createAdminClient()
+  const { data: cashCounts } = await admin.from('cash_counts').select('*').eq('closing_id', closing.id)
+  ;(closing as any).cash_counts = cashCounts ?? []
 
   // 菜單影片
   let videoUrl: string | null = null

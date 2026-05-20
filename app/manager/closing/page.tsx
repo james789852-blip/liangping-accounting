@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import ClosingForm from '@/components/manager/closing-form'
 import { Store, CKPrice } from '@/lib/types'
@@ -44,10 +45,16 @@ export default async function ClosingPage() {
 
   const { data: existingClosing } = await supabase
     .from('daily_closings')
-    .select('*, revenue_items(*), cash_counts(*), order_items(*), expense_items(*), handwrite_orders(*)')
+    .select('*, revenue_items(*), order_items(*), expense_items(*), handwrite_orders(*)')
     .eq('store_id', storeId)
     .eq('business_date', today)
     .maybeSingle()
+
+  if (existingClosing) {
+    const admin = createAdminClient()
+    const { data: cashCounts } = await admin.from('cash_counts').select('*').eq('closing_id', existingClosing.id)
+    ;(existingClosing as any).cash_counts = cashCounts ?? []
+  }
 
   if (existingClosing) {
     if (['submitted', 'verified'].includes(existingClosing.status)) {
