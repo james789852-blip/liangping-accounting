@@ -1,10 +1,14 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { NextRequest, NextResponse } from 'next/server'
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!)
+let genAI: GoogleGenerativeAI
 
 export async function POST(req: NextRequest) {
   try {
+    const apiKey = process.env.GOOGLE_GEMINI_API_KEY
+    if (!apiKey) return NextResponse.json({ error: '未設定 GOOGLE_GEMINI_API_KEY，請確認 Vercel 環境變數' }, { status: 500 })
+    genAI = new GoogleGenerativeAI(apiKey)
+
     const { imageUrl } = await req.json()
     if (!imageUrl) return NextResponse.json({ error: '缺少圖片網址' }, { status: 400 })
 
