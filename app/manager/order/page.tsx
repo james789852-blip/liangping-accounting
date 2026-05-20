@@ -37,6 +37,7 @@ export default async function OrderPage() {
   return (
     <OrderClient
       storeName={store?.name ?? ''}
+      storeId={storeId}
       today={today}
       month={today.slice(0, 7)}
       receipts={receipts ?? []}

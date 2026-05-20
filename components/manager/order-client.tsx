@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { ShoppingCart, ChevronDown, ChevronUp, Image } from 'lucide-react'
+import { ShoppingCart, ChevronDown, ChevronUp, Image, Download } from 'lucide-react'
 
 interface ReceiptItem { id: string; item_name: string; amount: number; excel_column: string; item_category: string }
 interface Receipt {
@@ -10,7 +10,7 @@ interface Receipt {
   total_amount: number; tax_amount: number; photo_url: string; receipt_items: ReceiptItem[]
 }
 
-interface Props { storeName: string; today: string; month: string; receipts: Receipt[] }
+interface Props { storeName: string; storeId: string; today: string; month: string; receipts: Receipt[] }
 
 const TYPE_LABEL: Record<string, string> = { invoice: '發票', receipt: '收據', delivery_note: '估價單' }
 
@@ -95,7 +95,7 @@ function VendorCard({ vendor, items }: { vendor: string; items: Receipt[] }) {
   )
 }
 
-export default function OrderClient({ storeName, today, month, receipts }: Props) {
+export default function OrderClient({ storeName, storeId, today, month, receipts }: Props) {
   const monthTotal = receipts.reduce((s, r) => s + r.total_amount, 0)
 
   // Group by vendor
@@ -114,11 +114,19 @@ export default function OrderClient({ storeName, today, month, receipts }: Props
 
   return (
     <div className="max-w-xl mx-auto px-4 py-6 space-y-4 pb-24">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-          <ShoppingCart className="h-5 w-5 text-orange-500" /> 叫貨明細
-        </h1>
-        <p className="text-sm text-slate-500 mt-0.5">{storeName} · {y} 年 {parseInt(m)} 月</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <ShoppingCart className="h-5 w-5 text-orange-500" /> 叫貨明細
+          </h1>
+          <p className="text-sm text-slate-500 mt-0.5">{storeName} · {y} 年 {parseInt(m)} 月</p>
+        </div>
+        <a
+          href={`/api/export/food-cost?storeId=${storeId}&month=${month}`}
+          className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors"
+        >
+          <Download className="h-4 w-4" /> 匯出 Excel
+        </a>
       </div>
 
       {/* 月份統計 */}
