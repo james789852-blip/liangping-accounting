@@ -1,9 +1,51 @@
-export default function Page() {
+import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { redirect } from 'next/navigation'
+import { getEffectiveStoreId } from '@/lib/get-effective-store'
+import { getBusinessDate } from '@/lib/business-date'
+import ReceiptsClient from '@/components/manager/receipts-client'
+
+export const dynamic = 'force-dynamic'
+
+export default async function ReceiptsPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const { data: profile } = await supabase
+    .from('user_profiles').select('name, role, store_ids').eq('user_id', user.id).single()
+
+  const storeId = await getEffectiveStoreId(profile)
+  if (!storeId) {
+    return (
+      <div className="p-6 text-center text-slate-500 text-sm">
+        您尚未被指派到任何店家，請聯絡系統管理員。
+      </div>
+    )
+  }
+
+  const today = getBusinessDate()
+  const thirtyDaysAgo = new Date(new Date(today + 'T00:00:00+08:00').getTime() - 30 * 86400000)
+    .toISOString().slice(0, 10)
+
+  const admin = createAdminClient()
+  const { data: receipts } = await admin
+    .from('receipts')
+    .select('*, receipt_items(*)')
+    .eq('store_id', storeId)
+    .gte('business_date', thirtyDaysAgo)
+    .order('business_date', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  const { data: store } = await supabase
+    .from('stores').select('name').eq('id', storeId).single()
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
-      <div className="text-4xl mb-4">🚧</div>
-      <h1 className="text-xl font-bold text-slate-900">發票收據</h1>
-      <p className="text-slate-400 mt-2 text-sm">此功能建置中，敬請期待</p>
-    </div>
+    <ReceiptsClient
+      storeId={storeId}
+      storeName={store?.name ?? ''}
+      today={today}
+      receipts={receipts ?? []}
+    />
   )
 }
