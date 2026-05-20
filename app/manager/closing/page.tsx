@@ -2,8 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import ClosingForm from '@/components/manager/closing-form'
+import ClosingDoneCard from '@/components/manager/closing-done-card'
 import { Store, CKPrice } from '@/lib/types'
-import { format } from 'date-fns'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
 
@@ -41,7 +41,6 @@ export default async function ClosingPage() {
     .eq('active', true)
     .order('sort_order').order('item_name')
 
-  // UTC+8 直接加偏移，不依賴 ICU timezone 資料
   const today = getBusinessDate()
 
   const { data: existingClosing } = await supabase
@@ -57,13 +56,20 @@ export default async function ClosingPage() {
     ;(existingClosing as any).cash_counts = cashCounts ?? []
   }
 
-  if (existingClosing) {
-    if (['submitted', 'verified'].includes(existingClosing.status)) {
-      redirect('/manager/summary')
-    }
-    if (existingClosing.status === 'disputed') {
-      redirect(`/manager/edit/${existingClosing.id}`)
-    }
+  if (existingClosing && ['submitted', 'verified'].includes(existingClosing.status)) {
+    return (
+      <ClosingDoneCard
+        storeName={store?.name ?? ''}
+        businessDate={today}
+        status={existingClosing.status}
+        totalRevenue={existingClosing.total_revenue}
+        variance={existingClosing.variance}
+      />
+    )
+  }
+
+  if (existingClosing?.status === 'disputed') {
+    redirect(`/manager/edit/${existingClosing.id}`)
   }
 
   return (
