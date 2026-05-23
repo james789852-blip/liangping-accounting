@@ -94,11 +94,28 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
             <Building2 className="h-5 w-5 text-blue-400" />
             <div>
               <h1 className="font-bold text-white text-sm">梁平作帳系統</h1>
-              <p className="text-xs text-slate-400">總公司端</p>
+              <p className="text-xs text-slate-400">{isManagerPath ? '店長端' : '總公司端'}</p>
             </div>
           </div>
           {time && (
             <p className="text-lg font-bold tabular-nums text-white mt-2 tracking-wide">{time}</p>
+          )}
+          {hasStores && (
+            <Link
+              href={isManagerPath ? '/hq/dashboard' : '/manager/dashboard'}
+              className={cn(
+                'mt-2.5 flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                isManagerPath
+                  ? 'bg-blue-600/30 text-blue-300 hover:bg-blue-600/50'
+                  : 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/40'
+              )}
+            >
+              {isManagerPath ? (
+                <><Building2 className="h-3.5 w-3.5" /> 切換到總公司端</>
+              ) : (
+                <><ShoppingCart className="h-3.5 w-3.5" /> 切換到店長端</>
+              )}
+            </Link>
           )}
         </div>
 
