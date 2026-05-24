@@ -57,40 +57,39 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
   return (
     <>
       {/* ── 桌機側欄 */}
-      <aside className="hidden lg:flex flex-col w-60 shrink-0" style={{ backgroundColor: '#0c0e1a', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+      <aside className="hidden lg:flex flex-col w-64 shrink-0" style={{ background: '#0f1117', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
 
-        {/* 標頭 */}
-        <div className="px-4 pt-6 pb-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(99,102,241,0.15)' }}>
-              <Store className="h-4 w-4 text-indigo-400" />
+        {/* 品牌標頭 */}
+        <div className="relative px-5 pt-7 pb-6 overflow-hidden" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          {/* 背景光暈 */}
+          <div className="absolute -top-10 -left-10 h-40 w-40 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.18) 0%, transparent 70%)' }} />
+
+          <div className="relative flex items-center gap-3 mb-5">
+            <div className="h-10 w-10 rounded-2xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', boxShadow: '0 4px 12px rgba(99,102,241,0.45)' }}>
+              <Store className="h-5 w-5 text-white" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#64748b' }}>店長端</p>
+              <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">店長端</p>
               <p className="text-sm font-bold text-white truncate mt-0.5">{storeName || '未指派店家'}</p>
             </div>
           </div>
           {time && (
-            <p className="text-3xl font-bold tabular-nums text-white tracking-tight" style={{ fontVariantNumeric: 'tabular-nums' }}>{time}</p>
+            <p className="relative text-4xl font-bold text-white tabular-nums" style={{ letterSpacing: '-0.02em', fontFeatureSettings: '"tnum"' }}>{time}</p>
           )}
         </div>
 
         {/* 導覽 */}
-        <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href)
             return (
               <Link key={href} href={href}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                  'flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150',
                   active
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-slate-400 hover:text-white'
-                )}
-                style={!active ? { ':hover': { backgroundColor: 'rgba(255,255,255,0.06)' } } as any : undefined}
-                onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.06)' }}
-                onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
-              >
+                    ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-900/50'
+                    : 'text-slate-400 hover:text-white hover:bg-white/[0.06]'
+                )}>
                 <Icon className="h-4 w-4 shrink-0" />
                 {label}
               </Link>
@@ -98,61 +97,59 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
           })}
         </nav>
 
-        {/* 底部使用者 */}
+        {/* 使用者 */}
         <div className="px-3 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <div className="flex items-center gap-3 px-3 py-2 mb-1">
-            <div className="h-8 w-8 rounded-full flex items-center justify-center text-indigo-300 text-sm font-bold shrink-0" style={{ backgroundColor: 'rgba(99,102,241,0.2)' }}>
+          <div className="flex items-center gap-3 px-3 py-2 mb-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
+            <div className="h-8 w-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
               {initial}
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-white truncate">{userName}</p>
-              <p className="text-xs" style={{ color: '#64748b' }}>{role}</p>
+              <p className="text-xs text-slate-500">{role}</p>
             </div>
           </div>
           <button onClick={handleLogout}
-            className="flex w-full items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors text-slate-500 hover:text-white"
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)')}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}>
+            className="flex w-full items-center gap-3 px-3 py-2 rounded-xl text-sm text-slate-500 hover:text-white hover:bg-white/[0.06] transition-colors">
             <LogOut className="h-4 w-4" /> 登出
           </button>
         </div>
       </aside>
 
       {/* ── 手機頂部 */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-slate-200 flex items-center px-4" style={{ height: '56px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-        <div className="flex items-center gap-2.5 flex-1 min-w-0">
-          <div className="h-8 w-8 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
+      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white flex items-center px-4" style={{ height: '60px', borderBottom: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', boxShadow: '0 3px 8px rgba(99,102,241,0.35)' }}>
             <Store className="h-4 w-4 text-white" />
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900 truncate leading-tight">{storeName || '梁平作帳'}</p>
-            <p className="text-xs text-slate-400 leading-tight">{role}</p>
+            <p className="text-[10px] text-slate-400 leading-tight">{role}</p>
           </div>
         </div>
         {time && (
-          <p className="text-sm font-bold tabular-nums text-slate-700 mx-3">{time}</p>
+          <p className="text-sm font-bold tabular-nums mx-3" style={{ color: '#64748b', fontFeatureSettings: '"tnum"' }}>{time}</p>
         )}
         <button onClick={handleLogout}
-          className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition-colors">
+          className="h-9 w-9 flex items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 transition-colors">
           <LogOut className="h-4 w-4" />
         </button>
       </header>
 
       {/* ── 手機底部 Tab */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200" style={{ boxShadow: '0 -1px 0 rgba(0,0,0,0.06)' }}>
-        <div className="flex justify-around px-2 pt-2 pb-3">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white" style={{ borderTop: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 -4px 20px rgba(0,0,0,0.06)' }}>
+        <div className="flex px-2 pt-2 pb-3">
           {navItems.slice(0, 5).map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href)
             return (
               <Link key={href} href={href}
                 className="flex flex-col items-center gap-1 flex-1">
                 <div className={cn(
-                  'flex items-center justify-center w-10 h-7 rounded-xl transition-colors',
-                  active ? 'bg-indigo-50' : ''
+                  'flex items-center justify-center w-11 h-8 rounded-xl transition-all duration-200',
+                  active ? 'bg-indigo-600 shadow-sm shadow-indigo-500/30' : ''
                 )}>
-                  <Icon className={cn('h-5 w-5', active ? 'text-indigo-600' : 'text-slate-400')} />
+                  <Icon className={cn('h-5 w-5', active ? 'text-white' : 'text-slate-400')} />
                 </div>
-                <span className={cn('text-[10px] font-medium', active ? 'text-indigo-600' : 'text-slate-400')}>
+                <span className={cn('text-[10px] font-semibold', active ? 'text-indigo-600' : 'text-slate-400')}>
                   {label}
                 </span>
               </Link>
