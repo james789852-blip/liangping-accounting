@@ -56,23 +56,22 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
 
   return (
     <>
-      {/* ── 桌機側欄 ───────────────────────────────── */}
-      <aside className="hidden lg:flex flex-col w-64 shrink-0"
-        style={{ background: 'linear-gradient(180deg,#1e1b4b 0%,#3730a3 100%)' }}>
+      {/* ── 桌機側欄 */}
+      <aside className="hidden lg:flex flex-col w-60 shrink-0" style={{ backgroundColor: '#0c0e1a', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
 
         {/* 標頭 */}
-        <div className="px-5 pt-6 pb-4 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-amber-400/20 flex items-center justify-center shrink-0">
-              <Store className="h-4.5 w-4.5 text-amber-400" />
+        <div className="px-4 pt-6 pb-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(99,102,241,0.15)' }}>
+              <Store className="h-4 w-4 text-indigo-400" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-indigo-300 uppercase tracking-widest">店長端</p>
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#64748b' }}>店長端</p>
               <p className="text-sm font-bold text-white truncate mt-0.5">{storeName || '未指派店家'}</p>
             </div>
           </div>
           {time && (
-            <p className="text-3xl font-bold tabular-nums text-white mt-4 tracking-tight">{time}</p>
+            <p className="text-3xl font-bold tabular-nums text-white tracking-tight" style={{ fontVariantNumeric: 'tabular-nums' }}>{time}</p>
           )}
         </div>
 
@@ -83,12 +82,16 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
             return (
               <Link key={href} href={href}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150',
+                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
                   active
-                    ? 'bg-white text-indigo-700 shadow-md shadow-indigo-950/30'
-                    : 'text-indigo-200 hover:bg-white/10 hover:text-white'
-                )}>
-                <Icon className={cn('h-4 w-4 shrink-0', active ? 'text-indigo-600' : '')} />
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-400 hover:text-white'
+                )}
+                style={!active ? { ':hover': { backgroundColor: 'rgba(255,255,255,0.06)' } } as any : undefined}
+                onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.06)' }}
+                onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
                 {label}
               </Link>
             )
@@ -96,62 +99,60 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
         </nav>
 
         {/* 底部使用者 */}
-        <div className="px-3 py-4 border-t border-white/10">
-          <div className="flex items-center gap-3 px-2 py-2 mb-1">
-            <div className="h-8 w-8 rounded-full bg-indigo-500/40 flex items-center justify-center text-white text-sm font-bold shrink-0">
+        <div className="px-3 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center gap-3 px-3 py-2 mb-1">
+            <div className="h-8 w-8 rounded-full flex items-center justify-center text-indigo-300 text-sm font-bold shrink-0" style={{ backgroundColor: 'rgba(99,102,241,0.2)' }}>
               {initial}
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-white truncate">{userName}</p>
-              <p className="text-xs text-indigo-300">{role}</p>
+              <p className="text-xs" style={{ color: '#64748b' }}>{role}</p>
             </div>
           </div>
           <button onClick={handleLogout}
-            className="flex w-full items-center gap-3 px-3 py-2 rounded-xl text-sm text-indigo-300 hover:bg-white/10 hover:text-white transition-colors">
+            className="flex w-full items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors text-slate-500 hover:text-white"
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}>
             <LogOut className="h-4 w-4" /> 登出
           </button>
         </div>
       </aside>
 
-      {/* ── 手機頂部 ───────────────────────────────── */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-slate-100 shadow-sm flex items-center px-4 h-13" style={{ height: '52px' }}>
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <div className="h-7 w-7 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">
-            <Store className="h-3.5 w-3.5 text-white" />
+      {/* ── 手機頂部 */}
+      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-slate-200 flex items-center px-4" style={{ height: '56px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+          <div className="h-8 w-8 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
+            <Store className="h-4 w-4 text-white" />
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900 truncate leading-tight">{storeName || '梁平作帳'}</p>
-            <p className="text-[10px] text-indigo-500 font-medium leading-tight">{role}</p>
+            <p className="text-xs text-slate-400 leading-tight">{role}</p>
           </div>
         </div>
         {time && (
-          <p className="text-sm font-bold tabular-nums text-indigo-600 mx-3 tracking-wide">{time}</p>
+          <p className="text-sm font-bold tabular-nums text-slate-700 mx-3">{time}</p>
         )}
         <button onClick={handleLogout}
-          className="h-8 w-8 flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+          className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition-colors">
           <LogOut className="h-4 w-4" />
         </button>
       </header>
 
-      {/* ── 手機底部 Tab ────────────────────────────── */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md"
-        style={{ boxShadow: '0 -1px 0 rgba(0,0,0,0.06), 0 -4px 16px rgba(79,70,229,0.08)' }}>
-        <div className="flex justify-around px-1 py-1.5">
+      {/* ── 手機底部 Tab */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200" style={{ boxShadow: '0 -1px 0 rgba(0,0,0,0.06)' }}>
+        <div className="flex justify-around px-2 pt-2 pb-3">
           {navItems.slice(0, 5).map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href)
             return (
               <Link key={href} href={href}
-                className="flex flex-col items-center gap-0.5 flex-1 py-1">
+                className="flex flex-col items-center gap-1 flex-1">
                 <div className={cn(
-                  'flex items-center justify-center w-11 h-7 rounded-2xl transition-all duration-200',
-                  active ? 'bg-indigo-100' : ''
+                  'flex items-center justify-center w-10 h-7 rounded-xl transition-colors',
+                  active ? 'bg-indigo-50' : ''
                 )}>
                   <Icon className={cn('h-5 w-5', active ? 'text-indigo-600' : 'text-slate-400')} />
                 </div>
-                <span className={cn(
-                  'text-[9px] font-medium leading-tight',
-                  active ? 'text-indigo-600 font-semibold' : 'text-slate-400'
-                )}>
+                <span className={cn('text-[10px] font-medium', active ? 'text-indigo-600' : 'text-slate-400')}>
                   {label}
                 </span>
               </Link>

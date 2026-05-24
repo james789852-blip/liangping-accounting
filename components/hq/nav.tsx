@@ -9,7 +9,7 @@ import {
   Store, BarChart3, FileSpreadsheet, Shield,
   Settings, Users, LogOut, Building2,
   ClipboardList, Wallet, ShoppingCart, FileText, History, Download,
-  ArrowLeftRight,
+  ArrowRightLeft,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
@@ -85,54 +85,52 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   ]
   const mobileTabs = isManagerPath ? managerNavItems.slice(0, 5) : mobileHQTabs
   const hasStores = allStores.length > 0
-
   const initial = userName ? userName.slice(0, 1) : '?'
 
   return (
     <>
-      {/* ── 桌機側欄 ───────────────────────────────── */}
-      <aside className="hidden lg:flex flex-col w-60 shrink-0"
-        style={{ background: 'linear-gradient(180deg,#0c0f1e 0%,#0f2057 60%,#1a3a8f 100%)' }}>
+      {/* ── 桌機側欄 */}
+      <aside className="hidden lg:flex flex-col w-60 shrink-0" style={{ backgroundColor: '#0c0e1a', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
 
         {/* 標頭 */}
-        <div className="px-4 pt-5 pb-4 border-b border-white/10">
-          <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-xl bg-blue-400/20 flex items-center justify-center shrink-0">
-              <Building2 className="h-4 w-4 text-blue-300" />
+        <div className="px-4 pt-6 pb-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(59,130,246,0.15)' }}>
+              <Building2 className="h-4 w-4 text-blue-400" />
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-blue-400 uppercase tracking-widest">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#64748b' }}>
                 {isManagerPath ? '店長端' : '總公司端'}
               </p>
-              <p className="text-sm font-bold text-white truncate">梁平作帳系統</p>
+              <p className="text-sm font-bold text-white truncate mt-0.5">梁平作帳系統</p>
             </div>
           </div>
           {time && (
-            <p className="text-2xl font-bold tabular-nums text-white mt-3 tracking-tight">{time}</p>
+            <p className="text-3xl font-bold tabular-nums text-white tracking-tight">{time}</p>
           )}
 
           {/* 切換按鈕 */}
           {hasStores && (
             <Link
               href={isManagerPath ? '/hq/dashboard' : '/manager/dashboard'}
-              className={cn(
-                'mt-3 flex items-center justify-center gap-2 w-full px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-150',
-                isManagerPath
-                  ? 'bg-blue-500/25 text-blue-200 hover:bg-blue-500/40 border border-blue-500/30'
-                  : 'bg-amber-500/25 text-amber-200 hover:bg-amber-500/40 border border-amber-500/30'
-              )}
+              className="mt-4 flex items-center justify-center gap-2 w-full py-2 rounded-xl text-xs font-semibold transition-colors"
+              style={{
+                backgroundColor: isManagerPath ? 'rgba(59,130,246,0.12)' : 'rgba(245,158,11,0.12)',
+                color: isManagerPath ? '#93c5fd' : '#fcd34d',
+                border: isManagerPath ? '1px solid rgba(59,130,246,0.2)' : '1px solid rgba(245,158,11,0.2)',
+              }}
             >
-              <ArrowLeftRight className="h-3.5 w-3.5" />
+              <ArrowRightLeft className="h-3.5 w-3.5" />
               {isManagerPath ? '切換到總公司端' : '切換到店長端'}
             </Link>
           )}
         </div>
 
         {/* 導覽 */}
-        <nav className="flex-1 px-2.5 py-3 overflow-y-auto space-y-4">
-          {/* 總公司端 */}
+        <nav className="flex-1 px-3 py-3 overflow-y-auto space-y-4">
+          {/* 總公司 */}
           <div>
-            <p className="px-3 pb-1.5 text-[10px] font-semibold text-blue-400/70 uppercase tracking-widest">
+            <p className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#475569' }}>
               總公司端
             </p>
             <div className="space-y-0.5">
@@ -141,11 +139,12 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                 return (
                   <Link key={href} href={href}
                     className={cn(
-                      'flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150',
-                      active
-                        ? 'bg-blue-500 text-white shadow-md shadow-blue-900/40'
-                        : 'text-blue-200/80 hover:bg-white/8 hover:text-white'
-                    )}>
+                      'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                      active ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                    )}
+                    onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.06)' }}
+                    onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
+                  >
                     <Icon className="h-4 w-4 shrink-0" />
                     {label}
                   </Link>
@@ -157,18 +156,19 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           {/* 店長端 */}
           {hasStores && (
             <div>
-              <div className="flex items-center gap-2 px-3 pb-1.5">
-                <p className="text-[10px] font-semibold text-amber-400/70 uppercase tracking-widest flex-1">
+              <div className="flex items-center gap-2 px-3 mb-1.5">
+                <p className="flex-1 text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#475569' }}>
                   店長端
                 </p>
                 {allStores.length > 1 ? (
                   <StoreSwitcher
                     stores={allStores}
                     currentStoreId={currentStoreId}
-                    className="text-xs border border-white/20 rounded-lg px-1.5 py-0.5 bg-white/10 text-white focus:outline-none focus:ring-1 focus:ring-amber-400 max-w-[90px] truncate"
+                    className="text-xs rounded-lg px-2 py-0.5 text-slate-300 focus:outline-none max-w-[90px] truncate"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)' }}
                   />
                 ) : (
-                  <span className="text-xs text-amber-300/70 truncate max-w-[90px]">{allStores[0]?.name}</span>
+                  <span className="text-xs text-slate-500 truncate max-w-[90px]">{allStores[0]?.name}</span>
                 )}
               </div>
               <div className="space-y-0.5">
@@ -177,11 +177,12 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                   return (
                     <Link key={href} href={href}
                       className={cn(
-                        'flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150',
-                        active
-                          ? 'bg-amber-500 text-white shadow-md shadow-amber-900/40'
-                          : 'text-amber-200/80 hover:bg-white/8 hover:text-white'
-                      )}>
+                        'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                        active ? 'bg-amber-500 text-white' : 'text-slate-400 hover:text-white'
+                      )}
+                      onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.06)' }}
+                      onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
+                    >
                       <Icon className="h-4 w-4 shrink-0" />
                       {label}
                     </Link>
@@ -193,98 +194,88 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         </nav>
 
         {/* 底部使用者 */}
-        <div className="px-2.5 py-3 border-t border-white/10">
-          <div className="flex items-center gap-2.5 px-3 py-2 mb-1">
-            <div className="h-7 w-7 rounded-full bg-blue-400/30 flex items-center justify-center text-white text-xs font-bold shrink-0">
+        <div className="px-3 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center gap-3 px-3 py-2 mb-1">
+            <div className="h-8 w-8 rounded-full flex items-center justify-center text-blue-300 text-sm font-bold shrink-0" style={{ backgroundColor: 'rgba(59,130,246,0.2)' }}>
               {initial}
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-white truncate">{userName}</p>
-              <p className="text-xs text-blue-300/80">{role}</p>
+              <p className="text-xs" style={{ color: '#64748b' }}>{role}</p>
             </div>
           </div>
           <button onClick={handleLogout}
-            className="flex w-full items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-blue-200/70 hover:bg-white/8 hover:text-white transition-colors">
+            className="flex w-full items-center gap-3 px-3 py-2 rounded-xl text-sm text-slate-500 hover:text-white transition-colors"
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}>
             <LogOut className="h-4 w-4" /> 登出
           </button>
         </div>
       </aside>
 
-      {/* ── 手機頂部 ───────────────────────────────── */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 h-[52px]"
-        style={{ background: 'linear-gradient(90deg,#0f2057 0%,#1a3a8f 100%)', boxShadow: '0 1px 0 rgba(255,255,255,0.06)' }}>
-        <div className="flex items-center gap-2 min-w-0">
+      {/* ── 手機頂部 */}
+      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-slate-200 flex items-center justify-between px-4" style={{ height: '56px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+        <div className="flex items-center gap-2.5 min-w-0">
           {isManagerPath && hasStores ? (
-            <Link href="/hq/dashboard" className="flex items-center gap-1.5 shrink-0 text-blue-300/70 hover:text-white transition-colors">
-              <Building2 className="h-4 w-4 text-blue-300" />
-              <span className="text-xs">總公司</span>
+            <Link href="/hq/dashboard" className="flex items-center gap-1.5 shrink-0 text-slate-400 hover:text-slate-700 transition-colors">
+              <Building2 className="h-4 w-4 text-blue-500" />
+              <span className="text-xs text-slate-500">總公司</span>
             </Link>
           ) : (
-            <Building2 className="h-4 w-4 text-blue-300 shrink-0" />
+            <div className="h-8 w-8 rounded-xl bg-blue-600 flex items-center justify-center shrink-0">
+              <Building2 className="h-4 w-4 text-white" />
+            </div>
           )}
 
           {isManagerPath && hasStores ? (
             <>
-              <span className="text-white/30 text-xs">/</span>
-              <span className="text-xs text-white/60 shrink-0">店長端</span>
+              <span className="text-slate-300 text-sm">/</span>
               {allStores.length > 1 ? (
-                <StoreSwitcher
-                  stores={allStores}
-                  currentStoreId={currentStoreId}
-                  className="text-sm font-bold border border-white/20 rounded-lg px-2 py-0.5 bg-white/10 text-white focus:outline-none max-w-[140px]"
-                />
+                <StoreSwitcher stores={allStores} currentStoreId={currentStoreId}
+                  className="text-sm font-bold text-slate-900 border border-slate-200 rounded-lg px-2 py-0.5 bg-white focus:outline-none max-w-[150px]" />
               ) : (
-                <span className="font-bold text-sm text-white truncate">{allStores[0]?.name}</span>
+                <span className="font-bold text-sm text-slate-900 truncate">{allStores[0]?.name}</span>
               )}
             </>
           ) : (
-            <span className="font-bold text-sm text-white">梁平作帳 · 總公司</span>
+            <span className="font-bold text-sm text-slate-900">梁平作帳 · 總公司</span>
           )}
         </div>
 
         <div className="flex items-center gap-3">
-          {time && (
-            <span className="text-sm font-bold tabular-nums text-white/90 tracking-wide">{time}</span>
-          )}
+          {time && <span className="text-sm font-bold tabular-nums text-slate-700">{time}</span>}
           {!isManagerPath && hasStores && (
             <Link href="/manager/dashboard"
-              className="text-xs font-semibold bg-amber-500 text-white rounded-lg px-2.5 py-1 hover:bg-amber-400 transition-colors">
+              className="text-xs font-semibold bg-amber-500 text-white rounded-lg px-2.5 py-1.5 hover:bg-amber-600 transition-colors">
               店長端
             </Link>
           )}
           {isManagerPath && hasStores && (
             <Link href="/hq/dashboard"
-              className="text-xs font-semibold bg-blue-500/40 text-blue-100 rounded-lg px-2.5 py-1 hover:bg-blue-500/60 transition-colors border border-blue-400/30">
+              className="text-xs font-semibold bg-blue-600 text-white rounded-lg px-2.5 py-1.5 hover:bg-blue-700 transition-colors">
               總公司
             </Link>
           )}
-          <button onClick={handleLogout} className="text-white/60 hover:text-white transition-colors">
+          <button onClick={handleLogout} className="text-slate-400 hover:text-slate-600 transition-colors">
             <LogOut className="h-4 w-4" />
           </button>
         </div>
       </header>
 
-      {/* ── 手機底部 Tab ────────────────────────────── */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md"
-        style={{ boxShadow: '0 -1px 0 rgba(0,0,0,0.06), 0 -4px 16px rgba(15,32,87,0.10)' }}>
-        <div className="flex justify-around px-1 py-1.5">
+      {/* ── 手機底部 Tab */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200" style={{ boxShadow: '0 -1px 0 rgba(0,0,0,0.06)' }}>
+        <div className="flex justify-around px-2 pt-2 pb-3">
           {mobileTabs.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href)
             const activeColor = isManagerPath ? 'text-amber-600' : 'text-blue-600'
-            const activeBg = isManagerPath ? 'bg-amber-100' : 'bg-blue-100'
+            const activeBg = isManagerPath ? 'bg-amber-50' : 'bg-blue-50'
             return (
               <Link key={href} href={href}
-                className="flex flex-col items-center gap-0.5 flex-1 py-1">
-                <div className={cn(
-                  'flex items-center justify-center w-11 h-7 rounded-2xl transition-all duration-200',
-                  active ? activeBg : ''
-                )}>
+                className="flex flex-col items-center gap-1 flex-1">
+                <div className={cn('flex items-center justify-center w-10 h-7 rounded-xl transition-colors', active ? activeBg : '')}>
                   <Icon className={cn('h-5 w-5', active ? activeColor : 'text-slate-400')} />
                 </div>
-                <span className={cn(
-                  'text-[9px] font-medium leading-tight',
-                  active ? cn(activeColor, 'font-semibold') : 'text-slate-400'
-                )}>
+                <span className={cn('text-[10px] font-medium', active ? activeColor : 'text-slate-400')}>
                   {label}
                 </span>
               </Link>
