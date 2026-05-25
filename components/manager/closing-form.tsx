@@ -46,7 +46,7 @@ interface FormData {
   panda_amount: number
   twpay_amount: number
   online_amount: number
-  ck_quantities: Record<string, number>
+  ck_total: number
   bills_1000: number; bills_500: number; bills_100: number
   coins_50: number; coins_10: number; coins_5: number; coins_1: number
   lump_1000: number; lump_500: number; lump_100: number
@@ -70,26 +70,16 @@ interface HandwriteOrder {
 
 function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayReceipts?: TodayReceipt[]): FormData {
   const uber_amounts: Record<string, number> = {}
-  const ck_quantities: Record<string, number> = {}
   ;(store.uber_accounts ?? []).forEach(acc => { uber_amounts[acc] = 0 })
-  ckPrices.forEach(p => { ck_quantities[p.item_name] = 0 })
 
   if (!existing) {
-    // 從央廚收據自動填入央廚配送數量
-    if (todayReceipts) {
-      const ckReceipts = todayReceipts.filter(r => isCKReceipt(r, ckPrices))
-      ckReceipts.forEach(r => {
-        (r.receipt_items ?? []).forEach(item => {
-          const price = findCKPrice(item.item_name, ckPrices)
-          if (price && price.unit_price > 0) {
-            ck_quantities[price.item_name] = (ck_quantities[price.item_name] ?? 0) + item.amount / price.unit_price
-          }
-        })
-      })
-    }
+    // 自動從央廚收據加總配送金額
+    const ck_total = todayReceipts
+      ? todayReceipts.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
+      : 0
     return {
       pos_cash: 0, uber_amounts, panda_amount: 0, twpay_amount: 0,
-      online_amount: 0, ck_quantities,
+      online_amount: 0, ck_total,
       bills_1000: 0, bills_500: 0, bills_100: 0,
       coins_50: 0, coins_10: 0, coins_5: 0, coins_1: 0,
       lump_1000: 0, lump_500: 0, lump_100: 0,
@@ -106,10 +96,11 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayRec
     const r = rev.find((x: any) => x.channel === 'uber' && x.account_name === acc)
     uber_amounts[acc] = r?.gross_amount ?? 0
   })
-  ckPrices.forEach(p => {
-    const o = orders.find((x: any) => x.item_name === p.item_name)
-    ck_quantities[p.item_name] = o?.quantity ?? 0
-  })
+  // 舊資料：單筆 '央廚配送' or 加總所有 vendor='央廚' 的項目
+  const ckSingle = orders.find((x: any) => x.item_name === '央廚配送')
+  const ck_total = ckSingle
+    ? (ckSingle.total_amount ?? 0)
+    : orders.filter((x: any) => x.vendor === '央廚').reduce((s: number, o: any) => s + (o.total_amount ?? 0), 0)
 
   return {
     pos_cash: rev.find((x: any) => x.channel === 'pos')?.gross_amount ?? 0,
@@ -117,7 +108,7 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayRec
     panda_amount: rev.find((x: any) => x.channel === 'panda')?.gross_amount ?? 0,
     twpay_amount: rev.find((x: any) => x.channel === 'twpay')?.gross_amount ?? 0,
     online_amount: rev.find((x: any) => x.channel === 'online')?.gross_amount ?? 0,
-    ck_quantities,
+    ck_total,
     bills_1000: cash.bills_1000 ?? 0, bills_500: cash.bills_500 ?? 0, bills_100: cash.bills_100 ?? 0,
     coins_50: cash.coins_50 ?? 0, coins_10: cash.coins_10 ?? 0, coins_5: cash.coins_5 ?? 0, coins_1: cash.coins_1 ?? 0,
     lump_1000: cash.lump_1000 ?? 0, lump_500: cash.lump_500 ?? 0, lump_100: cash.lump_100 ?? 0,
@@ -169,7 +160,7 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
     ? data.pos_cash
     : data.pos_cash + handwriteTotal + platformTotal
 
-  const deliveryFee = ckPrices.reduce((s, p) => s + p.unit_price * (data.ck_quantities[p.item_name] ?? 0), 0)
+  const deliveryFee = data.ck_total
   const shouldEnvelope = totalRevenue - platformTotal - totalExpenses
   const netToHQ = shouldEnvelope - deliveryFee
 
@@ -364,19 +355,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       const typed = receipts as TodayReceipt[]
       // 非央廚收據 → 支出
       setExpenses(receiptsToExpenses(typed, ckPrices))
-      // 央廚收據 → 央廚配送數量
-      const newCKQty: Record<string, number> = {}
-      ckPrices.forEach(p => { newCKQty[p.item_name] = 0 })
-      typed.filter(r => isCKReceipt(r, ckPrices)).forEach(r => {
-        (r.receipt_items ?? []).forEach(item => {
-          const price = findCKPrice(item.item_name, ckPrices)
-          if (price && price.unit_price > 0) {
-            newCKQty[price.item_name] = (newCKQty[price.item_name] ?? 0) + item.amount / price.unit_price
-          }
-        })
-      })
-      set('ck_quantities', newCKQty)
-      const ckCount = typed.filter(r => isCKReceipt(r, ckPrices)).length
+      // 央廚收據 → 加總配送金額
+      const ckReceipts = typed.filter(r => isCKReceipt(r, ckPrices))
+      const ckTotal = ckReceipts.reduce((s, r) => s + r.total_amount, 0)
+      set('ck_total', ckTotal)
+      const ckCount = ckReceipts.length
       const nonCKCount = typed.length - ckCount
       const parts: string[] = []
       if (nonCKCount > 0) parts.push(`${nonCKCount} 筆現金支出`)
@@ -490,15 +473,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (cashResult.error) throw new Error('現金清點儲存失敗：' + cashResult.error)
 
       await supabase.from('order_items').delete().eq('closing_id', cid)
-      const ckItems = ckPrices
-        .filter(p => (d.ck_quantities[p.item_name] ?? 0) > 0)
-        .map(p => ({
-          closing_id: cid, vendor: '央廚', item_name: p.item_name,
-          unit_price: p.unit_price, quantity: d.ck_quantities[p.item_name],
-          total_amount: p.unit_price * d.ck_quantities[p.item_name],
-          excel_column: p.excel_column,
-        }))
-      if (ckItems.length) await supabase.from('order_items').insert(ckItems)
+      if (d.ck_total > 0) {
+        await supabase.from('order_items').insert({
+          closing_id: cid, vendor: '央廚', item_name: '央廚配送',
+          unit_price: d.ck_total, quantity: 1, total_amount: d.ck_total,
+        })
+      }
 
       await supabase.from('expense_items').delete().eq('closing_id', cid)
       const expItems = expenses
@@ -815,7 +795,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         )}
 
         {/* 4. 央廚配送 */}
-        <SectionCard icon={<Package className="h-4 w-4" />} title="央廚配送" iconColor="#f97316">
+        <SectionCard icon={<Package className="h-4 w-4" />} title="央廚配送" subtitle="配送總金額（月底結）" iconColor="#f97316">
           {!isLocked && (
             <div className="flex justify-end mb-3">
               <button onClick={syncFromReceipts} disabled={syncing}
@@ -826,24 +806,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </button>
             </div>
           )}
-          <div className="space-y-3">
-            {ckPrices.map(p => (
-              <div key={p.id}>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>{p.item_name}</label>
-                <div className="flex items-center gap-2">
-                  <SInput
-                    value={data.ck_quantities[p.item_name] || 0}
-                    onChange={v => set('ck_quantities', { ...data.ck_quantities, [p.item_name]: v })}
-                    disabled={isLocked} step="0.5"
-                  />
-                  <span className="text-xs shrink-0" style={{ color: '#a1a1aa' }}>× ${p.unit_price}</span>
-                  <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: '#18181b', minWidth: '72px', textAlign: 'right' }}>
-                    = ${fmt(p.unit_price * (data.ck_quantities[p.item_name] ?? 0))}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <SInput
+            value={data.ck_total || 0}
+            onChange={v => set('ck_total', v)}
+            disabled={isLocked}
+          />
           <Divider />
           <div className="flex justify-between items-center">
             <span className="text-sm font-semibold" style={{ color: '#18181b' }}>配送費合計</span>
