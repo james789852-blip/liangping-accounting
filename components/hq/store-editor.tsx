@@ -156,7 +156,7 @@ export default function StoreEditor({ store, canEdit }: Props) {
                       style={{ flex: 1, height: '36px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
                       value={newAccount}
                       onChange={e => setNewAccount(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') addAccount() }}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.isComposing) addAccount() }}
                     />
                     <button type="button" onClick={addAccount}
                       className="flex items-center gap-1 px-3 rounded-xl text-sm font-medium"
