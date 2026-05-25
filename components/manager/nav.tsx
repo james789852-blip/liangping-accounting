@@ -72,10 +72,7 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
 
         {/* 品牌 */}
         <div className="flex items-center gap-3 px-5 pt-6 pb-5">
-          <div className="h-9 w-9 rounded-[10px] flex items-center justify-center text-white font-extrabold text-base shrink-0"
-            style={{ background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%)' }}>
-            梁
-          </div>
+          <img src="/icon.png" alt="logo" className="h-9 w-9 rounded-[10px] object-cover shrink-0" />
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>梁平-作帳</p>
             <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>{storeName || '未指派'} · {role}</p>
@@ -127,29 +124,13 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
           </button>
         </nav>
 
-        {/* 使用者 */}
-        <div className="px-4 py-4" style={{ borderTop: '1px solid #f4f4f5' }}>
-          <div className="flex items-center gap-3 px-2">
-            <div className="h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0"
-              style={{ background: 'linear-gradient(135deg,#f97316,#f59e0b)' }}>
-              {initial}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900 truncate">{userName}</p>
-              <p className="text-xs truncate" style={{ color: '#a1a1aa' }}>{role}</p>
-            </div>
-          </div>
-        </div>
       </aside>
 
       {/* ── 手機頂部 */}
       <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white flex items-center px-4"
         style={{ height: '56px', borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
-          <div className="h-8 w-8 rounded-[8px] flex items-center justify-center text-white font-extrabold text-sm shrink-0"
-            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899)' }}>
-            梁
-          </div>
+          <img src="/icon.png" alt="logo" className="h-8 w-8 rounded-[8px] object-cover shrink-0" />
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900 truncate leading-tight">{storeName || '梁平-作帳'}</p>
             <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{role}</p>

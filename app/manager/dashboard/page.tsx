@@ -113,24 +113,12 @@ export default async function ManagerDashboard() {
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
 
-      {/* 頁面頂部 user bar */}
-      <div className="bg-white flex items-center justify-between px-6 py-4 sticky top-0 z-10 lg:static"
+      {/* 頁面頂部 */}
+      <div className="bg-white px-6 py-4 sticky top-0 z-10 lg:static"
         style={{ borderBottom: '1px solid #f4f4f5' }}>
-        <div>
-          <p style={{ color: '#a1a1aa', fontSize: '13px' }}>
-            儀表板 / <strong style={{ color: '#18181b' }}>今日狀態</strong>
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="text-right hidden sm:block">
-            <p className="text-sm font-semibold text-slate-900">{profile?.name}</p>
-            <p className="text-xs" style={{ color: '#a1a1aa' }}>{store?.name} · {profile?.role}</p>
-          </div>
-          <div className="h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-semibold"
-            style={{ background: 'linear-gradient(135deg,#f97316,#f59e0b)' }}>
-            {profile?.name?.slice(0, 1) ?? '?'}
-          </div>
-        </div>
+        <p style={{ color: '#a1a1aa', fontSize: '13px' }}>
+          儀表板 / <strong style={{ color: '#18181b' }}>今日狀態</strong>
+        </p>
       </div>
 
       <div className="max-w-3xl mx-auto px-4 lg:px-8 pt-6 pb-28 space-y-6 lg:pb-8">
