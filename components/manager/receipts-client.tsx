@@ -50,7 +50,7 @@ function inputStyle(extra?: object) {
 }
 
 function ReceiptCard({ receipt, onDelete, onUpdated }: {
-  receipt: ReceiptData; onDelete: () => void; onUpdated: () => void
+  receipt: ReceiptData; onDelete: (id: string) => void; onUpdated: (updated: ReceiptData) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPhoto, setShowPhoto] = useState(false)
@@ -84,19 +84,30 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
 
   async function handleSave() {
     setSaving(true)
+    const filteredItems = editItems.filter(i => i.item_name.trim())
     const result = await updateReceipt(receipt.id, {
       businessDate: editDate, vendorName: editVendor, receiptType: editType,
       totalAmount: editTotal, taxAmount: editTax, photoUrl: receipt.photo_url,
-      notes: editNotes, items: editItems.filter(i => i.item_name.trim()),
+      notes: editNotes, items: filteredItems,
     })
     setSaving(false)
     if (result?.error) { alert('儲存失敗：' + result.error); return }
-    setEditing(false); onUpdated()
+    setEditing(false)
+    onUpdated({
+      ...receipt,
+      business_date: editDate, vendor_name: editVendor, receipt_type: editType,
+      total_amount: editTotal, tax_amount: editTax, notes: editNotes,
+      receipt_items: filteredItems.map((item, idx) => ({
+        id: receipt.receipt_items[idx]?.id ?? `local-${idx}`,
+        item_name: item.item_name, amount: item.amount,
+        excel_column: item.excel_column, item_category: item.item_category,
+      })),
+    })
   }
 
   async function handleDelete() {
     if (!confirm('確定要刪除這筆收據嗎？')) return
-    setDeleting(true); await deleteReceipt(receipt.id); onDelete()
+    setDeleting(true); await deleteReceipt(receipt.id); onDelete(receipt.id)
   }
 
   const st = STATUS_STYLE[receipt.status] ?? STATUS_STYLE.draft
@@ -385,7 +396,8 @@ export default function ReceiptsClient({ storeId, storeName, today, receipts: in
               </div>
               {grouped[date].map(r => (
                 <ReceiptCard key={r.id} receipt={r}
-                  onDelete={() => router.refresh()} onUpdated={() => router.refresh()} />
+                  onDelete={(id) => setReceipts(prev => prev.filter(r => r.id !== id))}
+                  onUpdated={(updated) => setReceipts(prev => prev.map(r => r.id === updated.id ? updated : r))} />
               ))}
             </div>
           ))
