@@ -187,8 +187,8 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
             </div>
           ))}
 
-          {/* 店長端 StoreSwitcher (只在 hq 路徑且有多店時顯示) */}
-          {!isManagerPath && hasStores && allStores.length > 1 && (
+          {/* 切換店家（有多店時顯示） */}
+          {hasStores && allStores.length > 1 && (
             <div className="mt-3 px-3">
               <p className="text-[11px] font-semibold uppercase mb-2" style={{ color: '#a1a1aa', letterSpacing: '0.05em' }}>切換店家</p>
               <StoreSwitcher
