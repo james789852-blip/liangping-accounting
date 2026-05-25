@@ -1,61 +1,35 @@
 'use client'
 
 import { useState } from 'react'
-import { cn } from '@/lib/utils'
-import { FileText, Plus, Trash2, Image, ChevronDown, ChevronUp, Receipt, Edit2, Check, X } from 'lucide-react'
+import { FileText, Plus, Trash2, ChevronDown, ChevronUp, Edit2, Check, X, Receipt } from 'lucide-react'
 import { deleteReceipt, updateReceipt } from '@/app/actions/receipts'
 import ReceiptUpload from './receipt-upload'
 import { useRouter } from 'next/navigation'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 
 interface ReceiptItem {
-  id: string
-  item_name: string
-  amount: number
-  excel_column: string
-  item_category: string
+  id: string; item_name: string; amount: number; excel_column: string; item_category: string
 }
-
-interface Receipt {
-  id: string
-  business_date: string
-  vendor_name: string
-  receipt_type: string
-  total_amount: number
-  tax_amount: number
-  photo_url: string
-  status: string
-  notes: string
-  created_at: string
-  receipt_items: ReceiptItem[]
+interface ReceiptData {
+  id: string; business_date: string; vendor_name: string; receipt_type: string
+  total_amount: number; tax_amount: number; photo_url: string; status: string
+  notes: string; created_at: string; receipt_items: ReceiptItem[]
 }
-
 interface MappingMap { [k: string]: { excel_column: string; item_category: string } }
-
 interface Props {
-  storeId: string
-  storeName: string
-  today: string
-  receipts: Receipt[]
-  mappings: MappingMap
+  storeId: string; storeName: string; today: string; receipts: ReceiptData[]; mappings: MappingMap
 }
 
 const TYPE_LABEL: Record<string, string> = {
-  invoice: '統一發票',
-  receipt: '收據',
-  delivery_note: '估價單',
+  invoice: '統一發票', receipt: '收據', delivery_note: '估價單',
 }
-
-const STATUS_STYLE: Record<string, string> = {
-  draft: 'bg-slate-100 text-slate-600',
-  submitted: 'bg-blue-100 text-blue-700',
-  verified: 'bg-green-100 text-green-700',
+const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
+  draft:     { bg: '#f1f5f9', color: '#475569' },
+  submitted: { bg: '#eef2ff', color: '#4338ca' },
+  verified:  { bg: '#d1fae5', color: '#065f46' },
 }
-
 const STATUS_LABEL: Record<string, string> = {
-  draft: '草稿',
-  submitted: '已送出',
-  verified: '已確認',
+  draft: '草稿', submitted: '已送出', verified: '已確認',
 }
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -67,10 +41,16 @@ function formatDate(d: string) {
 
 interface EditItem { item_name: string; amount: number; excel_column: string; item_category: string }
 
+function inputStyle(extra?: object) {
+  return {
+    padding: '9px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px',
+    fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit',
+    width: '100%', ...extra,
+  }
+}
+
 function ReceiptCard({ receipt, onDelete, onUpdated }: {
-  receipt: Receipt
-  onDelete: () => void
-  onUpdated: () => void
+  receipt: ReceiptData; onDelete: () => void; onUpdated: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPhoto, setShowPhoto] = useState(false)
@@ -78,7 +58,6 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  // edit state
   const [editVendor, setEditVendor] = useState(receipt.vendor_name)
   const [editType, setEditType] = useState(receipt.receipt_type)
   const [editDate, setEditDate] = useState(receipt.business_date)
@@ -87,143 +66,126 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
   const [editNotes, setEditNotes] = useState(receipt.notes ?? '')
   const [editItems, setEditItems] = useState<EditItem[]>(
     receipt.receipt_items.map(i => ({
-      item_name: i.item_name,
-      amount: i.amount,
-      excel_column: i.excel_column ?? '',
-      item_category: i.item_category ?? '食材',
+      item_name: i.item_name, amount: i.amount,
+      excel_column: i.excel_column ?? '', item_category: i.item_category ?? '食材',
     }))
   )
 
   function startEdit() {
-    setEditVendor(receipt.vendor_name)
-    setEditType(receipt.receipt_type)
-    setEditDate(receipt.business_date)
-    setEditTotal(receipt.total_amount)
-    setEditTax(receipt.tax_amount)
-    setEditNotes(receipt.notes ?? '')
+    setEditVendor(receipt.vendor_name); setEditType(receipt.receipt_type)
+    setEditDate(receipt.business_date); setEditTotal(receipt.total_amount)
+    setEditTax(receipt.tax_amount); setEditNotes(receipt.notes ?? '')
     setEditItems(receipt.receipt_items.map(i => ({
-      item_name: i.item_name,
-      amount: i.amount,
-      excel_column: i.excel_column ?? '',
-      item_category: i.item_category ?? '食材',
+      item_name: i.item_name, amount: i.amount,
+      excel_column: i.excel_column ?? '', item_category: i.item_category ?? '食材',
     })))
-    setEditing(true)
-    setExpanded(true)
+    setEditing(true); setExpanded(true)
   }
 
   async function handleSave() {
     setSaving(true)
     const result = await updateReceipt(receipt.id, {
-      businessDate: editDate,
-      vendorName: editVendor,
-      receiptType: editType,
-      totalAmount: editTotal,
-      taxAmount: editTax,
-      photoUrl: receipt.photo_url,
-      notes: editNotes,
-      items: editItems.filter(i => i.item_name.trim()),
+      businessDate: editDate, vendorName: editVendor, receiptType: editType,
+      totalAmount: editTotal, taxAmount: editTax, photoUrl: receipt.photo_url,
+      notes: editNotes, items: editItems.filter(i => i.item_name.trim()),
     })
     setSaving(false)
-    if (result?.error) {
-      alert('儲存失敗：' + result.error)
-      return
-    }
-    setEditing(false)
-    onUpdated()
+    if (result?.error) { alert('儲存失敗：' + result.error); return }
+    setEditing(false); onUpdated()
   }
 
   async function handleDelete() {
     if (!confirm('確定要刪除這筆收據嗎？')) return
-    setDeleting(true)
-    await deleteReceipt(receipt.id)
-    onDelete()
+    setDeleting(true); await deleteReceipt(receipt.id); onDelete()
   }
 
-  function addItem() {
-    setEditItems(prev => [...prev, { item_name: '', amount: 0, excel_column: '', item_category: '食材' }])
-  }
-
-  function removeItem(idx: number) {
-    setEditItems(prev => prev.filter((_, i) => i !== idx))
-  }
-
-  function updateItem(idx: number, field: keyof EditItem, value: string | number) {
-    setEditItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item))
-  }
+  const st = STATUS_STYLE[receipt.status] ?? STATUS_STYLE.draft
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-      {/* Header row */}
-      <div className="px-4 py-3 flex items-center gap-3">
+    <div className="bg-white rounded-2xl overflow-hidden transition-all"
+      style={{ border: editing ? '1.5px solid #6366f1' : '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-3.5">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold text-slate-800 truncate">
+          <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+            <span className="text-sm font-semibold" style={{ color: '#18181b' }}>
               {receipt.vendor_name || '（未填廠商）'}
             </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+              style={{ background: '#f8fafc', color: '#52525b' }}>
               {TYPE_LABEL[receipt.receipt_type] ?? receipt.receipt_type}
             </span>
-            <span className={cn('text-[10px] px-1.5 py-0.5 rounded', STATUS_STYLE[receipt.status] ?? STATUS_STYLE.draft)}>
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+              style={{ background: st.bg, color: st.color }}>
               {STATUS_LABEL[receipt.status] ?? receipt.status}
             </span>
           </div>
-          <div className="flex items-center gap-3 mt-0.5">
-            <span className="text-base font-bold tabular-nums text-slate-900">${fmt(receipt.total_amount)}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-base font-bold tabular-nums" style={{ color: '#18181b' }}>
+              ${fmt(receipt.total_amount)}
+            </span>
             {receipt.tax_amount > 0 && (
-              <span className="text-xs text-slate-400">含稅 ${fmt(receipt.tax_amount)}</span>
+              <span className="text-xs" style={{ color: '#a1a1aa' }}>含稅 ${fmt(receipt.tax_amount)}</span>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-0.5 shrink-0">
           {receipt.photo_url && (
             <button onClick={() => setShowPhoto(!showPhoto)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors">
-              <Image className="h-4 w-4" />
+              className="h-8 w-8 flex items-center justify-center rounded-xl transition-colors"
+              style={{ color: showPhoto ? '#4338ca' : '#a1a1aa', background: showPhoto ? '#eef2ff' : 'transparent' }}>
+              <FileText className="h-4 w-4" />
             </button>
           )}
           <button onClick={() => setExpanded(!expanded)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors">
+            className="h-8 w-8 flex items-center justify-center rounded-xl transition-colors hover:bg-slate-50"
+            style={{ color: '#a1a1aa' }}>
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
           <button onClick={startEdit}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors">
+            className="h-8 w-8 flex items-center justify-center rounded-xl transition-colors hover:bg-indigo-50"
+            style={{ color: editing ? '#4338ca' : '#a1a1aa' }}>
             <Edit2 className="h-4 w-4" />
           </button>
           <button onClick={handleDelete} disabled={deleting}
-            className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40">
+            className="h-8 w-8 flex items-center justify-center rounded-xl transition-colors hover:bg-red-50 disabled:opacity-40"
+            style={{ color: '#a1a1aa' }}>
             <Trash2 className="h-4 w-4" />
           </button>
         </div>
       </div>
 
+      {/* Photo */}
       {showPhoto && receipt.photo_url && (
         <div className="px-4 pb-3">
           <img src={receipt.photo_url} alt="receipt"
-            className="w-full max-h-64 object-contain rounded-lg border border-slate-100 bg-slate-50" />
+            className="w-full max-h-64 object-contain rounded-xl"
+            style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }} />
         </div>
       )}
 
       {/* View mode */}
       {expanded && !editing && (
-        <div className="px-4 pb-3 border-t border-slate-100 pt-3 space-y-2">
+        <div className="px-4 pb-4 pt-3 space-y-2" style={{ borderTop: '1px solid #f4f4f5' }}>
           {receipt.receipt_items.length > 0 ? (
             <>
-              <p className="text-xs font-semibold text-slate-500">品項明細</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>品項明細</p>
               {receipt.receipt_items.map(item => (
-                <div key={item.id} className="flex justify-between text-sm">
-                  <span className="text-slate-600">{item.item_name}</span>
-                  <span className="tabular-nums font-medium">${fmt(item.amount)}</span>
+                <div key={item.id} className="flex justify-between items-center">
+                  <span className="text-sm" style={{ color: '#52525b' }}>{item.item_name}</span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color: '#18181b' }}>${fmt(item.amount)}</span>
                 </div>
               ))}
             </>
           ) : (
-            <p className="text-xs text-slate-400">無品項明細</p>
+            <p className="text-xs" style={{ color: '#a1a1aa' }}>無品項明細</p>
           )}
           {receipt.notes && (
-            <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-2 py-1.5">{receipt.notes}</p>
+            <p className="text-xs px-3 py-2 rounded-xl" style={{ color: '#52525b', background: '#f8fafc' }}>{receipt.notes}</p>
           )}
-          <p className="text-[10px] text-slate-400">
+          <p className="text-[10px]" style={{ color: '#a1a1aa' }}>
             {new Date(receipt.created_at).toLocaleString('zh-TW', {
               timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric',
               hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
@@ -234,20 +196,17 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
 
       {/* Edit mode */}
       {editing && (
-        <div className="px-4 pb-4 border-t border-blue-100 pt-3 space-y-3 bg-blue-50/30">
-          <p className="text-xs font-semibold text-blue-700">編輯單據</p>
+        <div className="px-4 pb-4 pt-4 space-y-3" style={{ borderTop: '1.5px solid #eef2ff', background: '#fafbff' }}>
+          <p className="text-xs font-bold" style={{ color: '#4338ca' }}>編輯單據</p>
 
-          {/* 廠商 / 類型 / 日期 */}
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[10px] text-slate-500 mb-0.5 block">廠商名稱</label>
-              <input className="w-full h-9 px-2 text-sm rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-400"
-                value={editVendor} onChange={e => setEditVendor(e.target.value)} placeholder="廠商" />
+              <label className="block text-[11px] font-medium mb-1" style={{ color: '#71717a' }}>廠商名稱</label>
+              <input style={inputStyle()} value={editVendor} onChange={e => setEditVendor(e.target.value)} placeholder="廠商" />
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 mb-0.5 block">單據類型</label>
-              <select className="w-full h-9 px-2 text-sm rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-400"
-                value={editType} onChange={e => setEditType(e.target.value)}>
+              <label className="block text-[11px] font-medium mb-1" style={{ color: '#71717a' }}>單據類型</label>
+              <select style={inputStyle()} value={editType} onChange={e => setEditType(e.target.value)}>
                 <option value="invoice">統一發票</option>
                 <option value="receipt">收據</option>
                 <option value="delivery_note">估價單</option>
@@ -257,88 +216,76 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
 
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="text-[10px] text-slate-500 mb-0.5 block">業務日期</label>
-              <input type="date" className="w-full h-9 px-2 text-sm rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-400"
-                value={editDate} onChange={e => setEditDate(e.target.value)} />
+              <label className="block text-[11px] font-medium mb-1" style={{ color: '#71717a' }}>業務日期</label>
+              <input type="date" style={inputStyle()} value={editDate} onChange={e => setEditDate(e.target.value)} />
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 mb-0.5 block">總金額</label>
-              <input type="number" className="w-full h-9 px-2 text-sm rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-400 text-right tabular-nums"
+              <label className="block text-[11px] font-medium mb-1" style={{ color: '#71717a' }}>總金額</label>
+              <input type="number" style={inputStyle({ textAlign: 'right' })}
                 value={editTotal || ''} onChange={e => setEditTotal(parseFloat(e.target.value) || 0)} />
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 mb-0.5 block">稅額</label>
-              <input type="number" className="w-full h-9 px-2 text-sm rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-400 text-right tabular-nums"
+              <label className="block text-[11px] font-medium mb-1" style={{ color: '#71717a' }}>稅額</label>
+              <input type="number" style={inputStyle({ textAlign: 'right' })}
                 value={editTax || ''} placeholder="0" onChange={e => setEditTax(parseFloat(e.target.value) || 0)} />
             </div>
           </div>
 
-          {/* 品項 */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[10px] font-semibold text-slate-500">品項明細</p>
-              <button onClick={addItem}
-                className="text-[10px] text-blue-600 hover:text-blue-800 flex items-center gap-0.5">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>品項明細</p>
+              <button onClick={() => setEditItems(prev => [...prev, { item_name: '', amount: 0, excel_column: '', item_category: '食材' }])}
+                className="text-xs font-semibold flex items-center gap-1" style={{ color: '#4338ca' }}>
                 <Plus className="h-3 w-3" /> 新增品項
               </button>
             </div>
             <div className="space-y-1.5">
               {editItems.map((item, idx) => (
-                <div key={idx} className="grid grid-cols-[1fr_5rem_1fr_1.5rem] gap-1 items-center">
-                  <input
-                    className="h-8 px-2 text-xs rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-400"
-                    placeholder="品項名稱"
-                    value={item.item_name}
-                    onChange={e => updateItem(idx, 'item_name', e.target.value)}
-                  />
-                  <input
-                    type="number"
-                    className="h-8 px-2 text-xs rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-400 text-right tabular-nums"
-                    placeholder="金額"
-                    value={item.amount || ''}
-                    onChange={e => updateItem(idx, 'amount', parseFloat(e.target.value) || 0)}
-                  />
-                  <select
-                    className="h-8 px-1 text-xs rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-400"
+                <div key={idx} className="grid grid-cols-[1fr_5rem_1fr_1.5rem] gap-1.5 items-center">
+                  <input style={inputStyle({ padding: '7px 10px', fontSize: '13px' })}
+                    placeholder="品項名稱" value={item.item_name}
+                    onChange={e => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, item_name: e.target.value } : it))} />
+                  <input type="number" style={inputStyle({ padding: '7px 10px', fontSize: '13px', textAlign: 'right' })}
+                    placeholder="金額" value={item.amount || ''}
+                    onChange={e => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, amount: parseFloat(e.target.value) || 0 } : it))} />
+                  <select style={inputStyle({ padding: '7px 6px', fontSize: '12px' })}
                     value={item.excel_column}
-                    onChange={e => updateItem(idx, 'excel_column', e.target.value)}
-                  >
+                    onChange={e => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, excel_column: e.target.value } : it))}>
                     <option value="">欄位</option>
                     {Object.entries(EXCEL_COLUMNS).map(([cat, cols]) => (
                       <optgroup key={cat} label={cat}>
-                        {cols.map(col => <option key={col} value={col}>{col}</option>)}
+                        {(cols as string[]).map(col => <option key={col} value={col}>{col}</option>)}
                       </optgroup>
                     ))}
                   </select>
-                  <button onClick={() => removeItem(idx)}
-                    className="text-slate-300 hover:text-red-500 flex items-center justify-center">
+                  <button onClick={() => setEditItems(prev => prev.filter((_, i) => i !== idx))}
+                    className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors hover:bg-red-50"
+                    style={{ color: '#a1a1aa' }}>
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               ))}
               {editItems.length === 0 && (
-                <p className="text-[10px] text-slate-400 text-center py-1">無品項（點「新增品項」加入）</p>
+                <p className="text-xs text-center py-2" style={{ color: '#a1a1aa' }}>無品項（點上方新增）</p>
               )}
             </div>
           </div>
 
-          {/* 備註 */}
           <div>
-            <label className="text-[10px] text-slate-500 mb-0.5 block">備註</label>
-            <textarea
-              className="w-full h-16 px-2 py-1.5 text-xs rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-400 resize-none"
-              value={editNotes} onChange={e => setEditNotes(e.target.value)} placeholder="備註（選填）"
-            />
+            <label className="block text-[11px] font-medium mb-1" style={{ color: '#71717a' }}>備註</label>
+            <textarea style={{ ...inputStyle(), height: '64px', resize: 'none' }}
+              value={editNotes} onChange={e => setEditNotes(e.target.value)} placeholder="備註（選填）" />
           </div>
 
-          {/* 儲存 / 取消 */}
           <div className="flex gap-2">
             <button onClick={handleSave} disabled={saving}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
-              <Check className="h-4 w-4" /> {saving ? '儲存中...' : '儲存修改'}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.25)' }}>
+              <Check className="h-4 w-4" />{saving ? '儲存中...' : '儲存修改'}
             </button>
             <button onClick={() => setEditing(false)}
-              className="px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600">
+              className="px-4 py-2.5 rounded-xl text-sm font-semibold"
+              style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b' }}>
               取消
             </button>
           </div>
@@ -353,98 +300,97 @@ export default function ReceiptsClient({ storeId, storeName, today, receipts: in
   const [showUpload, setShowUpload] = useState(false)
   const router = useRouter()
 
-  function handleSaved() {
-    setShowUpload(false)
-    router.refresh()
-  }
+  function handleSaved() { setShowUpload(false); router.refresh() }
 
-  const grouped = receipts.reduce<Record<string, Receipt[]>>((acc, r) => {
-    const d = r.business_date
-    if (!acc[d]) acc[d] = []
-    acc[d].push(r)
-    return acc
+  const grouped = receipts.reduce<Record<string, ReceiptData[]>>((acc, r) => {
+    if (!acc[r.business_date]) acc[r.business_date] = []
+    acc[r.business_date].push(r); return acc
   }, {})
   const dates = Object.keys(grouped).sort((a, b) => b.localeCompare(a))
 
-  const todayTotal = receipts
-    .filter(r => r.business_date === today)
-    .reduce((s, r) => s + r.total_amount, 0)
+  const todayCount = receipts.filter(r => r.business_date === today).length
+  const todayTotal = receipts.filter(r => r.business_date === today).reduce((s, r) => s + r.total_amount, 0)
 
   return (
-    <div className="max-w-xl mx-auto px-4 py-6 space-y-4 pb-24">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <Receipt className="h-5 w-5 text-blue-500" /> 單據管理
-          </h1>
-          <p className="text-sm text-slate-500 mt-0.5">{storeName} · {today}</p>
+    <div className="min-h-full" style={{ background: '#fafafa' }}>
+
+      {/* 頁首 */}
+      <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div className="flex items-center justify-between max-w-xl mx-auto">
+          <div>
+            <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
+              <Receipt className="h-3.5 w-3.5" />
+              發票收據
+            </div>
+            <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>
+              {storeName}
+            </h1>
+            <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>{today}</p>
+          </div>
+          {!showUpload && (
+            <button onClick={() => setShowUpload(true)}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
+              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.25)' }}>
+              <Plus className="h-4 w-4" /> 新增
+            </button>
+          )}
         </div>
-        {!showUpload && (
-          <button
-            onClick={() => setShowUpload(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="h-4 w-4" /> 新增
-          </button>
-        )}
       </div>
 
-      {/* 今日統計 */}
-      {!showUpload && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 flex justify-between text-sm">
-          <span className="text-slate-500">今日單據</span>
-          <div className="text-right">
-            <span className="font-bold tabular-nums text-slate-800">${fmt(todayTotal)}</span>
-            <span className="text-slate-400 ml-2 text-xs">
-              共 {receipts.filter(r => r.business_date === today).length} 筆
-            </span>
-          </div>
-        </div>
-      )}
+      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-28">
 
-      {/* 上傳表單 */}
-      {showUpload && (
-        <div className="rounded-xl border border-blue-200 bg-white p-4">
-          <ReceiptUpload
-            storeId={storeId}
-            today={today}
-            mappings={mappings}
-            onSaved={handleSaved}
-            onCancel={() => setShowUpload(false)}
-          />
-        </div>
-      )}
-
-      {/* 收據列表 */}
-      {dates.length === 0 ? (
-        <div className="text-center py-16 text-slate-400 text-sm">
-          <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
-          <p>尚無單據紀錄</p>
-          <p className="text-xs mt-1">點右上角「新增」上傳第一張收據</p>
-        </div>
-      ) : (
-        dates.map(date => (
-          <div key={date} className="space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-slate-500">
-                {date === today ? `今天 ${formatDate(date)}` : formatDate(date)}
-              </p>
-              <p className="text-xs text-slate-400 tabular-nums">
-                ${fmt(grouped[date].reduce((s, r) => s + r.total_amount, 0))}
-              </p>
+        {/* 今日統計 */}
+        {!showUpload && todayCount > 0 && (
+          <div className="bg-white rounded-2xl p-4 relative overflow-hidden"
+            style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <div className="absolute left-0 top-0 w-1 h-full rounded-l-2xl" style={{ background: '#6366f1' }} />
+            <div className="flex items-center justify-between pl-2">
+              <div>
+                <p className="text-xs font-medium" style={{ color: '#71717a' }}>今日單據</p>
+                <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>共 {todayCount} 筆</p>
+              </div>
+              <p className="text-2xl font-bold tabular-nums" style={{ color: '#18181b' }}>${fmt(todayTotal)}</p>
             </div>
-            {grouped[date].map(r => (
-              <ReceiptCard
-                key={r.id}
-                receipt={r}
-                onDelete={() => router.refresh()}
-                onUpdated={() => router.refresh()}
-              />
-            ))}
           </div>
-        ))
-      )}
+        )}
+
+        {/* 上傳表單 */}
+        {showUpload && (
+          <div className="bg-white rounded-2xl p-5" style={{ border: '1.5px solid #6366f1', boxShadow: '0 4px 16px rgba(99,102,241,0.1)' }}>
+            <ReceiptUpload storeId={storeId} today={today} mappings={mappings}
+              onSaved={handleSaved} onCancel={() => setShowUpload(false)} />
+          </div>
+        )}
+
+        {/* 收據列表 */}
+        {dates.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="h-20 w-20 rounded-3xl flex items-center justify-center mx-auto mb-4"
+              style={{ background: '#f1f5f9' }}>
+              <Receipt className="h-9 w-9" style={{ color: '#a1a1aa' }} />
+            </div>
+            <p className="text-sm font-medium mb-1" style={{ color: '#52525b' }}>尚無單據紀錄</p>
+            <p className="text-xs" style={{ color: '#a1a1aa' }}>點右上角「新增」上傳第一張收據</p>
+          </div>
+        ) : (
+          dates.map(date => (
+            <div key={date} className="space-y-2">
+              <div className="flex items-center justify-between px-1">
+                <p className="text-xs font-bold" style={{ color: '#a1a1aa' }}>
+                  {date === today ? `今天 ${formatDate(date)}` : formatDate(date)}
+                </p>
+                <p className="text-xs font-semibold tabular-nums" style={{ color: '#52525b' }}>
+                  ${fmt(grouped[date].reduce((s, r) => s + r.total_amount, 0))}
+                </p>
+              </div>
+              {grouped[date].map(r => (
+                <ReceiptCard key={r.id} receipt={r}
+                  onDelete={() => router.refresh()} onUpdated={() => router.refresh()} />
+              ))}
+            </div>
+          ))
+        )}
+      </div>
     </div>
   )
 }

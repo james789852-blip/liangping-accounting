@@ -1,24 +1,28 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
-import { format } from 'date-fns'
 import { getBusinessDate } from '@/lib/business-date'
+import { getEffectiveStoreId } from '@/lib/get-effective-store'
+import {
+  CheckCircle2, AlertTriangle, Package, Banknote,
+  Calculator, BarChart3, Video, ChevronRight,
+} from 'lucide-react'
+import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
-import { cn } from '@/lib/utils'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
-import { Clock, Banknote, Package, Calculator, BarChart3, AlertTriangle, Video } from 'lucide-react'
-import Link from 'next/link'
-import { getEffectiveStoreId } from '@/lib/get-effective-store'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
-const statusMap: Record<string, { label: string; color: string }> = {
-  draft:     { label: '草稿',    color: 'bg-slate-100 text-slate-600' },
-  submitted: { label: '已送出',  color: 'bg-blue-100 text-blue-700' },
-  verified:  { label: '已審核',  color: 'bg-green-100 text-green-700' },
-  disputed:  { label: '退回修改', color: 'bg-orange-100 text-orange-700' },
+const STATUS_CFG: Record<string, { label: string; bg: string; color: string }> = {
+  draft:     { label: '草稿',    bg: '#f1f5f9', color: '#475569' },
+  submitted: { label: '已送出',  bg: '#eef2ff', color: '#4338ca' },
+  verified:  { label: '已審核',  bg: '#d1fae5', color: '#065f46' },
+  disputed:  { label: '退回修改', bg: '#ffe4e6', color: '#be123c' },
+}
+
+const CHANNEL_LABEL: Record<string, string> = {
+  pos: 'POS 現金', uber: 'Uber Eats', panda: '熊貓',
+  twpay: '台灣 Pay', online: '線上點餐', handwrite: '手寫訂單',
 }
 
 export default async function SummaryPage() {
@@ -27,10 +31,10 @@ export default async function SummaryPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, store_ids').eq('user_id', user.id).single()
+    .from('user_profiles').select('name, role, store_ids').eq('user_id', user.id).single()
 
   const storeId = await getEffectiveStoreId(profile)
-  if (!storeId) return <div className="p-6 text-slate-500">尚未指派店家</div>
+  if (!storeId) return <div className="p-6" style={{ color: '#a1a1aa' }}>尚未指派店家</div>
 
   const today = getBusinessDate()
 
@@ -49,28 +53,30 @@ export default async function SummaryPage() {
 
   if (!closing) {
     return (
-      <div className="max-w-xl mx-auto px-4 py-12 text-center space-y-4">
-        <Clock className="h-12 w-12 text-slate-300 mx-auto" />
-        <h1 className="text-lg font-bold text-slate-700">今日尚未結帳</h1>
-        <p className="text-slate-400 text-sm">請先完成今日結帳再查看結算結果</p>
-        <Link href="/manager/closing"
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-          前往每日結帳
-        </Link>
+      <div className="min-h-full flex items-center justify-center" style={{ background: '#fafafa' }}>
+        <div className="text-center px-6 py-16">
+          <div className="h-20 w-20 rounded-3xl flex items-center justify-center mx-auto mb-6"
+            style={{ background: '#f1f5f9' }}>
+            <Calculator className="h-9 w-9" style={{ color: '#a1a1aa' }} />
+          </div>
+          <h1 className="text-xl font-bold mb-2" style={{ color: '#18181b' }}>今日尚未結帳</h1>
+          <p className="text-sm mb-6" style={{ color: '#a1a1aa' }}>請先完成今日結帳再查看結算結果</p>
+          <Link href="/manager/closing"
+            className="inline-flex items-center gap-2 px-5 py-3 text-white rounded-xl text-sm font-semibold"
+            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 14px rgba(99,102,241,0.3)' }}>
+            前往每日結帳
+            <ChevronRight className="h-4 w-4" />
+          </Link>
+        </div>
       </div>
     )
   }
 
-  // 菜單影片
   let videoUrl: string | null = null
   let videoName: string | null = null
   try {
-    const { data: mv } = await supabase
-      .from('menu_videos')
-      .select('id, file_path, file_name')
-      .eq('store_id', storeId)
-      .eq('business_date', today)
-      .maybeSingle()
+    const { data: mv } = await supabase.from('menu_videos').select('id, file_path, file_name')
+      .eq('store_id', storeId).eq('business_date', today).maybeSingle()
     if (mv) {
       const { data: signed } = await supabase.storage.from('menu-videos').createSignedUrl(mv.file_path, 3600)
       videoUrl = signed?.signedUrl ?? null
@@ -79,332 +85,372 @@ export default async function SummaryPage() {
   } catch { /* menu_videos table may not exist yet */ }
 
   const rev = closing.revenue_items ?? []
-  const cash = closing.cash_counts?.[0]
+  const cash = (closing as any).cash_counts?.[0]
   const orders = closing.order_items ?? []
   const expenseItems = closing.expense_items ?? []
   const handwriteOrders = closing.handwrite_orders ?? []
-  const st = statusMap[closing.status] ?? statusMap.draft
 
-  const varColor = Math.abs(closing.variance) === 0 ? 'text-green-600' :
-    Math.abs(closing.variance) <= 200 ? 'text-yellow-600' : 'text-red-600'
-  const varBg = Math.abs(closing.variance) === 0 ? 'bg-green-50 border-green-300' :
-    Math.abs(closing.variance) <= 200 ? 'bg-yellow-50 border-yellow-300' : 'bg-red-50 border-red-300'
-
-  const channelLabel: Record<string, string> = {
-    pos: 'POS 現金', uber: 'Uber Eats', panda: '熊貓',
-    twpay: '台灣Pay', online: '線上點餐', handwrite: '手寫訂單',
-  }
-
+  const st = STATUS_CFG[closing.status] ?? STATUS_CFG.draft
   const platformTotal = rev
-    .filter((r: any) => ['uber','panda','twpay','online'].includes(r.channel))
+    .filter((r: any) => ['uber', 'panda', 'twpay', 'online'].includes(r.channel))
     .reduce((s: number, r: any) => s + r.gross_amount, 0)
 
+  const absVar = Math.abs(closing.variance)
+  const varStyle = absVar === 0
+    ? { bg: 'linear-gradient(135deg,#d1fae5,#ecfdf5)', border: '#6ee7b7', num: '#047857', label: '✓ 完美對帳' }
+    : absVar <= 200
+    ? { bg: 'linear-gradient(135deg,#fef3c7,#fffbeb)', border: '#fcd34d', num: '#b45309', label: '⚠ 小額誤差' }
+    : { bg: 'linear-gradient(135deg,#ffe4e6,#fff1f2)', border: '#fda4af', num: '#be123c', label: '✕ 誤差過大' }
+
   return (
-    <div className="max-w-xl mx-auto px-4 py-4 space-y-4 pb-8">
-      {/* 標題列 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">今日結帳</h1>
-          <p className="text-sm text-slate-500">{store?.name} · {closing.business_date}</p>
+    <div className="min-h-full" style={{ background: '#fafafa' }}>
+
+      {/* 頁面標頭 */}
+      <div className="bg-white px-6 py-4 sticky top-0 z-10"
+        style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div className="flex items-center justify-between max-w-xl mx-auto">
+          <div>
+            <p className="text-xs" style={{ color: '#a1a1aa' }}>
+              每日結帳 / <strong style={{ color: '#18181b' }}>結算結果</strong>
+            </p>
+            <p className="text-sm font-semibold mt-0.5" style={{ color: '#18181b' }}>
+              {store?.name} · {today}
+            </p>
+          </div>
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full"
+            style={{ background: st.bg, color: st.color }}>
+            {st.label}
+          </span>
         </div>
-        <span className={cn('px-2.5 py-1 rounded-full text-xs font-medium', st.color)}>
-          {st.label}
-        </span>
       </div>
 
-      {/* 退回提示 */}
-      {closing.status === 'disputed' && (
-        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />
-            <p className="text-sm font-semibold text-orange-700">總公司已退回，請修正後重新送出</p>
+      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-28">
+
+        {/* 退回提示 */}
+        {closing.status === 'disputed' && (
+          <div className="rounded-2xl p-4 border"
+            style={{ background: 'linear-gradient(135deg,#ffe4e6,#fff1f2)', borderColor: '#fda4af' }}>
+            <div className="flex items-start gap-3">
+              <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0"
+                style={{ background: '#ffe4e6', color: '#be123c' }}>
+                <AlertTriangle className="h-[18px] w-[18px]" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-bold mb-1" style={{ color: '#be123c' }}>總公司已退回，請修正後重新送出</p>
+                {(closing as any).dispute_note && (
+                  <p className="text-sm" style={{ color: '#9f1239' }}>{(closing as any).dispute_note}</p>
+                )}
+                <Link href={`/manager/edit/${closing.id}`}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white mt-3"
+                  style={{ background: '#be123c' }}>
+                  前往修改此帳目 <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            </div>
           </div>
-          {(closing as any).dispute_note && (
-            <p className="text-sm text-orange-600">{(closing as any).dispute_note}</p>
-          )}
-          <Link
-            href={`/manager/edit/${closing.id}`}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 transition-colors"
-          >
-            前往修改此帳目
-          </Link>
+        )}
+
+        {/* Hero 卡片 */}
+        <div className="rounded-3xl p-8 relative overflow-hidden text-white"
+          style={{ background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%)', boxShadow: '0 20px 50px -10px rgba(99,102,241,0.25)' }}>
+          <div className="absolute -top-1/2 -right-[10%] w-96 h-96 rounded-full pointer-events-none"
+            style={{ background: 'radial-gradient(circle,rgba(255,255,255,0.15),transparent)' }} />
+          <div className="relative">
+            <div className="flex items-center gap-2 text-sm mb-2 opacity-85">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {closing.status === 'draft' ? '草稿 · ' : '已準備好送出 · '}{store?.name}
+            </div>
+            <p className="font-extrabold tabular-nums leading-none mb-2"
+              style={{ fontSize: 'clamp(40px,8vw,56px)', letterSpacing: '-0.03em' }}>
+              $ {fmt(closing.total_revenue)}
+            </p>
+            <p className="text-sm mb-5 opacity-70">今日總營業額</p>
+            <div className="flex gap-6 flex-wrap">
+              {closing.total_cost > 0 && (
+                <div>
+                  <p className="text-xs mb-1 opacity-70">食耗（含配送）</p>
+                  <p className="text-xl font-bold tabular-nums">${fmt(closing.total_cost)}</p>
+                </div>
+              )}
+              <div>
+                <p className="text-xs mb-1 opacity-70">應匯入</p>
+                <p className="text-xl font-bold tabular-nums">${fmt(closing.expected_remit ?? 0)}</p>
+              </div>
+              <div>
+                <p className="text-xs mb-1 opacity-70">應包進信封</p>
+                <p className="text-xl font-bold tabular-nums">${fmt(closing.should_include_delivery)}</p>
+              </div>
+            </div>
+          </div>
         </div>
-      )}
 
-      {/* 誤差摘要 */}
-      <Card className={cn('border-2', varBg)}>
-        <CardContent className="p-4 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-slate-600">今日誤差</p>
-            <p className={cn('text-4xl font-bold tabular-nums mt-1', varColor)}>
-              {closing.variance >= 0 ? '+' : ''}{fmt(closing.variance)}
-            </p>
-            <p className={cn('text-xs mt-1', varColor)}>
-              {Math.abs(closing.variance) === 0 ? '金額完全正確' :
-               Math.abs(closing.variance) <= 200 ? '差距微小' : '差距過大，請核查'}
-            </p>
+        {/* 匯入計算卡片 */}
+        <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+          <div className="flex items-center gap-2.5 mb-4">
+            <span className="h-8 w-8 rounded-xl flex items-center justify-center text-base"
+              style={{ background: '#d1fae5' }}>💰</span>
+            <h3 className="text-base font-semibold" style={{ color: '#18181b' }}>匯入計算</h3>
           </div>
-          <div className="text-right space-y-2">
-            <div>
-              <p className="text-xs text-slate-400">總營業額</p>
-              <p className="text-xl font-bold tabular-nums">${fmt(closing.total_revenue)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-400">應包進信封</p>
-              <p className="text-base font-semibold tabular-nums">${fmt(closing.should_include_delivery)}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 營收明細 */}
-      {rev.filter((r: any) => r.channel !== 'handwrite').length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
-              <Banknote className="h-4 w-4 text-blue-500" /> 營收明細
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {rev.filter((r: any) => r.channel !== 'handwrite').map((r: any) => (
-              <div key={r.id} className="flex justify-between text-sm">
-                <span className="text-slate-600">
-                  {channelLabel[r.channel] ?? r.channel}
-                  {r.account_name ? `（${r.account_name}）` : ''}
-                </span>
-                <span className="tabular-nums font-medium">${fmt(r.gross_amount)}</span>
+          {[
+            { label: '應匯入 HQ（淨）', hint: '營業額 − 平台收款 − 現金支出', val: `$${fmt(closing.expected_remit ?? 0)}`, color: '#18181b' },
+            ...(closing.total_cost > 0 ? [{ label: '＋ 央廚配送費', hint: '代收給總公司', val: `$${fmt(closing.total_cost)}`, color: '#f97316' }] : []),
+          ].map(({ label, hint, val, color }) => (
+            <div key={label} className="flex items-center justify-between py-3.5"
+              style={{ borderBottom: '1px solid #f4f4f5' }}>
+              <div>
+                <p className="text-sm font-medium" style={{ color: '#18181b' }}>{label}</p>
+                <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>{hint}</p>
               </div>
-            ))}
-            <Separator />
-            <div className="flex justify-between font-semibold text-sm">
-              <span>總計</span>
-              <span className="tabular-nums">${fmt(closing.total_revenue)}</span>
+              <span className="text-lg font-bold tabular-nums shrink-0" style={{ color }}>{val}</span>
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 手寫訂單 */}
-      {handwriteOrders.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
-              <Banknote className="h-4 w-4 text-emerald-500" />
-              手寫訂單（共 {handwriteOrders.length} 筆，有效 {handwriteOrders.filter((o: any) => !o.voided && o.amount > 0).length} 筆）
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="divide-y divide-slate-100">
-              {handwriteOrders.map((o: any) => (
-                <div key={o.id} className={cn('py-1.5', o.voided ? 'opacity-50' : '')}>
-                  <div className="flex justify-between text-sm">
-                    <span className={cn('font-mono', o.voided ? 'line-through text-slate-400' : 'text-slate-700')}>
-                      {o.order_number}
-                    </span>
-                    <span className={cn('tabular-nums', o.voided ? 'text-orange-400 text-xs font-medium' : 'font-medium')}>
-                      {o.voided ? '作廢' : `$${fmt(o.amount)}`}
-                    </span>
-                  </div>
-                  {o.voided && o.void_reason && (
-                    <p className="text-[11px] text-slate-400 mt-0.5">{o.void_reason}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-            <Separator className="mt-2 mb-2" />
-            <div className="flex justify-between font-semibold text-sm">
-              <span>合計</span>
-              <span className="tabular-nums text-emerald-700">
-                ${fmt(handwriteOrders.filter((o: any) => !o.voided).reduce((s: number, o: any) => s + o.amount, 0))}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 菜單影片 */}
-      {videoUrl && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
-              <Video className="h-4 w-4 text-blue-500" /> 今日菜單影片
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            <video src={videoUrl} controls playsInline className="w-full rounded-lg bg-black" style={{ maxHeight: '220px' }} />
-            {videoName && <p className="text-xs text-slate-400">{videoName}</p>}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 央廚配送 */}
-      {orders.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
-              <Package className="h-4 w-4 text-orange-500" /> 央廚配送
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {orders.map((o: any) => (
-              <div key={o.id} className="flex justify-between text-sm">
-                <span className="text-slate-600">{o.item_name} × {o.quantity}</span>
-                <span className="tabular-nums">${fmt(o.total_amount)}</span>
-              </div>
-            ))}
-            <Separator />
-            <div className="flex justify-between font-semibold text-sm">
-              <span>配送費合計</span>
-              <span className="tabular-nums">${fmt(closing.total_cost)}</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 當日現金支出 */}
-      {expenseItems.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
-              <Banknote className="h-4 w-4 text-purple-500" /> 當日現金支出
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {expenseItems.map((e: any) => (
-              <div key={e.id} className="flex justify-between text-sm">
-                <span className="text-slate-600">{e.description}</span>
-                <span className="tabular-nums">${fmt(e.amount)}</span>
-              </div>
-            ))}
-            <Separator />
-            <div className="flex justify-between font-semibold text-sm">
-              <span>支出合計</span>
-              <span className="tabular-nums text-purple-700">${fmt(closing.total_expenses ?? 0)}</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 現金清點 */}
-      {cash && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
-              <Calculator className="h-4 w-4 text-green-500" /> 現金清點
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5 text-sm">
-            {/* 表頭 */}
-            <div className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 text-[10px] text-slate-400">
-              <span />
-              <span className="text-center">張 / 枚</span>
-              <span className="text-center">整筆金額</span>
-              <span className="text-right">小計</span>
-            </div>
-            {([
-              { label: '千元鈔', ck: 'bills_1000', lk: 'lump_1000', unit: 1000, ul: '張' },
-              { label: '五百元', ck: 'bills_500',  lk: 'lump_500',  unit: 500,  ul: '張' },
-              { label: '百元鈔', ck: 'bills_100',  lk: 'lump_100',  unit: 100,  ul: '張' },
-              { label: '五十元', ck: 'coins_50',   lk: 'lump_50',   unit: 50,   ul: '枚' },
-              { label: '十元',   ck: 'coins_10',   lk: 'lump_10',   unit: 10,   ul: '枚' },
-              { label: '五元',   ck: 'coins_5',    lk: 'lump_5',    unit: 5,    ul: '枚' },
-              { label: '一元',   ck: 'coins_1',    lk: 'lump_1',    unit: 1,    ul: '枚' },
-            ]).map(({ label, ck, lk, unit, ul }) => {
-              const count = (cash as any)[ck] ?? 0
-              const lump  = (cash as any)[lk] ?? 0
-              const sub   = count * unit + lump
-              if (sub === 0) return null
-              return (
-                <div key={label} className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 items-baseline text-slate-600">
-                  <span className="text-xs">{label}</span>
-                  <span className="text-xs text-center">{count > 0 ? `${count} ${ul}` : '—'}</span>
-                  <span className="text-xs text-center tabular-nums">{lump > 0 ? `$${fmt(lump)}` : '—'}</span>
-                  <span className="text-xs text-right tabular-nums font-medium">${fmt(sub)}</span>
-                </div>
-              )
-            })}
-            <Separator />
-            <div className="flex justify-between font-medium text-sm">
-              <span>現金總額</span>
-              <span className="tabular-nums">${fmt(cash.cash_total)}</span>
-            </div>
-            <div className="flex justify-between text-slate-400 text-xs">
-              <span>扣零用金（${fmt(store?.petty_cash ?? 0)}）</span>
-              <span className="tabular-nums">${fmt(closing.actual_remit)}</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 計算明細 */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
-            <BarChart3 className="h-4 w-4" /> 計算明細
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1.5 text-sm">
-          <div className="flex justify-between text-slate-600">
-            <span>總營業額</span>
-            <span className="tabular-nums">${fmt(closing.total_revenue)}</span>
-          </div>
-          <div className="flex justify-between text-slate-400">
-            <span>− 平台收款</span>
-            <span className="tabular-nums">−${fmt(platformTotal)}</span>
-          </div>
-          {(closing.total_expenses ?? 0) > 0 && (
-            <div className="flex justify-between text-slate-400">
-              <span>− 現金支出</span>
-              <span className="tabular-nums">−${fmt(closing.total_expenses)}</span>
-            </div>
-          )}
-          <Separator />
-          <div className="flex justify-between font-semibold">
-            <span>應包進信封</span>
-            <span className="tabular-nums">${fmt(closing.should_include_delivery)}</span>
-          </div>
-          <div className="flex justify-between text-xs text-slate-500 pl-2">
-            <span>其中央廚配送費</span>
-            <span className="tabular-nums">${fmt(closing.total_cost)}</span>
-          </div>
-          <div className="flex justify-between text-xs text-slate-500 pl-2">
-            <span>應匯入 HQ（淨）</span>
-            <span className="tabular-nums font-medium text-slate-700">${fmt(closing.expected_remit ?? 0)}</span>
-          </div>
-          <Separator />
-          <div className="flex justify-between font-medium">
-            <span>實際包進信封（現金 − 零用金）</span>
-            <span className="tabular-nums">${fmt(closing.actual_remit)}</span>
-          </div>
-          <Separator />
-          <div className="flex justify-between items-center font-bold">
-            <span>誤差</span>
-            <span className={cn('text-lg tabular-nums', varColor)}>
-              {closing.variance >= 0 ? '+' : ''}{fmt(closing.variance)}
+          ))}
+          <div className="flex items-center justify-between py-3.5 rounded-xl px-3 mt-2"
+            style={{ background: 'linear-gradient(135deg,#eef2ff,#f5f3ff)' }}>
+            <p className="text-sm font-bold" style={{ color: '#4338ca' }}>＝ 應包進信封</p>
+            <span className="text-2xl font-extrabold tabular-nums" style={{ color: '#4338ca' }}>
+              ${fmt(closing.should_include_delivery)}
             </span>
           </div>
-        </CardContent>
-      </Card>
-
-      {closing.note && (
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-slate-400 mb-1">備註</p>
-            <p className="text-sm text-slate-700">{closing.note}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 底部按鈕 */}
-      {(closing.status === 'draft' || closing.status === 'disputed') && (
-        <div className="flex gap-3">
-          <Link
-            href={closing.status === 'draft' ? '/manager/closing' : `/manager/edit/${closing.id}`}
-            className="flex-1 text-center py-3 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">
-            {closing.status === 'draft' ? '繼續填寫' : '修改帳目'}
-          </Link>
+          <div className="flex items-center justify-between py-3.5 mt-1">
+            <div>
+              <p className="text-sm font-medium" style={{ color: '#18181b' }}>實際包進信封</p>
+              <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
+                現金 ${fmt(cash?.cash_total ?? 0)} − 零用金 ${fmt(store?.petty_cash ?? 0)}
+              </p>
+            </div>
+            <span className="text-lg font-bold tabular-nums" style={{ color: '#18181b' }}>
+              ${fmt(closing.actual_remit)}
+            </span>
+          </div>
         </div>
-      )}
+
+        {/* 誤差結果 */}
+        <div className="rounded-2xl p-6 relative overflow-hidden" style={{
+          background: varStyle.bg, border: `1px solid ${varStyle.border}`,
+        }}>
+          <p className="text-sm font-medium mb-2 flex items-center gap-2" style={{ color: '#52525b' }}>
+            {absVar === 0
+              ? <CheckCircle2 className="h-[18px] w-[18px]" style={{ color: '#047857' }} />
+              : <AlertTriangle className="h-[18px] w-[18px]" style={{ color: absVar <= 200 ? '#b45309' : '#be123c' }} />
+            }
+            {varStyle.label}
+          </p>
+          <p className="font-extrabold tabular-nums" style={{ fontSize: '40px', letterSpacing: '-0.02em', color: varStyle.num, lineHeight: 1 }}>
+            $ {fmt(closing.variance)}
+          </p>
+          <p className="text-sm mt-3" style={{ color: '#52525b' }}>
+            {absVar === 0 ? '完美對帳！清點與輸入完全吻合，可送出。'
+              : absVar <= 200 ? '小額誤差（在 ±200 容忍範圍內），可送出但建議再核查。'
+              : '⚠ 已超過 ±200 上限。請重新檢查現金清點與輸入金額。'}
+          </p>
+        </div>
+
+        {/* 信封袋資訊 */}
+        <div className="rounded-2xl p-5" style={{
+          background: 'linear-gradient(135deg,#fef3c7,#fce7f3)',
+          border: '1px solid rgba(255,255,255,0.5)',
+        }}>
+          <div className="flex items-center gap-2.5 mb-3">
+            <span className="h-8 w-8 rounded-xl flex items-center justify-center text-base bg-white">✉️</span>
+            <h3 className="text-base font-semibold" style={{ color: '#18181b' }}>信封袋資訊</h3>
+          </div>
+          <div className="bg-white rounded-xl p-4 text-sm space-y-1.5" style={{ lineHeight: 1.8 }}>
+            <div><strong style={{ color: '#52525b' }}>日期：</strong>{today}</div>
+            <div><strong style={{ color: '#52525b' }}>店名：</strong>{store?.name}</div>
+            <div className="pt-2 mt-1" style={{ borderTop: '1px solid #f4f4f5' }}>
+              <strong style={{ color: '#52525b' }}>實匯入金額：</strong>
+              <span className="font-extrabold text-2xl tabular-nums ml-1" style={{ color: '#4338ca', letterSpacing: '-0.02em' }}>
+                ${fmt(closing.actual_remit)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 營收明細 */}
+        {rev.filter((r: any) => r.channel !== 'handwrite').length > 0 && (
+          <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <div className="flex items-center gap-2.5 mb-4">
+              <span className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0"
+                style={{ background: '#eef2ff' }}>
+                <Banknote className="h-[18px] w-[18px]" style={{ color: '#4338ca' }} />
+              </span>
+              <h3 className="text-sm font-semibold" style={{ color: '#18181b' }}>營收明細</h3>
+            </div>
+            <div className="space-y-2">
+              {rev.filter((r: any) => r.channel !== 'handwrite').map((r: any) => (
+                <div key={r.id} className="flex justify-between items-center py-1">
+                  <span className="text-sm" style={{ color: '#52525b' }}>
+                    {CHANNEL_LABEL[r.channel] ?? r.channel}
+                    {r.account_name ? `（${r.account_name}）` : ''}
+                  </span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color: '#18181b' }}>${fmt(r.gross_amount)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between items-center pt-2" style={{ borderTop: '1px solid #f4f4f5' }}>
+                <span className="text-sm font-bold" style={{ color: '#18181b' }}>總計</span>
+                <span className="text-sm font-bold tabular-nums" style={{ color: '#18181b' }}>${fmt(closing.total_revenue)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 手寫訂單 */}
+        {handwriteOrders.length > 0 && (
+          <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="h-8 w-8 rounded-xl flex items-center justify-center text-base" style={{ background: '#d1fae5' }}>📝</span>
+                <h3 className="text-sm font-semibold" style={{ color: '#18181b' }}>手寫訂單</h3>
+              </div>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: '#d1fae5', color: '#047857' }}>
+                {handwriteOrders.filter((o: any) => !o.voided && o.amount > 0).length} 筆有效
+              </span>
+            </div>
+            <div className="space-y-1">
+              {handwriteOrders.map((o: any) => (
+                <div key={o.id} className="flex justify-between items-center py-1.5" style={{ opacity: o.voided ? 0.4 : 1 }}>
+                  <span className="text-sm font-mono" style={{ color: '#52525b', textDecoration: o.voided ? 'line-through' : 'none' }}>
+                    {o.order_number}
+                  </span>
+                  <span className="text-sm font-medium tabular-nums" style={{ color: o.voided ? '#a1a1aa' : '#18181b' }}>
+                    {o.voided ? '作廢' : `$${fmt(o.amount)}`}
+                  </span>
+                </div>
+              ))}
+              <div className="flex justify-between items-center pt-2" style={{ borderTop: '1px solid #f4f4f5' }}>
+                <span className="text-sm font-bold" style={{ color: '#18181b' }}>合計</span>
+                <span className="text-sm font-bold tabular-nums" style={{ color: '#10b981' }}>
+                  ${fmt(handwriteOrders.filter((o: any) => !o.voided).reduce((s: number, o: any) => s + o.amount, 0))}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 菜單影片 */}
+        {videoUrl && (
+          <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <div className="flex items-center gap-2.5 mb-3">
+              <span className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#eef2ff' }}>
+                <Video className="h-[18px] w-[18px]" style={{ color: '#4338ca' }} />
+              </span>
+              <h3 className="text-sm font-semibold" style={{ color: '#18181b' }}>今日菜單影片</h3>
+            </div>
+            <video src={videoUrl} controls playsInline className="w-full rounded-xl bg-black" style={{ maxHeight: '220px' }} />
+            {videoName && <p className="text-xs mt-1.5" style={{ color: '#a1a1aa' }}>{videoName}</p>}
+          </div>
+        )}
+
+        {/* 央廚配送 */}
+        {orders.length > 0 && (
+          <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <div className="flex items-center gap-2.5 mb-4">
+              <span className="h-8 w-8 rounded-xl flex items-center justify-center text-base" style={{ background: '#ffedd5' }}>🚚</span>
+              <h3 className="text-sm font-semibold" style={{ color: '#18181b' }}>央廚配送</h3>
+            </div>
+            <div className="space-y-2">
+              {orders.map((o: any) => (
+                <div key={o.id} className="flex justify-between items-center py-1">
+                  <span className="text-sm" style={{ color: '#52525b' }}>{o.item_name} × {o.quantity}</span>
+                  <span className="text-sm font-medium tabular-nums" style={{ color: '#18181b' }}>${fmt(o.total_amount)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between items-center py-3 px-3 rounded-xl mt-1" style={{ background: '#ffedd5' }}>
+                <span className="text-sm font-bold" style={{ color: '#c2410c' }}>配送費合計</span>
+                <span className="text-xl font-extrabold tabular-nums" style={{ color: '#c2410c' }}>${fmt(closing.total_cost)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 現金支出 */}
+        {expenseItems.length > 0 && (
+          <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <div className="flex items-center gap-2.5 mb-4">
+              <span className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#f5f3ff' }}>
+                <Banknote className="h-[18px] w-[18px]" style={{ color: '#7c3aed' }} />
+              </span>
+              <h3 className="text-sm font-semibold" style={{ color: '#18181b' }}>當日現金支出</h3>
+            </div>
+            <div className="space-y-2">
+              {expenseItems.map((e: any) => (
+                <div key={e.id} className="flex justify-between items-center py-1">
+                  <span className="text-sm" style={{ color: '#52525b' }}>{e.description}</span>
+                  <span className="text-sm font-medium tabular-nums" style={{ color: '#18181b' }}>${fmt(e.amount)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between items-center pt-2" style={{ borderTop: '1px solid #f4f4f5' }}>
+                <span className="text-sm font-bold" style={{ color: '#18181b' }}>支出合計</span>
+                <span className="text-sm font-bold tabular-nums" style={{ color: '#7c3aed' }}>${fmt(closing.total_expenses ?? 0)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 現金清點摘要 */}
+        {cash && (
+          <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <div className="flex items-center gap-2.5 mb-4">
+              <span className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#d1fae5' }}>
+                <Calculator className="h-[18px] w-[18px]" style={{ color: '#047857' }} />
+              </span>
+              <h3 className="text-sm font-semibold" style={{ color: '#18181b' }}>現金清點</h3>
+            </div>
+            <div className="space-y-1">
+              {([
+                { label: '千元鈔', ck: 'bills_1000', lk: 'lump_1000', unit: 1000 },
+                { label: '五百元', ck: 'bills_500',  lk: 'lump_500',  unit: 500  },
+                { label: '百元鈔', ck: 'bills_100',  lk: 'lump_100',  unit: 100  },
+                { label: '五十元', ck: 'coins_50',   lk: 'lump_50',   unit: 50   },
+                { label: '十元',   ck: 'coins_10',   lk: 'lump_10',   unit: 10   },
+                { label: '五元',   ck: 'coins_5',    lk: 'lump_5',    unit: 5    },
+                { label: '一元',   ck: 'coins_1',    lk: 'lump_1',    unit: 1    },
+              ]).map(({ label, ck, lk, unit }) => {
+                const count = (cash as any)[ck] ?? 0
+                const lump  = (cash as any)[lk] ?? 0
+                const sub   = count * unit + lump
+                if (sub === 0) return null
+                return (
+                  <div key={label} className="flex justify-between items-center py-1">
+                    <span className="text-sm" style={{ color: '#52525b' }}>{label}</span>
+                    <span className="text-sm font-medium tabular-nums" style={{ color: '#18181b' }}>${fmt(sub)}</span>
+                  </div>
+                )
+              })}
+              <div className="flex justify-between items-center pt-2" style={{ borderTop: '1px solid #f4f4f5' }}>
+                <span className="text-sm font-bold" style={{ color: '#18181b' }}>現金總額</span>
+                <span className="text-sm font-bold tabular-nums" style={{ color: '#18181b' }}>${fmt(cash.cash_total)}</span>
+              </div>
+              <div className="flex justify-between items-center py-1">
+                <span className="text-xs" style={{ color: '#a1a1aa' }}>扣零用金（${fmt(store?.petty_cash ?? 0)}）</span>
+                <span className="text-sm font-semibold tabular-nums" style={{ color: '#4338ca' }}>${fmt(closing.actual_remit)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 備註 */}
+        {(closing as any).note && (
+          <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5' }}>
+            <p className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: '#a1a1aa' }}>備註</p>
+            <p className="text-sm" style={{ color: '#52525b' }}>{(closing as any).note}</p>
+          </div>
+        )}
+
+        {/* 底部按鈕 */}
+        {(closing.status === 'draft' || closing.status === 'disputed') && (
+          <div className="flex gap-3 pt-2">
+            <Link
+              href={closing.status === 'draft' ? '/manager/closing' : `/manager/edit/${closing.id}`}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white"
+              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 14px rgba(99,102,241,0.25)' }}>
+              <BarChart3 className="h-4 w-4" />
+              {closing.status === 'draft' ? '繼續填寫結帳' : '修改帳目'}
+            </Link>
+          </div>
+        )}
+
+      </div>
     </div>
   )
 }
