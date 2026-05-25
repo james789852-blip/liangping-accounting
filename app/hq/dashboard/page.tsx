@@ -99,9 +99,9 @@ export default async function HQDashboard() {
               <p className="text-sm font-semibold" style={{ color: '#18181b' }}>{profile?.name ?? ''}</p>
               <p className="text-xs" style={{ color: '#a1a1aa' }}>總公司 · {profile?.role ?? ''}</p>
             </div>
-            <div className="h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0"
+            <div className="h-9 w-9 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
               style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
-              {(profile?.name ?? '?').slice(0, 1)}
+              {profile?.role ?? '?'}
             </div>
           </div>
         </div>
