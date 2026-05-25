@@ -13,11 +13,18 @@ interface MappingMap {
   [itemName: string]: { excel_column: string; item_category: string }
 }
 
+interface NewReceiptData {
+  id: string; business_date: string; vendor_name: string; receipt_type: string
+  total_amount: number; tax_amount: number; photo_url: string; notes: string
+  status: string; created_at: string
+  receipt_items: { id: string; item_name: string; amount: number; excel_column: string; item_category: string }[]
+}
+
 interface Props {
   storeId: string
   today: string
   mappings: MappingMap
-  onSaved: () => void
+  onSaved: (receipt: NewReceiptData) => void
   onCancel: () => void
 }
 
@@ -128,7 +135,25 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
         })),
       })
       if (result?.error) { setError(result.error); setStep('review') }
-      else onSaved()
+      else onSaved({
+        id: result.id!,
+        business_date: today,
+        vendor_name: vendorName,
+        receipt_type: receiptType,
+        total_amount: totalAmount,
+        tax_amount: taxAmount,
+        photo_url: photoUrl,
+        notes: notes,
+        status: 'draft',
+        created_at: new Date().toISOString(),
+        receipt_items: validItems.map((it, idx) => ({
+          id: `new-${result.id}-${idx}`,
+          item_name: it.name,
+          amount: it.amount,
+          excel_column: it.excel_column,
+          item_category: it.item_category,
+        })),
+      })
     })
   }
 

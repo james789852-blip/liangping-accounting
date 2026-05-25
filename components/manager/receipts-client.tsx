@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { FileText, Plus, Trash2, ChevronDown, ChevronUp, Edit2, Check, X, Receipt } from 'lucide-react'
 import { deleteReceipt, updateReceipt } from '@/app/actions/receipts'
 import ReceiptUpload from './receipt-upload'
-import { useRouter } from 'next/navigation'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 
 interface ReceiptItem {
@@ -309,9 +308,11 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
 export default function ReceiptsClient({ storeId, storeName, today, receipts: initial, mappings }: Props) {
   const [receipts, setReceipts] = useState(initial)
   const [showUpload, setShowUpload] = useState(false)
-  const router = useRouter()
 
-  function handleSaved() { setShowUpload(false); router.refresh() }
+  function handleSaved(newReceipt: ReceiptData) {
+    setShowUpload(false)
+    setReceipts(prev => [newReceipt, ...prev])
+  }
 
   const grouped = receipts.reduce<Record<string, ReceiptData[]>>((acc, r) => {
     if (!acc[r.business_date]) acc[r.business_date] = []
