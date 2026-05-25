@@ -50,6 +50,13 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     .eq('active', true)
     .order('sort_order').order('item_name')
 
+  const { data: todayReceipts } = await supabase
+    .from('receipts')
+    .select('id, vendor_name, total_amount, receipt_type')
+    .eq('store_id', storeId)
+    .eq('business_date', closing.business_date)
+    .order('created_at')
+
   return (
     <ClosingForm
       store={store as Store}
@@ -57,6 +64,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       existingClosing={closing}
       userId={user.id}
       today={closing.business_date}
+      todayReceipts={todayReceipts ?? []}
     />
   )
 }

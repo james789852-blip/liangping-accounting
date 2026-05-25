@@ -5,9 +5,16 @@ import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
-import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, Video, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, Video, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react'
 import VideoUploader from '@/components/manager/video-uploader'
 import { saveCashCounts } from '@/app/actions/closings'
+
+interface TodayReceipt {
+  id: string
+  vendor_name: string
+  total_amount: number
+  receipt_type: string
+}
 
 interface Props {
   store: Store
@@ -15,6 +22,7 @@ interface Props {
   existingClosing: any
   userId: string
   today: string
+  todayReceipts?: TodayReceipt[]
 }
 
 interface FormData {
@@ -91,9 +99,27 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any): FormDat
   }
 }
 
-function initExpenses(existing: any): Expense[] {
-  return (existing?.expense_items ?? []).map((e: any) => ({
+function initExpenses(existing: any, todayReceipts?: TodayReceipt[]): Expense[] {
+  const fromDB = (existing?.expense_items ?? []).map((e: any) => ({
     id: e.id, description: e.description, amount: e.amount,
+  }))
+  if (fromDB.length > 0) return fromDB
+  // 若無既有支出，自動從今日收據填入
+  if (todayReceipts && todayReceipts.length > 0) {
+    return todayReceipts.map(r => ({
+      id: crypto.randomUUID(),
+      description: r.vendor_name || '（未填廠商）',
+      amount: r.total_amount,
+    }))
+  }
+  return []
+}
+
+function receiptsToExpenses(receipts: TodayReceipt[]): Expense[] {
+  return receipts.map(r => ({
+    id: crypto.randomUUID(),
+    description: r.vendor_name || '（未填廠商）',
+    amount: r.total_amount,
   }))
 }
 
@@ -243,9 +269,10 @@ function Row({ label, value, muted, bold, accent }: { label: string; value: stri
   )
 }
 
-export default function ClosingForm({ store, ckPrices, existingClosing, userId, today }: Props) {
+export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [] }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing))
-  const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing))
+  const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, todayReceipts))
+  const [syncing, setSyncing] = useState(false)
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
   const [newOrderNum, setNewOrderNum] = useState('')
   const [newOrderAmt, setNewOrderAmt] = useState(0)
@@ -292,6 +319,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const t = setInterval(() => handleSave(true), 60000)
     return () => clearInterval(t)
   }, [data, expenses, handwriteOrders, isLocked, isDisputed])
+
+  async function syncFromReceipts() {
+    setSyncing(true)
+    const supabase = createClient()
+    const { data: receipts } = await supabase
+      .from('receipts')
+      .select('id, vendor_name, total_amount, receipt_type')
+      .eq('store_id', store.id)
+      .eq('business_date', today)
+      .order('created_at')
+    if (receipts) {
+      setExpenses(receiptsToExpenses(receipts))
+      toast.success(receipts.length > 0 ? `已從 ${receipts.length} 筆收據同步支出` : '今日尚無收據')
+    }
+    setSyncing(false)
+  }
 
   function addExpense() {
     setExpenses(prev => [...prev, { id: crypto.randomUUID(), description: '', amount: 0 }])
@@ -750,6 +793,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
         {/* 5. 當日現金支出 */}
         <SectionCard icon={<Wallet className="h-4 w-4" />} title="當日現金支出" subtitle="現金付款的進貨、雜費等（不含央廚）" iconColor="#8b5cf6">
+          {/* 從收據同步按鈕 */}
+          {!isLocked && (
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs" style={{ color: '#a1a1aa' }}>
+                {expenses.length > 0 ? `${expenses.length} 筆` : '尚無支出'}
+              </p>
+              <button onClick={syncFromReceipts} disabled={syncing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
+                style={{ background: '#faf5ff', color: '#7c3aed', border: '1px solid #e9d5ff', opacity: syncing ? 0.6 : 1 }}>
+                {syncing
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <RefreshCw className="h-3.5 w-3.5" />}
+                從收據同步
+              </button>
+            </div>
+          )}
           {expenses.length === 0 && !isLocked && (
             <p className="text-xs text-center py-2 mb-2" style={{ color: '#a1a1aa' }}>無當日現金支出</p>
           )}

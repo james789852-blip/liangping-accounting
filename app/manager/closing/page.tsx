@@ -72,6 +72,14 @@ export default async function ClosingPage() {
     redirect(`/manager/edit/${existingClosing.id}`)
   }
 
+  // 撈今日收據，供結帳表單自動填入「當日現金支出」
+  const { data: todayReceipts } = await supabase
+    .from('receipts')
+    .select('id, vendor_name, total_amount, receipt_type')
+    .eq('store_id', storeId)
+    .eq('business_date', today)
+    .order('created_at')
+
   return (
     <ClosingForm
       store={store as Store}
@@ -79,6 +87,7 @@ export default async function ClosingPage() {
       existingClosing={existingClosing}
       userId={user.id}
       today={today}
+      todayReceipts={todayReceipts ?? []}
     />
   )
 }
