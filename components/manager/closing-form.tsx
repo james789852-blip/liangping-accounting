@@ -567,7 +567,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         </div>
       </div>
 
-      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-36">
+      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-56">
 
         {/* 退回提示 */}
         {isDisputed && (
