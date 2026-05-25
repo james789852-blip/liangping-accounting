@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { updateStoreSettings } from '@/app/actions/stores'
 import { toast } from 'sonner'
 import { ChevronDown, ChevronUp, Plus, X, Loader2, Check } from 'lucide-react'
@@ -44,7 +44,7 @@ export default function StoreEditor({ store, canEdit }: Props) {
   const [uberEnabled, setUberEnabled] = useState(store.uber_enabled)
   const [uberAccounts, setUberAccounts] = useState<string[]>(store.uber_accounts ?? [])
   const [newAccount, setNewAccount] = useState('')
-  const [composing, setComposing] = useState(false)
+  const composingRef = useRef(false)
   const [pandaEnabled, setPandaEnabled] = useState(store.panda_enabled)
   const [twpayEnabled, setTwpayEnabled] = useState(store.twpay_enabled)
   const [onlineEnabled, setOnlineEnabled] = useState(store.online_enabled)
@@ -157,9 +157,9 @@ export default function StoreEditor({ store, canEdit }: Props) {
                       style={{ flex: 1, height: '36px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
                       value={newAccount}
                       onChange={e => setNewAccount(e.target.value)}
-                      onCompositionStart={() => setComposing(true)}
-                      onCompositionEnd={() => setComposing(false)}
-                      onKeyDown={e => { if (e.key === 'Enter' && !composing) addAccount() }}
+                      onCompositionStart={() => { composingRef.current = true }}
+                      onCompositionEnd={() => { setTimeout(() => { composingRef.current = false }, 0) }}
+                      onKeyDown={e => { if (e.key === 'Enter' && !composingRef.current) addAccount() }}
                     />
                     <button type="button" onClick={addAccount}
                       className="flex items-center gap-1 px-3 rounded-xl text-sm font-medium"
