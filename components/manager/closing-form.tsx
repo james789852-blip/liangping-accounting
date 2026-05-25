@@ -567,7 +567,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         </div>
       </div>
 
-      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-56">
+      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-32 lg:pb-24">
 
         {/* 退回提示 */}
         {isDisputed && (
@@ -1003,7 +1003,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
       {/* 底部操作列 */}
       {!isLocked && (
-        <div className="fixed bottom-16 left-0 right-0 bg-white px-4 py-3"
+        <div className="fixed bottom-14 lg:bottom-0 left-0 lg:left-64 right-0 bg-white px-4 py-3"
           style={{ borderTop: '1px solid #f4f4f5', boxShadow: '0 -4px 16px rgba(0,0,0,0.06)' }}>
           <div className="max-w-xl mx-auto flex gap-3">
             <button onClick={() => handleSave()} disabled={saving || submitting}
