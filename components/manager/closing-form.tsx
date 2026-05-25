@@ -17,7 +17,11 @@ interface TodayReceipt {
   receipt_items?: { item_name: string; amount: number }[]
 }
 
-function isCKVendor(name: string) { return (name || '').includes('央廚') }
+function isCKReceipt(receipt: TodayReceipt, ckPrices: CKPrice[]): boolean {
+  if (!receipt.receipt_items || receipt.receipt_items.length === 0) return false
+  const ckNames = new Set(ckPrices.map(p => p.item_name))
+  return receipt.receipt_items.some(item => ckNames.has(item.item_name))
+}
 
 interface Props {
   store: Store
@@ -65,7 +69,7 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayRec
   if (!existing) {
     // 從央廚收據自動填入央廚配送數量
     if (todayReceipts) {
-      const ckReceipts = todayReceipts.filter(r => isCKVendor(r.vendor_name))
+      const ckReceipts = todayReceipts.filter(r => isCKReceipt(r, ckPrices))
       ckReceipts.forEach(r => {
         (r.receipt_items ?? []).forEach(item => {
           const price = ckPrices.find(p => p.item_name === item.item_name)
@@ -114,7 +118,7 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayRec
   }
 }
 
-function initExpenses(existing: any, todayReceipts?: TodayReceipt[]): Expense[] {
+function initExpenses(existing: any, ckPrices: CKPrice[], todayReceipts?: TodayReceipt[]): Expense[] {
   const fromDB = (existing?.expense_items ?? []).map((e: any) => ({
     id: e.id, description: e.description, amount: e.amount,
   }))
@@ -122,7 +126,7 @@ function initExpenses(existing: any, todayReceipts?: TodayReceipt[]): Expense[] 
   // 若無既有支出，自動從今日非央廚收據填入
   if (todayReceipts && todayReceipts.length > 0) {
     return todayReceipts
-      .filter(r => !isCKVendor(r.vendor_name))
+      .filter(r => !isCKReceipt(r, ckPrices))
       .map(r => ({
         id: crypto.randomUUID(),
         description: r.vendor_name || '（未填廠商）',
@@ -132,9 +136,9 @@ function initExpenses(existing: any, todayReceipts?: TodayReceipt[]): Expense[] 
   return []
 }
 
-function receiptsToExpenses(receipts: TodayReceipt[]): Expense[] {
+function receiptsToExpenses(receipts: TodayReceipt[], ckPrices: CKPrice[]): Expense[] {
   return receipts
-    .filter(r => !isCKVendor(r.vendor_name))
+    .filter(r => !isCKReceipt(r, ckPrices))
     .map(r => ({
       id: crypto.randomUUID(),
       description: r.vendor_name || '（未填廠商）',
@@ -290,7 +294,7 @@ function Row({ label, value, muted, bold, accent }: { label: string; value: stri
 
 export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [] }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
-  const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, todayReceipts))
+  const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
   const [syncing, setSyncing] = useState(false)
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
   const [newOrderNum, setNewOrderNum] = useState('')
@@ -351,11 +355,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (receipts) {
       const typed = receipts as TodayReceipt[]
       // 非央廚收據 → 支出
-      setExpenses(receiptsToExpenses(typed))
+      setExpenses(receiptsToExpenses(typed, ckPrices))
       // 央廚收據 → 央廚配送數量
       const newCKQty: Record<string, number> = {}
       ckPrices.forEach(p => { newCKQty[p.item_name] = 0 })
-      typed.filter(r => isCKVendor(r.vendor_name)).forEach(r => {
+      typed.filter(r => isCKReceipt(r, ckPrices)).forEach(r => {
         (r.receipt_items ?? []).forEach(item => {
           const price = ckPrices.find(p => p.item_name === item.item_name)
           if (price && price.unit_price > 0) {
@@ -364,7 +368,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         })
       })
       set('ck_quantities', newCKQty)
-      const ckCount = typed.filter(r => isCKVendor(r.vendor_name)).length
+      const ckCount = typed.filter(r => isCKReceipt(r, ckPrices)).length
       const nonCKCount = typed.length - ckCount
       const parts: string[] = []
       if (nonCKCount > 0) parts.push(`${nonCKCount} 筆現金支出`)
