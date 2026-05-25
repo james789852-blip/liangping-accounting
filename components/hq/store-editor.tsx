@@ -4,45 +4,34 @@ import { useState } from 'react'
 import { updateStoreSettings } from '@/app/actions/stores'
 import { toast } from 'sonner'
 import { ChevronDown, ChevronUp, Plus, X, Loader2, Check } from 'lucide-react'
-import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
 
 interface Store {
-  id: string
-  name: string
-  mode: string
-  ichef_uber_linked: boolean
-  uber_enabled: boolean
-  uber_accounts: string[]
-  panda_enabled: boolean
-  twpay_enabled: boolean
-  online_enabled: boolean
-  petty_cash: number
+  id: string; name: string; mode: string; ichef_uber_linked: boolean
+  uber_enabled: boolean; uber_accounts: string[]; panda_enabled: boolean
+  twpay_enabled: boolean; online_enabled: boolean; petty_cash: number
 }
 
-interface Props {
-  store: Store
-  canEdit: boolean
-}
+interface Props { store: Store; canEdit: boolean }
 
 function Toggle({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
-    <label className={cn('flex items-center gap-2 cursor-pointer', disabled && 'opacity-50 cursor-default')}>
+    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1 }}>
       <button
-        type="button"
-        disabled={disabled}
+        type="button" disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
-        className={cn(
-          'relative w-9 h-5 rounded-full transition-colors shrink-0',
-          checked ? 'bg-blue-500' : 'bg-slate-300'
-        )}
-      >
-        <span className={cn(
-          'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
-          checked ? 'translate-x-4' : 'translate-x-0'
-        )} />
+        style={{
+          position: 'relative', width: '36px', height: '20px', borderRadius: '10px', flexShrink: 0,
+          background: checked ? '#6366f1' : '#d4d4d8', border: 'none', cursor: disabled ? 'default' : 'pointer',
+          transition: 'background 0.2s',
+        }}>
+        <span style={{
+          position: 'absolute', top: '2px', left: '2px', width: '16px', height: '16px',
+          background: 'white', borderRadius: '50%', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+          transform: checked ? 'translateX(16px)' : 'translateX(0)',
+          transition: 'transform 0.2s',
+        }} />
       </button>
-      <span className="text-sm text-slate-700">{label}</span>
+      <span className="text-sm" style={{ color: '#52525b' }}>{label}</span>
     </label>
   )
 }
@@ -50,7 +39,6 @@ function Toggle({ label, checked, onChange, disabled }: { label: string; checked
 export default function StoreEditor({ store, canEdit }: Props) {
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-
   const [mode, setMode] = useState(store.mode)
   const [ichefLinked, setIchefLinked] = useState(store.ichef_uber_linked)
   const [uberEnabled, setUberEnabled] = useState(store.uber_enabled)
@@ -64,121 +52,98 @@ export default function StoreEditor({ store, canEdit }: Props) {
   function addAccount() {
     const name = newAccount.trim()
     if (!name) return
-    if (uberAccounts.includes(name)) {
-      toast.error('帳號名稱已存在')
-      return
-    }
+    if (uberAccounts.includes(name)) { toast.error('帳號名稱已存在'); return }
     setUberAccounts(prev => [...prev, name])
     setNewAccount('')
-  }
-
-  function removeAccount(name: string) {
-    setUberAccounts(prev => prev.filter(a => a !== name))
   }
 
   async function handleSave() {
     setSaving(true)
     const result = await updateStoreSettings(store.id, {
-      mode,
-      ichef_uber_linked: ichefLinked,
-      uber_enabled: uberEnabled,
-      uber_accounts: uberAccounts,
-      panda_enabled: pandaEnabled,
-      twpay_enabled: twpayEnabled,
-      online_enabled: onlineEnabled,
-      petty_cash: pettyCash,
+      mode, ichef_uber_linked: ichefLinked, uber_enabled: uberEnabled, uber_accounts: uberAccounts,
+      panda_enabled: pandaEnabled, twpay_enabled: twpayEnabled, online_enabled: onlineEnabled, petty_cash: pettyCash,
     })
-    if (result.error) {
-      toast.error(result.error)
-    } else {
-      toast.success(`${store.name} 設定已儲存`)
-      setOpen(false)
-    }
+    if (result.error) { toast.error(result.error) }
+    else { toast.success(`${store.name} 設定已儲存`); setOpen(false) }
     setSaving(false)
   }
 
-  const modeLabel: Record<string, string> = {
-    ichef: 'iChef',
-    handwrite: '手寫菜單',
-    mixed: '混合模式',
-  }
+  const modeLabel: Record<string, string> = { ichef: 'iChef', handwrite: '手寫菜單', mixed: '混合模式' }
 
   return (
-    <div className="border border-slate-200 rounded-xl overflow-hidden">
-      {/* 標題列 */}
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors"
-      >
+    <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+      <button type="button" onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-4">
         <div className="flex items-center gap-3">
-          <span className="font-semibold text-slate-900">{store.name}</span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-            {modeLabel[store.mode] ?? store.mode}
-          </span>
-          {store.uber_enabled && store.uber_accounts.length > 0 && (
-            <span className="text-xs text-slate-400">Uber × {store.uber_accounts.length}</span>
-          )}
+          <div className="h-9 w-9 rounded-xl flex items-center justify-center text-white text-xs font-bold shrink-0"
+            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+            {store.name.slice(0, 2)}
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-left" style={{ color: '#18181b' }}>{store.name}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: '#f4f4f5', color: '#71717a' }}>
+                {modeLabel[store.mode] ?? store.mode}
+              </span>
+              {store.uber_enabled && store.uber_accounts.length > 0 && (
+                <span className="text-xs" style={{ color: '#a1a1aa' }}>Uber × {store.uber_accounts.length}</span>
+              )}
+            </div>
+          </div>
         </div>
-        {open ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+        {open
+          ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />
+          : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />}
       </button>
 
-      {/* 展開內容 */}
       {open && (
-        <div className="px-4 pb-4 pt-2 bg-slate-50 border-t border-slate-100 space-y-4">
+        <div className="px-4 pb-4 space-y-5" style={{ borderTop: '1px solid #f4f4f5', background: '#fafafa', paddingTop: '16px' }}>
 
           {/* 營業模式 */}
-          <div className="space-y-1.5">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">營業模式</p>
+          <div className="space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>營業模式</p>
             <div className="flex gap-2 flex-wrap">
               {(['ichef', 'handwrite', 'mixed'] as const).map(m => (
-                <button
-                  key={m}
-                  type="button"
-                  disabled={!canEdit}
-                  onClick={() => setMode(m)}
-                  className={cn(
-                    'px-3 py-1.5 rounded-lg text-sm border transition-colors',
-                    mode === m
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300',
-                    !canEdit && 'opacity-60 cursor-default'
-                  )}
-                >
+                <button key={m} type="button" disabled={!canEdit} onClick={() => setMode(m)}
+                  className="px-3 py-1.5 rounded-xl text-sm font-medium"
+                  style={{
+                    background: mode === m ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'white',
+                    color: mode === m ? 'white' : '#52525b',
+                    border: mode === m ? 'none' : '1px solid #e4e4e7',
+                    opacity: !canEdit ? 0.6 : 1,
+                    boxShadow: mode === m ? '0 2px 8px rgba(99,102,241,0.25)' : 'none',
+                  }}>
                   {modeLabel[m]}
                 </button>
               ))}
             </div>
             {mode === 'ichef' && (
-              <div className="mt-2">
-                <Toggle
-                  label="iChef 整合外送平台（總金額含 Uber / 台灣Pay）"
-                  checked={ichefLinked}
-                  onChange={setIchefLinked}
-                  disabled={!canEdit}
-                />
-                <p className="text-[11px] text-slate-400 mt-1 ml-11">
+              <div className="mt-2 space-y-1">
+                <Toggle label="iChef 整合外送平台（總金額含 Uber / 台灣Pay）"
+                  checked={ichefLinked} onChange={setIchefLinked} disabled={!canEdit} />
+                <p className="text-[11px] ml-11" style={{ color: '#a1a1aa' }}>
                   啟用後，結帳時輸入 iChef 總金額，外送平台金額僅供扣除使用
                 </p>
               </div>
             )}
           </div>
 
-          {/* Uber 設定 */}
+          {/* Uber */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Uber Eats</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>Uber Eats</p>
               <Toggle label="啟用" checked={uberEnabled} onChange={setUberEnabled} disabled={!canEdit} />
             </div>
             {uberEnabled && (
               <div className="space-y-2">
                 <div className="flex flex-wrap gap-2">
                   {uberAccounts.map(acc => (
-                    <span key={acc} className="flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded-lg text-sm text-slate-700">
+                    <span key={acc} className="flex items-center gap-1 px-2.5 py-1 rounded-full text-sm"
+                      style={{ background: '#eef2ff', color: '#4338ca', border: '1px solid #e0e7ff' }}>
                       {acc}
                       {canEdit && (
-                        <button type="button" onClick={() => removeAccount(acc)} className="text-slate-400 hover:text-red-500 transition-colors">
-                          <X className="h-3 w-3" />
+                        <button type="button" onClick={() => setUberAccounts(prev => prev.filter(a => a !== acc))}>
+                          <X className="h-3 w-3" style={{ color: '#818cf8' }} />
                         </button>
                       )}
                     </span>
@@ -186,17 +151,16 @@ export default function StoreEditor({ store, canEdit }: Props) {
                 </div>
                 {canEdit && (
                   <div className="flex gap-2">
-                    <Input
+                    <input
                       placeholder="帳號名稱（例：鑫營）"
-                      className="h-8 text-sm flex-1"
+                      style={{ flex: 1, height: '36px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
                       value={newAccount}
                       onChange={e => setNewAccount(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') addAccount() }}
                     />
-                    <button
-                      type="button"
-                      onClick={addAccount}
-                      className="flex items-center gap-1 px-3 h-8 rounded-lg bg-blue-50 text-blue-600 text-sm hover:bg-blue-100 transition-colors"
-                    >
+                    <button type="button" onClick={addAccount}
+                      className="flex items-center gap-1 px-3 rounded-xl text-sm font-medium"
+                      style={{ background: '#eef2ff', color: '#4338ca', border: '1px solid #e0e7ff' }}>
                       <Plus className="h-3.5 w-3.5" /> 新增
                     </button>
                   </div>
@@ -207,8 +171,8 @@ export default function StoreEditor({ store, canEdit }: Props) {
 
           {/* 其他平台 */}
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">其他平台 / 通路</p>
-            <div className="space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>其他平台 / 通路</p>
+            <div className="space-y-2.5">
               <Toggle label="熊貓 foodpanda" checked={pandaEnabled} onChange={setPandaEnabled} disabled={!canEdit} />
               <Toggle label="台灣Pay" checked={twpayEnabled} onChange={setTwpayEnabled} disabled={!canEdit} />
               <Toggle label="線上點餐" checked={onlineEnabled} onChange={setOnlineEnabled} disabled={!canEdit} />
@@ -216,30 +180,24 @@ export default function StoreEditor({ store, canEdit }: Props) {
           </div>
 
           {/* 零用金 */}
-          <div className="space-y-1.5">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">結帳後剩餘零用金</p>
+          <div className="space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>結帳後剩餘零用金</p>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-500">$</span>
-              <Input
-                type="number"
-                min="0"
-                className="w-32 h-9 text-right tabular-nums"
-                value={pettyCash || ''}
-                placeholder="0"
+              <span className="text-sm" style={{ color: '#a1a1aa' }}>$</span>
+              <input
+                type="number" min="0"
+                style={{ width: '128px', height: '36px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', textAlign: 'right', outline: 'none', background: !canEdit ? '#fafafa' : 'white', fontVariantNumeric: 'tabular-nums' }}
+                value={pettyCash || ''} placeholder="0"
                 disabled={!canEdit}
                 onChange={e => setPettyCash(parseInt(e.target.value) || 0)}
               />
             </div>
           </div>
 
-          {/* 儲存按鈕 */}
           {canEdit && (
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
-            >
+            <button type="button" onClick={handleSave} disabled={saving}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
+              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', opacity: saving ? 0.7 : 1 }}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               儲存設定
             </button>

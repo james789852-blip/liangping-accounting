@@ -1,23 +1,22 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { cn } from '@/lib/utils'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import { deleteItemMapping, updateItemMapping, saveItemMapping } from '@/app/actions/item-mappings'
 import { useRouter } from 'next/navigation'
 import { Trash2, Edit2, Check, X, Plus, Tag } from 'lucide-react'
 
-interface Mapping {
-  id: string
-  item_name: string
-  excel_column: string
-  item_category: string
+interface Mapping { id: string; item_name: string; excel_column: string; item_category: string }
+
+const CAT_STYLE: Record<string, { bg: string; color: string }> = {
+  '食材': { bg: '#d1fae5', color: '#047857' },
+  '耗材': { bg: '#eef2ff', color: '#4338ca' },
+  '雜項': { bg: '#f4f4f5', color: '#71717a' },
 }
 
-const CAT_COLOR: Record<string, string> = {
-  '食材': 'bg-green-100 text-green-700',
-  '耗材': 'bg-blue-100 text-blue-700',
-  '雜項': 'bg-slate-100 text-slate-600',
+const SELECT_STYLE: React.CSSProperties = {
+  height: '32px', padding: '0 8px', border: '1.5px solid #6366f1', borderRadius: '8px',
+  fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit',
 }
 
 export default function ItemMappingsClient({ mappings: initial }: { mappings: Mapping[] }) {
@@ -32,11 +31,7 @@ export default function ItemMappingsClient({ mappings: initial }: { mappings: Ma
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
-  function startEdit(m: Mapping) {
-    setEditId(m.id)
-    setEditCol(m.excel_column)
-    setEditCat(m.item_category)
-  }
+  function startEdit(m: Mapping) { setEditId(m.id); setEditCol(m.excel_column); setEditCat(m.item_category) }
 
   function handleUpdate(id: string) {
     startTransition(async () => {
@@ -59,10 +54,7 @@ export default function ItemMappingsClient({ mappings: initial }: { mappings: Ma
     if (!newName.trim() || !newCol) return
     startTransition(async () => {
       await saveItemMapping(newName.trim(), newCol, newCat)
-      setShowAdd(false)
-      setNewName('')
-      setNewCol('')
-      setNewCat('食材')
+      setShowAdd(false); setNewName(''); setNewCol(''); setNewCat('食材')
       router.refresh()
     })
   }
@@ -75,126 +67,133 @@ export default function ItemMappingsClient({ mappings: initial }: { mappings: Ma
   }, {})
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 space-y-6 pb-24">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <Tag className="h-5 w-5 text-blue-500" /> 品項對應管理
-          </h1>
-          <p className="text-sm text-slate-500 mt-0.5">管理收據品項與 Excel 欄位的對應關係</p>
+    <div className="min-h-full" style={{ background: '#fafafa' }}>
+
+      <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div className="max-w-2xl mx-auto flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
+              <Tag className="h-3.5 w-3.5" />
+              品項對應
+            </div>
+            <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>品項對應管理</h1>
+            <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>管理收據品項與 Excel 欄位的對應關係</p>
+          </div>
+          <button onClick={() => setShowAdd(!showAdd)}
+            className="mt-1 flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-white text-sm font-semibold"
+            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}>
+            <Plus className="h-4 w-4" /> 新增
+          </button>
         </div>
-        <button
-          onClick={() => setShowAdd(!showAdd)}
-          className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium"
-        >
-          <Plus className="h-4 w-4" /> 新增
-        </button>
       </div>
 
-      {showAdd && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
-          <p className="text-sm font-semibold text-blue-800">新增品項對應</p>
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <label className="text-xs text-slate-500 mb-1 block">品項名稱</label>
-              <input
-                className="w-full h-9 px-2 text-sm rounded-lg border border-slate-200 outline-none focus:border-blue-500 bg-white"
-                value={newName} onChange={e => setNewName(e.target.value)} placeholder="例：高麗菜"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 mb-1 block">Excel 欄位</label>
-              <select
-                className="w-full h-9 px-2 text-sm rounded-lg border border-slate-200 outline-none focus:border-blue-500 bg-white"
-                value={newCol} onChange={e => setNewCol(e.target.value)}
-              >
-                <option value="">請選擇</option>
-                {Object.entries(EXCEL_COLUMNS).map(([cat, cols]) => (
-                  <optgroup key={cat} label={cat}>
-                    {cols.map(col => <option key={col} value={col}>{col}</option>)}
-                  </optgroup>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 mb-1 block">類別</label>
-              <select
-                className="w-full h-9 px-2 text-sm rounded-lg border border-slate-200 outline-none focus:border-blue-500 bg-white"
-                value={newCat} onChange={e => setNewCat(e.target.value)}
-              >
-                <option>食材</option><option>耗材</option><option>雜項</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={handleAdd} disabled={!newName.trim() || !newCol || isPending}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
-              儲存
-            </button>
-            <button onClick={() => setShowAdd(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600">
-              取消
-            </button>
-          </div>
-        </div>
-      )}
+      <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 pb-28">
 
-      {Object.entries(grouped).map(([cat, items]) => (
-        <div key={cat}>
-          <div className="flex items-center gap-2 mb-2">
-            <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full', CAT_COLOR[cat] ?? CAT_COLOR['雜項'])}>
-              {cat}
-            </span>
-            <span className="text-xs text-slate-400">{items.length} 項</span>
-          </div>
-          <div className="rounded-xl border border-slate-200 overflow-hidden">
-            {items.map((m, idx) => (
-              <div key={m.id} className={cn(
-                'flex items-center gap-3 px-4 py-2.5',
-                idx !== items.length - 1 && 'border-b border-slate-100'
-              )}>
-                <span className="flex-1 text-sm text-slate-700 font-medium">{m.item_name}</span>
-
-                {editId === m.id ? (
-                  <>
-                    <select
-                      className="h-8 px-2 text-xs rounded-lg border border-blue-300 outline-none bg-white"
-                      value={editCol} onChange={e => setEditCol(e.target.value)}
-                    >
-                      {Object.entries(EXCEL_COLUMNS).map(([c, cols]) => (
-                        <optgroup key={c} label={c}>
-                          {cols.map(col => <option key={col} value={col}>{col}</option>)}
-                        </optgroup>
-                      ))}
-                    </select>
-                    <select
-                      className="h-8 px-2 text-xs rounded-lg border border-blue-300 outline-none bg-white"
-                      value={editCat} onChange={e => setEditCat(e.target.value)}
-                    >
-                      <option>食材</option><option>耗材</option><option>雜項</option>
-                    </select>
-                    <button onClick={() => handleUpdate(m.id)} className="text-green-600 hover:text-green-700">
-                      <Check className="h-4 w-4" />
-                    </button>
-                    <button onClick={() => setEditId(null)} className="text-slate-400">
-                      <X className="h-4 w-4" />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-sm text-slate-500 tabular-nums">{m.excel_column}</span>
-                    <button onClick={() => startEdit(m)} className="text-slate-300 hover:text-blue-500">
-                      <Edit2 className="h-4 w-4" />
-                    </button>
-                    <button onClick={() => handleDelete(m.id)} className="text-slate-300 hover:text-red-500">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </>
-                )}
+        {showAdd && (
+          <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1.5px solid #e0e7ff', boxShadow: '0 2px 8px rgba(99,102,241,0.1)' }}>
+            <p className="text-sm font-semibold" style={{ color: '#4338ca' }}>新增品項對應</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: '#52525b' }}>品項名稱</label>
+                <input
+                  style={{ width: '100%', height: '36px', padding: '0 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
+                  value={newName} onChange={e => setNewName(e.target.value)} placeholder="例：高麗菜" />
               </div>
-            ))}
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: '#52525b' }}>Excel 欄位</label>
+                <select
+                  style={{ width: '100%', height: '36px', padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
+                  value={newCol} onChange={e => setNewCol(e.target.value)}>
+                  <option value="">請選擇</option>
+                  {Object.entries(EXCEL_COLUMNS).map(([cat, cols]) => (
+                    <optgroup key={cat} label={cat}>
+                      {cols.map(col => <option key={col} value={col}>{col}</option>)}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: '#52525b' }}>類別</label>
+                <select
+                  style={{ width: '100%', height: '36px', padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
+                  value={newCat} onChange={e => setNewCat(e.target.value)}>
+                  <option>食材</option><option>耗材</option><option>雜項</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handleAdd} disabled={!newName.trim() || !newCol || isPending}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-white"
+                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', opacity: !newName.trim() || !newCol || isPending ? 0.5 : 1 }}>
+                儲存
+              </button>
+              <button onClick={() => setShowAdd(false)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold"
+                style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b' }}>
+                取消
+              </button>
+            </div>
           </div>
-        </div>
-      ))}
+        )}
+
+        {Object.entries(grouped).map(([cat, items]) => {
+          const catSt = CAT_STYLE[cat] ?? CAT_STYLE['雜項']
+          return (
+            <div key={cat}>
+              <div className="flex items-center gap-2 mb-2 px-1">
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                  style={{ background: catSt.bg, color: catSt.color }}>
+                  {cat}
+                </span>
+                <span className="text-xs" style={{ color: '#a1a1aa' }}>{items.length} 項</span>
+              </div>
+              <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                {items.map((m, idx) => (
+                  <div key={m.id} className="flex items-center gap-3 px-4 py-2.5"
+                    style={{ borderBottom: idx !== items.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
+                    <span className="flex-1 text-sm font-semibold" style={{ color: '#18181b' }}>{m.item_name}</span>
+
+                    {editId === m.id ? (
+                      <>
+                        <select style={SELECT_STYLE} value={editCol} onChange={e => setEditCol(e.target.value)}>
+                          {Object.entries(EXCEL_COLUMNS).map(([c, cols]) => (
+                            <optgroup key={c} label={c}>
+                              {cols.map(col => <option key={col} value={col}>{col}</option>)}
+                            </optgroup>
+                          ))}
+                        </select>
+                        <select style={SELECT_STYLE} value={editCat} onChange={e => setEditCat(e.target.value)}>
+                          <option>食材</option><option>耗材</option><option>雜項</option>
+                        </select>
+                        <button onClick={() => handleUpdate(m.id)} style={{ color: '#047857' }}>
+                          <Check className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => setEditId(null)} style={{ color: '#a1a1aa' }}>
+                          <X className="h-4 w-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
+                        <button onClick={() => startEdit(m)} style={{ color: '#d4d4d8' }}
+                          onMouseEnter={e => (e.currentTarget.style.color = '#6366f1')}
+                          onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => handleDelete(m.id)} style={{ color: '#d4d4d8' }}
+                          onMouseEnter={e => (e.currentTarget.style.color = '#be123c')}
+                          onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
