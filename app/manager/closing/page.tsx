@@ -75,7 +75,7 @@ export default async function ClosingPage() {
   // 撈今日收據，供結帳表單自動填入「當日現金支出」
   const { data: todayReceipts } = await supabase
     .from('receipts')
-    .select('id, vendor_name, total_amount, receipt_type')
+    .select('id, vendor_name, total_amount, receipt_type, receipt_items(item_name, amount)')
     .eq('store_id', storeId)
     .eq('business_date', today)
     .order('created_at')

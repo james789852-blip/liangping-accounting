@@ -14,7 +14,10 @@ interface TodayReceipt {
   vendor_name: string
   total_amount: number
   receipt_type: string
+  receipt_items?: { item_name: string; amount: number }[]
 }
+
+function isCKVendor(name: string) { return (name || '').includes('央廚') }
 
 interface Props {
   store: Store
@@ -53,13 +56,25 @@ interface HandwriteOrder {
   void_reason: string
 }
 
-function initFormData(store: Store, ckPrices: CKPrice[], existing: any): FormData {
+function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayReceipts?: TodayReceipt[]): FormData {
   const uber_amounts: Record<string, number> = {}
   const ck_quantities: Record<string, number> = {}
   ;(store.uber_accounts ?? []).forEach(acc => { uber_amounts[acc] = 0 })
   ckPrices.forEach(p => { ck_quantities[p.item_name] = 0 })
 
   if (!existing) {
+    // 從央廚收據自動填入央廚配送數量
+    if (todayReceipts) {
+      const ckReceipts = todayReceipts.filter(r => isCKVendor(r.vendor_name))
+      ckReceipts.forEach(r => {
+        (r.receipt_items ?? []).forEach(item => {
+          const price = ckPrices.find(p => p.item_name === item.item_name)
+          if (price && price.unit_price > 0) {
+            ck_quantities[price.item_name] = (ck_quantities[price.item_name] ?? 0) + item.amount / price.unit_price
+          }
+        })
+      })
+    }
     return {
       pos_cash: 0, uber_amounts, panda_amount: 0, twpay_amount: 0,
       online_amount: 0, ck_quantities,
@@ -104,23 +119,27 @@ function initExpenses(existing: any, todayReceipts?: TodayReceipt[]): Expense[] 
     id: e.id, description: e.description, amount: e.amount,
   }))
   if (fromDB.length > 0) return fromDB
-  // 若無既有支出，自動從今日收據填入
+  // 若無既有支出，自動從今日非央廚收據填入
   if (todayReceipts && todayReceipts.length > 0) {
-    return todayReceipts.map(r => ({
-      id: crypto.randomUUID(),
-      description: r.vendor_name || '（未填廠商）',
-      amount: r.total_amount,
-    }))
+    return todayReceipts
+      .filter(r => !isCKVendor(r.vendor_name))
+      .map(r => ({
+        id: crypto.randomUUID(),
+        description: r.vendor_name || '（未填廠商）',
+        amount: r.total_amount,
+      }))
   }
   return []
 }
 
 function receiptsToExpenses(receipts: TodayReceipt[]): Expense[] {
-  return receipts.map(r => ({
-    id: crypto.randomUUID(),
-    description: r.vendor_name || '（未填廠商）',
-    amount: r.total_amount,
-  }))
+  return receipts
+    .filter(r => !isCKVendor(r.vendor_name))
+    .map(r => ({
+      id: crypto.randomUUID(),
+      description: r.vendor_name || '（未填廠商）',
+      amount: r.total_amount,
+    }))
 }
 
 function initHandwriteOrders(existing: any): HandwriteOrder[] {
@@ -270,7 +289,7 @@ function Row({ label, value, muted, bold, accent }: { label: string; value: stri
 }
 
 export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [] }: Props) {
-  const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing))
+  const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, todayReceipts))
   const [syncing, setSyncing] = useState(false)
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
@@ -325,13 +344,32 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const supabase = createClient()
     const { data: receipts } = await supabase
       .from('receipts')
-      .select('id, vendor_name, total_amount, receipt_type')
+      .select('id, vendor_name, total_amount, receipt_type, receipt_items(item_name, amount)')
       .eq('store_id', store.id)
       .eq('business_date', today)
       .order('created_at')
     if (receipts) {
-      setExpenses(receiptsToExpenses(receipts))
-      toast.success(receipts.length > 0 ? `已從 ${receipts.length} 筆收據同步支出` : '今日尚無收據')
+      const typed = receipts as TodayReceipt[]
+      // 非央廚收據 → 支出
+      setExpenses(receiptsToExpenses(typed))
+      // 央廚收據 → 央廚配送數量
+      const newCKQty: Record<string, number> = {}
+      ckPrices.forEach(p => { newCKQty[p.item_name] = 0 })
+      typed.filter(r => isCKVendor(r.vendor_name)).forEach(r => {
+        (r.receipt_items ?? []).forEach(item => {
+          const price = ckPrices.find(p => p.item_name === item.item_name)
+          if (price && price.unit_price > 0) {
+            newCKQty[price.item_name] = (newCKQty[price.item_name] ?? 0) + item.amount / price.unit_price
+          }
+        })
+      })
+      set('ck_quantities', newCKQty)
+      const ckCount = typed.filter(r => isCKVendor(r.vendor_name)).length
+      const nonCKCount = typed.length - ckCount
+      const parts: string[] = []
+      if (nonCKCount > 0) parts.push(`${nonCKCount} 筆現金支出`)
+      if (ckCount > 0) parts.push(`${ckCount} 筆央廚配送`)
+      toast.success(parts.length > 0 ? `已同步：${parts.join('、')}` : '今日尚無收據')
     }
     setSyncing(false)
   }
