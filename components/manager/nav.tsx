@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, ClipboardList, Wallet, ShoppingCart,
-  FileText, BarChart3, History, Download, LogOut, Store
+  FileText, BarChart3, History, Download, LogOut, Settings,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -16,8 +16,7 @@ function useClock() {
     function tick() {
       setTime(new Date().toLocaleTimeString('zh-TW', {
         timeZone: 'Asia/Taipei',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-        hour12: false,
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
       }))
     }
     tick()
@@ -27,16 +26,28 @@ function useClock() {
   return time
 }
 
-const navItems = [
-  { href: '/manager/dashboard', label: '今日狀態', icon: LayoutDashboard },
-  { href: '/manager/closing',   label: '每日結帳', icon: ClipboardList },
-  { href: '/manager/cash',      label: '現金清點', icon: Wallet },
-  { href: '/manager/order',     label: '叫貨明細', icon: ShoppingCart },
-  { href: '/manager/receipts',  label: '發票收據', icon: FileText },
-  { href: '/manager/summary',   label: '結算結果', icon: BarChart3 },
-  { href: '/manager/history',   label: '歷史紀錄', icon: History },
-  { href: '/manager/export',    label: '本月匯出', icon: Download },
+const sections = [
+  {
+    label: '今日',
+    items: [
+      { href: '/manager/dashboard', label: '今日狀態', icon: LayoutDashboard },
+      { href: '/manager/closing',   label: '每日結帳', icon: ClipboardList },
+      { href: '/manager/cash',      label: '現金清點', icon: Wallet },
+      { href: '/manager/order',     label: '叫貨明細', icon: ShoppingCart },
+    ],
+  },
+  {
+    label: '紀錄',
+    items: [
+      { href: '/manager/receipts', label: '發票收據', icon: FileText },
+      { href: '/manager/summary',  label: '結算結果', icon: BarChart3 },
+      { href: '/manager/history',  label: '歷史紀錄', icon: History },
+      { href: '/manager/export',   label: '本月匯出', icon: Download },
+    ],
+  },
 ]
+
+const allNavItems = sections.flatMap(s => s.items)
 
 interface Props { userName: string; storeName: string; role: string }
 
@@ -57,99 +68,110 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
   return (
     <>
       {/* ── 桌機側欄 */}
-      <aside className="hidden lg:flex flex-col w-64 shrink-0" style={{ background: '#0f1117', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+      <aside className="hidden lg:flex flex-col w-64 shrink-0 bg-white" style={{ borderRight: '1px solid #f4f4f5' }}>
 
-        {/* 品牌標頭 */}
-        <div className="relative px-5 pt-7 pb-6 overflow-hidden" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          {/* 背景光暈 */}
-          <div className="absolute -top-10 -left-10 h-40 w-40 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.18) 0%, transparent 70%)' }} />
-
-          <div className="relative flex items-center gap-3 mb-5">
-            <div className="h-10 w-10 rounded-2xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', boxShadow: '0 4px 12px rgba(99,102,241,0.45)' }}>
-              <Store className="h-5 w-5 text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">店長端</p>
-              <p className="text-sm font-bold text-white truncate mt-0.5">{storeName || '未指派店家'}</p>
-            </div>
+        {/* 品牌 */}
+        <div className="flex items-center gap-3 px-5 pt-6 pb-5">
+          <div className="h-9 w-9 rounded-[10px] flex items-center justify-center text-white font-extrabold text-base shrink-0"
+            style={{ background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%)' }}>
+            梁
           </div>
-          {time && (
-            <p className="relative text-4xl font-bold text-white tabular-nums" style={{ letterSpacing: '-0.02em', fontFeatureSettings: '"tnum"' }}>{time}</p>
-          )}
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>梁平-作帳</p>
+            <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>{storeName || '未指派'} · {role}</p>
+          </div>
         </div>
 
+        {/* 時鐘 */}
+        {time && (
+          <div className="px-5 pb-4">
+            <p className="text-2xl font-bold tabular-nums" style={{ color: '#18181b', letterSpacing: '-0.02em', fontFeatureSettings: '"tnum"' }}>{time}</p>
+          </div>
+        )}
+
         {/* 導覽 */}
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-          {navItems.map(({ href, label, icon: Icon }) => {
-            const active = pathname.startsWith(href)
-            return (
-              <Link key={href} href={href}
-                className={cn(
-                  'flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150',
-                  active
-                    ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-900/50'
-                    : 'text-slate-400 hover:text-white hover:bg-white/[0.06]'
-                )}>
-                <Icon className="h-4 w-4 shrink-0" />
-                {label}
-              </Link>
-            )
-          })}
+        <nav className="flex-1 px-4 pb-4 overflow-y-auto">
+          {sections.map(section => (
+            <div key={section.label}>
+              <p className="text-[11px] font-semibold uppercase px-3 pt-3 pb-1.5" style={{ color: '#a1a1aa', letterSpacing: '0.05em' }}>
+                {section.label}
+              </p>
+              {section.items.map(({ href, label, icon: Icon }) => {
+                const active = pathname.startsWith(href)
+                return (
+                  <Link key={href} href={href}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-all duration-150 mb-0.5',
+                      active
+                        ? 'font-semibold'
+                        : 'hover:bg-slate-50'
+                    )}
+                    style={active
+                      ? { backgroundColor: '#eef2ff', color: '#4338ca' }
+                      : { color: '#52525b' }
+                    }>
+                    <Icon className="h-[18px] w-[18px] shrink-0" />
+                    {label}
+                  </Link>
+                )
+              })}
+            </div>
+          ))}
+
+          <div style={{ borderTop: '1px solid #f4f4f5', margin: '12px 0 4px' }} />
+          <button onClick={handleLogout}
+            className="flex w-full items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-colors hover:bg-slate-50"
+            style={{ color: '#52525b' }}>
+            <LogOut className="h-[18px] w-[18px]" />
+            登出
+          </button>
         </nav>
 
         {/* 使用者 */}
-        <div className="px-3 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <div className="flex items-center gap-3 px-3 py-2 mb-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
-            <div className="h-8 w-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+        <div className="px-4 py-4" style={{ borderTop: '1px solid #f4f4f5' }}>
+          <div className="flex items-center gap-3 px-2">
+            <div className="h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0"
+              style={{ background: 'linear-gradient(135deg,#f97316,#f59e0b)' }}>
               {initial}
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-white truncate">{userName}</p>
-              <p className="text-xs text-slate-500">{role}</p>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900 truncate">{userName}</p>
+              <p className="text-xs truncate" style={{ color: '#a1a1aa' }}>{role}</p>
             </div>
           </div>
-          <button onClick={handleLogout}
-            className="flex w-full items-center gap-3 px-3 py-2 rounded-xl text-sm text-slate-500 hover:text-white hover:bg-white/[0.06] transition-colors">
-            <LogOut className="h-4 w-4" /> 登出
-          </button>
         </div>
       </aside>
 
       {/* ── 手機頂部 */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white flex items-center px-4" style={{ height: '60px', borderBottom: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', boxShadow: '0 3px 8px rgba(99,102,241,0.35)' }}>
-            <Store className="h-4 w-4 text-white" />
+      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white flex items-center px-4"
+        style={{ height: '56px', borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+          <div className="h-8 w-8 rounded-[8px] flex items-center justify-center text-white font-extrabold text-sm shrink-0"
+            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899)' }}>
+            梁
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-900 truncate leading-tight">{storeName || '梁平作帳'}</p>
-            <p className="text-[10px] text-slate-400 leading-tight">{role}</p>
+            <p className="text-sm font-bold text-slate-900 truncate leading-tight">{storeName || '梁平-作帳'}</p>
+            <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{role}</p>
           </div>
         </div>
-        {time && (
-          <p className="text-sm font-bold tabular-nums mx-3" style={{ color: '#64748b', fontFeatureSettings: '"tnum"' }}>{time}</p>
-        )}
-        <button onClick={handleLogout}
-          className="h-9 w-9 flex items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 transition-colors">
+        {time && <p className="text-sm font-bold tabular-nums mx-3" style={{ color: '#18181b' }}>{time}</p>}
+        <button onClick={handleLogout} className="h-8 w-8 flex items-center justify-center rounded-lg transition-colors hover:bg-slate-50" style={{ color: '#a1a1aa' }}>
           <LogOut className="h-4 w-4" />
         </button>
       </header>
 
       {/* ── 手機底部 Tab */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white" style={{ borderTop: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 -4px 20px rgba(0,0,0,0.06)' }}>
-        <div className="flex px-2 pt-2 pb-3">
-          {navItems.slice(0, 5).map(({ href, label, icon: Icon }) => {
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md"
+        style={{ borderTop: '1px solid #f4f4f5', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="flex px-1 pt-2 pb-2">
+          {allNavItems.slice(0, 5).map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href)
             return (
               <Link key={href} href={href}
-                className="flex flex-col items-center gap-1 flex-1">
-                <div className={cn(
-                  'flex items-center justify-center w-11 h-8 rounded-xl transition-all duration-200',
-                  active ? 'bg-indigo-600 shadow-sm shadow-indigo-500/30' : ''
-                )}>
-                  <Icon className={cn('h-5 w-5', active ? 'text-white' : 'text-slate-400')} />
-                </div>
-                <span className={cn('text-[10px] font-semibold', active ? 'text-indigo-600' : 'text-slate-400')}>
+                className="flex flex-col items-center gap-1 flex-1 py-1">
+                <Icon className={cn('h-[22px] w-[22px]')} style={{ color: active ? '#4f46e5' : '#a1a1aa' }} />
+                <span className="text-[11px] font-medium" style={{ color: active ? '#4f46e5' : '#a1a1aa' }}>
                   {label}
                 </span>
               </Link>
