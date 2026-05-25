@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 
 interface Store { id: string; name: string }
 
-export default function StoreSwitcher({ stores, currentStoreId, className }: { stores: Store[]; currentStoreId: string; className?: string }) {
+export default function StoreSwitcher({ stores, currentStoreId, className, style }: { stores: Store[]; currentStoreId: string; className?: string; style?: React.CSSProperties }) {
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -23,6 +23,7 @@ export default function StoreSwitcher({ stores, currentStoreId, className }: { s
       onChange={handleChange}
       disabled={pending}
       className={className ?? "text-xs border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"}
+      style={style}
     >
       {stores.map(s => (
         <option key={s.id} value={s.id}>{s.name}</option>

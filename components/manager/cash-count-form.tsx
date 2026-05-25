@@ -1,9 +1,6 @@
 'use client'
 
 import { useState, useRef, useTransition } from 'react'
-import { cn } from '@/lib/utils'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
 import { Calculator, CheckCircle2, AlertTriangle, Info, Save, History } from 'lucide-react'
 import { savePettyCashCount } from '@/app/actions/petty-cash'
 
@@ -65,6 +62,30 @@ function formatTime(iso: string) {
   })
 }
 
+const BASE_INPUT: React.CSSProperties = {
+  padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px',
+  fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit',
+  width: '100%', textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+}
+
+function NumInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [focused, setFocused] = useState(false)
+  return (
+    <input
+      type="number" min="0" inputMode="numeric"
+      style={{
+        ...BASE_INPUT,
+        borderColor: focused ? '#6366f1' : '#e4e4e7',
+        boxShadow: focused ? '0 0 0 4px rgba(99,102,241,0.1)' : 'none',
+      }}
+      value={value === 0 ? '' : value} placeholder="0"
+      onFocus={() => setFocused(true)}
+      onBlur={e => { setFocused(false); onChange(parseInt(e.target.value) || 0) }}
+      onChange={e => onChange(parseInt(e.target.value) || 0)}
+    />
+  )
+}
+
 export default function CashCountForm({
   storeName, pettyCash, storeId, today, closing, savedPettyCashCount, history,
 }: Props) {
@@ -84,6 +105,10 @@ export default function CashCountForm({
   const diff = total - pettyCash
   const isExact = diff === 0 && total > 0
   const isClose = Math.abs(diff) <= 50 && !isExact && total > 0
+
+  const diffColor = isExact ? '#047857' : isClose ? '#b45309' : total > 0 ? '#be123c' : '#a1a1aa'
+  const diffBg    = isExact ? '#d1fae5' : isClose ? '#fef3c7' : total > 0 ? '#ffe4e6' : '#f4f4f5'
+  const diffBorder = isExact ? '#6ee7b7' : isClose ? '#fcd34d' : total > 0 ? '#fda4af' : '#e4e4e7'
 
   const statusLabel: Record<string, string> = {
     draft: '草稿', submitted: '已送出', verified: '已審核', disputed: '退回修改'
@@ -109,217 +134,213 @@ export default function CashCountForm({
   }
 
   return (
-    <div className="max-w-xl mx-auto px-4 py-6 space-y-4 pb-24">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-          <Calculator className="h-5 w-5 text-green-500" /> 現金清點
-        </h1>
-        <p className="text-sm text-slate-500 mt-0.5">{storeName} · {today}</p>
+    <div className="min-h-full" style={{ background: '#fafafa' }}>
+
+      {/* 頁首 */}
+      <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div className="max-w-xl mx-auto">
+          <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
+            <Calculator className="h-3.5 w-3.5" />
+            現金清點
+          </div>
+          <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>{storeName}</h1>
+          <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>{today}</p>
+        </div>
       </div>
 
-      {/* 今日結帳狀態提示 */}
-      {closing ? (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm space-y-1">
-          <div className="flex justify-between text-slate-600">
-            <span>今日結帳</span>
-            <span className="font-medium">{statusLabel[closing.status] ?? closing.status}</span>
-          </div>
-          <div className="flex justify-between text-slate-600">
-            <span>應包入信封</span>
-            <span className="tabular-nums font-medium">${fmt(closing.actual_remit)}</span>
-          </div>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700 flex items-start gap-2">
-          <Info className="h-4 w-4 mt-0.5 shrink-0" />
-          <span>今日尚未提交結帳，以下為零用金確認工具</span>
-        </div>
-      )}
+      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-28">
 
-      {/* 清點輸入 */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700">逐項清點</CardTitle>
-          <div className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 text-[10px] text-slate-400 mt-1">
-            <span />
-            <span className="text-center">張 / 枚</span>
-            <span className="text-center">整筆金額</span>
-            <span className="text-right">小計</span>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {DENOMS.map(({ label, countKey, lumpKey, unit, unitLabel }) => {
-            const countVal = values[countKey] || 0
-            const lumpVal  = values[lumpKey]  || 0
-            const subtotal = countVal * unit + lumpVal
-            return (
-              <div key={countKey} className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 items-center">
-                <span className="text-xs text-slate-500 shrink-0">{label}</span>
-                <div className="flex items-center gap-0.5">
-                  <input
-                    type="number" min="0" inputMode="numeric"
-                    className="text-right tabular-nums h-9 text-sm px-2 w-full rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-500"
-                    value={countVal === 0 ? '' : countVal} placeholder="0"
-                    onChange={e => set(countKey, parseInt(e.target.value) || 0)}
-                    onBlur={e => set(countKey, parseInt(e.target.value) || 0)}
-                  />
-                  <span className="text-[10px] text-slate-400 shrink-0">{unitLabel}</span>
-                </div>
-                <input
-                  type="number" min="0" inputMode="numeric"
-                  className="text-right tabular-nums h-9 text-sm px-2 w-full rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-500"
-                  value={lumpVal === 0 ? '' : lumpVal} placeholder="0"
-                  onChange={e => set(lumpKey, parseInt(e.target.value) || 0)}
-                  onBlur={e => set(lumpKey, parseInt(e.target.value) || 0)}
-                />
-                <span className={cn(
-                  'text-right text-xs tabular-nums shrink-0',
-                  subtotal > 0 ? 'text-slate-700 font-medium' : 'text-slate-300'
-                )}>
-                  ${fmt(subtotal)}
-                </span>
-              </div>
-            )
-          })}
-
-          <Separator className="my-1" />
-
-          <div className="flex justify-between items-center">
-            <span className="text-sm font-semibold text-slate-700">清點總額</span>
-            <span className="text-xl font-bold tabular-nums">${fmt(total)}</span>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 零用金比對結果 */}
-      <Card className={cn('border-2',
-        isExact  ? 'border-green-300 bg-green-50' :
-        isClose  ? 'border-yellow-300 bg-yellow-50' :
-        total > 0 ? 'border-red-300 bg-red-50' : 'border-slate-200'
-      )}>
-        <CardContent className="p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            {isExact ? (
-              <CheckCircle2 className="h-5 w-5 text-green-600" />
-            ) : total > 0 ? (
-              <AlertTriangle className="h-5 w-5 text-red-500" />
-            ) : (
-              <Calculator className="h-5 w-5 text-slate-400" />
-            )}
-            <span className="font-semibold text-slate-800 text-sm">零用金核對</span>
-          </div>
-
-          <div className="space-y-1.5 text-sm">
-            <div className="flex justify-between text-slate-600">
-              <span>清點總額</span>
-              <span className="tabular-nums font-medium">${fmt(total)}</span>
+        {/* 今日結帳狀態 */}
+        {closing ? (
+          <div className="bg-white rounded-2xl px-4 py-3.5 space-y-2"
+            style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <div className="flex justify-between items-center">
+              <span className="text-sm" style={{ color: '#52525b' }}>今日結帳</span>
+              <span className="text-sm font-semibold" style={{ color: '#4338ca' }}>{statusLabel[closing.status] ?? closing.status}</span>
             </div>
-            <div className="flex justify-between text-slate-600">
-              <span>應留零用金</span>
-              <span className="tabular-nums font-medium">${fmt(pettyCash)}</span>
+            <div className="flex justify-between items-center">
+              <span className="text-sm" style={{ color: '#52525b' }}>應包入信封</span>
+              <span className="text-base font-bold tabular-nums" style={{ color: '#18181b' }}>${fmt(closing.actual_remit)}</span>
             </div>
           </div>
-
-          <Separator />
-
-          <div className="flex justify-between items-center">
-            <span className="font-bold text-slate-900">差額</span>
-            <div className="text-right">
-              <p className={cn('text-3xl font-bold tabular-nums',
-                isExact  ? 'text-green-600' :
-                isClose  ? 'text-yellow-600' :
-                total > 0 ? 'text-red-600' : 'text-slate-400'
-              )}>
-                {total === 0 ? '—' : (diff >= 0 ? '+' : '') + fmt(diff)}
-              </p>
-              {total > 0 && (
-                <p className={cn('text-xs mt-0.5',
-                  isExact ? 'text-green-600' : isClose ? 'text-yellow-600' : 'text-red-600'
-                )}>
-                  {isExact ? '零用金正確 ✓' :
-                   isClose ? '差距微小，請再確認' :
-                   diff > 0 ? `多 $${fmt(Math.abs(diff))}` : `少 $${fmt(Math.abs(diff))}`}
-                </p>
-              )}
-            </div>
+        ) : (
+          <div className="rounded-2xl px-4 py-3.5 flex items-start gap-2.5"
+            style={{ background: '#eef2ff', border: '1px solid #e0e7ff' }}>
+            <Info className="h-4 w-4 mt-0.5 shrink-0" style={{ color: '#4338ca' }} />
+            <span className="text-sm" style={{ color: '#4338ca' }}>今日尚未提交結帳，以下為零用金確認工具</span>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* 儲存 / 清除按鈕 */}
-      <div className="space-y-2">
-        <button
-          type="button"
-          disabled={isPending || total === 0}
-          onClick={handleSave}
-          className={cn(
-            'w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors',
-            total === 0
-              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-              : saveStatus === 'saved'
-              ? 'bg-green-500 text-white'
-              : 'bg-blue-600 text-white active:bg-blue-700',
-          )}
-        >
-          {isPending ? (
-            <span className="animate-pulse">儲存中…</span>
-          ) : saveStatus === 'saved' ? (
-            <><CheckCircle2 className="h-4 w-4" /> 已儲存</>
-          ) : (
-            <><Save className="h-4 w-4" /> 儲存清點紀錄</>
-          )}
-        </button>
-
-        {saveStatus === 'error' && (
-          <p className="text-xs text-red-500 text-center">{saveError}</p>
         )}
 
-        {total > 0 && (
-          <button
-            type="button"
-            onClick={() => { setValues(initValues(null)); setSaveStatus('idle') }}
-            className="w-full py-2.5 border border-slate-200 rounded-xl text-sm text-slate-500 hover:bg-slate-50 transition-colors"
-          >
-            清除重填
-          </button>
-        )}
-      </div>
-
-      {/* 近期紀錄 */}
-      {history.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
-            <History className="h-4 w-4" /> 近期清點紀錄
+        {/* 逐項清點 */}
+        <div className="bg-white rounded-2xl overflow-hidden"
+          style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+          <div className="px-4 pt-4 pb-2">
+            <p className="text-sm font-semibold" style={{ color: '#18181b' }}>逐項清點</p>
+            <div className="grid mt-2 text-[10px] font-semibold uppercase tracking-wide"
+              style={{ gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px', color: '#a1a1aa' }}>
+              <span />
+              <span className="text-center">張 / 枚</span>
+              <span className="text-center">整筆金額</span>
+              <span className="text-right">小計</span>
+            </div>
           </div>
-          <div className="space-y-1.5">
-            {history.map(row => {
-              const rowTotal = calcTotal(row as any)
-              const rowDiff  = rowTotal - pettyCash
-              const rowExact = rowDiff === 0
-              const rowClose = Math.abs(rowDiff) <= 50 && !rowExact
+
+          <div className="px-4 pb-4 space-y-2.5">
+            {DENOMS.map(({ label, countKey, lumpKey, unit, unitLabel }) => {
+              const countVal = values[countKey] || 0
+              const lumpVal  = values[lumpKey]  || 0
+              const subtotal = countVal * unit + lumpVal
               return (
-                <div key={row.count_date}
-                  className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-2.5"
-                >
-                  <span className="text-sm text-slate-600">{formatDate(row.count_date)}</span>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold tabular-nums text-slate-800">${fmt(rowTotal)}</p>
-                    <p className={cn('text-xs tabular-nums',
-                      rowExact ? 'text-green-600' : rowClose ? 'text-yellow-600' : 'text-red-500'
-                    )}>
-                      {rowExact ? '正確 ✓' : (rowDiff >= 0 ? '+' : '') + fmt(rowDiff)}
-                    </p>
-                    {row.updated_at && (
-                      <p className="text-[10px] text-slate-400 mt-0.5">{formatTime(row.updated_at)}</p>
-                    )}
+                <div key={countKey} style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px', alignItems: 'center' }}>
+                  <span className="text-xs shrink-0" style={{ color: '#52525b' }}>{label}</span>
+                  <div className="flex items-center gap-1">
+                    <NumInput value={countVal} onChange={v => set(countKey, v)} />
+                    <span className="text-[10px] shrink-0" style={{ color: '#a1a1aa' }}>{unitLabel}</span>
                   </div>
+                  <NumInput value={lumpVal} onChange={v => set(lumpKey, v)} />
+                  <span className="text-right text-xs tabular-nums shrink-0"
+                    style={{ color: subtotal > 0 ? '#18181b' : '#d4d4d8', fontWeight: subtotal > 0 ? 600 : 400 }}>
+                    ${fmt(subtotal)}
+                  </span>
                 </div>
               )
             })}
+
+            <div style={{ borderTop: '1px solid #f4f4f5', paddingTop: '12px', marginTop: '4px' }}
+              className="flex justify-between items-center">
+              <span className="text-sm font-semibold" style={{ color: '#18181b' }}>清點總額</span>
+              <span className="text-xl font-bold tabular-nums" style={{ color: '#18181b' }}>${fmt(total)}</span>
+            </div>
           </div>
         </div>
-      )}
+
+        {/* 零用金核對 */}
+        <div className="rounded-2xl overflow-hidden"
+          style={{ border: `1.5px solid ${diffBorder}`, background: diffBg }}>
+          <div className="px-4 py-4 space-y-3">
+            <div className="flex items-center gap-2">
+              {isExact ? (
+                <CheckCircle2 className="h-5 w-5" style={{ color: diffColor }} />
+              ) : total > 0 ? (
+                <AlertTriangle className="h-5 w-5" style={{ color: diffColor }} />
+              ) : (
+                <Calculator className="h-5 w-5" style={{ color: '#a1a1aa' }} />
+              )}
+              <span className="text-sm font-semibold" style={{ color: '#18181b' }}>零用金核對</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-sm">
+                <span style={{ color: '#52525b' }}>清點總額</span>
+                <span className="font-semibold tabular-nums" style={{ color: '#18181b' }}>${fmt(total)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span style={{ color: '#52525b' }}>應留零用金</span>
+                <span className="font-semibold tabular-nums" style={{ color: '#18181b' }}>${fmt(pettyCash)}</span>
+              </div>
+            </div>
+
+            <div style={{ borderTop: `1px solid ${diffBorder}`, paddingTop: '12px' }}
+              className="flex justify-between items-center">
+              <span className="text-sm font-semibold" style={{ color: '#18181b' }}>差額</span>
+              <div className="text-right">
+                <p className="text-3xl font-bold tabular-nums" style={{ color: diffColor }}>
+                  {total === 0 ? '—' : (diff >= 0 ? '+' : '') + fmt(diff)}
+                </p>
+                {total > 0 && (
+                  <p className="text-xs mt-0.5" style={{ color: diffColor }}>
+                    {isExact ? '零用金正確 ✓' :
+                     isClose ? '差距微小，請再確認' :
+                     diff > 0 ? `多 $${fmt(Math.abs(diff))}` : `少 $${fmt(Math.abs(diff))}`}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 儲存按鈕 */}
+        <div className="space-y-2">
+          <button
+            type="button"
+            disabled={isPending || total === 0}
+            onClick={handleSave}
+            className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+            style={{
+              background: total === 0
+                ? '#f4f4f5'
+                : saveStatus === 'saved'
+                ? 'linear-gradient(135deg,#10b981,#059669)'
+                : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+              color: total === 0 ? '#a1a1aa' : 'white',
+              boxShadow: total === 0 ? 'none'
+                : saveStatus === 'saved' ? '0 4px 12px rgba(16,185,129,0.3)'
+                : '0 4px 12px rgba(99,102,241,0.3)',
+              cursor: total === 0 ? 'not-allowed' : 'pointer',
+            }}>
+            {isPending ? (
+              <span style={{ opacity: 0.8 }}>儲存中…</span>
+            ) : saveStatus === 'saved' ? (
+              <><CheckCircle2 className="h-4 w-4" /> 已儲存</>
+            ) : (
+              <><Save className="h-4 w-4" /> 儲存清點紀錄</>
+            )}
+          </button>
+
+          {saveStatus === 'error' && (
+            <p className="text-xs text-center" style={{ color: '#be123c' }}>{saveError}</p>
+          )}
+
+          {total > 0 && (
+            <button
+              type="button"
+              onClick={() => { setValues(initValues(null)); setSaveStatus('idle') }}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold"
+              style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b' }}>
+              清除重填
+            </button>
+          )}
+        </div>
+
+        {/* 近期清點紀錄 */}
+        {history.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5 px-1">
+              <History className="h-3.5 w-3.5" style={{ color: '#a1a1aa' }} />
+              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>
+                近期清點紀錄
+              </span>
+            </div>
+            <div className="bg-white rounded-2xl overflow-hidden"
+              style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              {history.map((row, idx) => {
+                const rowTotal = calcTotal(row as any)
+                const rowDiff  = rowTotal - pettyCash
+                const rowExact = rowDiff === 0
+                const rowClose = Math.abs(rowDiff) <= 50 && !rowExact
+                const rColor = rowExact ? '#047857' : rowClose ? '#b45309' : '#be123c'
+                return (
+                  <div key={row.count_date}
+                    className="flex items-center justify-between px-4 py-3"
+                    style={{ borderBottom: idx !== history.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
+                    <span className="text-sm" style={{ color: '#52525b' }}>{formatDate(row.count_date)}</span>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold tabular-nums" style={{ color: '#18181b' }}>${fmt(rowTotal)}</p>
+                      <p className="text-xs tabular-nums" style={{ color: rColor }}>
+                        {rowExact ? '正確 ✓' : (rowDiff >= 0 ? '+' : '') + fmt(rowDiff)}
+                      </p>
+                      {row.updated_at && (
+                        <p className="text-[10px] mt-0.5" style={{ color: '#a1a1aa' }}>{formatTime(row.updated_at)}</p>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+      </div>
     </div>
   )
 }

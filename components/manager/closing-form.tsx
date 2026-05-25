@@ -3,16 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
-import { cn } from '@/lib/utils'
-import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, Video } from 'lucide-react'
+import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, Video, AlertCircle, CheckCircle2 } from 'lucide-react'
 import VideoUploader from '@/components/manager/video-uploader'
 import { saveCashCounts } from '@/app/actions/closings'
 
@@ -31,22 +24,10 @@ interface FormData {
   twpay_amount: number
   online_amount: number
   ck_quantities: Record<string, number>
-  // 現金清點（個數）
-  bills_1000: number
-  bills_500: number
-  bills_100: number
-  coins_50: number
-  coins_10: number
-  coins_5: number
-  coins_1: number
-  // 整筆金額
-  lump_1000: number
-  lump_500: number
-  lump_100: number
-  lump_50: number
-  lump_10: number
-  lump_5: number
-  lump_1: number
+  bills_1000: number; bills_500: number; bills_100: number
+  coins_50: number; coins_10: number; coins_5: number; coins_1: number
+  lump_1000: number; lump_500: number; lump_100: number
+  lump_50: number; lump_10: number; lump_5: number; lump_1: number
   note: string
 }
 
@@ -102,39 +83,24 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any): FormDat
     twpay_amount: rev.find((x: any) => x.channel === 'twpay')?.gross_amount ?? 0,
     online_amount: rev.find((x: any) => x.channel === 'online')?.gross_amount ?? 0,
     ck_quantities,
-    bills_1000: cash.bills_1000 ?? 0,
-    bills_500: cash.bills_500 ?? 0,
-    bills_100: cash.bills_100 ?? 0,
-    coins_50: cash.coins_50 ?? 0,
-    coins_10: cash.coins_10 ?? 0,
-    coins_5: cash.coins_5 ?? 0,
-    coins_1: cash.coins_1 ?? 0,
-    lump_1000: cash.lump_1000 ?? 0,
-    lump_500: cash.lump_500 ?? 0,
-    lump_100: cash.lump_100 ?? 0,
-    lump_50: cash.lump_50 ?? 0,
-    lump_10: cash.lump_10 ?? 0,
-    lump_5: cash.lump_5 ?? 0,
-    lump_1: cash.lump_1 ?? 0,
+    bills_1000: cash.bills_1000 ?? 0, bills_500: cash.bills_500 ?? 0, bills_100: cash.bills_100 ?? 0,
+    coins_50: cash.coins_50 ?? 0, coins_10: cash.coins_10 ?? 0, coins_5: cash.coins_5 ?? 0, coins_1: cash.coins_1 ?? 0,
+    lump_1000: cash.lump_1000 ?? 0, lump_500: cash.lump_500 ?? 0, lump_100: cash.lump_100 ?? 0,
+    lump_50: cash.lump_50 ?? 0, lump_10: cash.lump_10 ?? 0, lump_5: cash.lump_5 ?? 0, lump_1: cash.lump_1 ?? 0,
     note: existing.note ?? '',
   }
 }
 
 function initExpenses(existing: any): Expense[] {
   return (existing?.expense_items ?? []).map((e: any) => ({
-    id: e.id,
-    description: e.description,
-    amount: e.amount,
+    id: e.id, description: e.description, amount: e.amount,
   }))
 }
 
 function initHandwriteOrders(existing: any): HandwriteOrder[] {
   return (existing?.handwrite_orders ?? []).map((o: any) => ({
-    id: o.id,
-    order_number: o.order_number,
-    amount: o.amount,
-    voided: o.voided ?? false,
-    void_reason: o.void_reason ?? '',
+    id: o.id, order_number: o.order_number, amount: o.amount,
+    voided: o.voided ?? false, void_reason: o.void_reason ?? '',
   }))
 }
 
@@ -142,21 +108,14 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
   const uberTotal = Object.values(data.uber_amounts).reduce((a, b) => a + b, 0)
   const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount
 
-  // ichef_uber_linked：iChef 總金額已含外送平台，直接就是總營業額，平台費只做扣除
-  // 否則：總收 = POS現金 + 手寫訂單 + 平台
   const totalRevenue = store.ichef_uber_linked
     ? data.pos_cash
     : data.pos_cash + handwriteTotal + platformTotal
 
   const deliveryFee = ckPrices.reduce((s, p) => s + p.unit_price * (data.ck_quantities[p.item_name] ?? 0), 0)
-
-  // 應包進信封 = 總營業額 − 平台費 − 其他現金支出（央廚費不扣，包在信封裡）
   const shouldEnvelope = totalRevenue - platformTotal - totalExpenses
-
-  // 應匯入（HQ 淨收）= 應包進信封 − 央廚配送費
   const netToHQ = shouldEnvelope - deliveryFee
 
-  // 現金清點 = 個數 × 面額 + 整筆金額
   const cashTotal =
     (data.bills_1000 * 1000 + data.lump_1000) +
     (data.bills_500  * 500  + data.lump_500)  +
@@ -167,30 +126,12 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
     (data.coins_1    * 1    + data.lump_1)
 
   const actualRemit = cashTotal - store.petty_cash
-  // 誤差 = 實際包進信封 − 應包進信封
   const variance = actualRemit - shouldEnvelope
-
   const storeRevenue = totalRevenue - platformTotal
   return { totalRevenue, platformTotal, storeRevenue, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashTotal, actualRemit, variance }
 }
 
-function fmt(n: number) {
-  return Math.round(n).toLocaleString('zh-TW')
-}
-
-function NumInput({ label, value, onChange, disabled }: { label: string; value: number; onChange: (v: number) => void; disabled?: boolean }) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-xs text-slate-500">{label}</Label>
-      <Input
-        type="number" min="0" inputMode="numeric" disabled={disabled}
-        className="text-right tabular-nums text-base h-12 text-slate-900"
-        value={value || ''} placeholder="0"
-        onChange={e => onChange(parseFloat(e.target.value) || 0)}
-      />
-    </div>
-  )
-}
+function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
 const DENOMINATIONS = [
   { label: '千元鈔', countKey: 'bills_1000' as const, lumpKey: 'lump_1000' as const, unit: 1000, unitLabel: '張' },
@@ -201,6 +142,106 @@ const DENOMINATIONS = [
   { label: '五元',   countKey: 'coins_5'    as const, lumpKey: 'lump_5'    as const, unit: 5,    unitLabel: '枚' },
   { label: '一元',   countKey: 'coins_1'    as const, lumpKey: 'lump_1'    as const, unit: 1,    unitLabel: '枚' },
 ]
+
+function SInput({
+  value, onChange, placeholder = '0', disabled, step, textRight = true,
+  onKeyDown,
+}: {
+  value: number | string; onChange: (v: number) => void; placeholder?: string
+  disabled?: boolean; step?: string; textRight?: boolean; onKeyDown?: React.KeyboardEventHandler
+}) {
+  const [focused, setFocused] = useState(false)
+  return (
+    <input
+      type="number" min="0" inputMode="numeric" disabled={disabled}
+      step={step}
+      style={{
+        padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px',
+        fontSize: '14px', background: disabled ? '#fafafa' : 'white', outline: 'none',
+        fontFamily: 'inherit', width: '100%', fontVariantNumeric: 'tabular-nums',
+        textAlign: textRight ? 'right' : 'left',
+        borderColor: focused ? '#6366f1' : '#e4e4e7',
+        boxShadow: focused ? '0 0 0 4px rgba(99,102,241,0.1)' : 'none',
+        color: '#18181b', opacity: disabled ? 0.5 : 1,
+        cursor: disabled ? 'not-allowed' : 'auto',
+      }}
+      value={typeof value === 'number' ? (value === 0 ? '' : value) : value}
+      placeholder={placeholder}
+      onFocus={() => setFocused(true)}
+      onBlur={e => { setFocused(false); onChange(parseFloat(e.target.value) || 0) }}
+      onChange={e => onChange(parseFloat(e.target.value) || 0)}
+      onKeyDown={onKeyDown}
+    />
+  )
+}
+
+function TextInputStyled({
+  value, onChange, placeholder, disabled, forwardRef,
+  onKeyDown, mono,
+}: {
+  value: string; onChange: (v: string) => void; placeholder?: string
+  disabled?: boolean; forwardRef?: React.RefObject<HTMLInputElement | null>
+  onKeyDown?: React.KeyboardEventHandler; mono?: boolean
+}) {
+  const [focused, setFocused] = useState(false)
+  return (
+    <input
+      ref={forwardRef}
+      type="text" disabled={disabled}
+      style={{
+        padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px',
+        fontSize: '14px', background: disabled ? '#fafafa' : 'white', outline: 'none',
+        fontFamily: mono ? 'monospace' : 'inherit', width: '100%',
+        borderColor: focused ? '#6366f1' : '#e4e4e7',
+        boxShadow: focused ? '0 0 0 4px rgba(99,102,241,0.1)' : 'none',
+        color: '#18181b', opacity: disabled ? 0.5 : 1,
+      }}
+      value={value} placeholder={placeholder}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChange={e => onChange(e.target.value)}
+      onKeyDown={onKeyDown}
+    />
+  )
+}
+
+function SectionCard({ children, icon, title, subtitle, iconColor }: {
+  children: React.ReactNode; icon: React.ReactNode; title: string; subtitle?: string; iconColor: string
+}) {
+  return (
+    <div className="bg-white rounded-2xl overflow-hidden"
+      style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+      <div className="px-4 pt-4 pb-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
+        <div className="flex items-center gap-2">
+          <div className="h-7 w-7 rounded-lg flex items-center justify-center"
+            style={{ background: iconColor + '18' }}>
+            <span style={{ color: iconColor }}>{icon}</span>
+          </div>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: '#18181b' }}>{title}</p>
+            {subtitle && <p className="text-xs" style={{ color: '#a1a1aa' }}>{subtitle}</p>}
+          </div>
+        </div>
+      </div>
+      <div className="px-4 py-4">
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function Divider() {
+  return <div style={{ borderTop: '1px solid #f4f4f5', margin: '12px 0' }} />
+}
+
+function Row({ label, value, muted, bold, accent }: { label: string; value: string; muted?: boolean; bold?: boolean; accent?: string }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-sm" style={{ color: muted ? '#a1a1aa' : '#52525b' }}>{label}</span>
+      <span className="text-sm tabular-nums" style={{ color: accent ?? (bold ? '#18181b' : '#52525b'), fontWeight: bold ? 700 : 500 }}>{value}</span>
+    </div>
+  )
+}
 
 export default function ClosingForm({ store, ckPrices, existingClosing, userId, today }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing))
@@ -227,6 +268,20 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const isLocked = status === 'submitted' || status === 'verified'
   const isDisputed = status === 'disputed'
   const disputeNote = existingClosing?.dispute_note ?? ''
+
+  const absVar = Math.abs(s.variance)
+  const varColor = absVar === 0 ? '#047857' : absVar <= 200 ? '#b45309' : '#be123c'
+  const varBg    = absVar === 0 ? '#d1fae5' : absVar <= 200 ? '#fef3c7' : '#ffe4e6'
+  const varBorder = absVar === 0 ? '#6ee7b7' : absVar <= 200 ? '#fcd34d' : '#fda4af'
+  const varMsg   = absVar === 0 ? '金額正確 ✓' : absVar <= 200 ? '差距微小，請確認' : '差距過大，請重新核查'
+
+  const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+    draft:     { bg: '#f4f4f5', color: '#71717a', label: '草稿' },
+    submitted: { bg: '#eef2ff', color: '#4338ca', label: '已送出' },
+    verified:  { bg: '#d1fae5', color: '#047857', label: '已審核' },
+    disputed:  { bg: '#ffe4e6', color: '#be123c', label: '退回修改' },
+  }
+  const st = STATUS_STYLE[status] ?? STATUS_STYLE.draft
 
   const set = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) => {
     setData(prev => ({ ...prev, [key]: value }))
@@ -263,12 +318,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   function generateRange() {
     if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) {
-      toast.error('請輸入有效的起始和結束單號')
-      return
+      toast.error('請輸入有效的起始和結束單號'); return
     }
     if (rangeEnd - rangeStart > 200) {
-      toast.error('單次最多建立 200 筆')
-      return
+      toast.error('單次最多建立 200 筆'); return
     }
     const existingNums = new Set(handwriteOrders.map(o => o.order_number))
     const newOrders: HandwriteOrder[] = []
@@ -277,10 +330,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         newOrders.push({ id: crypto.randomUUID(), order_number: String(n), amount: 0, voided: false, void_reason: '' })
       }
     }
-    if (newOrders.length === 0) {
-      toast.info('該範圍內的單號已全部存在')
-      return
-    }
+    if (newOrders.length === 0) { toast.info('該範圍內的單號已全部存在'); return }
     setHandwriteOrders(prev => [...prev, ...newOrders])
     toast.success(`已建立 ${newOrders.length} 筆單號`)
   }
@@ -304,20 +354,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   async function handleSave(silent = false) {
     setSaving(true)
     const supabase = createClient()
-    const d = dataRef.current  // 永遠讀最新 data，避免 stale closure
+    const d = dataRef.current
     try {
       let cid = closingId
 
       const payload = {
         store_id: store.id, manager_id: userId, business_date: today, status: isDisputed ? 'disputed' : 'draft',
-        total_revenue: s.totalRevenue,
-        total_cost: s.deliveryFee,
-        total_expenses: totalExpenses,
-        expected_remit: s.netToHQ,
-        actual_remit: s.actualRemit,
-        should_include_delivery: s.shouldEnvelope,
-        variance: s.variance,
-        note: d.note,
+        total_revenue: s.totalRevenue, total_cost: s.deliveryFee, total_expenses: totalExpenses,
+        expected_remit: s.netToHQ, actual_remit: s.actualRemit,
+        should_include_delivery: s.shouldEnvelope, variance: s.variance, note: d.note,
       }
 
       if (!cid) {
@@ -330,7 +375,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         if (error) throw error
       }
 
-      // Revenue items
       await supabase.from('revenue_items').delete().eq('closing_id', cid)
       const revItems = [
         ...(store.mode !== 'handwrite' ? [{ closing_id: cid, channel: 'pos', gross_amount: d.pos_cash, is_cash: true }] : []),
@@ -342,7 +386,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       ]
       if (revItems.length) await supabase.from('revenue_items').insert(revItems)
 
-      // Cash count（用 server action + service role 繞過 RLS）
       if (!cid) throw new Error('無法取得帳目 ID')
       const cashPayload = {
         bills_1000: d.bills_1000, bills_500: d.bills_500, bills_100: d.bills_100,
@@ -353,7 +396,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       const cashResult = await saveCashCounts(cid, cashPayload)
       if (cashResult.error) throw new Error('現金清點儲存失敗：' + cashResult.error)
 
-      // CK order items
       await supabase.from('order_items').delete().eq('closing_id', cid)
       const ckItems = ckPrices
         .filter(p => (d.ck_quantities[p.item_name] ?? 0) > 0)
@@ -365,24 +407,20 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         }))
       if (ckItems.length) await supabase.from('order_items').insert(ckItems)
 
-      // Expense items
       await supabase.from('expense_items').delete().eq('closing_id', cid)
       const expItems = expenses
         .filter(e => e.description.trim() || e.amount > 0)
         .map(e => ({ closing_id: cid, description: e.description.trim() || '支出', amount: e.amount }))
       if (expItems.length) await supabase.from('expense_items').insert(expItems)
 
-      // Handwrite orders
       await supabase.from('handwrite_orders').delete().eq('closing_id', cid)
       const hwItems = handwriteOrders
         .filter(o => o.order_number.trim())
         .map(o => ({
-          closing_id: cid,
-          store_id: store.id,
+          closing_id: cid, store_id: store.id,
           order_number: o.order_number.trim(),
           amount: o.voided ? 0 : o.amount,
-          voided: o.voided,
-          void_reason: o.void_reason || null,
+          voided: o.voided, void_reason: o.void_reason || null,
         }))
       if (hwItems.length) await supabase.from('handwrite_orders').insert(hwItems)
 
@@ -423,167 +461,161 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
   }
 
-  const varColor = Math.abs(s.variance) === 0 ? 'text-green-600' : Math.abs(s.variance) <= 200 ? 'text-yellow-600' : 'text-red-600'
-  const varBg = Math.abs(s.variance) === 0 ? 'border-green-300 bg-green-50' : Math.abs(s.variance) <= 200 ? 'border-yellow-300 bg-yellow-50' : 'border-red-300 bg-red-50'
-  const varMsg = Math.abs(s.variance) === 0 ? '金額正確' : Math.abs(s.variance) <= 200 ? '差距微小，請確認' : '差距過大，請重新核查'
-
   return (
-    <div className="max-w-xl mx-auto px-4 py-4 space-y-4 pb-32 lg:pb-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">每日結帳</h1>
-          <p className="text-sm text-slate-500">{store.name} · {today}</p>
+    <div className="min-h-full" style={{ background: '#fafafa' }}>
+
+      {/* 頁首 */}
+      <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div className="max-w-xl mx-auto flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
+              <BarChart3 className="h-3.5 w-3.5" />
+              每日結帳
+            </div>
+            <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>{store.name}</h1>
+            <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>{today}</p>
+          </div>
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full mt-1"
+            style={{ background: st.bg, color: st.color }}>
+            {st.label}
+          </span>
         </div>
-        <Badge variant={isLocked ? 'default' : isDisputed ? 'destructive' : 'secondary'}>
-          {status === 'draft' ? '草稿' : status === 'submitted' ? '已送出' : status === 'verified' ? '已審核' : '退回修改'}
-        </Badge>
       </div>
 
-      {/* 退回修改提示 */}
-      {isDisputed && disputeNote && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 space-y-1">
-          <p className="text-sm font-semibold text-red-700">總公司已退回，請修正後重新送出</p>
-          <p className="text-sm text-red-600">{disputeNote}</p>
-        </div>
-      )}
-      {isDisputed && !disputeNote && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <p className="text-sm font-semibold text-red-700">總公司已退回此帳目，請修正後重新送出</p>
-        </div>
-      )}
+      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-36">
 
-      {/* 1. 營收 */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
-            <Banknote className="h-4 w-4 text-blue-500" /> 營收輸入
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+        {/* 退回提示 */}
+        {isDisputed && (
+          <div className="rounded-2xl px-4 py-3.5 flex items-start gap-2.5"
+            style={{ background: '#ffe4e6', border: '1px solid #fda4af' }}>
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: '#be123c' }} />
+            <div>
+              <p className="text-sm font-semibold" style={{ color: '#be123c' }}>總公司已退回，請修正後重新送出</p>
+              {disputeNote && <p className="text-sm mt-0.5" style={{ color: '#be123c' }}>{disputeNote}</p>}
+            </div>
+          </div>
+        )}
+
+        {/* 1. 營收輸入 */}
+        <SectionCard icon={<Banknote className="h-4 w-4" />} title="營收輸入" iconColor="#6366f1">
           {store.mode !== 'handwrite' && (
-            <div className="space-y-1">
+            <div className="mb-3">
               {store.ichef_uber_linked && (
-                <p className="text-[11px] text-blue-600 bg-blue-50 rounded-md px-2 py-1">
+                <div className="mb-2 text-xs px-3 py-2 rounded-xl" style={{ background: '#eef2ff', color: '#4338ca' }}>
                   輸入 iChef 結帳總金額（含外送平台）
-                </p>
+                </div>
               )}
-              <NumInput
-                label={store.ichef_uber_linked ? 'iChef 結帳總金額' : 'POS 現金'}
-                value={data.pos_cash}
-                onChange={v => set('pos_cash', v)}
-                disabled={isLocked}
-              />
+              <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>
+                {store.ichef_uber_linked ? 'iChef 結帳總金額' : 'POS 現金'}
+              </label>
+              <SInput value={data.pos_cash} onChange={v => set('pos_cash', v)} disabled={isLocked} />
             </div>
           )}
           {store.ichef_uber_linked && (
-            <p className="text-[11px] text-slate-400 -mt-1">↓ 輸入各平台金額（僅用於計算扣除，不加入總收）</p>
+            <p className="text-xs mb-2" style={{ color: '#a1a1aa' }}>↓ 輸入各平台金額（僅用於計算扣除，不加入總收）</p>
           )}
           {(store.uber_accounts ?? []).map(acc => (
-            <NumInput key={acc} label={`Uber Eats（${acc}）`} value={data.uber_amounts[acc] ?? 0}
-              onChange={v => set('uber_amounts', { ...data.uber_amounts, [acc]: v })} disabled={isLocked} />
+            <div key={acc} className="mb-3">
+              <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>Uber Eats（{acc}）</label>
+              <SInput value={data.uber_amounts[acc] ?? 0} onChange={v => set('uber_amounts', { ...data.uber_amounts, [acc]: v })} disabled={isLocked} />
+            </div>
           ))}
           {store.panda_enabled && (
-            <NumInput label="熊貓 foodpanda" value={data.panda_amount} onChange={v => set('panda_amount', v)} disabled={isLocked} />
+            <div className="mb-3">
+              <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>熊貓 foodpanda</label>
+              <SInput value={data.panda_amount} onChange={v => set('panda_amount', v)} disabled={isLocked} />
+            </div>
           )}
           {store.twpay_enabled && (
-            <NumInput label="台灣Pay" value={data.twpay_amount} onChange={v => set('twpay_amount', v)} disabled={isLocked} />
+            <div className="mb-3">
+              <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>台灣Pay</label>
+              <SInput value={data.twpay_amount} onChange={v => set('twpay_amount', v)} disabled={isLocked} />
+            </div>
           )}
           {store.online_enabled && (
-            <NumInput label="線上點餐" value={data.online_amount} onChange={v => set('online_amount', v)} disabled={isLocked} />
+            <div className="mb-3">
+              <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>線上點餐</label>
+              <SInput value={data.online_amount} onChange={v => set('online_amount', v)} disabled={isLocked} />
+            </div>
           )}
           {store.mode !== 'ichef' && handwriteTotal > 0 && (
-            <div className="flex justify-between items-center text-xs text-slate-500">
-              <span>手寫訂單合計</span>
-              <span className="tabular-nums font-medium text-slate-700">${fmt(handwriteTotal)}</span>
+            <div className="flex justify-between items-center mb-2 text-sm">
+              <span style={{ color: '#52525b' }}>手寫訂單合計</span>
+              <span className="font-semibold tabular-nums" style={{ color: '#18181b' }}>${fmt(handwriteTotal)}</span>
             </div>
           )}
-          <Separator />
+          <Divider />
           <div className="flex justify-between items-center">
-            <span className="text-sm font-medium text-slate-700">總營業額</span>
-            <span className="text-lg font-bold tabular-nums">${fmt(s.totalRevenue)}</span>
+            <span className="text-sm font-semibold" style={{ color: '#18181b' }}>總營業額</span>
+            <span className="text-xl font-bold tabular-nums" style={{ color: '#6366f1' }}>${fmt(s.totalRevenue)}</span>
           </div>
           {store.ichef_uber_linked && s.platformTotal > 0 && (
-            <div className="flex justify-between items-center text-xs text-slate-500">
-              <span>店舖現金（iChef − 平台）</span>
-              <span className="tabular-nums">${fmt(s.storeRevenue)}</span>
+            <div className="flex justify-between items-center mt-1.5 text-xs">
+              <span style={{ color: '#a1a1aa' }}>店舖現金（iChef − 平台）</span>
+              <span className="tabular-nums" style={{ color: '#52525b' }}>${fmt(s.storeRevenue)}</span>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </SectionCard>
 
-      {/* 2. 手寫訂單（手寫 / 混合模式） */}
-      {store.mode !== 'ichef' && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
-              <Banknote className="h-4 w-4 text-emerald-500" /> 手寫訂單
-            </CardTitle>
-            <p className="text-xs text-slate-400">金額為 0 的單號不計入合計</p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {/* 批量建立單號範圍 */}
+        {/* 2. 手寫訂單 */}
+        {store.mode !== 'ichef' && (
+          <SectionCard icon={<Banknote className="h-4 w-4" />} title="手寫訂單" subtitle="金額為 0 的單號不計入合計" iconColor="#10b981">
+            {/* 批量建立 */}
             {!isLocked && (
-              <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
-                <p className="text-[11px] font-semibold text-slate-500">批量建立單號範圍</p>
-                <div className="flex gap-2 items-center">
-                  <Input
-                    type="number" min="1" inputMode="numeric"
-                    placeholder="起始"
-                    className="h-9 text-sm text-center w-24"
+              <div className="mb-3 p-3 rounded-xl" style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }}>
+                <p className="text-xs font-semibold mb-2" style={{ color: '#52525b' }}>批量建立單號範圍</p>
+                <div className="flex gap-2 items-center mb-1.5">
+                  <input
+                    type="number" min="1" inputMode="numeric" placeholder="起始"
+                    style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
                     value={rangeStart || ''}
                     onChange={e => setRangeStart(parseInt(e.target.value) || 0)}
                   />
-                  <span className="text-slate-400 text-sm shrink-0">—</span>
-                  <Input
-                    type="number" min="1" inputMode="numeric"
-                    placeholder="結束"
-                    className="h-9 text-sm text-center w-24"
+                  <span style={{ color: '#a1a1aa' }}>—</span>
+                  <input
+                    type="number" min="1" inputMode="numeric" placeholder="結束"
+                    style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
                     value={rangeEnd || ''}
                     onChange={e => setRangeEnd(parseInt(e.target.value) || 0)}
                   />
-                  <button
-                    type="button"
-                    onClick={generateRange}
-                    className="flex items-center gap-1 px-3 h-9 rounded-lg bg-slate-700 text-white text-xs font-medium hover:bg-slate-600 transition-colors shrink-0"
-                  >
+                  <button type="button" onClick={generateRange}
+                    className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold text-white shrink-0"
+                    style={{ background: 'linear-gradient(135deg,#18181b,#3f3f46)', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
                     <Plus className="h-3.5 w-3.5" /> 建立
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-400">已存在的單號不重複建立 · 最多 200 筆</p>
+                <p className="text-[10px]" style={{ color: '#a1a1aa' }}>已存在的單號不重複建立 · 最多 200 筆</p>
               </div>
             )}
 
-            {/* 訂單列表（含可編輯金額與作廢） */}
+            {/* 訂單列表 */}
             {handwriteOrders.length > 0 && (
-              <div className="rounded-lg border border-slate-100 overflow-hidden divide-y divide-slate-100">
-                {/* 表頭 */}
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 text-[10px] text-slate-400 font-medium">
-                  <span className="flex-1">單號</span>
-                  <span className="w-20 text-right">金額</span>
+              <div className="rounded-xl overflow-hidden mb-3" style={{ border: '1px solid #f4f4f5' }}>
+                <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#f8fafc', borderBottom: '1px solid #f4f4f5' }}>
+                  <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>單號</span>
+                  <span className="w-20 text-right text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>金額</span>
                   {!isLocked && <span className="w-8" />}
                   {!isLocked && <span className="w-5" />}
                 </div>
                 {handwriteOrders.map((o, idx) => (
-                  <div key={o.id} className={cn(o.voided ? 'bg-red-50/60' : '')}>
-                    {/* 主列 */}
+                  <div key={o.id} style={{ background: o.voided ? '#fff8f8' : 'white', borderBottom: idx !== handwriteOrders.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
                     <div className="flex items-center gap-2 px-3 py-2">
-                      <span className={cn('flex-1 text-sm font-mono min-w-0 truncate', o.voided ? 'text-slate-400 line-through' : 'text-slate-700')}>
+                      <span className="flex-1 text-sm min-w-0 truncate"
+                        style={{ fontFamily: 'monospace', color: o.voided ? '#a1a1aa' : '#52525b', textDecoration: o.voided ? 'line-through' : 'none' }}>
                         {o.order_number}
                       </span>
                       {isLocked ? (
                         o.voided
-                          ? <span className="w-20 text-right text-xs font-medium text-red-400 shrink-0">作廢</span>
-                          : <span className={cn('w-20 text-sm tabular-nums text-right font-medium shrink-0', o.amount === 0 ? 'text-slate-300' : '')}>
+                          ? <span className="w-20 text-right text-xs font-semibold" style={{ color: '#be123c' }}>作廢</span>
+                          : <span className="w-20 text-right text-sm tabular-nums font-semibold" style={{ color: o.amount === 0 ? '#d4d4d8' : '#18181b' }}>
                               ${fmt(o.amount)}
                             </span>
                       ) : (
-                        <Input
+                        <input
                           type="number" min="0" inputMode="numeric"
-                          className={cn('h-8 w-20 text-sm text-right tabular-nums px-2 shrink-0', o.voided && 'opacity-30')}
+                          style={{ width: '80px', padding: '6px 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', textAlign: 'right', outline: 'none', background: o.voided ? '#f4f4f5' : 'white', opacity: o.voided ? 0.4 : 1, fontVariantNumeric: 'tabular-nums' }}
                           value={o.voided ? '' : (o.amount || '')}
-                          placeholder="0"
-                          disabled={o.voided}
+                          placeholder="0" disabled={o.voided}
                           ref={el => { if (el) amtRefsMap.current.set(o.id, el); else amtRefsMap.current.delete(o.id) }}
                           onChange={e => updateHandwriteOrderAmount(o.id, parseInt(e.target.value) || 0)}
                           onKeyDown={e => {
@@ -597,35 +629,33 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         />
                       )}
                       {!isLocked && (
-                        <button
-                          type="button"
-                          onClick={() => toggleVoidOrder(o.id)}
-                          className={cn(
-                            'shrink-0 h-7 w-8 text-[10px] rounded border font-semibold transition-colors',
-                            o.voided
-                              ? 'bg-red-100 text-red-500 border-red-300'
-                              : 'bg-white text-slate-400 border-slate-200 hover:border-red-300 hover:text-red-400'
-                          )}
-                        >
+                        <button type="button" onClick={() => toggleVoidOrder(o.id)}
+                          className="shrink-0 h-7 w-8 text-[10px] rounded-lg font-semibold"
+                          style={{
+                            background: o.voided ? '#ffe4e6' : 'white',
+                            color: o.voided ? '#be123c' : '#a1a1aa',
+                            border: `1px solid ${o.voided ? '#fda4af' : '#e4e4e7'}`,
+                          }}>
                           廢
                         </button>
                       )}
                       {!isLocked && (
                         <button type="button" onClick={() => removeHandwriteOrder(o.id)}
-                          className="shrink-0 text-slate-300 hover:text-red-500 transition-colors">
+                          className="shrink-0" style={{ color: '#d4d4d8' }}
+                          onMouseEnter={e => (e.currentTarget.style.color = '#be123c')}
+                          onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
                           <X className="h-3.5 w-3.5" />
                         </button>
                       )}
                     </div>
-                    {/* 作廢原因 */}
                     {o.voided && (
                       <div className="px-3 pb-2">
                         {isLocked ? (
-                          <p className="text-xs text-slate-400">{o.void_reason || '未填原因'}</p>
+                          <p className="text-xs" style={{ color: '#a1a1aa' }}>{o.void_reason || '未填原因'}</p>
                         ) : (
-                          <Input
+                          <input
                             placeholder="作廢原因（選填，如：廚房失誤、客人取消）"
-                            className="h-7 text-xs border-red-200 focus-visible:ring-red-300"
+                            style={{ padding: '6px 10px', border: '1.5px solid #fda4af', borderRadius: '8px', fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit', width: '100%' }}
                             value={o.void_reason}
                             onChange={e => updateVoidReason(o.id, e.target.value)}
                           />
@@ -637,36 +667,32 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </div>
             )}
 
-            {/* 手動新增單筆 */}
+            {/* 手動新增 */}
             {!isLocked && (
-              <div className="flex gap-2 items-end">
-                <div className="space-y-1 flex-1">
-                  <Label className="text-xs text-slate-500">手動新增</Label>
-                  <Input
-                    ref={newOrderNumRef}
-                    placeholder="單號"
-                    className="h-10 text-sm font-mono"
+              <div className="flex gap-2 items-end mb-3">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>手動新增</label>
+                  <input
+                    ref={newOrderNumRef} type="text" placeholder="單號"
+                    style={{ padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'monospace', width: '100%' }}
                     value={newOrderNum}
                     onChange={e => setNewOrderNum(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); newOrderAmtRef.current?.focus() } }}
                   />
                 </div>
-                <div className="space-y-1 w-28">
-                  <Label className="text-xs text-slate-500 invisible">金額</Label>
-                  <Input
-                    ref={newOrderAmtRef}
-                    type="number" min="0" inputMode="numeric"
-                    placeholder="金額"
-                    className="h-10 text-sm text-right tabular-nums"
+                <div style={{ width: '110px' }}>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'transparent' }}>_</label>
+                  <input
+                    ref={newOrderAmtRef} type="number" min="0" inputMode="numeric" placeholder="金額"
+                    style={{ padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit', width: '100%', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
                     value={newOrderAmt || ''}
                     onChange={e => setNewOrderAmt(parseInt(e.target.value) || 0)}
                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addHandwriteOrder() } }}
                   />
                 </div>
-                <button
-                  type="button"
-                  onClick={addHandwriteOrder}
-                  className="flex items-center gap-1 px-3 h-10 rounded-lg bg-emerald-50 text-emerald-600 text-sm hover:bg-emerald-100 transition-colors shrink-0">
+                <button type="button" onClick={addHandwriteOrder}
+                  className="flex items-center gap-1 px-3 py-2.5 rounded-xl text-sm font-semibold shrink-0"
+                  style={{ background: '#f0fdf4', color: '#047857', border: '1px solid #a7f3d0' }}>
                   <Plus className="h-3.5 w-3.5" /> 新增
                 </button>
               </div>
@@ -674,275 +700,235 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
             {handwriteOrders.filter(o => o.amount > 0).length > 0 ? (
               <>
-                <Separator />
+                <Divider />
                 <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-slate-700">
+                  <span className="text-sm font-semibold" style={{ color: '#18181b' }}>
                     合計（{handwriteOrders.filter(o => o.amount > 0).length} 筆有效）
                   </span>
-                  <span className="text-base font-bold tabular-nums text-emerald-700">${fmt(handwriteTotal)}</span>
+                  <span className="text-xl font-bold tabular-nums" style={{ color: '#047857' }}>${fmt(handwriteTotal)}</span>
                 </div>
               </>
             ) : handwriteOrders.length === 0 && !isLocked ? (
-              <p className="text-xs text-slate-400 text-center py-2">請使用批量建立或手動新增訂單</p>
+              <p className="text-xs text-center py-2" style={{ color: '#a1a1aa' }}>請使用批量建立或手動新增訂單</p>
             ) : null}
-          </CardContent>
-        </Card>
-      )}
+          </SectionCard>
+        )}
 
-      {/* 2b. 今日菜單影片 */}
-      {store.mode !== 'ichef' && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
-              <Video className="h-4 w-4 text-blue-500" /> 今日菜單影片
-            </CardTitle>
-            <p className="text-xs text-slate-400">上傳今日菜單影片（選填）</p>
-          </CardHeader>
-          <CardContent>
+        {/* 3. 今日菜單影片 */}
+        {store.mode !== 'ichef' && (
+          <SectionCard icon={<Video className="h-4 w-4" />} title="今日菜單影片" subtitle="上傳今日菜單影片（選填）" iconColor="#3b82f6">
             <VideoUploader storeId={store.id} businessDate={today} userId={userId} disabled={isLocked} />
-          </CardContent>
-        </Card>
-      )}
+          </SectionCard>
+        )}
 
-      {/* 3. 央廚配送 */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
-            <Package className="h-4 w-4 text-orange-500" /> 央廚配送
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {ckPrices.map(p => (
-            <div key={p.id} className="flex items-end gap-2">
-              <div className="flex-1 space-y-1">
-                <Label className="text-xs text-slate-500">{p.item_name}</Label>
-                <Input
-                  type="number" min="0" step="0.5" inputMode="decimal" disabled={isLocked}
-                  className="text-right tabular-nums h-11"
-                  value={data.ck_quantities[p.item_name] || ''} placeholder="0"
-                  onChange={e => set('ck_quantities', { ...data.ck_quantities, [p.item_name]: parseFloat(e.target.value) || 0 })}
-                />
+        {/* 4. 央廚配送 */}
+        <SectionCard icon={<Package className="h-4 w-4" />} title="央廚配送" iconColor="#f97316">
+          <div className="space-y-3">
+            {ckPrices.map(p => (
+              <div key={p.id}>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>{p.item_name}</label>
+                <div className="flex items-center gap-2">
+                  <SInput
+                    value={data.ck_quantities[p.item_name] || 0}
+                    onChange={v => set('ck_quantities', { ...data.ck_quantities, [p.item_name]: v })}
+                    disabled={isLocked} step="0.5"
+                  />
+                  <span className="text-xs shrink-0" style={{ color: '#a1a1aa' }}>× ${p.unit_price}</span>
+                  <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: '#18181b', minWidth: '72px', textAlign: 'right' }}>
+                    = ${fmt(p.unit_price * (data.ck_quantities[p.item_name] ?? 0))}
+                  </span>
+                </div>
               </div>
-              <span className="text-xs text-slate-400 pb-3">× ${p.unit_price}</span>
-              <span className="text-sm font-medium tabular-nums pb-3 w-20 text-right">
-                = ${fmt(p.unit_price * (data.ck_quantities[p.item_name] ?? 0))}
-              </span>
-            </div>
-          ))}
-          <Separator />
-          <div className="flex justify-between items-center">
-            <span className="text-sm font-medium text-slate-700">配送費合計</span>
-            <span className="text-base font-bold tabular-nums">${fmt(s.deliveryFee)}</span>
+            ))}
           </div>
-        </CardContent>
-      </Card>
+          <Divider />
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-semibold" style={{ color: '#18181b' }}>配送費合計</span>
+            <span className="text-xl font-bold tabular-nums" style={{ color: '#f97316' }}>${fmt(s.deliveryFee)}</span>
+          </div>
+        </SectionCard>
 
-      {/* 3. 當日現金支出 */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
-            <Wallet className="h-4 w-4 text-purple-500" /> 當日現金支出
-          </CardTitle>
-          <p className="text-xs text-slate-400">現金付款的進貨、雜費等（不含央廚）</p>
-        </CardHeader>
-        <CardContent className="space-y-2">
+        {/* 5. 當日現金支出 */}
+        <SectionCard icon={<Wallet className="h-4 w-4" />} title="當日現金支出" subtitle="現金付款的進貨、雜費等（不含央廚）" iconColor="#8b5cf6">
           {expenses.length === 0 && !isLocked && (
-            <p className="text-xs text-slate-400 text-center py-2">無當日現金支出</p>
+            <p className="text-xs text-center py-2 mb-2" style={{ color: '#a1a1aa' }}>無當日現金支出</p>
           )}
-          {expenses.map(e => (
-            <div key={e.id} className="flex items-center gap-2">
-              <Input
-                placeholder="說明（例：菜商、雜貨）"
-                className="flex-1 h-10 text-sm"
-                value={e.description}
-                disabled={isLocked}
-                onChange={ev => updateExpense(e.id, 'description', ev.target.value)}
-              />
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-slate-400">$</span>
-                <Input
-                  type="number" min="0" inputMode="numeric"
-                  className="w-24 h-10 text-right tabular-nums text-sm"
-                  value={e.amount || ''} placeholder="0"
+          <div className="space-y-2">
+            {expenses.map(e => (
+              <div key={e.id} className="flex items-center gap-2">
+                <input
+                  placeholder="說明（例：菜商、雜貨）"
                   disabled={isLocked}
-                  onChange={ev => updateExpense(e.id, 'amount', parseFloat(ev.target.value) || 0)}
+                  style={{ flex: 1, padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: isLocked ? '#fafafa' : 'white', outline: 'none', fontFamily: 'inherit' }}
+                  value={e.description}
+                  onChange={ev => updateExpense(e.id, 'description', ev.target.value)}
                 />
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-xs" style={{ color: '#a1a1aa' }}>$</span>
+                  <input
+                    type="number" min="0" inputMode="numeric" disabled={isLocked}
+                    style={{ width: '88px', padding: '10px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: isLocked ? '#fafafa' : 'white', outline: 'none', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+                    value={e.amount || ''} placeholder="0"
+                    onChange={ev => updateExpense(e.id, 'amount', parseFloat(ev.target.value) || 0)}
+                  />
+                </div>
+                {!isLocked && (
+                  <button onClick={() => removeExpense(e.id)}
+                    className="p-2 rounded-xl shrink-0"
+                    style={{ background: '#fff8f8', color: '#fda4af', border: '1px solid #fecdd3' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#ffe4e6' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#fff8f8' }}>
+                    <Trash2 className="h-4 w-4" style={{ color: '#be123c' }} />
+                  </button>
+                )}
               </div>
-              {!isLocked && (
-                <button onClick={() => removeExpense(e.id)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
           {!isLocked && (
             <button onClick={addExpense}
-              className="flex items-center gap-1.5 text-xs text-purple-600 hover:text-purple-800 transition-colors mt-1">
+              className="flex items-center gap-1.5 text-xs font-semibold mt-3"
+              style={{ color: '#7c3aed' }}>
               <Plus className="h-3.5 w-3.5" /> 新增支出項目
             </button>
           )}
           {expenses.length > 0 && (
             <>
-              <Separator />
+              <Divider />
               <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-slate-700">支出合計</span>
-                <span className="text-base font-bold tabular-nums text-purple-700">${fmt(totalExpenses)}</span>
+                <span className="text-sm font-semibold" style={{ color: '#18181b' }}>支出合計</span>
+                <span className="text-xl font-bold tabular-nums" style={{ color: '#7c3aed' }}>${fmt(totalExpenses)}</span>
               </div>
             </>
           )}
-        </CardContent>
-      </Card>
+        </SectionCard>
 
-      {/* 4. 現金清點 */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
-            <Calculator className="h-4 w-4 text-green-500" /> 現金清點
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {/* 表頭 */}
-            <div className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 items-center">
+        {/* 6. 現金清點 */}
+        <SectionCard icon={<Calculator className="h-4 w-4" />} title="現金清點" iconColor="#10b981">
+          <div className="space-y-2.5">
+            <div style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px' }}>
               <span />
-              <span className="text-[10px] text-slate-400 text-center">張 / 枚</span>
-              <span className="text-[10px] text-slate-400 text-center">整筆金額</span>
-              <span className="text-[10px] text-slate-400 text-right">小計</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-center" style={{ color: '#a1a1aa' }}>張 / 枚</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-center" style={{ color: '#a1a1aa' }}>整筆金額</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-right" style={{ color: '#a1a1aa' }}>小計</span>
             </div>
             {DENOMINATIONS.map(({ label, countKey, lumpKey, unit, unitLabel }) => {
               const countVal = data[countKey] as number
               const lumpVal = data[lumpKey] as number
               const subtotal = countVal * unit + lumpVal
               return (
-                <div key={countKey} className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 items-center">
-                  <span className="text-xs text-slate-500 shrink-0">{label}</span>
-                  <div className="flex items-center gap-0.5">
-                    <input
-                      type="number" min="0" inputMode="numeric" disabled={isLocked}
-                      className="text-right tabular-nums h-9 text-sm px-2 w-full rounded-lg border border-slate-200 bg-transparent outline-none focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                      value={countVal === 0 ? '' : countVal} placeholder="0"
-                      onChange={e => set(countKey, parseInt(e.target.value) || 0)}
-                      onBlur={e => set(countKey, parseInt(e.target.value) || 0)}
-                    />
-                    <span className="text-[10px] text-slate-400 shrink-0">{unitLabel}</span>
+                <div key={countKey} style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px', alignItems: 'center' }}>
+                  <span className="text-xs shrink-0" style={{ color: '#52525b' }}>{label}</span>
+                  <div className="flex items-center gap-1">
+                    <SInput value={countVal} onChange={v => set(countKey, parseInt(String(v)) || 0)} disabled={isLocked} />
+                    <span className="text-[10px] shrink-0" style={{ color: '#a1a1aa' }}>{unitLabel}</span>
                   </div>
-                  <input
-                    type="number" min="0" inputMode="numeric" disabled={isLocked}
-                    className="text-right tabular-nums h-9 text-sm px-2 w-full rounded-lg border border-slate-200 bg-transparent outline-none focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                    value={lumpVal === 0 ? '' : lumpVal} placeholder="0"
-                    onChange={e => set(lumpKey, parseInt(e.target.value) || 0)}
-                    onBlur={e => set(lumpKey, parseInt(e.target.value) || 0)}
-                  />
-                  <span className={cn(
-                    'text-right text-xs tabular-nums shrink-0',
-                    subtotal > 0 ? 'text-slate-700 font-medium' : 'text-slate-300'
-                  )}>
+                  <SInput value={lumpVal} onChange={v => set(lumpKey, parseInt(String(v)) || 0)} disabled={isLocked} />
+                  <span className="text-right text-xs tabular-nums shrink-0"
+                    style={{ color: subtotal > 0 ? '#18181b' : '#d4d4d8', fontWeight: subtotal > 0 ? 600 : 400 }}>
                     ${fmt(subtotal)}
                   </span>
                 </div>
               )
             })}
           </div>
-          <Separator className="my-3" />
+          <Divider />
           <div className="space-y-1.5">
-            <div className="flex justify-between">
-              <span className="text-sm text-slate-600">現金總額</span>
-              <span className="font-bold tabular-nums text-lg">${fmt(s.cashTotal)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-slate-500">扣零用金（${fmt(store.petty_cash)}）</span>
-              <span className="font-bold tabular-nums text-blue-700">${fmt(s.actualRemit)}</span>
-            </div>
+            <Row label="現金總額" value={`$${fmt(s.cashTotal)}`} bold />
+            <Row label={`扣零用金（$${fmt(store.petty_cash)}）`} value={`$${fmt(s.actualRemit)}`} bold accent="#4338ca" />
           </div>
-        </CardContent>
-      </Card>
+        </SectionCard>
 
-      {/* 5. 結算摘要 */}
-      <Card className={cn('border-2', varBg)}>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
-            <BarChart3 className="h-4 w-4" /> 結算摘要
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-slate-600">總營業額</span>
-            <span className="tabular-nums font-medium">${fmt(s.totalRevenue)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-500">− 平台收款（Uber / 熊貓等）</span>
-            <span className="tabular-nums text-slate-400">−${fmt(s.platformTotal)}</span>
-          </div>
-          {totalExpenses > 0 && (
-            <div className="flex justify-between">
-              <span className="text-slate-500">− 現金支出</span>
-              <span className="tabular-nums text-slate-400">−${fmt(totalExpenses)}</span>
+        {/* 7. 結算摘要 */}
+        <div className="rounded-2xl overflow-hidden"
+          style={{ border: `1.5px solid ${varBorder}` }}>
+          <div className="px-4 pt-4 pb-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${varBorder}`, background: varBg }}>
+            <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: varBg }}>
+              <BarChart3 className="h-4 w-4" style={{ color: varColor }} />
             </div>
-          )}
-          <Separator />
-          <div className="flex justify-between font-semibold">
-            <span>應包進信封</span>
-            <span className="tabular-nums">${fmt(s.shouldEnvelope)}</span>
+            <p className="text-sm font-semibold" style={{ color: '#18181b' }}>結算摘要</p>
           </div>
-          <div className="flex justify-between text-xs text-slate-500 pl-2">
-            <span>其中央廚配送費</span>
-            <span className="tabular-nums">${fmt(s.deliveryFee)}</span>
-          </div>
-          <div className="flex justify-between text-xs text-slate-500 pl-2">
-            <span>應匯入 HQ（淨）</span>
-            <span className="tabular-nums font-medium text-slate-700">${fmt(s.netToHQ)}</span>
-          </div>
-          <Separator />
-          <div className="flex justify-between font-medium">
-            <span>實際包進信封（現金 − 零用金）</span>
-            <span className="tabular-nums">${fmt(s.actualRemit)}</span>
-          </div>
-          <Separator />
-          <div className="flex justify-between items-center pt-1">
-            <span className="font-bold text-slate-900 text-base">誤差</span>
-            <div className="text-right">
-              <p className={cn('text-3xl font-bold tabular-nums', varColor)}>
-                {s.variance >= 0 ? '+' : ''}{fmt(s.variance)}
-              </p>
-              <p className={cn('text-xs mt-0.5', varColor)}>{varMsg}</p>
+          <div className="px-4 py-4 bg-white space-y-2">
+            <Row label="總營業額" value={`$${fmt(s.totalRevenue)}`} bold />
+            <Row label="− 平台收款（Uber / 熊貓等）" value={`−$${fmt(s.platformTotal)}`} muted />
+            {totalExpenses > 0 && <Row label="− 現金支出" value={`−$${fmt(totalExpenses)}`} muted />}
+            <Divider />
+            <Row label="應包進信封" value={`$${fmt(s.shouldEnvelope)}`} bold />
+            <div className="pl-3 space-y-1">
+              <Row label="其中央廚配送費" value={`$${fmt(s.deliveryFee)}`} muted />
+              <Row label="應匯入 HQ（淨）" value={`$${fmt(s.netToHQ)}`} />
+            </div>
+            <Divider />
+            <Row label="實際包進信封（現金 − 零用金）" value={`$${fmt(s.actualRemit)}`} bold />
+            <Divider />
+            <div className="flex justify-between items-center pt-1">
+              <span className="text-sm font-bold" style={{ color: '#18181b' }}>誤差</span>
+              <div className="text-right">
+                <p className="text-3xl font-bold tabular-nums" style={{ color: varColor }}>
+                  {s.variance >= 0 ? '+' : ''}{fmt(s.variance)}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: varColor }}>{varMsg}</p>
+              </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* 備註 */}
-      <div className="space-y-1">
-        <Label className="text-sm text-slate-600">備註</Label>
-        <textarea
-          disabled={isLocked}
-          className="w-full min-h-[72px] px-3 py-2 text-sm border border-slate-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50 disabled:text-slate-400"
-          placeholder="如有異常情況請說明..."
-          value={data.note}
-          onChange={e => set('note', e.target.value)}
-        />
+        {/* 8. 備註 */}
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: '#a1a1aa' }}>備註</label>
+          <textarea
+            disabled={isLocked}
+            style={{
+              width: '100%', minHeight: '72px', padding: '12px', fontSize: '14px',
+              border: '1.5px solid #e4e4e7', borderRadius: '12px', resize: 'none', outline: 'none',
+              fontFamily: 'inherit', background: isLocked ? '#fafafa' : 'white', color: '#18181b',
+            }}
+            placeholder="如有異常情況請說明..."
+            value={data.note}
+            onChange={e => set('note', e.target.value)}
+          />
+        </div>
+
+        {/* 9. 已鎖定提示 */}
+        {isLocked && (
+          <div className="rounded-2xl px-4 py-3.5 flex items-center gap-2.5"
+            style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }}>
+            <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: status === 'verified' ? '#10b981' : '#6366f1' }} />
+            <p className="text-sm" style={{ color: '#52525b' }}>
+              {status === 'verified' ? '此帳目已核准，如需修改請聯絡總公司' : '帳目已送出，等待總公司審核'}
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* 操作按鈕 */}
-      {!isLocked ? (
-        <div className="fixed bottom-16 left-0 right-0 lg:static lg:bottom-auto bg-white lg:bg-transparent border-t lg:border-0 p-4 lg:p-0 flex gap-3">
-          <Button variant="outline" className="flex-1" onClick={() => handleSave()} disabled={saving || submitting}>
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            儲存草稿
-          </Button>
-          <Button
-            className={cn('flex-1', isDisputed ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-600 hover:bg-blue-700')}
-            onClick={handleSubmit} disabled={saving || submitting}
-          >
-            {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-            {isDisputed ? '修正後重新送出' : '送出今日結帳'}
-          </Button>
-        </div>
-      ) : (
-        <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-center">
-          <p className="text-slate-600 font-medium text-sm">
-            {status === 'verified' ? '此帳目已核准，如需修改請聯絡總公司' : '帳目已送出，等待總公司審核'}
-          </p>
+      {/* 底部操作列 */}
+      {!isLocked && (
+        <div className="fixed bottom-16 left-0 right-0 bg-white px-4 py-3"
+          style={{ borderTop: '1px solid #f4f4f5', boxShadow: '0 -4px 16px rgba(0,0,0,0.06)' }}>
+          <div className="max-w-xl mx-auto flex gap-3">
+            <button onClick={() => handleSave()} disabled={saving || submitting}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold"
+              style={{
+                background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b',
+                opacity: saving || submitting ? 0.6 : 1,
+              }}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              儲存草稿
+            </button>
+            <button onClick={handleSubmit} disabled={saving || submitting}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white"
+              style={{
+                background: isDisputed
+                  ? 'linear-gradient(135deg,#f97316,#ea580c)'
+                  : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+                boxShadow: isDisputed
+                  ? '0 4px 12px rgba(249,115,22,0.3)'
+                  : '0 4px 12px rgba(99,102,241,0.3)',
+                opacity: saving || submitting ? 0.7 : 1,
+              }}>
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {isDisputed ? '修正後重新送出' : '送出今日結帳'}
+            </button>
+          </div>
         </div>
       )}
     </div>
