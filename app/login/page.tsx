@@ -76,17 +76,8 @@ export default function LoginPage() {
         }}>
 
           {/* Logo */}
-          <div className="flex items-center justify-center text-white font-extrabold mb-7"
-            style={{
-              width: '64px', height: '64px',
-              background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%)',
-              borderRadius: '20px',
-              fontSize: '28px',
-              letterSpacing: '-0.02em',
-              boxShadow: '0 8px 24px rgba(99,102,241,0.3)',
-            }}>
-            梁
-          </div>
+          <img src="/icon.png" alt="logo" className="mb-7"
+            style={{ width: '64px', height: '64px', borderRadius: '20px', objectFit: 'cover' }} />
 
           <h1 className="font-bold mb-1.5" style={{ fontSize: '28px', letterSpacing: '-0.02em', color: '#18181b' }}>
             歡迎回來
