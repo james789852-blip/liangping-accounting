@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   "total_amount": 總金額數字,
   "tax_amount": 稅金數字（沒有則為0）,
   "items": [
-    { "name": "品項名稱", "amount": 金額數字 }
+    { "name": "品項名稱（只填品名本身，不含數量、單位、盤數等，例如「雞肉」而非「雞肉10盤」）", "amount": 該品項小計金額數字 }
   ]
 }
 如果某項資訊無法辨識，用null表示。`,

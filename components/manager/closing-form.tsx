@@ -19,8 +19,16 @@ interface TodayReceipt {
 
 function isCKReceipt(receipt: TodayReceipt, ckPrices: CKPrice[]): boolean {
   if (!receipt.receipt_items || receipt.receipt_items.length === 0) return false
-  const ckNames = new Set(ckPrices.map(p => p.item_name))
-  return receipt.receipt_items.some(item => ckNames.has(item.item_name))
+  const ckNames = ckPrices.map(p => p.item_name)
+  return receipt.receipt_items.some(item =>
+    ckNames.some(ck => item.item_name === ck || item.item_name.includes(ck) || ck.includes(item.item_name))
+  )
+}
+
+function findCKPrice(itemName: string, ckPrices: CKPrice[]): CKPrice | undefined {
+  return ckPrices.find(p =>
+    p.item_name === itemName || itemName.includes(p.item_name) || p.item_name.includes(itemName)
+  )
 }
 
 interface Props {
@@ -72,7 +80,7 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayRec
       const ckReceipts = todayReceipts.filter(r => isCKReceipt(r, ckPrices))
       ckReceipts.forEach(r => {
         (r.receipt_items ?? []).forEach(item => {
-          const price = ckPrices.find(p => p.item_name === item.item_name)
+          const price = findCKPrice(item.item_name, ckPrices)
           if (price && price.unit_price > 0) {
             ck_quantities[price.item_name] = (ck_quantities[price.item_name] ?? 0) + item.amount / price.unit_price
           }
@@ -361,7 +369,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       ckPrices.forEach(p => { newCKQty[p.item_name] = 0 })
       typed.filter(r => isCKReceipt(r, ckPrices)).forEach(r => {
         (r.receipt_items ?? []).forEach(item => {
-          const price = ckPrices.find(p => p.item_name === item.item_name)
+          const price = findCKPrice(item.item_name, ckPrices)
           if (price && price.unit_price > 0) {
             newCKQty[price.item_name] = (newCKQty[price.item_name] ?? 0) + item.amount / price.unit_price
           }
@@ -808,6 +816,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
         {/* 4. 央廚配送 */}
         <SectionCard icon={<Package className="h-4 w-4" />} title="央廚配送" iconColor="#f97316">
+          {!isLocked && (
+            <div className="flex justify-end mb-3">
+              <button onClick={syncFromReceipts} disabled={syncing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
+                style={{ background: '#fff7ed', color: '#f97316', border: '1px solid #fed7aa', opacity: syncing ? 0.6 : 1 }}>
+                {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                從收據同步
+              </button>
+            </div>
+          )}
           <div className="space-y-3">
             {ckPrices.map(p => (
               <div key={p.id}>
