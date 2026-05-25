@@ -72,7 +72,7 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
 
         {/* 品牌 */}
         <div className="flex items-center gap-3 px-5 pt-6 pb-5">
-          <img src="/icon.png" alt="logo" className="h-9 w-9 rounded-[10px] object-cover shrink-0" />
+          <img src="/icon-192.png" alt="logo" className="h-9 w-9 rounded-[10px] object-cover shrink-0" />
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>梁平-作帳</p>
             <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>{storeName || '未指派'} · {role}</p>
@@ -130,7 +130,7 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
       <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white flex items-center px-4"
         style={{ height: '56px', borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
-          <img src="/icon.png" alt="logo" className="h-8 w-8 rounded-[8px] object-cover shrink-0" />
+          <img src="/icon-192.png" alt="logo" className="h-8 w-8 rounded-[8px] object-cover shrink-0" />
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900 truncate leading-tight">{storeName || '梁平-作帳'}</p>
             <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{role}</p>

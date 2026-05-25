@@ -76,7 +76,7 @@ export default function LoginPage() {
         }}>
 
           {/* Logo */}
-          <img src="/icon.png" alt="logo" className="mb-7"
+          <img src="/icon-192.png" alt="logo" className="mb-7"
             style={{ width: '64px', height: '64px', borderRadius: '20px', objectFit: 'cover' }} />
 
           <h1 className="font-bold mb-1.5" style={{ fontSize: '28px', letterSpacing: '-0.02em', color: '#18181b' }}>
