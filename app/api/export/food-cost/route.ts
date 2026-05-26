@@ -127,15 +127,19 @@ export async function GET(req: NextRequest) {
     dd.actual   = c.actual_remit   ?? 0
     dd.variance = c.variance       ?? 0
 
+    let panda = 0, online = 0
     for (const rv of (c.revenue_items as any[]) ?? []) {
       if (rv.channel === 'pos')   dd.pos    += rv.gross_amount ?? 0
       if (rv.channel === 'twpay') dd.twpay  += rv.gross_amount ?? 0
-      if (rv.channel === 'panda') dd.onsite += rv.gross_amount ?? 0
+      if (rv.channel === 'panda') panda     += rv.gross_amount ?? 0
+      if (rv.channel === 'online') online   += rv.gross_amount ?? 0
       if (rv.channel === 'uber' && rv.account_name) {
         dd.uber[rv.account_name] = (dd.uber[rv.account_name] || 0) + (rv.gross_amount ?? 0)
       }
     }
-    dd.onsite += dd.pos + dd.twpay
+    // 現場 = POS − Uber各帳號 − TWPAY − Panda − 線上點餐
+    const uberSum = Object.values(dd.uber).reduce((s, v) => s + v, 0)
+    dd.onsite = dd.pos - uberSum - dd.twpay - panda - online
 
     for (const oi of (c.order_items as any[]) ?? []) {
       if (oi.item_name === '央廚配送') dd.ck = oi.total_amount ?? 0
@@ -267,7 +271,10 @@ export async function GET(req: NextRequest) {
     const revenue = d?.revenue ?? 0
     const variance = d?.variance ?? 0
     const uberTotal = uberAccounts.reduce((s, acc) => s + (uber[acc] ?? 0), 0)
-    const after_deduct = uberTotal  // display uber subtotal
+    // 扣除後的$ = 實際$ − 配送 − 結果
+    const after_deduct = actual - ck - variance
+    // 營業額 = 現場 + 結果
+    const computedRevenue = onsite + variance
     const items = d?.items ?? {}
     const foodTotal = foodCols.reduce((s, col) => s + (items[col] || 0), 0)
     const packTotal = packCols.reduce((s, col) => s + (items[col] || 0), 0)
@@ -276,7 +283,7 @@ export async function GET(req: NextRequest) {
     return {
       date, row: {
         pos, twpay, uber, after_deduct, onsite, actual, ck, result: variance,
-        revenue, items, foodTotal, packTotal, miscTotal, grandTotal,
+        revenue: computedRevenue, items, foodTotal, packTotal, miscTotal, grandTotal,
       },
     }
   })
