@@ -72,10 +72,11 @@ export async function GET(req: NextRequest) {
       .select('business_date, total_revenue, actual_remit, variance, revenue_items(channel, gross_amount, account_name), order_items(item_name, total_amount)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
-    admin.from('stores').select('name, uber_accounts').eq('id', storeId).single(),
+    admin.from('stores').select('name, uber_accounts, ichef_uber_linked').eq('id', storeId).single(),
   ])
 
   const uberAccounts: string[] = storeRow?.uber_accounts ?? []
+  const ichefLinked: boolean = storeRow?.ichef_uber_linked ?? false
   const N = uberAccounts.length
   const foodCols = EXCEL_COLUMNS['食材']
   const packCols = EXCEL_COLUMNS['耗材']
@@ -137,9 +138,10 @@ export async function GET(req: NextRequest) {
         dd.uber[rv.account_name] = (dd.uber[rv.account_name] || 0) + (rv.gross_amount ?? 0)
       }
     }
-    // 現場 = POS − Uber各帳號 − TWPAY − Panda − 線上點餐
     const uberSum = Object.values(dd.uber).reduce((s, v) => s + v, 0)
-    dd.onsite = dd.pos - uberSum - dd.twpay - panda - online
+    // ichef_uber_linked = true：iChef POS 含各平台，需扣除得到現場
+    // ichef_uber_linked = false：POS 已是純現場金額
+    dd.onsite = ichefLinked ? (dd.pos - uberSum - dd.twpay - panda - online) : dd.pos
 
     for (const oi of (c.order_items as any[]) ?? []) {
       if (oi.item_name === '央廚配送') dd.ck = oi.total_amount ?? 0
@@ -271,10 +273,8 @@ export async function GET(req: NextRequest) {
     const revenue = d?.revenue ?? 0
     const variance = d?.variance ?? 0
     const uberTotal = uberAccounts.reduce((s, acc) => s + (uber[acc] ?? 0), 0)
-    // 扣除後的$ = 實際$ − 配送 − 結果
-    const after_deduct = actual - ck - variance
-    // 營業額 = 現場 + 結果
-    const computedRevenue = onsite + variance
+    // 扣除後的$ = Uber 各帳號合計（外送平台扣款額）
+    const after_deduct = uberTotal
     const items = d?.items ?? {}
     const foodTotal = foodCols.reduce((s, col) => s + (items[col] || 0), 0)
     const packTotal = packCols.reduce((s, col) => s + (items[col] || 0), 0)
@@ -283,7 +283,7 @@ export async function GET(req: NextRequest) {
     return {
       date, row: {
         pos, twpay, uber, after_deduct, onsite, actual, ck, result: variance,
-        revenue: computedRevenue, items, foodTotal, packTotal, miscTotal, grandTotal,
+        revenue, items, foodTotal, packTotal, miscTotal, grandTotal,
       },
     }
   })
