@@ -118,8 +118,19 @@ export async function GET(req: NextRequest) {
   let invoiceTotal = 0, receiptTotal = 0
   for (const r of (receipts ?? []) as any[]) {
     const dd = ensureDay(r.business_date)
-    for (const it of r.receipt_items ?? []) {
-      if (it.excel_column) dd.items[it.excel_column] = (dd.items[it.excel_column] || 0) + (it.amount || 0)
+    const validItems = (r.receipt_items ?? []).filter((it: any) => it.excel_column && (it.amount || 0) > 0)
+    const itemsSum = validItems.reduce((s: number, it: any) => s + (it.amount as number), 0)
+    // Add item amounts
+    for (const it of validItems) {
+      dd.items[it.excel_column] = (dd.items[it.excel_column] || 0) + (it.amount as number)
+    }
+    // Distribute tax proportionally to mapped items so column totals match receipt totals
+    const tax = r.tax_amount ?? 0
+    if (tax > 0 && itemsSum > 0) {
+      for (const it of validItems) {
+        const taxShare = Math.round(tax * (it.amount as number) / itemsSum)
+        dd.items[it.excel_column] = (dd.items[it.excel_column] || 0) + taxShare
+      }
     }
     if (r.receipt_type === 'invoice') invoiceTotal += r.total_amount ?? 0
     else if (r.receipt_type === 'receipt') receiptTotal += r.total_amount ?? 0

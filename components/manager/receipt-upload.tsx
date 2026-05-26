@@ -291,6 +291,26 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
         </div>
       </div>
 
+      {/* 品項合計防呆 */}
+      {items.length > 0 && (() => {
+        const sum = items.reduce((s, i) => s + (i.amount || 0), 0)
+        const diff = totalAmount - sum
+        const ok = diff === 0
+        return (
+          <div className={cn(
+            'flex justify-between items-center px-3 py-2 rounded-xl text-xs font-medium',
+            ok ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+          )}>
+            <span>品項合計</span>
+            <span className="tabular-nums">
+              ${sum.toLocaleString('zh-TW')}
+              {!ok && `　差 ${diff > 0 ? '+' : ''}${diff.toLocaleString('zh-TW')}`}
+              {ok && '　✓ 與總金額相符'}
+            </span>
+          </div>
+        )
+      })()}
+
       <div>
         <label className="text-xs text-slate-500 mb-1 block">備註</label>
         <input className="w-full h-9 px-3 text-sm rounded-lg border border-slate-200 outline-none focus:border-blue-500"

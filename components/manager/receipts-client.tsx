@@ -281,6 +281,25 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
             </div>
           </div>
 
+          {/* 品項合計防呆 */}
+          {(() => {
+            const sum = editItems.reduce((s, i) => s + (i.amount || 0), 0)
+            const diff = editTotal - sum
+            const ok = diff === 0
+            const warn = !ok && Math.abs(diff) > 0
+            return (
+              <div className="flex justify-between items-center px-3 py-2 rounded-xl text-xs font-medium"
+                style={{ background: ok ? '#f0fdf4' : '#fff7ed', color: ok ? '#15803d' : '#b45309' }}>
+                <span>品項合計</span>
+                <span className="tabular-nums">
+                  ${fmt(sum)}
+                  {warn && `　差 ${diff > 0 ? '+' : ''}${fmt(diff)}`}
+                  {ok && '　✓ 與總金額相符'}
+                </span>
+              </div>
+            )
+          })()}
+
           <div>
             <label className="block text-[11px] font-medium mb-1" style={{ color: '#71717a' }}>備註</label>
             <textarea style={{ ...inputStyle(), height: '64px', resize: 'none' }}
