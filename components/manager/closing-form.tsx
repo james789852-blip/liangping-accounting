@@ -96,11 +96,15 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayRec
     const r = rev.find((x: any) => x.channel === 'uber' && x.account_name === acc)
     uber_amounts[acc] = r?.gross_amount ?? 0
   })
-  // 舊資料：單筆 '央廚配送' or 加總所有 vendor='央廚' 的項目
+  // CK 永遠以今日收據為準；若無收據則退回用已存的
+  const ckFromReceipts = todayReceipts
+    ? todayReceipts.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
+    : null
   const ckSingle = orders.find((x: any) => x.item_name === '央廚配送')
-  const ck_total = ckSingle
+  const ckFromSaved = ckSingle
     ? (ckSingle.total_amount ?? 0)
     : orders.filter((x: any) => x.vendor === '央廚').reduce((s: number, o: any) => s + (o.total_amount ?? 0), 0)
+  const ck_total = ckFromReceipts !== null ? ckFromReceipts : ckFromSaved
 
   return {
     pos_cash: rev.find((x: any) => x.channel === 'pos')?.gross_amount ?? 0,
@@ -341,6 +345,27 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const t = setInterval(() => handleSave(true), 60000)
     return () => clearInterval(t)
   }, [data, expenses, handwriteOrders, isLocked, isDisputed])
+
+  // 切回此 tab 時自動更新央廚金額
+  useEffect(() => {
+    if (isLocked) return
+    async function autoSyncCK() {
+      if (document.hidden) return
+      const supabase = createClient()
+      const { data: receipts } = await supabase
+        .from('receipts')
+        .select('id, vendor_name, total_amount, receipt_type, receipt_items(item_name, amount)')
+        .eq('store_id', store.id)
+        .eq('business_date', today)
+      if (!receipts) return
+      const ckTotal = (receipts as TodayReceipt[])
+        .filter(r => isCKReceipt(r, ckPrices))
+        .reduce((s, r) => s + r.total_amount, 0)
+      set('ck_total', ckTotal)
+    }
+    document.addEventListener('visibilitychange', autoSyncCK)
+    return () => document.removeEventListener('visibilitychange', autoSyncCK)
+  }, [isLocked, store.id, today, ckPrices, set])
 
   async function syncFromReceipts() {
     setSyncing(true)
