@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
   const admin = createAdminClient()
   const [{ data: receipts }, { data: closings }, { data: storeRow }] = await Promise.all([
     admin.from('receipts')
-      .select('business_date, receipt_items(excel_column, amount)')
+      .select('business_date, total_amount, receipt_type, receipt_items(excel_column, amount)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('daily_closings')
@@ -115,11 +115,14 @@ export async function GET(req: NextRequest) {
     return byDate[d]
   }
 
-  for (const r of receipts ?? []) {
+  let invoiceTotal = 0, receiptTotal = 0
+  for (const r of (receipts ?? []) as any[]) {
     const dd = ensureDay(r.business_date)
-    for (const it of (r.receipt_items as any[]) ?? []) {
+    for (const it of r.receipt_items ?? []) {
       if (it.excel_column) dd.items[it.excel_column] = (dd.items[it.excel_column] || 0) + (it.amount || 0)
     }
+    if (r.receipt_type === 'invoice') invoiceTotal += r.total_amount ?? 0
+    else if (r.receipt_type === 'receipt') receiptTotal += r.total_amount ?? 0
   }
 
   for (const c of closings ?? []) {
@@ -148,112 +151,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Excel helper: cell by [row, col] (both 0-based)
-  const wb = new ExcelJS.Workbook()
-  wb.creator = 'Liangping Accounting'
-  const ws = wb.addWorksheet(`${monthNum}月食耗成本`, {
-    views: [{ state: 'frozen', xSplit: 2, ySplit: 3 }],
-  })
-
-  function gc(r: number, c: number) { return ws.getRow(r).getCell(c + 1) }
-
-  function styleHeader(r: number, c: number, value: string | number, fillColor: string, bold = true) {
-    const cell = gc(r, c)
-    cell.value = value
-    fill(cell, fillColor)
-    font(cell, bold)
-    align(cell)
-    thinBorder(cell)
-  }
-
-  function styleData(r: number, c: number, value: string | number | null, fillColor: string) {
-    const cell = gc(r, c)
-    if (value !== null && value !== 0) cell.value = value
-    fill(cell, fillColor)
-    font(cell, false)
-    align(cell, 'center')
-    thinBorder(cell)
-  }
-
-  // ─── ROW 1: Vendor group headers ───────────────────────────────────────────
-  // Revenue section A..L: light yellow, no text
-  for (let col = 0; col < COL_REVENUE + 1; col++) {
-    styleHeader(1, col, '', C.FFFFCC, false)
-  }
-  // Spacer M
-  gc(1, COL_SPACER).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E8E8' } }
-
-  // Subtotal headers N..Q: gray
-  for (let col = COL_TOTAL; col <= COL_MISC_SUB; col++) styleHeader(1, col, '', C.BFBFBF, false)
-
-  // Vendor groups for food items
-  const vendorGroups = [
-    { name: '央廚配送', start: COL_FOOD_START,      end: COL_FOOD_START + 5,   color: C.NONE },   // 6 cols
-    { name: '振源',     start: COL_FOOD_START + 6,  end: COL_FOOD_START + 6,   color: C.DA9694 }, // 1 col
-    { name: '小雲',     start: COL_FOOD_START + 7,  end: COL_FOOD_START + 7,   color: C.C6D9F0 }, // 1 col
-    { name: '菜商',     start: COL_FOOD_START + 8,  end: COL_FOOD_START + 16,  color: C.FDE9D9 }, // 9 cols
-    { name: '雜貨',     start: COL_FOOD_START + 17, end: COL_FOOD_START + 23,  color: C.FBD4B4 }, // 7 cols
-    { name: '免洗',     start: COL_PACK_START,      end: COL_PACK_START + packCols.length - 1, color: C.C6D9F0 },
-    { name: '感熱紙',   start: COL_MISC_START,      end: COL_MISC_START + 12, color: C.C6D9F0 },
-    { name: '固定費用', start: COL_MISC_START + 13, end: COL_MISC_START + miscCols.length - 1, color: C.FBD4B4 },
-  ]
-  for (const g of vendorGroups) {
-    styleHeader(1, g.start, g.name, g.color || C.WHITE, true)
-    if (g.end > g.start) {
-      ws.mergeCells(1, g.start + 1, 1, g.end + 1)
-      for (let col = g.start + 1; col <= g.end; col++) {
-        const cell = gc(1, col)
-        fill(cell, g.color || C.WHITE)
-        thinBorder(cell)
-      }
-    }
-    const cell = gc(1, g.start)
-    align(cell)
-    font(cell, true)
-  }
-
-  // ─── ROW 2: Column headers (gray BFBFBF with some overrides) ───────────────
-  const colHeaders: Array<{ label: string; color: string }> = [
-    { label: '日期',    color: C.BFBFBF },
-    { label: '星期',    color: C.BFBFBF },
-    { label: 'POS',     color: C.FFC000 },
-    { label: 'TWPAY',   color: C.DA9694 },
-    ...uberAccounts.map(acc => ({ label: acc, color: C.GREEN })),
-    { label: '扣除後的$', color: C.FFC000 },
-    { label: '現場',    color: C.FFC000 },
-    { label: '實際$',   color: C.FFC000 },
-    { label: '配送(月底結)', color: C.FFFF00 },
-    { label: '結果',    color: C.FFC000 },
-    { label: '營業額',  color: C.FFC000 },
-    { label: '',        color: C.NONE },  // spacer
-    { label: '總',      color: C.BFBFBF },
-    { label: '食材',    color: C.BFBFBF },
-    { label: '耗材',    color: C.BFBFBF },
-    { label: '雜項',    color: C.BFBFBF },
-    ...foodCols.map(h => ({ label: h, color: C.BFBFBF })),
-    ...packCols.map(h => ({ label: h, color: C.BFBFBF })),
-    ...miscCols.map(h => ({ label: h, color: C.BFBFBF })),
-  ]
-
-  colHeaders.forEach(({ label, color }, ci) => {
-    const cell = gc(2, ci)
-    cell.value = label
-    if (color) fill(cell, color)
-    font(cell, true)
-    align(cell)
-    thinBorder(cell)
-  })
-
-  // Set column widths
-  ws.columns = colHeaders.map((h, i) => ({
-    width: i === 0 ? 12 : i === 1 ? 6 : h.label.length <= 2 ? 7 : Math.max(h.label.length * 1.8 + 2, 8),
-  }))
-  ws.getColumn(COL_SPACER + 1).width = 2
-
-  // ─── ROW 3: Monthly totals ──────────────────────────────────────────────────
+  // ─── Compute data rows & monthly totals (needed before writing headers) ──────
   const days = getDaysInMonth(year, monthNum)
 
-  // We'll build daily data first to compute totals
   interface RowVals {
     pos: number; twpay: number; uber: Record<string, number>
     after_deduct: number; onsite: number; actual: number; ck: number
@@ -288,7 +188,6 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  // Monthly totals
   const sumOf = (fn: (r: RowVals) => number) => dataRows.reduce((s, { row }) => s + fn(row), 0)
   const totals: RowVals = {
     pos:          sumOf(r => r.pos),
@@ -308,6 +207,128 @@ export async function GET(req: NextRequest) {
     miscTotal:    sumOf(r => r.miscTotal),
     grandTotal:   sumOf(r => r.grandTotal),
   }
+  // 梁平退稅 = 當月免洗稅金合計
+  const lianpingTaxRefund = totals.items['免洗稅金'] ?? 0
+
+  // ─── Excel workbook ───────────────────────────────────────────────────────
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'Liangping Accounting'
+  const ws = wb.addWorksheet(`${monthNum}月食耗成本`, {
+    views: [{ state: 'frozen', xSplit: 2, ySplit: 3 }],
+  })
+
+  function gc(r: number, c: number) { return ws.getRow(r).getCell(c + 1) }
+
+  function styleHeader(r: number, c: number, value: string | number, fillColor: string, bold = true) {
+    const cell = gc(r, c)
+    cell.value = value
+    fill(cell, fillColor)
+    font(cell, bold)
+    align(cell)
+    thinBorder(cell)
+  }
+
+  function styleData(r: number, c: number, value: string | number | null, fillColor: string) {
+    const cell = gc(r, c)
+    if (value !== null && value !== 0) cell.value = value
+    fill(cell, fillColor)
+    font(cell, false)
+    align(cell, 'center')
+    thinBorder(cell)
+  }
+
+  // ─── ROW 1: Vendor group headers ───────────────────────────────────────────
+  // Revenue section A..L: light yellow, no text
+  for (let col = 0; col < COL_REVENUE + 1; col++) {
+    styleHeader(1, col, '', C.FFFFCC, false)
+  }
+  // Spacer M
+  gc(1, COL_SPACER).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E8E8' } }
+
+  // Subtotal N-Q: 梁平退稅 label + 免洗稅金 value
+  styleHeader(1, COL_TOTAL,    '梁平退稅',           C.BFBFBF, true)
+  styleHeader(1, COL_FOOD_SUB, lianpingTaxRefund || '', C.FFFF00, true)
+  styleHeader(1, COL_PACK_SUB, '',                   C.BFBFBF, false)
+  styleHeader(1, COL_MISC_SUB, '',                   C.BFBFBF, false)
+
+  // Vendor groups for food items
+  const vendorGroups = [
+    { name: '央廚配送', start: COL_FOOD_START,      end: COL_FOOD_START + 5,   color: C.NONE },   // 6 cols
+    { name: '振源',     start: COL_FOOD_START + 6,  end: COL_FOOD_START + 6,   color: C.DA9694 }, // 1 col
+    { name: '小雲',     start: COL_FOOD_START + 7,  end: COL_FOOD_START + 7,   color: C.C6D9F0 }, // 1 col
+    { name: '菜商',     start: COL_FOOD_START + 8,  end: COL_FOOD_START + 16,  color: C.FDE9D9 }, // 9 cols
+    { name: '雜貨',     start: COL_FOOD_START + 17, end: COL_FOOD_START + 23,  color: C.FBD4B4 }, // 7 cols
+    { name: '免洗',     start: COL_PACK_START,      end: COL_PACK_START + packCols.length - 1, color: C.C6D9F0 },
+    { name: '感熱紙',   start: COL_MISC_START,      end: COL_MISC_START + 12, color: C.C6D9F0 },
+    { name: '固定費用', start: COL_MISC_START + 13, end: COL_MISC_START + miscCols.length - 1, color: C.FBD4B4 },
+  ]
+  for (const g of vendorGroups) {
+    styleHeader(1, g.start, g.name, g.color || C.WHITE, true)
+    if (g.end > g.start) {
+      ws.mergeCells(1, g.start + 1, 1, g.end + 1)
+      for (let col = g.start + 1; col <= g.end; col++) {
+        const cell = gc(1, col)
+        fill(cell, g.color || C.WHITE)
+        thinBorder(cell)
+      }
+    }
+    const cell = gc(1, g.start)
+    align(cell)
+    font(cell, true)
+  }
+
+  // ─── ROW 2: 總發票 / 總收據 info row ────────────────────────────────────────
+  // Revenue section A..L: light yellow, no text
+  for (let col = 0; col < COL_REVENUE + 1; col++) {
+    styleHeader(2, col, '', C.FFFFCC, false)
+  }
+  gc(2, COL_SPACER).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E8E8' } }
+  styleHeader(2, COL_TOTAL,    '總發票',              C.BFBFBF, true)
+  styleHeader(2, COL_FOOD_SUB, invoiceTotal || '',    C.FFFF00, true)
+  styleHeader(2, COL_PACK_SUB, '總收據',              C.BFBFBF, true)
+  styleHeader(2, COL_MISC_SUB, receiptTotal || '',    C.FFFF00, true)
+  // Food/pack/misc header cells in row 2: just gray background
+  for (let col = COL_ITEMS_START; col < TOTAL_COLS; col++) {
+    styleHeader(2, col, '', C.BFBFBF, false)
+  }
+
+  // ─── ROW 3: Column headers ──────────────────────────────────────────────────
+  const colHeaders: Array<{ label: string; color: string }> = [
+    { label: '日期',    color: C.BFBFBF },
+    { label: '星期',    color: C.BFBFBF },
+    { label: 'POS',     color: C.FFC000 },
+    { label: 'TWPAY',   color: C.DA9694 },
+    ...uberAccounts.map(acc => ({ label: acc, color: C.GREEN })),
+    { label: '扣除後的$', color: C.FFC000 },
+    { label: '現場',    color: C.FFC000 },
+    { label: '實際$',   color: C.FFC000 },
+    { label: '配送(月底結)', color: C.FFFF00 },
+    { label: '結果',    color: C.FFC000 },
+    { label: '營業額',  color: C.FFC000 },
+    { label: '',        color: C.NONE },  // spacer
+    { label: '總',      color: C.BFBFBF },
+    { label: '食材',    color: C.BFBFBF },
+    { label: '耗材',    color: C.BFBFBF },
+    { label: '雜項',    color: C.BFBFBF },
+    ...foodCols.map(h => ({ label: h, color: C.BFBFBF })),
+    ...packCols.map(h => ({ label: h, color: C.BFBFBF })),
+    ...miscCols.map(h => ({ label: h, color: C.BFBFBF })),
+  ]
+
+  colHeaders.forEach(({ label, color }, ci) => {
+    const cell = gc(3, ci)
+    cell.value = label
+    if (color) fill(cell, color)
+    font(cell, true)
+    align(cell)
+    thinBorder(cell)
+  })
+
+  // Set column widths
+  ws.columns = colHeaders.map((h, i) => ({
+    width: i === 0 ? 12 : i === 1 ? 6 : h.label.length <= 2 ? 7 : Math.max(h.label.length * 1.8 + 2, 8),
+  }))
+  ws.getColumn(COL_SPACER + 1).width = 2
 
   function writeRowData(excelRow: number, label: string | null, row: RowVals, fillA_L: string) {
     const dt = label === null
@@ -366,19 +387,20 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Write monthly totals row (row 3)
-  writeRowData(3, null, totals, C.FFFF00)
+  // Write monthly totals row (row 4)
+  writeRowData(4, null, totals, C.FFFF00)
 
-  // Write daily rows starting from row 4
+  // Write daily rows starting from row 5
   dataRows.forEach(({ date, row }, i) => {
-    writeRowData(4 + i, date, row, C.FFFFCC)
+    writeRowData(5 + i, date, row, C.FFFFCC)
   })
 
   // ─── Row heights ────────────────────────────────────────────────────────────
-  ws.getRow(1).height = 18
-  ws.getRow(2).height = 20
-  ws.getRow(3).height = 18
-  for (let i = 0; i < days.length; i++) ws.getRow(4 + i).height = 16
+  ws.getRow(1).height = 18  // vendor groups
+  ws.getRow(2).height = 16  // invoice/receipt info
+  ws.getRow(3).height = 20  // column headers
+  ws.getRow(4).height = 18  // monthly totals
+  for (let i = 0; i < days.length; i++) ws.getRow(5 + i).height = 16
 
   // ─── Output ─────────────────────────────────────────────────────────────────
   const storeName = storeRow?.name ?? 'export'
