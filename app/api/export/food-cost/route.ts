@@ -124,12 +124,13 @@ export async function GET(req: NextRequest) {
     for (const it of validItems) {
       dd.items[it.excel_column] = (dd.items[it.excel_column] || 0) + (it.amount as number)
     }
-    // Distribute tax proportionally to mapped items so column totals match receipt totals
-    const tax = r.tax_amount ?? 0
-    if (tax > 0 && itemsSum > 0) {
+    // Distribute unallocated amount (total - items) to columns proportionally
+    // This handles tax that is stored in total_amount but not split into receipt_items
+    const unallocated = (r.total_amount ?? 0) - itemsSum
+    if (unallocated > 0 && itemsSum > 0) {
       for (const it of validItems) {
-        const taxShare = Math.round(tax * (it.amount as number) / itemsSum)
-        dd.items[it.excel_column] = (dd.items[it.excel_column] || 0) + taxShare
+        const share = Math.round(unallocated * (it.amount as number) / itemsSum)
+        dd.items[it.excel_column] = (dd.items[it.excel_column] || 0) + share
       }
     }
     if (r.receipt_type === 'invoice') invoiceTotal += r.total_amount ?? 0
