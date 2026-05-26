@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
   const admin = createAdminClient()
   const [{ data: receipts }, { data: closings }, { data: storeRow }] = await Promise.all([
     admin.from('receipts')
-      .select('business_date, total_amount, receipt_type, receipt_items(excel_column, amount)')
+      .select('business_date, total_amount, tax_amount, receipt_type, receipt_items(excel_column, amount)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('daily_closings')
