@@ -188,11 +188,11 @@ export async function GET(req: NextRequest) {
 
   // Vendor groups for food items
   const vendorGroups = [
-    { name: '央廚配送', start: COL_FOOD_START,     end: COL_FOOD_START + 4,   color: C.NONE },
-    { name: '振源',     start: COL_FOOD_START + 5, end: COL_FOOD_START + 5,   color: C.DA9694 },
-    { name: '小雲',     start: COL_FOOD_START + 6, end: COL_FOOD_START + 6,   color: C.C6D9F0 },
-    { name: '菜商',     start: COL_FOOD_START + 7, end: COL_FOOD_START + 14,  color: C.FDE9D9 },
-    { name: '雜貨',     start: COL_FOOD_START + 15, end: COL_FOOD_START + 21, color: C.FBD4B4 },
+    { name: '央廚配送', start: COL_FOOD_START,      end: COL_FOOD_START + 5,   color: C.NONE },   // 6 cols
+    { name: '振源',     start: COL_FOOD_START + 6,  end: COL_FOOD_START + 6,   color: C.DA9694 }, // 1 col
+    { name: '小雲',     start: COL_FOOD_START + 7,  end: COL_FOOD_START + 7,   color: C.C6D9F0 }, // 1 col
+    { name: '菜商',     start: COL_FOOD_START + 8,  end: COL_FOOD_START + 16,  color: C.FDE9D9 }, // 9 cols
+    { name: '雜貨',     start: COL_FOOD_START + 17, end: COL_FOOD_START + 23,  color: C.FBD4B4 }, // 7 cols
     { name: '免洗',     start: COL_PACK_START,      end: COL_PACK_START + packCols.length - 1, color: C.C6D9F0 },
     { name: '感熱紙',   start: COL_MISC_START,      end: COL_MISC_START + 12, color: C.C6D9F0 },
     { name: '固定費用', start: COL_MISC_START + 13, end: COL_MISC_START + miscCols.length - 1, color: C.FBD4B4 },
@@ -270,11 +270,11 @@ export async function GET(req: NextRequest) {
     const onsite  = d?.onsite ?? 0
     const actual  = d?.actual ?? 0
     const ck      = d?.ck ?? 0
-    const revenue = d?.revenue ?? 0
     const variance = d?.variance ?? 0
-    const uberTotal = uberAccounts.reduce((s, acc) => s + (uber[acc] ?? 0), 0)
-    // 扣除後的$ = Uber 各帳號合計（外送平台扣款額）
-    const after_deduct = uberTotal
+    // 扣除後的$ = 實際$ − 配送(月底結) − 結果
+    const after_deduct = actual - ck - variance
+    // 營業額 = 現場 + 結果
+    const computedRevenue = onsite + variance
     const items = d?.items ?? {}
     const foodTotal = foodCols.reduce((s, col) => s + (items[col] || 0), 0)
     const packTotal = packCols.reduce((s, col) => s + (items[col] || 0), 0)
@@ -283,7 +283,7 @@ export async function GET(req: NextRequest) {
     return {
       date, row: {
         pos, twpay, uber, after_deduct, onsite, actual, ck, result: variance,
-        revenue, items, foodTotal, packTotal, miscTotal, grandTotal,
+        revenue: computedRevenue, items, foodTotal, packTotal, miscTotal, grandTotal,
       },
     }
   })
