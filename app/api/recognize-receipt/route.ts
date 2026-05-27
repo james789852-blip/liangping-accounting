@@ -35,7 +35,14 @@ export async function POST(req: NextRequest) {
     { "name": "品項名稱（只填品名本身，不含數量、單位、盤數等，例如「雞肉」而非「雞肉10盤」）", "amount": 該品項小計金額數字 }
   ]
 }
-如果某項資訊無法辨識，用null表示。`,
+
+【重要稅金規則】
+- total_amount 請填入發票或收據上的「總計」金額（含稅最終應付金額）
+- 不要用「銷售額(應稅)」或「未稅金額」來填 total_amount
+- 判斷是否有外加稅：
+  a. 若發票/收據上有明確列出「稅額」或「營業稅」欄位，且總計 = 未稅額 + 稅額，則 tax_amount 填該稅額數字
+  b. 若總計已含稅（內含稅），沒有額外稅金行，則 tax_amount = 0
+- 如果某項資訊無法辨識，用null表示。`,
     ])
 
     const text = result.response.text()

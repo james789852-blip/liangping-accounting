@@ -353,6 +353,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [editingReceiptId, setEditingReceiptId] = useState<string | null>(null)
   const [editVendor, setEditVendor] = useState('')
   const [editAmount, setEditAmount] = useState(0)
+  const [editItems, setEditItems] = useState<{ item_name: string; amount: number }[]>([])
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
   const [currentStep, setCurrentStep] = useState(0)
   const [submitDone, setSubmitDone] = useState(false)
@@ -471,8 +472,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (!editingReceiptId) return
     const oldReceipt = localReceipts.find(r => r.id === editingReceiptId)
     if (!oldReceipt) return
+    const validItems = editItems.filter(i => i.item_name.trim())
     const updatedReceipts = localReceipts.map(r =>
-      r.id === editingReceiptId ? { ...r, vendor_name: editVendor, total_amount: editAmount } : r
+      r.id === editingReceiptId ? { ...r, vendor_name: editVendor, total_amount: editAmount, receipt_items: validItems } : r
     )
     setLocalReceipts(updatedReceipts)
     const oldKey = oldReceipt.vendor_name || '（未填廠商）'
@@ -483,6 +485,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     set('ck_total', ckTotal)
     const supabase = createClient()
     await supabase.from('receipts').update({ vendor_name: editVendor, total_amount: editAmount }).eq('id', editingReceiptId)
+    await supabase.from('receipt_items').delete().eq('receipt_id', editingReceiptId)
+    if (validItems.length > 0) {
+      await supabase.from('receipt_items').insert(
+        validItems.map(i => ({ receipt_id: editingReceiptId, item_name: i.item_name, amount: i.amount, item_category: '食材', excel_column: '' }))
+      )
+    }
     setEditingReceiptId(null)
     toast.success('已更新')
   }
@@ -841,6 +849,40 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   onChange={e => setEditAmount(parseInt(e.target.value) || 0)}
                                 />
                               </div>
+                              {/* 品項編輯 */}
+                              <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <p className="text-[11px] font-semibold" style={{ color: '#52525b' }}>品項明細</p>
+                                  <button
+                                    onClick={() => setEditItems(prev => [...prev, { item_name: '', amount: 0 }])}
+                                    className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: '#6366f1' }}>
+                                    <Plus className="h-3 w-3" /> 新增品項
+                                  </button>
+                                </div>
+                                {editItems.length === 0 && (
+                                  <p className="text-[11px] text-center py-1.5" style={{ color: '#a1a1aa' }}>尚無品項</p>
+                                )}
+                                {editItems.map((item, idx) => (
+                                  <div key={idx} className="flex items-center gap-1.5 mb-1.5">
+                                    <input
+                                      placeholder="品項名稱"
+                                      style={{ flex: 1, padding: '7px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: 'white', outline: 'none', fontFamily: 'inherit' }}
+                                      value={item.item_name}
+                                      onChange={e => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, item_name: e.target.value } : it))}
+                                    />
+                                    <input type="number" min="0" inputMode="numeric"
+                                      placeholder="金額"
+                                      style={{ width: '80px', padding: '7px 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', background: 'white', outline: 'none', fontFamily: 'inherit' }}
+                                      value={item.amount || ''}
+                                      onChange={e => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, amount: parseInt(e.target.value) || 0 } : it))}
+                                    />
+                                    <button onClick={() => setEditItems(prev => prev.filter((_, i) => i !== idx))}
+                                      className="p-1.5 rounded-lg shrink-0" style={{ background: '#ffe4e6', color: '#be123c' }}>
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
                               <div className="flex gap-2">
                                 <button onClick={handleSaveReceiptEdit} disabled={!editVendor.trim()}
                                   className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
@@ -873,7 +915,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               ${fmt(r.total_amount)}
                             </p>
                             {!isLocked && (
-                              <button onClick={() => { setEditingReceiptId(r.id); setEditVendor(r.vendor_name || ''); setEditAmount(r.total_amount) }}
+                              <button onClick={() => { setEditingReceiptId(r.id); setEditVendor(r.vendor_name || ''); setEditAmount(r.total_amount); setEditItems((r.receipt_items ?? []).map(i => ({ item_name: i.item_name, amount: i.amount }))) }}
                                 className="p-1.5 rounded-lg shrink-0"
                                 style={{ background: missingVendor ? '#ffe4e6' : '#f4f4f5', color: missingVendor ? '#be123c' : '#a1a1aa' }}>
                                 <Pencil className="h-3.5 w-3.5" />
