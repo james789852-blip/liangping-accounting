@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ShoppingCart, ChevronDown, ChevronUp, Download } from 'lucide-react'
+import { ShoppingCart, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface ReceiptItem { id: string; item_name: string; amount: number; excel_column: string; item_category: string }
 interface Receipt {
@@ -129,12 +129,6 @@ export default function OrderClient({ storeName, storeId, today, month, receipts
             </h1>
             <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>{parseInt(y)} 年 {parseInt(m)} 月</p>
           </div>
-          <a href={`/api/export/food-cost?storeId=${storeId}&month=${month}`}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
-            style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 4px 12px rgba(16,185,129,0.3)' }}>
-            <Download className="h-4 w-4" />
-            匯出
-          </a>
         </div>
       </div>
 
