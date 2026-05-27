@@ -78,9 +78,22 @@ export async function GET(req: NextRequest) {
   const uberAccounts: string[] = storeRow?.uber_accounts ?? []
   const ichefLinked: boolean = storeRow?.ichef_uber_linked ?? false
   const N = uberAccounts.length
-  const foodCols = EXCEL_COLUMNS['食材']
-  const packCols = EXCEL_COLUMNS['耗材']
-  const miscCols = EXCEL_COLUMNS['雜項']
+
+  // Load store-specific columns if available, fallback to defaults
+  let storeColumns = EXCEL_COLUMNS
+  try {
+    const { data: colFile } = await admin.storage.from('excel-templates').download(`${storeId}-columns.json`)
+    if (colFile) {
+      const parsed = JSON.parse(await colFile.text())
+      if (parsed['食材']?.length && parsed['耗材']?.length && parsed['雜項']?.length) {
+        storeColumns = parsed
+      }
+    }
+  } catch { /* fallback to defaults */ }
+
+  const foodCols = storeColumns['食材']
+  const packCols = storeColumns['耗材']
+  const miscCols = storeColumns['雜項']
 
   // Column indices (0-based)
   const BASE = 4 + N  // column after uber accounts
