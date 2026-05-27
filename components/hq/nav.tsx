@@ -5,10 +5,10 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import {
-  LayoutDashboard, CreditCard, CheckSquare, Video,
-  Store, BarChart3, FileSpreadsheet, Shield,
-  Settings, Users, LogOut, Building2,
-  ClipboardList, Wallet, ShoppingCart, FileText, History, Download,
+  LayoutDashboard, CheckSquare,
+  Store, FileSpreadsheet, Shield,
+  Settings, Users, LogOut,
+  ClipboardList, FileText, History, LineChart,
   ArrowRightLeft,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -34,17 +34,14 @@ const hqSections = [
   {
     label: '營運',
     items: [
-      { href: '/hq/dashboard',     label: '即時儀表板', icon: LayoutDashboard },
-      { href: '/hq/payouts',       label: '平台匯款',   icon: CreditCard },
-      { href: '/hq/reviews',       label: '審核中心',   icon: CheckSquare },
-      { href: '/hq/videos',        label: '影片庫',     icon: Video },
-      { href: '/hq/stores',        label: '店家管理',   icon: Store },
+      { href: '/hq/dashboard', label: '即時儀表板', icon: LayoutDashboard },
+      { href: '/hq/reviews',   label: '審核中心',   icon: CheckSquare },
+      { href: '/hq/stores',    label: '店家管理',   icon: Store },
     ],
   },
   {
     label: '分析',
     items: [
-      { href: '/hq/reports',       label: '月度報表',   icon: BarChart3 },
       { href: '/hq/excel',         label: 'Excel 匯出', icon: FileSpreadsheet },
       { href: '/hq/audit',         label: '稽核中心',   icon: Shield },
       { href: '/hq/item-mappings', label: '品項對應',   icon: FileText },
@@ -61,38 +58,25 @@ const hqSections = [
 
 const managerSections = [
   {
-    label: '今日',
+    label: '日常',
     items: [
-      { href: '/manager/dashboard', label: '今日狀態', icon: LayoutDashboard },
-      { href: '/manager/closing',   label: '每日結帳', icon: ClipboardList },
-      { href: '/manager/cash',      label: '現金清點', icon: Wallet },
-      { href: '/manager/order',     label: '叫貨明細', icon: ShoppingCart },
-    ],
-  },
-  {
-    label: '紀錄',
-    items: [
-      { href: '/manager/receipts', label: '發票收據', icon: FileText },
-      { href: '/manager/summary',  label: '結算結果', icon: BarChart3 },
-      { href: '/manager/history',  label: '歷史紀錄', icon: History },
-      { href: '/manager/export',   label: '本月匯出', icon: Download },
+      { href: '/manager/dashboard',  label: '今日結帳', icon: ClipboardList },
+      { href: '/manager/history',    label: '歷史紀錄', icon: History },
+      { href: '/manager/analytics',  label: '營運洞察', icon: LineChart },
     ],
   },
 ]
 
 const mobileHQTabs = [
-  { href: '/hq/dashboard',  label: '儀表板', icon: LayoutDashboard },
-  { href: '/hq/reviews',    label: '審核',   icon: CheckSquare },
-  { href: '/hq/stores',     label: '店家',   icon: Store },
-  { href: '/hq/settings',   label: '設定',   icon: Settings },
-  { href: '/hq/users',      label: '帳號',   icon: Users },
+  { href: '/hq/dashboard', label: '儀表板', icon: LayoutDashboard },
+  { href: '/hq/reviews',   label: '審核',   icon: CheckSquare },
+  { href: '/hq/stores',    label: '店家',   icon: Store },
+  { href: '/hq/settings',  label: '設定',   icon: Settings },
 ]
 const mobileManagerTabs = [
-  { href: '/manager/dashboard', label: '今日', icon: LayoutDashboard },
-  { href: '/manager/closing',   label: '結帳', icon: ClipboardList },
-  { href: '/manager/cash',      label: '現金', icon: Wallet },
-  { href: '/manager/receipts',  label: '收據', icon: FileText },
-  { href: '/manager/summary',   label: '結算', icon: BarChart3 },
+  { href: '/manager/dashboard',  label: '今日結帳', icon: ClipboardList },
+  { href: '/manager/history',    label: '歷史紀錄', icon: History },
+  { href: '/manager/analytics',  label: '營運洞察', icon: LineChart },
 ]
 
 interface Props {

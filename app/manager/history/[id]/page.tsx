@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator'
 import { Banknote, Package, Calculator, BarChart3, AlertTriangle, ArrowLeft, Video } from 'lucide-react'
 import Link from 'next/link'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
+import DeleteDraftButton from '@/components/manager/delete-draft-button'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -395,6 +396,10 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
             <p className="text-sm text-slate-700">{closing.note}</p>
           </CardContent>
         </Card>
+      )}
+
+      {closing.status === 'draft' && (
+        <DeleteDraftButton closingId={closing.id} />
       )}
     </div>
   )

@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 
 interface CashCountsPayload {
   bills_1000: number; bills_500: number; bills_100: number
@@ -49,6 +50,39 @@ export async function verifyClosing(closingId: string) {
   if (error) return { error: error.message }
   revalidatePath('/hq/reviews')
   return { success: true }
+}
+
+export async function deleteClosingDraft(closingId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+
+  // RLS 確保只能讀取自己店的資料；再驗證狀態為草稿
+  const { data: closing } = await supabase
+    .from('daily_closings')
+    .select('id, status')
+    .eq('id', closingId)
+    .single()
+
+  if (!closing) return { error: '找不到此帳目' }
+  if (closing.status !== 'draft') return { error: '只能刪除草稿狀態的帳目' }
+
+  const admin = createAdminClient()
+  await Promise.all([
+    admin.from('audit_logs').delete().eq('closing_id', closingId),
+    admin.from('revenue_items').delete().eq('closing_id', closingId),
+    admin.from('cash_counts').delete().eq('closing_id', closingId),
+    admin.from('order_items').delete().eq('closing_id', closingId),
+    admin.from('expense_items').delete().eq('closing_id', closingId),
+    admin.from('handwrite_orders').delete().eq('closing_id', closingId),
+  ])
+
+  const { error } = await admin.from('daily_closings').delete().eq('id', closingId)
+  if (error) return { error: error.message }
+
+  revalidatePath('/manager/history')
+  revalidatePath('/manager/dashboard')
+  redirect('/manager/history')
 }
 
 export async function deleteClosing(closingId: string) {

@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
-import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, Video, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react'
+import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, Video, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil } from 'lucide-react'
 import VideoUploader from '@/components/manager/video-uploader'
+import ReceiptUpload from '@/components/manager/receipt-upload'
 import { saveCashCounts } from '@/app/actions/closings'
 
 interface TodayReceipt {
@@ -17,17 +18,18 @@ interface TodayReceipt {
   receipt_items?: { item_name: string; amount: number }[]
 }
 
+interface ChannelPhoto {
+  previewUrl?: string
+  publicUrl?: string
+  status: 'idle' | 'uploading' | 'verifying' | 'matched' | 'mismatch' | 'uploaded'
+  recognized?: number
+}
+
 function isCKReceipt(receipt: TodayReceipt, ckPrices: CKPrice[]): boolean {
   if (!receipt.receipt_items || receipt.receipt_items.length === 0) return false
   const ckNames = ckPrices.map(p => p.item_name)
   return receipt.receipt_items.some(item =>
     ckNames.some(ck => item.item_name === ck || item.item_name.includes(ck) || ck.includes(item.item_name))
-  )
-}
-
-function findCKPrice(itemName: string, ckPrices: CKPrice[]): CKPrice | undefined {
-  return ckPrices.find(p =>
-    p.item_name === itemName || itemName.includes(p.item_name) || p.item_name.includes(itemName)
   )
 }
 
@@ -73,7 +75,6 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayRec
   ;(store.uber_accounts ?? []).forEach(acc => { uber_amounts[acc] = 0 })
 
   if (!existing) {
-    // 自動從央廚收據加總配送金額
     const ck_total = todayReceipts
       ? todayReceipts.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
       : 0
@@ -96,7 +97,6 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayRec
     const r = rev.find((x: any) => x.channel === 'uber' && x.account_name === acc)
     uber_amounts[acc] = r?.gross_amount ?? 0
   })
-  // CK 永遠以今日收據為準；若無收據則退回用已存的
   const ckFromReceipts = todayReceipts
     ? todayReceipts.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
     : null
@@ -126,7 +126,6 @@ function initExpenses(existing: any, ckPrices: CKPrice[], todayReceipts?: TodayR
     id: e.id, description: e.description, amount: e.amount,
   }))
   if (fromDB.length > 0) return fromDB
-  // 若無既有支出，自動從今日非央廚收據填入
   if (todayReceipts && todayReceipts.length > 0) {
     return todayReceipts
       .filter(r => !isCKReceipt(r, ckPrices))
@@ -196,8 +195,7 @@ const DENOMINATIONS = [
 ]
 
 function SInput({
-  value, onChange, placeholder = '0', disabled, step, textRight = true,
-  onKeyDown,
+  value, onChange, placeholder = '0', disabled, step, textRight = true, onKeyDown,
 }: {
   value: number | string; onChange: (v: number) => void; placeholder?: string
   disabled?: boolean; step?: string; textRight?: boolean; onKeyDown?: React.KeyboardEventHandler
@@ -205,8 +203,7 @@ function SInput({
   const [focused, setFocused] = useState(false)
   return (
     <input
-      type="number" min="0" inputMode="numeric" disabled={disabled}
-      step={step}
+      type="number" min="0" inputMode="numeric" disabled={disabled} step={step}
       style={{
         padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px',
         fontSize: '14px', background: disabled ? '#fafafa' : 'white', outline: 'none',
@@ -227,36 +224,6 @@ function SInput({
   )
 }
 
-function TextInputStyled({
-  value, onChange, placeholder, disabled, forwardRef,
-  onKeyDown, mono,
-}: {
-  value: string; onChange: (v: string) => void; placeholder?: string
-  disabled?: boolean; forwardRef?: React.RefObject<HTMLInputElement | null>
-  onKeyDown?: React.KeyboardEventHandler; mono?: boolean
-}) {
-  const [focused, setFocused] = useState(false)
-  return (
-    <input
-      ref={forwardRef}
-      type="text" disabled={disabled}
-      style={{
-        padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px',
-        fontSize: '14px', background: disabled ? '#fafafa' : 'white', outline: 'none',
-        fontFamily: mono ? 'monospace' : 'inherit', width: '100%',
-        borderColor: focused ? '#6366f1' : '#e4e4e7',
-        boxShadow: focused ? '0 0 0 4px rgba(99,102,241,0.1)' : 'none',
-        color: '#18181b', opacity: disabled ? 0.5 : 1,
-      }}
-      value={value} placeholder={placeholder}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onChange={e => onChange(e.target.value)}
-      onKeyDown={onKeyDown}
-    />
-  )
-}
-
 function SectionCard({ children, icon, title, subtitle, iconColor }: {
   children: React.ReactNode; icon: React.ReactNode; title: string; subtitle?: string; iconColor: string
 }) {
@@ -265,8 +232,7 @@ function SectionCard({ children, icon, title, subtitle, iconColor }: {
       style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
       <div className="px-4 pt-4 pb-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
         <div className="flex items-center gap-2">
-          <div className="h-7 w-7 rounded-lg flex items-center justify-center"
-            style={{ background: iconColor + '18' }}>
+          <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: iconColor + '18' }}>
             <span style={{ color: iconColor }}>{icon}</span>
           </div>
           <div>
@@ -275,9 +241,7 @@ function SectionCard({ children, icon, title, subtitle, iconColor }: {
           </div>
         </div>
       </div>
-      <div className="px-4 py-4">
-        {children}
-      </div>
+      <div className="px-4 py-4">{children}</div>
     </div>
   )
 }
@@ -286,11 +250,93 @@ function Divider() {
   return <div style={{ borderTop: '1px solid #f4f4f5', margin: '12px 0' }} />
 }
 
-function Row({ label, value, muted, bold, accent }: { label: string; value: string; muted?: boolean; bold?: boolean; accent?: string }) {
+function GradientTitle({ step, total, title, desc }: { step: number; total: number; title: string; desc: string }) {
   return (
-    <div className="flex justify-between items-center">
-      <span className="text-sm" style={{ color: muted ? '#a1a1aa' : '#52525b' }}>{label}</span>
-      <span className="text-sm tabular-nums" style={{ color: accent ?? (bold ? '#18181b' : '#52525b'), fontWeight: bold ? 700 : 500 }}>{value}</span>
+    <div className="mb-5">
+      <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>📍 步驟 {step} / {total}</p>
+      <h2 className="text-2xl font-extrabold tracking-tight mb-1"
+        style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+        {title}
+      </h2>
+      <p className="text-sm" style={{ color: '#52525b' }}>{desc}</p>
+    </div>
+  )
+}
+
+function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo, onPhotoClick }: {
+  channelKey: string; name: string; hint?: string; value: number
+  onChange: (v: number) => void; disabled?: boolean
+  photo?: ChannelPhoto; onPhotoClick?: () => void
+}) {
+  const isVerifying = photo?.status === 'uploading' || photo?.status === 'verifying'
+  const isMatched = photo?.status === 'matched'
+  const isMismatch = photo?.status === 'mismatch'
+  const hasPhoto = photo && photo.status !== 'idle'
+
+  const photoBoxStyle: React.CSSProperties = {
+    height: '80px', borderRadius: '12px', display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center', cursor: disabled ? 'default' : 'pointer',
+    transition: 'all 0.2s', fontSize: '11px', fontWeight: 600,
+    border: isMatched ? '2px solid #10b981' : isMismatch ? '2px solid #f43f5e' : '2px dashed #e4e4e7',
+    background: isMatched ? 'linear-gradient(135deg,#d1fae5,#ecfdf5)'
+      : isMismatch ? 'linear-gradient(135deg,#ffe4e6,#fff1f2)'
+      : hasPhoto ? 'linear-gradient(135deg,#eef2ff,#f5f3ff)'
+      : '#f8fafc',
+    color: isMatched ? '#047857' : isMismatch ? '#be123c' : '#a1a1aa',
+    overflow: 'hidden', position: 'relative',
+  }
+
+  return (
+    <div className="rounded-2xl p-4" style={{ background: 'white', border: '1px solid #f4f4f5' }}>
+      <div className="flex justify-between items-center mb-3">
+        <span style={{ fontWeight: 600, fontSize: '14px', color: '#18181b' }}>{name}</span>
+        {hint && <span style={{ fontSize: '11px', color: '#a1a1aa' }}>{hint}</span>}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: '10px', alignItems: 'center' }}>
+        <input type="number" min="0" inputMode="numeric" disabled={disabled}
+          style={{ padding: '12px 14px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '20px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: disabled ? '#fafafa' : '#f8fafc', outline: 'none', color: '#18181b', opacity: disabled ? 0.7 : 1, width: '100%', boxSizing: 'border-box' }}
+          value={value || ''} placeholder="0"
+          onChange={e => onChange(parseInt(e.target.value) || 0)} />
+
+        {/* Photo box */}
+        {photo?.previewUrl && (isMatched || isMismatch || photo.status === 'uploaded') ? (
+          <div style={photoBoxStyle} onClick={disabled ? undefined : onPhotoClick}>
+            <img src={photo.previewUrl} alt="preview"
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.3 }} />
+            <div style={{ position: 'relative', textAlign: 'center', padding: '4px' }}>
+              {isMatched && <><CheckCircle2 style={{ width: '20px', height: '20px', margin: '0 auto 3px' }} /><span>已驗證 ✓</span></>}
+              {isMismatch && <><AlertCircle style={{ width: '20px', height: '20px', margin: '0 auto 3px' }} /><span>差 ${photo.recognized?.toLocaleString('zh-TW')}</span></>}
+              {photo.status === 'uploaded' && <><CheckCircle2 style={{ width: '20px', height: '20px', margin: '0 auto 3px', color: '#6366f1' }} /><span style={{ color: '#6366f1' }}>已上傳</span></>}
+            </div>
+          </div>
+        ) : (
+          <button type="button" style={photoBoxStyle} onClick={disabled ? undefined : onPhotoClick} disabled={disabled}>
+            {isVerifying
+              ? <><Loader2 style={{ width: '22px', height: '22px', marginBottom: '4px' }} className="animate-spin" /><span>{photo?.status === 'uploading' ? '上傳中…' : 'AI 核對…'}</span></>
+              : <><Camera style={{ width: '22px', height: '22px', marginBottom: '4px' }} /><span>{disabled ? '—' : '點此拍照'}</span></>
+            }
+          </button>
+        )}
+      </div>
+
+      {/* Mismatch warning */}
+      {isMismatch && photo.recognized != null && (
+        <div className="mt-2 px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5"
+          style={{ background: '#ffe4e6', color: '#be123c' }}>
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          AI 辨識金額 ${photo.recognized.toLocaleString('zh-TW')}，與輸入差距 ${Math.abs((photo.recognized ?? 0) - value).toLocaleString('zh-TW')}，請覆核
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SummaryBlock({ label, value, warm }: { label: string; value: string; warm?: boolean }) {
+  return (
+    <div className="flex justify-between items-center mt-4 rounded-2xl px-4 py-3"
+      style={{ background: warm ? 'linear-gradient(135deg,#ffedd5,#fffbeb)' : 'linear-gradient(135deg,#eef2ff,#f5f3ff)' }}>
+      <span className="text-sm font-medium" style={{ color: warm ? '#7c2d12' : '#312e81' }}>{label}</span>
+      <span className="text-2xl font-extrabold tabular-nums" style={{ color: warm ? '#c2410c' : '#4338ca' }}>{value}</span>
     </div>
   )
 }
@@ -298,8 +344,20 @@ function Row({ label, value, muted, bold, accent }: { label: string; value: stri
 export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [] }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
+  const [localReceipts, setLocalReceipts] = useState<TodayReceipt[]>(todayReceipts)
+  const [showReceiptUpload, setShowReceiptUpload] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [channelPhotos, setChannelPhotos] = useState<Record<string, ChannelPhoto>>({})
+  const currentUploadChannelRef = useRef<{ key: string; amount: number } | null>(null)
+  const channelFileRef = useRef<HTMLInputElement>(null)
+  const [editingReceiptId, setEditingReceiptId] = useState<string | null>(null)
+  const [editVendor, setEditVendor] = useState('')
+  const [editAmount, setEditAmount] = useState(0)
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
+  const [currentStep, setCurrentStep] = useState(0)
+  const [submitDone, setSubmitDone] = useState(false)
+  const [pettyCounts, setPettyCounts] = useState<Record<string, number>>({})
+  const [pettyLumps, setPettyLumps] = useState<Record<string, number>>({})
   const [newOrderNum, setNewOrderNum] = useState('')
   const [newOrderAmt, setNewOrderAmt] = useState(0)
   const [saving, setSaving] = useState(false)
@@ -318,7 +376,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0)
   const handwriteTotal = handwriteOrders.reduce((s, o) => s + (o.voided ? 0 : (o.amount || 0)), 0)
   const s = calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal)
-  const isLocked = status === 'submitted' || status === 'verified'
+  const isLocked = (status === 'submitted' || status === 'verified') && !submitDone
   const isDisputed = status === 'disputed'
   const disputeNote = existingClosing?.dispute_note ?? ''
 
@@ -326,7 +384,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const varColor = absVar === 0 ? '#047857' : absVar <= 200 ? '#b45309' : '#be123c'
   const varBg    = absVar === 0 ? '#d1fae5' : absVar <= 200 ? '#fef3c7' : '#ffe4e6'
   const varBorder = absVar === 0 ? '#6ee7b7' : absVar <= 200 ? '#fcd34d' : '#fda4af'
-  const varMsg   = absVar === 0 ? '金額正確 ✓' : absVar <= 200 ? '差距微小，請確認' : '差距過大，請重新核查'
+  const varMsg   = absVar === 0 ? '完美對帳！✓' : absVar <= 200 ? '差距微小，請確認' : '差距過大，請重新核查'
 
   const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
     draft:     { bg: '#f4f4f5', color: '#71717a', label: '草稿' },
@@ -341,12 +399,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [])
 
   useEffect(() => {
-    if (isLocked) return
+    if (isLocked || submitDone) return
     const t = setInterval(() => handleSave(true), 60000)
     return () => clearInterval(t)
-  }, [data, expenses, handwriteOrders, isLocked, isDisputed])
+  }, [data, expenses, handwriteOrders, isLocked, isDisputed, submitDone])
 
-  // 切回此 tab 時自動更新央廚金額
   useEffect(() => {
     if (isLocked) return
     async function autoSyncCK() {
@@ -367,6 +424,23 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     return () => document.removeEventListener('visibilitychange', autoSyncCK)
   }, [isLocked, store.id, today, ckPrices, set])
 
+  function handleReceiptSaved(receipt: any) {
+    const newR: TodayReceipt = {
+      id: receipt.id,
+      vendor_name: receipt.vendor_name,
+      total_amount: receipt.total_amount,
+      receipt_type: receipt.receipt_type,
+      receipt_items: (receipt.receipt_items ?? []).map((i: any) => ({ item_name: i.item_name, amount: i.amount })),
+    }
+    const updated = [...localReceipts, newR]
+    setLocalReceipts(updated)
+    const ckTotal = updated.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
+    set('ck_total', ckTotal)
+    setExpenses(receiptsToExpenses(updated, ckPrices))
+    setShowReceiptUpload(false)
+    toast.success(`已加入：${receipt.vendor_name || '收據'} $${fmt(receipt.total_amount)}`)
+  }
+
   async function syncFromReceipts() {
     setSyncing(true)
     const supabase = createClient()
@@ -378,9 +452,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       .order('created_at')
     if (receipts) {
       const typed = receipts as TodayReceipt[]
-      // 非央廚收據 → 支出
+      setLocalReceipts(typed)
       setExpenses(receiptsToExpenses(typed, ckPrices))
-      // 央廚收據 → 加總配送金額
       const ckReceipts = typed.filter(r => isCKReceipt(r, ckPrices))
       const ckTotal = ckReceipts.reduce((s, r) => s + r.total_amount, 0)
       set('ck_total', ckTotal)
@@ -394,14 +467,78 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setSyncing(false)
   }
 
+  async function handleSaveReceiptEdit() {
+    if (!editingReceiptId) return
+    const oldReceipt = localReceipts.find(r => r.id === editingReceiptId)
+    if (!oldReceipt) return
+    const updatedReceipts = localReceipts.map(r =>
+      r.id === editingReceiptId ? { ...r, vendor_name: editVendor, total_amount: editAmount } : r
+    )
+    setLocalReceipts(updatedReceipts)
+    const oldKey = oldReceipt.vendor_name || '（未填廠商）'
+    setExpenses(prev => prev.map(e =>
+      e.description === oldKey ? { ...e, description: editVendor || '（未填廠商）', amount: editAmount } : e
+    ))
+    const ckTotal = updatedReceipts.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
+    set('ck_total', ckTotal)
+    const supabase = createClient()
+    await supabase.from('receipts').update({ vendor_name: editVendor, total_amount: editAmount }).eq('id', editingReceiptId)
+    setEditingReceiptId(null)
+    toast.success('已更新')
+  }
+
+  function openChannelUpload(key: string, amount: number) {
+    currentUploadChannelRef.current = { key, amount }
+    channelFileRef.current?.click()
+  }
+
+  async function handleChannelFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !currentUploadChannelRef.current) return
+    const { key, amount } = currentUploadChannelRef.current
+    e.target.value = ''
+
+    const previewUrl = URL.createObjectURL(file)
+    setChannelPhotos(prev => ({ ...prev, [key]: { previewUrl, status: 'uploading' } }))
+
+    const supabase = createClient()
+    const ext = file.name.split('.').pop() || 'jpg'
+    const path = `revenue-photos/${store.id}/${today}/${key}.${ext}`
+    const { error: upErr } = await supabase.storage.from('receipts').upload(path, file, { upsert: true })
+    if (upErr) {
+      setChannelPhotos(prev => ({ ...prev, [key]: { previewUrl, status: 'uploaded' } }))
+      toast.error('照片上傳失敗')
+      return
+    }
+
+    const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(path)
+    setChannelPhotos(prev => ({ ...prev, [key]: { previewUrl, publicUrl, status: 'verifying' } }))
+
+    try {
+      const res = await fetch('/api/recognize-receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: publicUrl }),
+      })
+      const result = await res.json()
+      const recognized = result.total_amount ?? 0
+      const diff = Math.abs(recognized - amount)
+      const matched = recognized > 0 && diff <= Math.max(amount * 0.03, 100)
+      setChannelPhotos(prev => ({
+        ...prev,
+        [key]: { previewUrl, publicUrl, status: matched ? 'matched' : 'mismatch', recognized },
+      }))
+    } catch {
+      setChannelPhotos(prev => ({ ...prev, [key]: { previewUrl, publicUrl, status: 'uploaded' } }))
+    }
+  }
+
   function addExpense() {
     setExpenses(prev => [...prev, { id: crypto.randomUUID(), description: '', amount: 0 }])
   }
-
   function updateExpense(id: string, field: 'description' | 'amount', value: string | number) {
     setExpenses(prev => prev.map(e => e.id === id ? { ...e, [field]: value } : e))
   }
-
   function removeExpense(id: string) {
     setExpenses(prev => prev.filter(e => e.id !== id))
   }
@@ -418,18 +555,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }
 
   function generateRange() {
-    if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) {
-      toast.error('請輸入有效的起始和結束單號'); return
-    }
-    if (rangeEnd - rangeStart > 200) {
-      toast.error('單次最多建立 200 筆'); return
-    }
+    if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) { toast.error('請輸入有效的起始和結束單號'); return }
+    if (rangeEnd - rangeStart > 200) { toast.error('單次最多建立 200 筆'); return }
     const existingNums = new Set(handwriteOrders.map(o => o.order_number))
     const newOrders: HandwriteOrder[] = []
     for (let n = rangeStart; n <= rangeEnd; n++) {
-      if (!existingNums.has(String(n))) {
+      if (!existingNums.has(String(n)))
         newOrders.push({ id: crypto.randomUUID(), order_number: String(n), amount: 0, voided: false, void_reason: '' })
-      }
     }
     if (newOrders.length === 0) { toast.info('該範圍內的單號已全部存在'); return }
     setHandwriteOrders(prev => [...prev, ...newOrders])
@@ -439,33 +571,29 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   function updateHandwriteOrderAmount(id: string, amount: number) {
     setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, amount } : o))
   }
-
   function toggleVoidOrder(id: string) {
     setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, voided: !o.voided } : o))
   }
-
   function updateVoidReason(id: string, reason: string) {
     setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, void_reason: reason } : o))
   }
-
   function removeHandwriteOrder(id: string) {
     setHandwriteOrders(prev => prev.filter(o => o.id !== id))
   }
 
   async function handleSave(silent = false) {
+    if (status === 'submitted' || status === 'verified') return null
     setSaving(true)
     const supabase = createClient()
     const d = dataRef.current
     try {
       let cid = closingId
-
       const payload = {
         store_id: store.id, manager_id: userId, business_date: today, status: isDisputed ? 'disputed' : 'draft',
         total_revenue: s.totalRevenue, total_cost: s.deliveryFee, total_expenses: totalExpenses,
         expected_remit: s.netToHQ, actual_remit: s.actualRemit,
         should_include_delivery: s.shouldEnvelope, variance: s.variance, note: d.note,
       }
-
       if (!cid) {
         const { data: nc, error } = await supabase.from('daily_closings').insert(payload).select('id').single()
         if (error) throw error
@@ -475,7 +603,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         const { error } = await supabase.from('daily_closings').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', cid)
         if (error) throw error
       }
-
       await supabase.from('revenue_items').delete().eq('closing_id', cid)
       const revItems = [
         ...(store.mode !== 'handwrite' ? [{ closing_id: cid, channel: 'pos', gross_amount: d.pos_cash, is_cash: true }] : []),
@@ -486,7 +613,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         ...(store.mode !== 'ichef' ? [{ closing_id: cid, channel: 'handwrite', gross_amount: handwriteTotal, is_cash: true }] : []),
       ]
       if (revItems.length) await supabase.from('revenue_items').insert(revItems)
-
       if (!cid) throw new Error('無法取得帳目 ID')
       const cashPayload = {
         bills_1000: d.bills_1000, bills_500: d.bills_500, bills_100: d.bills_100,
@@ -496,7 +622,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       }
       const cashResult = await saveCashCounts(cid, cashPayload)
       if (cashResult.error) throw new Error('現金清點儲存失敗：' + cashResult.error)
-
       await supabase.from('order_items').delete().eq('closing_id', cid)
       if (d.ck_total > 0) {
         await supabase.from('order_items').insert({
@@ -504,13 +629,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           unit_price: d.ck_total, quantity: 1, total_amount: d.ck_total,
         })
       }
-
       await supabase.from('expense_items').delete().eq('closing_id', cid)
       const expItems = expenses
         .filter(e => e.description.trim() || e.amount > 0)
         .map(e => ({ closing_id: cid, description: e.description.trim() || '支出', amount: e.amount }))
       if (expItems.length) await supabase.from('expense_items').insert(expItems)
-
       await supabase.from('handwrite_orders').delete().eq('closing_id', cid)
       const hwItems = handwriteOrders
         .filter(o => o.order_number.trim())
@@ -521,7 +644,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           voided: o.voided, void_reason: o.void_reason || null,
         }))
       if (hwItems.length) await supabase.from('handwrite_orders').insert(hwItems)
-
       if (!silent) toast.success('草稿已儲存')
       return cid
     } catch (err: any) {
@@ -551,7 +673,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           metadata: { variance: s.variance, business_date: today },
         })
       }
-      router.push('/manager/summary')
+      setSubmitDone(true)
+      setCurrentStep(prev => prev + 1) // advance to 摘要
     } catch (err: any) {
       toast.error('送出失敗：' + err.message)
     } finally {
@@ -559,28 +682,92 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
   }
 
+  // ─── Wizard ───────────────────────────────────────────────────────────────
+  const STEPS = [
+    { id: 'receipts',  label: '上傳單據' },
+    ...(store.mode !== 'ichef' ? [{ id: 'handwrite', label: '手寫菜單' }] : []),
+    { id: 'revenue',   label: '營業額'  },
+    { id: 'cash',      label: '現金清點' },
+    { id: 'summary',   label: '確認結帳' },
+    { id: 'submit',    label: '送出'    },
+    { id: 'result',    label: '摘要'    },
+    { id: 'petty',     label: '零用金核對' },
+  ]
+  const totalSteps = STEPS.length
+  const submitStepIdx = STEPS.findIndex(s => s.id === 'submit')
+  const isPostSubmit = submitDone || status === 'submitted' || status === 'verified'
+  const step = isLocked && !submitDone
+    ? STEPS.findIndex(s => s.id === 'summary')
+    : Math.min(currentStep, totalSteps - 1)
+  const stepId = STEPS[step]?.id
+  const stepNum = step + 1
+
+  function goNext() {
+    if (stepId === 'receipts' && !isLocked) {
+      const missing = localReceipts.filter(r => !isCKReceipt(r, ckPrices) && !r.vendor_name?.trim())
+      if (missing.length > 0) {
+        toast.error(`請先填寫 ${missing.length} 筆收據的廠商名稱`)
+        return
+      }
+    }
+    if (step >= submitStepIdx) { setCurrentStep(step + 1); return }
+    if (step < totalSteps - 1) { handleSave(true); setCurrentStep(step + 1) }
+  }
+  function goPrev() { if (step > 0) setCurrentStep(step - 1) }
+
+  const pettyVerifyCash = DENOMINATIONS.reduce((sum, { countKey, lumpKey, unit }) =>
+    sum + (pettyCounts[countKey] || 0) * unit + (pettyLumps[lumpKey] || 0), 0)
+  const pettyDiff = pettyVerifyCash - store.petty_cash
+  const pettyOk = pettyDiff === 0
+
+  // ── Main wizard return ────────────────────────────────────────────────────
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
 
-      {/* 頁首 */}
-      <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-        <div className="max-w-xl mx-auto flex items-start justify-between">
+      {/* Sticky header + stepper */}
+      <div className="bg-white sticky top-0 z-50" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #f4f4f5' }}>
           <div>
-            <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
-              <BarChart3 className="h-3.5 w-3.5" />
-              每日結帳
-            </div>
-            <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>{store.name}</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>{today}</p>
+            <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>每日結帳</p>
+            <p className="text-sm font-bold" style={{ color: '#18181b' }}>{store.name} · {today}</p>
           </div>
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-full mt-1"
-            style={{ background: st.bg, color: st.color }}>
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: st.bg, color: st.color }}>
             {st.label}
           </span>
         </div>
+        {!isLocked && (
+          <div className="px-4 py-3 overflow-x-auto">
+            <div className="flex items-center" style={{ minWidth: 'max-content' }}>
+              {STEPS.map((s, i) => (
+                <div key={s.id} className="flex items-center">
+                  <button onClick={() => { if (i <= step) setCurrentStep(i) }}
+                    className="flex flex-col items-center gap-1 px-1.5"
+                    style={{ cursor: i <= step ? 'pointer' : 'default' }}>
+                    <div className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold transition-all"
+                      style={{
+                        background: i === step ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : i < step ? '#10b981' : '#f4f4f5',
+                        color: i === step || i < step ? 'white' : '#a1a1aa',
+                        boxShadow: i === step ? '0 4px 14px rgba(99,102,241,0.3)' : 'none',
+                        transform: i === step ? 'scale(1.1)' : 'scale(1)',
+                      }}>
+                      {i < step ? '✓' : i + 1}
+                    </div>
+                    <span className="text-[10px] font-semibold whitespace-nowrap"
+                      style={{ color: i === step ? '#6366f1' : i < step ? '#10b981' : '#a1a1aa' }}>
+                      {s.label}
+                    </span>
+                  </button>
+                  {i < STEPS.length - 1 && (
+                    <div className="w-6 h-0.5 rounded mx-0.5 mb-4" style={{ background: i < step ? '#10b981' : '#e4e4e7' }} />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-32 lg:pb-24">
+      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-32">
 
         {/* 退回提示 */}
         {isDisputed && (
@@ -594,454 +781,740 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           </div>
         )}
 
-        {/* 1. 營收輸入 */}
-        <SectionCard icon={<Banknote className="h-4 w-4" />} title="營收輸入" iconColor="#6366f1">
-          {store.mode !== 'handwrite' && (
-            <div className="mb-3">
-              {store.ichef_uber_linked && (
-                <div className="mb-2 text-xs px-3 py-2 rounded-xl" style={{ background: '#eef2ff', color: '#4338ca' }}>
-                  輸入 iChef 結帳總金額（含外送平台）
+        {/* ── STEP 1: 上傳單據 ──────────────────────────────────────────── */}
+        {(stepId === 'receipts' || isLocked) && (
+          <>
+            {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="上傳單據與央廚配送"
+              desc="上傳今日所有發票與收據，AI 自動辨識後歸入支出；再填入央廚今日配送費。" />}
+
+            {/* 嵌入式上傳 */}
+            {showReceiptUpload && !isLocked ? (
+              <div className="bg-white rounded-2xl overflow-hidden p-4" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                <ReceiptUpload
+                  storeId={store.id}
+                  today={today}
+                  mappings={{}}
+                  onSaved={handleReceiptSaved}
+                  onCancel={() => setShowReceiptUpload(false)}
+                />
+              </div>
+            ) : (
+              <>
+                {/* 今日收據清單 */}
+                <SectionCard icon={<Camera className="h-4 w-4" />} title="今日發票 / 收據" subtitle="AI 自動辨識，上傳後自動歸入支出" iconColor="#6366f1">
+                  {!isLocked && (
+                    <button onClick={() => setShowReceiptUpload(true)}
+                      className="w-full h-12 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 text-sm font-semibold mb-3 transition-colors"
+                      style={{ borderColor: '#c7d2fe', color: '#6366f1', background: '#f8f9ff' }}>
+                      <Camera className="h-4 w-4" />
+                      拍照或選擇圖片上傳
+                    </button>
+                  )}
+
+                  {localReceipts.length > 0 && (
+                    <div className="space-y-2 mb-1">
+                      {localReceipts.map(r => {
+                        const isCK = isCKReceipt(r, ckPrices)
+                        const missingVendor = !isCK && !r.vendor_name?.trim()
+                        const isEditing = editingReceiptId === r.id
+
+                        if (isEditing) {
+                          return (
+                            <div key={r.id} className="rounded-xl p-3 space-y-2"
+                              style={{ background: '#f8f9ff', border: '1.5px solid #c7d2fe' }}>
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <Pencil className="h-3.5 w-3.5 shrink-0" style={{ color: '#6366f1' }} />
+                                <p className="text-xs font-semibold" style={{ color: '#6366f1' }}>編輯收據資訊</p>
+                              </div>
+                              <div className="flex gap-2">
+                                <input
+                                  placeholder="廠商名稱（必填）"
+                                  style={{ flex: 1, padding: '9px 12px', border: `1.5px solid ${editVendor.trim() ? '#c7d2fe' : '#fda4af'}`, borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit' }}
+                                  value={editVendor}
+                                  onChange={e => setEditVendor(e.target.value)}
+                                  autoFocus
+                                />
+                                <input type="number" min="0" inputMode="numeric"
+                                  style={{ width: '96px', padding: '9px 10px', border: '1.5px solid #c7d2fe', borderRadius: '10px', fontSize: '14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', background: 'white', outline: 'none', fontFamily: 'inherit' }}
+                                  value={editAmount || ''}
+                                  placeholder="金額"
+                                  onChange={e => setEditAmount(parseInt(e.target.value) || 0)}
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <button onClick={handleSaveReceiptEdit} disabled={!editVendor.trim()}
+                                  className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
+                                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', opacity: !editVendor.trim() ? 0.5 : 1 }}>
+                                  儲存
+                                </button>
+                                <button onClick={() => setEditingReceiptId(null)}
+                                  className="px-4 py-2 rounded-xl text-xs font-semibold"
+                                  style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b' }}>
+                                  取消
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        }
+
+                        return (
+                          <div key={r.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                            style={{ background: isCK ? '#fff7ed' : missingVendor ? '#fff8f8' : '#f8fafc', border: `1px solid ${isCK ? '#fed7aa' : missingVendor ? '#fda4af' : '#f4f4f5'}` }}>
+                            <span className="text-base shrink-0">{isCK ? '🚚' : '🧾'}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold truncate" style={{ color: missingVendor ? '#be123c' : '#18181b' }}>
+                                {r.vendor_name || '⚠ 請填寫廠商名稱'}
+                              </p>
+                              <p className="text-xs" style={{ color: '#a1a1aa' }}>
+                                {isCK ? 'AI 辨識 · 央廚配送' : 'AI 辨識 · 現金支出'}
+                              </p>
+                            </div>
+                            <p className="text-sm font-bold tabular-nums shrink-0" style={{ color: '#18181b' }}>
+                              ${fmt(r.total_amount)}
+                            </p>
+                            {!isLocked && (
+                              <button onClick={() => { setEditingReceiptId(r.id); setEditVendor(r.vendor_name || ''); setEditAmount(r.total_amount) }}
+                                className="p-1.5 rounded-lg shrink-0"
+                                style={{ background: missingVendor ? '#ffe4e6' : '#f4f4f5', color: missingVendor ? '#be123c' : '#a1a1aa' }}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {!missingVendor && (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
+                                style={{ background: '#d1fae5', color: '#047857' }}>✓ 已辨識</span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {localReceipts.length === 0 && !isLocked && (
+                    <p className="text-xs text-center py-1" style={{ color: '#a1a1aa' }}>尚未上傳任何收據</p>
+                  )}
+                  {totalExpenses > 0 && (
+                    <SummaryBlock label={`今日支出小計（${expenses.length} 筆）`} value={`$${fmt(totalExpenses)}`} />
+                  )}
+
+                  {/* 手動支出 */}
+                  {!isLocked && (
+                    <div className="mt-3 pt-3" style={{ borderTop: '1px solid #f4f4f5' }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-semibold" style={{ color: '#52525b' }}>手動新增支出</p>
+                        <button onClick={addExpense} className="flex items-center gap-1 text-xs font-semibold" style={{ color: '#7c3aed' }}>
+                          <Plus className="h-3.5 w-3.5" /> 新增
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {expenses.filter(e => !localReceipts.some(r => r.vendor_name === e.description)).map(e => (
+                          <div key={e.id} className="flex items-center gap-2">
+                            <input placeholder="說明（例：菜商、雜貨）"
+                              style={{ flex: 1, padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit' }}
+                              value={e.description} onChange={ev => updateExpense(e.id, 'description', ev.target.value)} />
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-xs" style={{ color: '#a1a1aa' }}>$</span>
+                              <input type="number" min="0" inputMode="numeric"
+                                style={{ width: '88px', padding: '10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+                                value={e.amount || ''} placeholder="0"
+                                onChange={ev => updateExpense(e.id, 'amount', parseFloat(ev.target.value) || 0)} />
+                            </div>
+                            <button onClick={() => removeExpense(e.id)} className="p-2 rounded-xl shrink-0"
+                              style={{ background: '#fff8f8', border: '1px solid #fecdd3' }}>
+                              <Trash2 className="h-4 w-4" style={{ color: '#be123c' }} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {isLocked && expenses.length > 0 && (
+                    <div className="space-y-2 mt-2">
+                      {expenses.map(e => (
+                        <div key={e.id} className="flex items-center gap-2">
+                          <input disabled style={{ flex: 1, padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: '#fafafa', outline: 'none', fontFamily: 'inherit', opacity: 0.5 }} value={e.description} onChange={() => {}} />
+                          <input type="number" disabled style={{ width: '88px', padding: '10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: '#fafafa', outline: 'none', textAlign: 'right', opacity: 0.5 }} value={e.amount || ''} onChange={() => {}} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </SectionCard>
+
+                {/* 央廚配送 */}
+                <SectionCard icon={<Package className="h-4 w-4" />} title="央廚配送" subtitle="配送總金額（月底結帳用）" iconColor="#f97316">
+                  {!isLocked && (
+                    <div className="flex justify-end mb-3">
+                      <button onClick={syncFromReceipts} disabled={syncing}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
+                        style={{ background: '#fff7ed', color: '#f97316', border: '1px solid #fed7aa', opacity: syncing ? 0.6 : 1 }}>
+                        {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                        從收據同步
+                      </button>
+                    </div>
+                  )}
+                  <SInput value={data.ck_total || 0} onChange={v => set('ck_total', v)} disabled={isLocked} />
+                  {data.ck_total > 0 && <SummaryBlock label="配送費小計" value={`$${fmt(s.deliveryFee)}`} warm />}
+                </SectionCard>
+              </>
+            )}
+          </>
+        )}
+
+        {/* ── STEP 2: 手寫菜單 ─────────────────────────────────────────── */}
+        {(stepId === 'handwrite' || isLocked) && store.mode !== 'ichef' && (
+          <>
+            {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="手寫菜單訂單"
+              desc="每筆訂單輸入單號與金額，作廢訂單請標記原因。iChef 店可跳過此步。" />}
+
+            <SectionCard icon={<Banknote className="h-4 w-4" />} title="手寫訂單" subtitle="金額為 0 的單號不計入合計" iconColor="#10b981">
+              {!isLocked && (
+                <div className="mb-3 p-3 rounded-xl" style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }}>
+                  <p className="text-xs font-semibold mb-2" style={{ color: '#52525b' }}>批量建立單號範圍</p>
+                  <div className="flex gap-2 items-center mb-1.5">
+                    <input type="number" min="1" inputMode="numeric" placeholder="起始"
+                      style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
+                      value={rangeStart || ''} onChange={e => setRangeStart(parseInt(e.target.value) || 0)} />
+                    <span style={{ color: '#a1a1aa' }}>—</span>
+                    <input type="number" min="1" inputMode="numeric" placeholder="結束"
+                      style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
+                      value={rangeEnd || ''} onChange={e => setRangeEnd(parseInt(e.target.value) || 0)} />
+                    <button type="button" onClick={generateRange}
+                      className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold text-white shrink-0"
+                      style={{ background: 'linear-gradient(135deg,#18181b,#3f3f46)', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+                      <Plus className="h-3.5 w-3.5" /> 建立
+                    </button>
+                  </div>
+                  <p className="text-[10px]" style={{ color: '#a1a1aa' }}>已存在的單號不重複建立 · 最多 200 筆</p>
                 </div>
               )}
-              <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>
-                {store.ichef_uber_linked ? 'iChef 結帳總金額' : 'POS 現金'}
-              </label>
-              <SInput value={data.pos_cash} onChange={v => set('pos_cash', v)} disabled={isLocked} />
-            </div>
-          )}
-          {store.ichef_uber_linked && (
-            <p className="text-xs mb-2" style={{ color: '#a1a1aa' }}>↓ 輸入各平台金額（僅用於計算扣除，不加入總收）</p>
-          )}
-          {(store.uber_accounts ?? []).map(acc => (
-            <div key={acc} className="mb-3">
-              <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>Uber Eats（{acc}）</label>
-              <SInput value={data.uber_amounts[acc] ?? 0} onChange={v => set('uber_amounts', { ...data.uber_amounts, [acc]: v })} disabled={isLocked} />
-            </div>
-          ))}
-          {store.panda_enabled && (
-            <div className="mb-3">
-              <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>熊貓 foodpanda</label>
-              <SInput value={data.panda_amount} onChange={v => set('panda_amount', v)} disabled={isLocked} />
-            </div>
-          )}
-          {store.twpay_enabled && (
-            <div className="mb-3">
-              <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>台灣Pay</label>
-              <SInput value={data.twpay_amount} onChange={v => set('twpay_amount', v)} disabled={isLocked} />
-            </div>
-          )}
-          {store.online_enabled && (
-            <div className="mb-3">
-              <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>線上點餐</label>
-              <SInput value={data.online_amount} onChange={v => set('online_amount', v)} disabled={isLocked} />
-            </div>
-          )}
-          {store.mode !== 'ichef' && handwriteTotal > 0 && (
-            <div className="flex justify-between items-center mb-2 text-sm">
-              <span style={{ color: '#52525b' }}>手寫訂單合計</span>
-              <span className="font-semibold tabular-nums" style={{ color: '#18181b' }}>${fmt(handwriteTotal)}</span>
-            </div>
-          )}
-          <Divider />
-          <div className="flex justify-between items-center">
-            <span className="text-sm font-semibold" style={{ color: '#18181b' }}>總營業額</span>
-            <span className="text-xl font-bold tabular-nums" style={{ color: '#6366f1' }}>${fmt(s.totalRevenue)}</span>
-          </div>
-          {store.ichef_uber_linked && s.platformTotal > 0 && (
-            <div className="flex justify-between items-center mt-1.5 text-xs">
-              <span style={{ color: '#a1a1aa' }}>店舖現金（iChef − 平台）</span>
-              <span className="tabular-nums" style={{ color: '#52525b' }}>${fmt(s.storeRevenue)}</span>
-            </div>
-          )}
-        </SectionCard>
-
-        {/* 2. 手寫訂單 */}
-        {store.mode !== 'ichef' && (
-          <SectionCard icon={<Banknote className="h-4 w-4" />} title="手寫訂單" subtitle="金額為 0 的單號不計入合計" iconColor="#10b981">
-            {/* 批量建立 */}
-            {!isLocked && (
-              <div className="mb-3 p-3 rounded-xl" style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }}>
-                <p className="text-xs font-semibold mb-2" style={{ color: '#52525b' }}>批量建立單號範圍</p>
-                <div className="flex gap-2 items-center mb-1.5">
-                  <input
-                    type="number" min="1" inputMode="numeric" placeholder="起始"
-                    style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
-                    value={rangeStart || ''}
-                    onChange={e => setRangeStart(parseInt(e.target.value) || 0)}
-                  />
-                  <span style={{ color: '#a1a1aa' }}>—</span>
-                  <input
-                    type="number" min="1" inputMode="numeric" placeholder="結束"
-                    style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
-                    value={rangeEnd || ''}
-                    onChange={e => setRangeEnd(parseInt(e.target.value) || 0)}
-                  />
-                  <button type="button" onClick={generateRange}
-                    className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold text-white shrink-0"
-                    style={{ background: 'linear-gradient(135deg,#18181b,#3f3f46)', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-                    <Plus className="h-3.5 w-3.5" /> 建立
-                  </button>
-                </div>
-                <p className="text-[10px]" style={{ color: '#a1a1aa' }}>已存在的單號不重複建立 · 最多 200 筆</p>
-              </div>
-            )}
-
-            {/* 訂單列表 */}
-            {handwriteOrders.length > 0 && (
-              <div className="rounded-xl overflow-hidden mb-3" style={{ border: '1px solid #f4f4f5' }}>
-                <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#f8fafc', borderBottom: '1px solid #f4f4f5' }}>
-                  <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>單號</span>
-                  <span className="w-20 text-right text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>金額</span>
-                  {!isLocked && <span className="w-8" />}
-                  {!isLocked && <span className="w-5" />}
-                </div>
-                {handwriteOrders.map((o, idx) => (
-                  <div key={o.id} style={{ background: o.voided ? '#fff8f8' : 'white', borderBottom: idx !== handwriteOrders.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
-                    <div className="flex items-center gap-2 px-3 py-2">
-                      <span className="flex-1 text-sm min-w-0 truncate"
-                        style={{ fontFamily: 'monospace', color: o.voided ? '#a1a1aa' : '#52525b', textDecoration: o.voided ? 'line-through' : 'none' }}>
-                        {o.order_number}
-                      </span>
-                      {isLocked ? (
-                        o.voided
-                          ? <span className="w-20 text-right text-xs font-semibold" style={{ color: '#be123c' }}>作廢</span>
-                          : <span className="w-20 text-right text-sm tabular-nums font-semibold" style={{ color: o.amount === 0 ? '#d4d4d8' : '#18181b' }}>
-                              ${fmt(o.amount)}
-                            </span>
-                      ) : (
-                        <input
-                          type="number" min="0" inputMode="numeric"
-                          style={{ width: '80px', padding: '6px 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', textAlign: 'right', outline: 'none', background: o.voided ? '#f4f4f5' : 'white', opacity: o.voided ? 0.4 : 1, fontVariantNumeric: 'tabular-nums' }}
-                          value={o.voided ? '' : (o.amount || '')}
-                          placeholder="0" disabled={o.voided}
-                          ref={el => { if (el) amtRefsMap.current.set(o.id, el); else amtRefsMap.current.delete(o.id) }}
-                          onChange={e => updateHandwriteOrderAmount(o.id, parseInt(e.target.value) || 0)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault()
-                              const next = handwriteOrders[idx + 1]
-                              if (next) amtRefsMap.current.get(next.id)?.focus()
-                              else newOrderNumRef.current?.focus()
-                            }
-                          }}
-                        />
-                      )}
-                      {!isLocked && (
-                        <button type="button" onClick={() => toggleVoidOrder(o.id)}
-                          className="shrink-0 h-7 w-8 text-[10px] rounded-lg font-semibold"
-                          style={{
-                            background: o.voided ? '#ffe4e6' : 'white',
-                            color: o.voided ? '#be123c' : '#a1a1aa',
-                            border: `1px solid ${o.voided ? '#fda4af' : '#e4e4e7'}`,
-                          }}>
-                          廢
-                        </button>
-                      )}
-                      {!isLocked && (
-                        <button type="button" onClick={() => removeHandwriteOrder(o.id)}
-                          className="shrink-0" style={{ color: '#d4d4d8' }}
-                          onMouseEnter={e => (e.currentTarget.style.color = '#be123c')}
-                          onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                    {o.voided && (
-                      <div className="px-3 pb-2">
+              {handwriteOrders.length > 0 && (
+                <div className="rounded-xl overflow-hidden mb-3" style={{ border: '1px solid #f4f4f5' }}>
+                  <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#f8fafc', borderBottom: '1px solid #f4f4f5' }}>
+                    <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>單號</span>
+                    <span className="w-20 text-right text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>金額</span>
+                    {!isLocked && <span className="w-8" />}
+                    {!isLocked && <span className="w-5" />}
+                  </div>
+                  {handwriteOrders.map((o, idx) => (
+                    <div key={o.id} style={{ background: o.voided ? '#fff8f8' : 'white', borderBottom: idx !== handwriteOrders.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
+                      <div className="flex items-center gap-2 px-3 py-2">
+                        <span className="flex-1 text-sm min-w-0 truncate"
+                          style={{ fontFamily: 'monospace', color: o.voided ? '#a1a1aa' : '#52525b', textDecoration: o.voided ? 'line-through' : 'none' }}>
+                          {o.order_number}
+                        </span>
                         {isLocked ? (
-                          <p className="text-xs" style={{ color: '#a1a1aa' }}>{o.void_reason || '未填原因'}</p>
+                          o.voided
+                            ? <span className="w-20 text-right text-xs font-semibold" style={{ color: '#be123c' }}>作廢</span>
+                            : <span className="w-20 text-right text-sm tabular-nums font-semibold" style={{ color: o.amount === 0 ? '#d4d4d8' : '#18181b' }}>${fmt(o.amount)}</span>
                         ) : (
-                          <input
-                            placeholder="作廢原因（選填，如：廚房失誤、客人取消）"
-                            style={{ padding: '6px 10px', border: '1.5px solid #fda4af', borderRadius: '8px', fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit', width: '100%' }}
-                            value={o.void_reason}
-                            onChange={e => updateVoidReason(o.id, e.target.value)}
+                          <input type="number" min="0" inputMode="numeric"
+                            style={{ width: '80px', padding: '6px 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', textAlign: 'right', outline: 'none', background: o.voided ? '#f4f4f5' : 'white', opacity: o.voided ? 0.4 : 1, fontVariantNumeric: 'tabular-nums' }}
+                            value={o.voided ? '' : (o.amount || '')} placeholder="0" disabled={o.voided}
+                            ref={el => { if (el) amtRefsMap.current.set(o.id, el); else amtRefsMap.current.delete(o.id) }}
+                            onChange={e => updateHandwriteOrderAmount(o.id, parseInt(e.target.value) || 0)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); const next = handwriteOrders[idx + 1]; if (next) amtRefsMap.current.get(next.id)?.focus(); else newOrderNumRef.current?.focus() } }}
                           />
                         )}
+                        {!isLocked && (
+                          <button type="button" onClick={() => toggleVoidOrder(o.id)}
+                            className="shrink-0 h-7 w-8 text-[10px] rounded-lg font-semibold"
+                            style={{ background: o.voided ? '#ffe4e6' : 'white', color: o.voided ? '#be123c' : '#a1a1aa', border: `1px solid ${o.voided ? '#fda4af' : '#e4e4e7'}` }}>
+                            廢
+                          </button>
+                        )}
+                        {!isLocked && (
+                          <button type="button" onClick={() => removeHandwriteOrder(o.id)} className="shrink-0" style={{ color: '#d4d4d8' }}
+                            onMouseEnter={e => (e.currentTarget.style.color = '#be123c')} onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
-                    )}
+                      {o.voided && (
+                        <div className="px-3 pb-2">
+                          {isLocked
+                            ? <p className="text-xs" style={{ color: '#a1a1aa' }}>{o.void_reason || '未填原因'}</p>
+                            : <input placeholder="作廢原因（選填）"
+                                style={{ padding: '6px 10px', border: '1.5px solid #fda4af', borderRadius: '8px', fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit', width: '100%' }}
+                                value={o.void_reason} onChange={e => updateVoidReason(o.id, e.target.value)} />}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!isLocked && (
+                <div className="flex gap-2 items-end mb-3">
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>手動新增</label>
+                    <input ref={newOrderNumRef} type="text" placeholder="單號"
+                      style={{ padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'monospace', width: '100%' }}
+                      value={newOrderNum} onChange={e => setNewOrderNum(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); newOrderAmtRef.current?.focus() } }} />
+                  </div>
+                  <div style={{ width: '110px' }}>
+                    <label className="block text-xs font-medium mb-1.5" style={{ color: 'transparent' }}>_</label>
+                    <input ref={newOrderAmtRef} type="number" min="0" inputMode="numeric" placeholder="金額"
+                      style={{ padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit', width: '100%', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+                      value={newOrderAmt || ''} onChange={e => setNewOrderAmt(parseInt(e.target.value) || 0)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addHandwriteOrder() } }} />
+                  </div>
+                  <button type="button" onClick={addHandwriteOrder}
+                    className="flex items-center gap-1 px-3 py-2.5 rounded-xl text-sm font-semibold shrink-0"
+                    style={{ background: '#f0fdf4', color: '#047857', border: '1px solid #a7f3d0' }}>
+                    <Plus className="h-3.5 w-3.5" /> 新增
+                  </button>
+                </div>
+              )}
+              {handwriteOrders.filter(o => o.amount > 0).length > 0
+                ? <SummaryBlock label={`手寫訂單合計（${handwriteOrders.filter(o => o.amount > 0).length} 筆有效）`} value={`$${fmt(handwriteTotal)}`} />
+                : handwriteOrders.length === 0 && !isLocked
+                  ? <p className="text-xs text-center py-2" style={{ color: '#a1a1aa' }}>請使用批量建立或手動新增訂單</p>
+                  : null}
+            </SectionCard>
+
+            <SectionCard icon={<Video className="h-4 w-4" />} title="今日菜單影片" subtitle="上傳今日菜單影片（選填）" iconColor="#3b82f6">
+              <VideoUploader storeId={store.id} businessDate={today} userId={userId} disabled={isLocked} />
+            </SectionCard>
+          </>
+        )}
+
+        {/* ── STEP 3: 營業額 ───────────────────────────────────────────── */}
+        {(stepId === 'revenue' || isLocked) && (
+          <>
+            {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="各平台營業額"
+              desc="輸入今日各通路的原始金額，並上傳平台統計畫面照片 — AI 自動比對防止輸入錯誤。" />}
+
+            {/* 共用隱藏 file input */}
+            <input ref={channelFileRef} type="file" accept="image/*" capture="environment" className="hidden"
+              onChange={handleChannelFileChange} />
+
+            <div className="space-y-3">
+              {/* iChef POS */}
+              {store.mode !== 'handwrite' && (() => {
+                const key = 'pos'
+                const photo = channelPhotos[key]
+                return (
+                  <PlatformRow
+                    channelKey={key}
+                    name={store.ichef_uber_linked ? 'iChef 結帳總金額' : 'iChef 現場 POS'}
+                    hint={store.ichef_uber_linked ? '含外送平台（iChef 同步）' : '現場 POS 現金'}
+                    value={data.pos_cash}
+                    onChange={v => set('pos_cash', v)}
+                    disabled={isLocked}
+                    photo={photo}
+                    onPhotoClick={() => openChannelUpload(key, data.pos_cash)}
+                  />
+                )
+              })()}
+
+              {/* iChef linked hint */}
+              {store.ichef_uber_linked && !isLocked && (
+                <p className="text-xs px-1" style={{ color: '#a1a1aa' }}>↓ 各外送平台金額（用於計算扣除，不重複計入總收）</p>
+              )}
+
+              {/* Uber accounts */}
+              {(store.uber_accounts ?? []).map(acc => {
+                const key = `uber_${acc}`
+                const photo = channelPhotos[key]
+                return (
+                  <PlatformRow
+                    key={acc}
+                    channelKey={key}
+                    name={`Uber Eats${(store.uber_accounts ?? []).length > 1 ? ` — ${acc}` : ''}`}
+                    hint="原始金額 · 拍 Uber 平板統計畫面"
+                    value={data.uber_amounts[acc] ?? 0}
+                    onChange={v => set('uber_amounts', { ...data.uber_amounts, [acc]: v })}
+                    disabled={isLocked}
+                    photo={photo}
+                    onPhotoClick={() => openChannelUpload(key, data.uber_amounts[acc] ?? 0)}
+                  />
+                )
+              })}
+
+              {/* Panda */}
+              {store.panda_enabled && (() => {
+                const key = 'panda'
+                const photo = channelPhotos[key]
+                return (
+                  <PlatformRow
+                    channelKey={key}
+                    name="熊貓 foodpanda"
+                    hint="原始金額 · 拍熊貓後台統計"
+                    value={data.panda_amount}
+                    onChange={v => set('panda_amount', v)}
+                    disabled={isLocked}
+                    photo={photo}
+                    onPhotoClick={() => openChannelUpload(key, data.panda_amount)}
+                  />
+                )
+              })()}
+
+              {/* TW Pay */}
+              {store.twpay_enabled && (() => {
+                const key = 'twpay'
+                const photo = channelPhotos[key]
+                return (
+                  <PlatformRow
+                    channelKey={key}
+                    name="台灣 Pay"
+                    hint="行動支付"
+                    value={data.twpay_amount}
+                    onChange={v => set('twpay_amount', v)}
+                    disabled={isLocked}
+                    photo={photo}
+                    onPhotoClick={() => openChannelUpload(key, data.twpay_amount)}
+                  />
+                )
+              })()}
+
+              {/* Online order */}
+              {store.online_enabled && (() => {
+                const key = 'online'
+                const photo = channelPhotos[key]
+                return (
+                  <PlatformRow
+                    channelKey={key}
+                    name="線上點餐"
+                    hint="線上訂單平台"
+                    value={data.online_amount}
+                    onChange={v => set('online_amount', v)}
+                    disabled={isLocked}
+                    photo={photo}
+                    onPhotoClick={() => openChannelUpload(key, data.online_amount)}
+                  />
+                )
+              })()}
+
+              {/* Handwrite subtotal summary row */}
+              {store.mode !== 'ichef' && handwriteTotal > 0 && (
+                <div className="flex justify-between items-center px-4 py-3 rounded-2xl" style={{ background: 'white', border: '1px solid #f4f4f5' }}>
+                  <span className="text-sm font-semibold" style={{ color: '#52525b' }}>手寫訂單合計</span>
+                  <span className="text-lg font-bold tabular-nums" style={{ color: '#18181b' }}>${fmt(handwriteTotal)}</span>
+                </div>
+              )}
+            </div>
+
+            <SummaryBlock label="今日總營業額" value={`$${fmt(s.totalRevenue)}`} />
+            {store.ichef_uber_linked && s.platformTotal > 0 && (
+              <div className="flex justify-between items-center mt-2 text-xs px-1">
+                <span style={{ color: '#a1a1aa' }}>店舖現金（iChef − 平台）</span>
+                <span className="tabular-nums font-semibold" style={{ color: '#52525b' }}>${fmt(s.storeRevenue)}</span>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── STEP 4: 現金清點 ─────────────────────────────────────────── */}
+        {(stepId === 'cash' || isLocked) && (
+          <>
+            {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="現金清點"
+              desc="輸入各幣值張數，系統自動加總計算現金總額。" />}
+
+            <SectionCard icon={<Calculator className="h-4 w-4" />} title="現金清點" iconColor="#10b981">
+              <div className="space-y-2.5">
+                <div style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px' }}>
+                  <span />
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-center" style={{ color: '#a1a1aa' }}>張 / 枚</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-center" style={{ color: '#a1a1aa' }}>整筆金額</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-right" style={{ color: '#a1a1aa' }}>小計</span>
+                </div>
+                {DENOMINATIONS.map(({ label, countKey, lumpKey, unit, unitLabel }) => {
+                  const countVal = data[countKey] as number
+                  const lumpVal = data[lumpKey] as number
+                  const subtotal = countVal * unit + lumpVal
+                  return (
+                    <div key={countKey} style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px', alignItems: 'center' }}>
+                      <span className="text-xs shrink-0" style={{ color: '#52525b' }}>{label}</span>
+                      <div className="flex items-center gap-1">
+                        <SInput value={countVal} onChange={v => set(countKey, parseInt(String(v)) || 0)} disabled={isLocked} />
+                        <span className="text-[10px] shrink-0" style={{ color: '#a1a1aa' }}>{unitLabel}</span>
+                      </div>
+                      <SInput value={lumpVal} onChange={v => set(lumpKey, parseInt(String(v)) || 0)} disabled={isLocked} />
+                      <span className="text-right text-xs tabular-nums shrink-0"
+                        style={{ color: subtotal > 0 ? '#18181b' : '#d4d4d8', fontWeight: subtotal > 0 ? 600 : 400 }}>
+                        ${fmt(subtotal)}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="mt-3 space-y-2">
+                <SummaryBlock label="現金總額" value={`$${fmt(s.cashTotal)}`} />
+                <SummaryBlock label={`扣零用金（$${fmt(store.petty_cash)}）= 實匯入`} value={`$${fmt(s.actualRemit)}`} />
+              </div>
+            </SectionCard>
+          </>
+        )}
+
+        {/* ── STEP 5: 確認結帳 ─────────────────────────────────────────── */}
+        {(stepId === 'summary' || isLocked) && (
+          <>
+            {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="結帳確認"
+              desc="確認所有金額無誤後，送出今日結帳。" />}
+
+            {/* Summary card */}
+            <div className="bg-white rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${varBorder}` }}>
+              <div className="px-5 pt-4 pb-3 flex items-center gap-2" style={{ background: varBg, borderBottom: `1px solid ${varBorder}` }}>
+                <BarChart3 className="h-4 w-4" style={{ color: varColor }} />
+                <p className="text-sm font-semibold" style={{ color: '#18181b' }}>今日帳目總覽</p>
+              </div>
+              <div className="px-5 py-4">
+                {[
+                  { label: '總營業額', value: `$${fmt(s.totalRevenue)}`, bold: true },
+                  { label: '− 平台收款（Uber / 熊貓等）', value: `−$${fmt(s.platformTotal)}`, muted: true },
+                  ...(totalExpenses > 0 ? [{ label: '− 現金支出', value: `−$${fmt(totalExpenses)}`, muted: true }] : []),
+                ].map(r => (
+                  <div key={r.label} className="flex justify-between items-center py-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
+                    <span className="text-sm" style={{ color: r.muted ? '#a1a1aa' : '#52525b' }}>{r.label}</span>
+                    <span className="text-base font-bold tabular-nums">{r.value}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between items-center py-3 px-3 -mx-3 my-2 rounded-xl"
+                  style={{ background: 'linear-gradient(135deg,#eef2ff,#f5f3ff)' }}>
+                  <span className="text-sm font-semibold" style={{ color: '#312e81' }}>應包進信封</span>
+                  <span className="text-xl font-extrabold tabular-nums" style={{ color: '#4338ca' }}>${fmt(s.shouldEnvelope)}</span>
+                </div>
+                <div className="pl-3 space-y-1.5 text-xs pb-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
+                  <div className="flex justify-between">
+                    <span style={{ color: '#a1a1aa' }}>其中央廚配送費</span>
+                    <span className="tabular-nums" style={{ color: '#52525b' }}>${fmt(s.deliveryFee)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span style={{ color: '#a1a1aa' }}>應匯入 HQ（淨）</span>
+                    <span className="tabular-nums" style={{ color: '#52525b' }}>${fmt(s.netToHQ)}</span>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center py-3">
+                  <span className="text-sm font-semibold" style={{ color: '#52525b' }}>實際包進信封（現金 − 零用金）</span>
+                  <span className="text-base font-bold tabular-nums">${fmt(s.actualRemit)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Variance block */}
+            <div className="rounded-2xl px-5 py-6 text-center" style={{ background: varBg, border: `1.5px solid ${varBorder}` }}>
+              <p className="text-xs font-semibold mb-2" style={{ color: varColor }}>真正誤差</p>
+              <p className="font-extrabold tabular-nums tracking-tight" style={{ fontSize: '52px', lineHeight: 1, color: varColor }}>
+                {s.variance >= 0 ? '+' : ''}{fmt(s.variance)}
+              </p>
+              <p className="text-sm mt-2" style={{ color: varColor }}>{varMsg}</p>
+            </div>
+
+            {/* 備註 */}
+            <div>
+              <label className="block text-xs font-semibold mb-2" style={{ color: '#a1a1aa' }}>備註</label>
+              <textarea disabled={isLocked}
+                style={{ width: '100%', minHeight: '72px', padding: '12px', fontSize: '14px', border: '1.5px solid #e4e4e7', borderRadius: '12px', resize: 'none', outline: 'none', fontFamily: 'inherit', background: isLocked ? '#fafafa' : 'white', color: '#18181b' }}
+                placeholder="如有異常情況請說明..."
+                value={data.note} onChange={e => set('note', e.target.value)} />
+            </div>
+
+            {isLocked && !submitDone && (
+              <div className="rounded-2xl px-4 py-3.5 flex items-center gap-2.5"
+                style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }}>
+                <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: status === 'verified' ? '#10b981' : '#6366f1' }} />
+                <p className="text-sm" style={{ color: '#52525b' }}>
+                  {status === 'verified' ? '此帳目已核准，如需修改請聯絡總公司' : '帳目已送出，等待總公司審核'}
+                </p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── STEP 6: 送出 ─────────────────────────────────────────────── */}
+        {stepId === 'submit' && (
+          <>
+            <GradientTitle step={stepNum} total={totalSteps} title="送出今日結帳"
+              desc="送出後資料將上傳至總公司，請再次確認金額正確。" />
+
+            <div className="rounded-3xl p-6 text-center mb-4"
+              style={{ background: 'linear-gradient(135deg,#eef2ff,#f5f3ff)', border: '1.5px solid #c7d2fe' }}>
+              <p className="text-xs mb-1 font-semibold" style={{ color: '#6366f1' }}>應包進信封的錢</p>
+              <p className="text-5xl font-extrabold tabular-nums tracking-tight mb-2" style={{ color: '#4338ca' }}>
+                ${fmt(s.actualRemit)}
+              </p>
+              <div className="flex justify-center gap-6 text-sm mt-3">
+                <div><p className="text-xs mb-0.5" style={{ color: '#a1a1aa' }}>總營業額</p><p className="font-bold tabular-nums">${fmt(s.totalRevenue)}</p></div>
+                <div><p className="text-xs mb-0.5" style={{ color: '#a1a1aa' }}>誤差</p>
+                  <p className="font-bold tabular-nums" style={{ color: varColor }}>{s.variance >= 0 ? '+' : ''}{fmt(s.variance)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl px-4 py-3.5 flex items-start gap-2.5 text-sm"
+              style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: '#f97316' }} />
+              <span style={{ color: '#9a3412' }}>送出後當天閉店即無法修改，請確認所有營業額、發票、現金清點皆已填寫完畢。</span>
+            </div>
+          </>
+        )}
+
+        {/* ── STEP 7: 摘要 ─────────────────────────────────────────────── */}
+        {stepId === 'result' && (
+          <>
+            <GradientTitle step={stepNum} total={totalSteps} title="送出成功" desc="今日結帳已送出至總公司，請依下方資訊準備信封袋。" />
+
+            <div className="rounded-3xl p-8 text-white text-center mb-4 relative overflow-hidden"
+              style={{ background: 'linear-gradient(135deg,#10b981,#06b6d4)', boxShadow: '0 20px 50px -10px rgba(16,185,129,0.3)' }}>
+              <div className="h-20 w-20 bg-white rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle2 className="h-11 w-11" style={{ color: '#10b981' }} />
+              </div>
+              <h2 className="text-2xl font-bold mb-1">結帳已成功送出！</h2>
+              <p className="text-sm opacity-90">{today} · {store.name}</p>
+            </div>
+
+            <div className="rounded-3xl p-6 text-white relative overflow-hidden"
+              style={{ background: 'linear-gradient(135deg,#18181b,#4338ca)', boxShadow: '0 20px 50px -10px rgba(99,102,241,0.25)' }}>
+              <div className="flex items-center gap-2.5 mb-5">
+                <Send className="h-5 w-5" />
+                <span className="font-semibold">信封袋資訊</span>
+              </div>
+              <div className="space-y-2 text-sm mb-5">
+                {[['日期', today], ['店名', store.name]].map(([label, val]) => (
+                  <div key={label} className="flex justify-between pb-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                    <span style={{ opacity: 0.7 }}>{label}</span>
+                    <span className="font-semibold">{val}</span>
                   </div>
                 ))}
               </div>
-            )}
-
-            {/* 手動新增 */}
-            {!isLocked && (
-              <div className="flex gap-2 items-end mb-3">
-                <div className="flex-1">
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>手動新增</label>
-                  <input
-                    ref={newOrderNumRef} type="text" placeholder="單號"
-                    style={{ padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'monospace', width: '100%' }}
-                    value={newOrderNum}
-                    onChange={e => setNewOrderNum(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); newOrderAmtRef.current?.focus() } }}
-                  />
-                </div>
-                <div style={{ width: '110px' }}>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'transparent' }}>_</label>
-                  <input
-                    ref={newOrderAmtRef} type="number" min="0" inputMode="numeric" placeholder="金額"
-                    style={{ padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit', width: '100%', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
-                    value={newOrderAmt || ''}
-                    onChange={e => setNewOrderAmt(parseInt(e.target.value) || 0)}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addHandwriteOrder() } }}
-                  />
-                </div>
-                <button type="button" onClick={addHandwriteOrder}
-                  className="flex items-center gap-1 px-3 py-2.5 rounded-xl text-sm font-semibold shrink-0"
-                  style={{ background: '#f0fdf4', color: '#047857', border: '1px solid #a7f3d0' }}>
-                  <Plus className="h-3.5 w-3.5" /> 新增
-                </button>
+              <div className="rounded-2xl p-5 text-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
+                <p className="text-xs mb-1" style={{ opacity: 0.8 }}>請包入信封袋的金額</p>
+                <p className="text-4xl font-extrabold tabular-nums tracking-tight">${fmt(s.actualRemit)}</p>
               </div>
-            )}
-
-            {handwriteOrders.filter(o => o.amount > 0).length > 0 ? (
-              <>
-                <Divider />
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-semibold" style={{ color: '#18181b' }}>
-                    合計（{handwriteOrders.filter(o => o.amount > 0).length} 筆有效）
-                  </span>
-                  <span className="text-xl font-bold tabular-nums" style={{ color: '#047857' }}>${fmt(handwriteTotal)}</span>
-                </div>
-              </>
-            ) : handwriteOrders.length === 0 && !isLocked ? (
-              <p className="text-xs text-center py-2" style={{ color: '#a1a1aa' }}>請使用批量建立或手動新增訂單</p>
-            ) : null}
-          </SectionCard>
+            </div>
+          </>
         )}
 
-        {/* 3. 今日菜單影片 */}
-        {store.mode !== 'ichef' && (
-          <SectionCard icon={<Video className="h-4 w-4" />} title="今日菜單影片" subtitle="上傳今日菜單影片（選填）" iconColor="#3b82f6">
-            <VideoUploader storeId={store.id} businessDate={today} userId={userId} disabled={isLocked} />
-          </SectionCard>
-        )}
+        {/* ── STEP 8: 零用金核對 ───────────────────────────────────────── */}
+        {stepId === 'petty' && (
+          <>
+            <GradientTitle step={stepNum} total={totalSteps} title="零用金核對"
+              desc="包好信封後，請清點店內剩餘零用金是否等於備付額。" />
 
-        {/* 4. 央廚配送 */}
-        <SectionCard icon={<Package className="h-4 w-4" />} title="央廚配送" subtitle="配送總金額（月底結）" iconColor="#f97316">
-          {!isLocked && (
-            <div className="flex justify-end mb-3">
-              <button onClick={syncFromReceipts} disabled={syncing}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
-                style={{ background: '#fff7ed', color: '#f97316', border: '1px solid #fed7aa', opacity: syncing ? 0.6 : 1 }}>
-                {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                從收據同步
-              </button>
-            </div>
-          )}
-          <SInput
-            value={data.ck_total || 0}
-            onChange={v => set('ck_total', v)}
-            disabled={isLocked}
-          />
-          <Divider />
-          <div className="flex justify-between items-center">
-            <span className="text-sm font-semibold" style={{ color: '#18181b' }}>配送費合計</span>
-            <span className="text-xl font-bold tabular-nums" style={{ color: '#f97316' }}>${fmt(s.deliveryFee)}</span>
-          </div>
-        </SectionCard>
-
-        {/* 5. 當日現金支出 */}
-        <SectionCard icon={<Wallet className="h-4 w-4" />} title="當日現金支出" subtitle="現金付款的進貨、雜費等（不含央廚）" iconColor="#8b5cf6">
-          {/* 從收據同步按鈕 */}
-          {!isLocked && (
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs" style={{ color: '#a1a1aa' }}>
-                {expenses.length > 0 ? `${expenses.length} 筆` : '尚無支出'}
-              </p>
-              <button onClick={syncFromReceipts} disabled={syncing}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
-                style={{ background: '#faf5ff', color: '#7c3aed', border: '1px solid #e9d5ff', opacity: syncing ? 0.6 : 1 }}>
-                {syncing
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  : <RefreshCw className="h-3.5 w-3.5" />}
-                從收據同步
-              </button>
-            </div>
-          )}
-          {expenses.length === 0 && !isLocked && (
-            <p className="text-xs text-center py-2 mb-2" style={{ color: '#a1a1aa' }}>無當日現金支出</p>
-          )}
-          <div className="space-y-2">
-            {expenses.map(e => (
-              <div key={e.id} className="flex items-center gap-2">
-                <input
-                  placeholder="說明（例：菜商、雜貨）"
-                  disabled={isLocked}
-                  style={{ flex: 1, padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: isLocked ? '#fafafa' : 'white', outline: 'none', fontFamily: 'inherit' }}
-                  value={e.description}
-                  onChange={ev => updateExpense(e.id, 'description', ev.target.value)}
-                />
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-xs" style={{ color: '#a1a1aa' }}>$</span>
-                  <input
-                    type="number" min="0" inputMode="numeric" disabled={isLocked}
-                    style={{ width: '88px', padding: '10px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: isLocked ? '#fafafa' : 'white', outline: 'none', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
-                    value={e.amount || ''} placeholder="0"
-                    onChange={ev => updateExpense(e.id, 'amount', parseFloat(ev.target.value) || 0)}
-                  />
+            <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <div className="px-5 pt-5 pb-4" style={{ borderBottom: '1px solid #f4f4f5' }}>
+                <p className="text-sm font-semibold mb-0.5">零用金最終核對</p>
+                <p className="text-xs" style={{ color: '#a1a1aa' }}>包好信封後，請清點剩餘零用金是否等於零用金備付額</p>
+              </div>
+              <div className="px-5 py-4">
+                <div className="rounded-2xl p-4 text-center mb-4" style={{ background: 'linear-gradient(135deg,#eef2ff,#f5f3ff)' }}>
+                  <p className="text-xs mb-1" style={{ color: '#6366f1' }}>店面應剩餘零用金</p>
+                  <p className="text-3xl font-extrabold tabular-nums" style={{ color: '#4338ca' }}>${fmt(store.petty_cash)}</p>
                 </div>
-                {!isLocked && (
-                  <button onClick={() => removeExpense(e.id)}
-                    className="p-2 rounded-xl shrink-0"
-                    style={{ background: '#fff8f8', color: '#fda4af', border: '1px solid #fecdd3' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#ffe4e6' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#fff8f8' }}>
-                    <Trash2 className="h-4 w-4" style={{ color: '#be123c' }} />
-                  </button>
+                <div className="space-y-2.5 mb-4">
+                  <div style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px' }}>
+                    <span />
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-center" style={{ color: '#a1a1aa' }}>張 / 枚</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-center" style={{ color: '#a1a1aa' }}>整筆金額</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-right" style={{ color: '#a1a1aa' }}>小計</span>
+                  </div>
+                  {DENOMINATIONS.map(({ label, countKey, lumpKey, unit, unitLabel }) => {
+                    const countVal = pettyCounts[countKey] || 0
+                    const lumpVal = pettyLumps[lumpKey] || 0
+                    const subtotal = countVal * unit + lumpVal
+                    return (
+                      <div key={countKey} style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px', alignItems: 'center' }}>
+                        <span className="text-xs shrink-0" style={{ color: '#52525b' }}>{label}</span>
+                        <div className="flex items-center gap-1">
+                          <SInput value={countVal} onChange={v => setPettyCounts(prev => ({ ...prev, [countKey]: parseInt(String(v)) || 0 }))} />
+                          <span className="text-[10px] shrink-0" style={{ color: '#a1a1aa' }}>{unitLabel}</span>
+                        </div>
+                        <SInput value={lumpVal} onChange={v => setPettyLumps(prev => ({ ...prev, [lumpKey]: parseInt(String(v)) || 0 }))} />
+                        <span className="text-right text-xs tabular-nums shrink-0"
+                          style={{ color: subtotal > 0 ? '#18181b' : '#d4d4d8', fontWeight: subtotal > 0 ? 600 : 400 }}>
+                          ${fmt(subtotal)}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+                <SummaryBlock label="清點零用金總額" value={`$${fmt(pettyVerifyCash)}`} />
+                {pettyVerifyCash > 0 && (
+                  <div className="mt-3 rounded-2xl px-4 py-4 text-center"
+                    style={{
+                      background: pettyOk ? 'linear-gradient(135deg,#d1fae5,#ecfdf5)' : Math.abs(pettyDiff) <= 300 ? 'linear-gradient(135deg,#fef3c7,#fffbeb)' : 'linear-gradient(135deg,#ffe4e6,#fff1f2)',
+                      border: `1px solid ${pettyOk ? '#6ee7b7' : Math.abs(pettyDiff) <= 300 ? '#fcd34d' : '#fda4af'}`,
+                    }}>
+                    <p className="text-xs mb-1" style={{ color: '#52525b' }}>核對結果</p>
+                    <p className="text-2xl font-extrabold tabular-nums"
+                      style={{ color: pettyOk ? '#047857' : Math.abs(pettyDiff) <= 300 ? '#b45309' : '#be123c' }}>
+                      {pettyOk ? '✓ 零用金正確' : `差額 ${pettyDiff > 0 ? '+' : ''}${fmt(pettyDiff)}`}
+                    </p>
+                    {!pettyOk && <p className="text-xs mt-1" style={{ color: '#71717a' }}>請複查信封袋或重新清點零用金</p>}
+                  </div>
                 )}
               </div>
-            ))}
-          </div>
-          {!isLocked && (
-            <button onClick={addExpense}
-              className="flex items-center gap-1.5 text-xs font-semibold mt-3"
-              style={{ color: '#7c3aed' }}>
-              <Plus className="h-3.5 w-3.5" /> 新增支出項目
-            </button>
-          )}
-          {expenses.length > 0 && (
-            <>
-              <Divider />
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-semibold" style={{ color: '#18181b' }}>支出合計</span>
-                <span className="text-xl font-bold tabular-nums" style={{ color: '#7c3aed' }}>${fmt(totalExpenses)}</span>
-              </div>
-            </>
-          )}
-        </SectionCard>
-
-        {/* 6. 現金清點 */}
-        <SectionCard icon={<Calculator className="h-4 w-4" />} title="現金清點" iconColor="#10b981">
-          <div className="space-y-2.5">
-            <div style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px' }}>
-              <span />
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-center" style={{ color: '#a1a1aa' }}>張 / 枚</span>
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-center" style={{ color: '#a1a1aa' }}>整筆金額</span>
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-right" style={{ color: '#a1a1aa' }}>小計</span>
             </div>
-            {DENOMINATIONS.map(({ label, countKey, lumpKey, unit, unitLabel }) => {
-              const countVal = data[countKey] as number
-              const lumpVal = data[lumpKey] as number
-              const subtotal = countVal * unit + lumpVal
-              return (
-                <div key={countKey} style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px', alignItems: 'center' }}>
-                  <span className="text-xs shrink-0" style={{ color: '#52525b' }}>{label}</span>
-                  <div className="flex items-center gap-1">
-                    <SInput value={countVal} onChange={v => set(countKey, parseInt(String(v)) || 0)} disabled={isLocked} />
-                    <span className="text-[10px] shrink-0" style={{ color: '#a1a1aa' }}>{unitLabel}</span>
-                  </div>
-                  <SInput value={lumpVal} onChange={v => set(lumpKey, parseInt(String(v)) || 0)} disabled={isLocked} />
-                  <span className="text-right text-xs tabular-nums shrink-0"
-                    style={{ color: subtotal > 0 ? '#18181b' : '#d4d4d8', fontWeight: subtotal > 0 ? 600 : 400 }}>
-                    ${fmt(subtotal)}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-          <Divider />
-          <div className="space-y-1.5">
-            <Row label="現金總額" value={`$${fmt(s.cashTotal)}`} bold />
-            <Row label={`扣零用金（$${fmt(store.petty_cash)}）`} value={`$${fmt(s.actualRemit)}`} bold accent="#4338ca" />
-          </div>
-        </SectionCard>
-
-        {/* 7. 結算摘要 */}
-        <div className="rounded-2xl overflow-hidden"
-          style={{ border: `1.5px solid ${varBorder}` }}>
-          <div className="px-4 pt-4 pb-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${varBorder}`, background: varBg }}>
-            <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: varBg }}>
-              <BarChart3 className="h-4 w-4" style={{ color: varColor }} />
-            </div>
-            <p className="text-sm font-semibold" style={{ color: '#18181b' }}>結算摘要</p>
-          </div>
-          <div className="px-4 py-4 bg-white space-y-2">
-            <Row label="總營業額" value={`$${fmt(s.totalRevenue)}`} bold />
-            <Row label="− 平台收款（Uber / 熊貓等）" value={`−$${fmt(s.platformTotal)}`} muted />
-            {totalExpenses > 0 && <Row label="− 現金支出" value={`−$${fmt(totalExpenses)}`} muted />}
-            <Divider />
-            <Row label="應包進信封" value={`$${fmt(s.shouldEnvelope)}`} bold />
-            <div className="pl-3 space-y-1">
-              <Row label="其中央廚配送費" value={`$${fmt(s.deliveryFee)}`} muted />
-              <Row label="應匯入 HQ（淨）" value={`$${fmt(s.netToHQ)}`} />
-            </div>
-            <Divider />
-            <Row label="實際包進信封（現金 − 零用金）" value={`$${fmt(s.actualRemit)}`} bold />
-            <Divider />
-            <div className="flex justify-between items-center pt-1">
-              <span className="text-sm font-bold" style={{ color: '#18181b' }}>誤差</span>
-              <div className="text-right">
-                <p className="text-3xl font-bold tabular-nums" style={{ color: varColor }}>
-                  {s.variance >= 0 ? '+' : ''}{fmt(s.variance)}
-                </p>
-                <p className="text-xs mt-0.5" style={{ color: varColor }}>{varMsg}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* 8. 備註 */}
-        <div>
-          <label className="block text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: '#a1a1aa' }}>備註</label>
-          <textarea
-            disabled={isLocked}
-            style={{
-              width: '100%', minHeight: '72px', padding: '12px', fontSize: '14px',
-              border: '1.5px solid #e4e4e7', borderRadius: '12px', resize: 'none', outline: 'none',
-              fontFamily: 'inherit', background: isLocked ? '#fafafa' : 'white', color: '#18181b',
-            }}
-            placeholder="如有異常情況請說明..."
-            value={data.note}
-            onChange={e => set('note', e.target.value)}
-          />
-        </div>
-
-        {/* 9. 已鎖定提示 */}
-        {isLocked && (
-          <div className="rounded-2xl px-4 py-3.5 flex items-center gap-2.5"
-            style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }}>
-            <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: status === 'verified' ? '#10b981' : '#6366f1' }} />
-            <p className="text-sm" style={{ color: '#52525b' }}>
-              {status === 'verified' ? '此帳目已核准，如需修改請聯絡總公司' : '帳目已送出，等待總公司審核'}
-            </p>
-          </div>
+          </>
         )}
       </div>
 
-      {/* 底部操作列 */}
-      {!isLocked && (
-        <div className="fixed bottom-14 lg:bottom-0 left-0 lg:left-64 right-0 bg-white px-4 py-3"
+      {/* ── Fixed bottom bar ──────────────────────────────────────────────── */}
+      {(!isLocked || submitDone) && (
+        <div className="fixed bottom-14 lg:bottom-0 left-0 lg:left-60 right-0 bg-white px-4 py-3"
           style={{ borderTop: '1px solid #f4f4f5', boxShadow: '0 -4px 16px rgba(0,0,0,0.06)' }}>
           <div className="max-w-xl mx-auto flex gap-3">
-            <button onClick={() => handleSave()} disabled={saving || submitting}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold"
-              style={{
-                background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b',
-                opacity: saving || submitting ? 0.6 : 1,
-              }}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              儲存草稿
-            </button>
-            <button onClick={handleSubmit} disabled={saving || submitting}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white"
-              style={{
-                background: isDisputed
-                  ? 'linear-gradient(135deg,#f97316,#ea580c)'
-                  : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
-                boxShadow: isDisputed
-                  ? '0 4px 12px rgba(249,115,22,0.3)'
-                  : '0 4px 12px rgba(99,102,241,0.3)',
-                opacity: saving || submitting ? 0.7 : 1,
-              }}>
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {isDisputed ? '修正後重新送出' : '送出今日結帳'}
-            </button>
+
+            {/* Step 8: 零用金核對 → 完成結束 */}
+            {stepId === 'petty' && (
+              <button onClick={() => router.push('/manager/summary')}
+                className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-base font-bold text-white"
+                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 8px 20px rgba(99,102,241,0.3)' }}>
+                <CheckCircle2 className="h-5 w-5" />
+                完成 · 結束今日
+              </button>
+            )}
+
+            {/* Step 7: 摘要 → 繼續到零用金核對 */}
+            {stepId === 'result' && (
+              <button onClick={goNext}
+                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white"
+                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}>
+                繼續 → 零用金核對
+              </button>
+            )}
+
+            {/* Step 6: 送出 → 確認送出按鈕 */}
+            {stepId === 'submit' && (
+              <>
+                <button onClick={goPrev} disabled={submitting}
+                  className="flex items-center justify-center gap-2 py-3 px-5 rounded-2xl text-sm font-semibold"
+                  style={{ background: '#f4f4f5', color: '#52525b', opacity: submitting ? 0.6 : 1 }}>
+                  ← 上一步
+                </button>
+                <button onClick={handleSubmit} disabled={submitting}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white"
+                  style={{
+                    background: isDisputed ? 'linear-gradient(135deg,#f97316,#ea580c)' : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+                    boxShadow: isDisputed ? '0 4px 12px rgba(249,115,22,0.3)' : '0 4px 12px rgba(99,102,241,0.3)',
+                    opacity: submitting ? 0.7 : 1,
+                  }}>
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {isDisputed ? '確認重新送出' : '確認送出'}
+                </button>
+              </>
+            )}
+
+            {/* Steps 1-5: 上一步 + 繼續 */}
+            {step < submitStepIdx && (
+              <>
+                {step > 0 && (
+                  <button onClick={goPrev} disabled={saving}
+                    className="flex items-center justify-center gap-2 py-3 px-5 rounded-2xl text-sm font-semibold"
+                    style={{ background: '#f4f4f5', color: '#52525b', opacity: saving ? 0.6 : 1 }}>
+                    ← 上一步
+                  </button>
+                )}
+                <button onClick={goNext} disabled={saving}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white"
+                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', opacity: saving ? 0.7 : 1 }}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  繼續 →
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
+
     </div>
   )
 }
