@@ -364,6 +364,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]') } catch { return [] }
   })
   const [addingCatForId, setAddingCatForId] = useState<string | null>(null)
+  const [managingCatForId, setManagingCatForId] = useState<string | null>(null)
   const [newCatText, setNewCatText] = useState('')
   const allCategories = [...RECEIPT_CATEGORIES, ...customCategories]
   const [ckQuantities, setCkQuantities] = useState<Record<string, number>>(() => {
@@ -559,6 +560,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     updateReceiptForm(formId, 'category', cat)
     setAddingCatForId(null)
     setNewCatText('')
+  }
+
+  function deleteCustomCategory(cat: string) {
+    const updated = customCategories.filter(c => c !== cat)
+    setCustomCategories(updated)
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(updated)) } catch {}
+    // 若有表單使用了此類別，清空
+    setReceiptForms(prev => prev.map(f => f.category === cat ? { ...f, category: '' } : f))
   }
 
   function removeReceiptForm(id: string) {
@@ -1053,7 +1062,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       {/* 表單 */}
                       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: '10px', minWidth: 0, overflow: 'hidden' }}>
                         {/* 類別 */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: addingCatForId === form.id ? '1/-1' : undefined }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: (addingCatForId === form.id || managingCatForId === form.id) ? '1/-1' : undefined }}>
                           <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>類別</label>
                           {addingCatForId === form.id ? (
                             <div style={{ display: 'flex', gap: '4px' }}>
@@ -1071,16 +1080,41 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 ✕
                               </button>
                             </div>
+                          ) : managingCatForId === form.id ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <p style={{ fontSize: '11px', color: '#a1a1aa' }}>點 × 刪除自訂類別（內建類別無法刪除）</p>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {RECEIPT_CATEGORIES.map(c => (
+                                  <span key={c} style={{ padding: '4px 10px', borderRadius: '999px', background: '#f4f4f5', color: '#71717a', fontSize: '13px' }}>{c}</span>
+                                ))}
+                                {customCategories.map(c => (
+                                  <span key={c} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px 4px 10px', borderRadius: '999px', background: '#eef2ff', color: '#4338ca', border: '1px solid #e0e7ff', fontSize: '13px' }}>
+                                    {c}
+                                    <button onClick={() => deleteCustomCategory(c)}
+                                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#818cf8', padding: '0', lineHeight: 1, fontSize: '14px' }}>×</button>
+                                  </span>
+                                ))}
+                                {customCategories.length === 0 && (
+                                  <span style={{ fontSize: '12px', color: '#a1a1aa' }}>尚無自訂類別</span>
+                                )}
+                              </div>
+                              <button onClick={() => setManagingCatForId(null)}
+                                style={{ alignSelf: 'flex-start', padding: '5px 12px', background: '#f4f4f5', border: 'none', borderRadius: '8px', fontSize: '13px', color: '#52525b', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                完成
+                              </button>
+                            </div>
                           ) : (
                             <select value={form.category}
                               onChange={e => {
                                 if (e.target.value === '__new__') { setAddingCatForId(form.id); setNewCatText('') }
+                                else if (e.target.value === '__manage__') { setManagingCatForId(form.id) }
                                 else updateReceiptForm(form.id, 'category', e.target.value)
                               }}
                               style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
                               <option value="">— 選擇 —</option>
                               {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
                               <option value="__new__">＋ 新增類別</option>
+                              {customCategories.length > 0 && <option value="__manage__">✎ 管理類別</option>}
                             </select>
                           )}
                         </div>
