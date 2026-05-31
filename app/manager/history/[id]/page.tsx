@@ -8,6 +8,7 @@ import { Banknote, Package, Calculator, BarChart3, AlertTriangle, ArrowLeft, Vid
 import Link from 'next/link'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import DeleteDraftButton from '@/components/manager/delete-draft-button'
+import ReceiptPhotoViewer from '@/components/manager/receipt-photo-viewer'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -51,6 +52,13 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
   const admin = createAdminClient()
   const { data: cashCounts } = await admin.from('cash_counts').select('*').eq('closing_id', closing.id)
   ;(closing as any).cash_counts = cashCounts ?? []
+
+  const { data: receipts } = await admin
+    .from('receipts')
+    .select('id, vendor_name, total_amount, receipt_type, photo_url, tax_amount')
+    .eq('store_id', storeId)
+    .eq('business_date', closing.business_date)
+    .order('created_at')
 
   // 菜單影片
   let videoUrl: string | null = null
@@ -292,6 +300,11 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* 收據照片 */}
+      {receipts && receipts.length > 0 && receipts.some(r => r.photo_url) && (
+        <ReceiptPhotoViewer receipts={receipts} />
       )}
 
       {/* 現金清點 */}

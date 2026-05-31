@@ -7,7 +7,7 @@ import { Loader2, Pencil, Check, X } from 'lucide-react'
 
 interface CKItem { id: string; item_name: string; unit_price: number; updated_at: string }
 
-export default function CKPriceEditor({ items, canEdit }: { items: CKItem[]; canEdit: boolean }) {
+export default function CKPriceEditor({ items, priceHistory = [], canEdit }: { items: CKItem[]; priceHistory?: any[]; canEdit: boolean }) {
   const [editing, setEditing] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [reason, setReason] = useState('')
@@ -38,6 +38,7 @@ export default function CKPriceEditor({ items, canEdit }: { items: CKItem[]; can
 
   return (
     <div>
+      <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
       {prices.map((item, idx) => (
         <div key={item.id} className="flex items-center gap-4 px-4 py-3.5"
           style={{ borderBottom: idx !== prices.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
@@ -91,6 +92,39 @@ export default function CKPriceEditor({ items, canEdit }: { items: CKItem[]; can
           )}
         </div>
       ))}
+      </div>
+
+      {priceHistory.length > 0 && (
+        <div className="mt-6 bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+          <div className="px-4 py-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
+            <p className="text-sm font-semibold" style={{ color: '#18181b' }}>最近單價變動紀錄</p>
+          </div>
+          {priceHistory.map((h: any, idx: number) => {
+            const dateStr = h.changed_at || h.created_at
+            const date = dateStr ? new Date(dateStr).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }) : '—'
+            return (
+              <div key={idx} className="px-4 py-3 flex items-start gap-3 text-sm"
+                style={{ borderBottom: idx !== priceHistory.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
+                <span className="shrink-0 text-xs tabular-nums font-medium" style={{ color: '#a1a1aa', marginTop: '1px' }}>{date}</span>
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium" style={{ color: '#18181b' }}>{h.item_name}</span>
+                  <span className="mx-1.5" style={{ color: '#a1a1aa' }}>
+                    <span className="tabular-nums" style={{ color: '#71717a' }}>${h.old_price}</span>
+                    <span className="mx-1" style={{ color: '#d4d4d8' }}>→</span>
+                    <span className="tabular-nums font-semibold" style={{ color: '#4338ca' }}>${h.new_price}</span>
+                  </span>
+                  {h.reason && (
+                    <span className="text-xs" style={{ color: '#a1a1aa' }}>（{h.reason}）</span>
+                  )}
+                </div>
+                {h.changed_by && (
+                  <span className="shrink-0 text-xs" style={{ color: '#d4d4d8' }}>{h.changed_by}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

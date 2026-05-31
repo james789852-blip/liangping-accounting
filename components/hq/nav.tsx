@@ -9,7 +9,7 @@ import {
   Store, FileSpreadsheet, Shield,
   Settings, Users, LogOut,
   ClipboardList, FileText, History, LineChart,
-  ArrowRightLeft,
+  ArrowRightLeft, Package,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
@@ -50,6 +50,7 @@ const hqSections = [
   {
     label: '設定',
     items: [
+      { href: '/hq/ck-prices', label: '央廚單價', icon: Package },
       { href: '/hq/settings', label: '系統設定', icon: Settings },
       { href: '/hq/users',    label: '帳號管理', icon: Users },
     ],

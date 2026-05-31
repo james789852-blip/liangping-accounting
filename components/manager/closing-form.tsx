@@ -5,16 +5,17 @@ import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
-import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, Video, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil } from 'lucide-react'
+import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, Video, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, Sparkles } from 'lucide-react'
 import VideoUploader from '@/components/manager/video-uploader'
-import ReceiptUpload from '@/components/manager/receipt-upload'
 import { saveCashCounts } from '@/app/actions/closings'
 
 interface TodayReceipt {
   id: string
   vendor_name: string
   total_amount: number
+  tax_amount?: number
   receipt_type: string
+  photo_url?: string
   receipt_items?: { item_name: string; amount: number }[]
 }
 
@@ -23,6 +24,29 @@ interface ChannelPhoto {
   publicUrl?: string
   status: 'idle' | 'uploading' | 'verifying' | 'matched' | 'mismatch' | 'uploaded'
   recognized?: number
+}
+
+const RECEIPT_CATEGORIES = ['菜商', '豆腐', '蛋商', '雜貨', '免洗', '瓦斯', '水電', '房租', '其他']
+
+interface ReceiptForm {
+  id: string
+  file?: File
+  previewUrl?: string
+  category: string
+  vendor_name: string
+  total_amount: number
+  tax_amount: number
+  notes: string
+  uploading: boolean
+}
+
+interface AIItem {
+  receiptId: string
+  vendor: string
+  inputAmount: number
+  recognized: number
+  matched: boolean
+  accepted: boolean
 }
 
 function isCKReceipt(receipt: TodayReceipt, ckPrices: CKPrice[]): boolean {
@@ -345,7 +369,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
   const [localReceipts, setLocalReceipts] = useState<TodayReceipt[]>(todayReceipts)
-  const [showReceiptUpload, setShowReceiptUpload] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [channelPhotos, setChannelPhotos] = useState<Record<string, ChannelPhoto>>({})
   const currentUploadChannelRef = useRef<{ key: string; amount: number } | null>(null)
@@ -354,6 +377,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [editVendor, setEditVendor] = useState('')
   const [editAmount, setEditAmount] = useState(0)
   const [editItems, setEditItems] = useState<{ item_name: string; amount: number }[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [receiptForms, setReceiptForms] = useState<ReceiptForm[]>([])
+  const [aiItems, setAiItems] = useState<AIItem[]>([])
+  const [aiRunning, setAiRunning] = useState(false)
+  const [aiTriggered, setAiTriggered] = useState(false)
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
   const [currentStep, setCurrentStep] = useState(0)
   const [submitDone, setSubmitDone] = useState(false)
@@ -412,7 +440,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       const supabase = createClient()
       const { data: receipts } = await supabase
         .from('receipts')
-        .select('id, vendor_name, total_amount, receipt_type, receipt_items(item_name, amount)')
+        .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, amount)')
         .eq('store_id', store.id)
         .eq('business_date', today)
       if (!receipts) return
@@ -425,29 +453,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     return () => document.removeEventListener('visibilitychange', autoSyncCK)
   }, [isLocked, store.id, today, ckPrices, set])
 
-  function handleReceiptSaved(receipt: any) {
-    const newR: TodayReceipt = {
-      id: receipt.id,
-      vendor_name: receipt.vendor_name,
-      total_amount: receipt.total_amount,
-      receipt_type: receipt.receipt_type,
-      receipt_items: (receipt.receipt_items ?? []).map((i: any) => ({ item_name: i.item_name, amount: i.amount })),
-    }
-    const updated = [...localReceipts, newR]
-    setLocalReceipts(updated)
-    const ckTotal = updated.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
-    set('ck_total', ckTotal)
-    setExpenses(receiptsToExpenses(updated, ckPrices))
-    setShowReceiptUpload(false)
-    toast.success(`已加入：${receipt.vendor_name || '收據'} $${fmt(receipt.total_amount)}`)
-  }
+
+
 
   async function syncFromReceipts() {
     setSyncing(true)
     const supabase = createClient()
     const { data: receipts } = await supabase
       .from('receipts')
-      .select('id, vendor_name, total_amount, receipt_type, receipt_items(item_name, amount)')
+      .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, amount)')
       .eq('store_id', store.id)
       .eq('business_date', today)
       .order('created_at')
@@ -493,6 +507,135 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
     setEditingReceiptId(null)
     toast.success('已更新')
+  }
+
+  function handleMultiUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
+    e.target.value = ''
+    const newForms: ReceiptForm[] = files.map(file => ({
+      id: crypto.randomUUID(),
+      file,
+      previewUrl: URL.createObjectURL(file),
+      category: '',
+      vendor_name: '',
+      total_amount: 0,
+      tax_amount: 0,
+      notes: '',
+      uploading: false,
+    }))
+    setReceiptForms(prev => [...prev, ...newForms])
+  }
+
+  function addNoPhotoReceipt() {
+    setReceiptForms(prev => [...prev, {
+      id: crypto.randomUUID(),
+      category: '',
+      vendor_name: '',
+      total_amount: 0,
+      tax_amount: 0,
+      notes: '',
+      uploading: false,
+    }])
+  }
+
+  function updateReceiptForm(id: string, field: keyof ReceiptForm, value: any) {
+    setReceiptForms(prev => prev.map(f => f.id === id ? { ...f, [field]: value } : f))
+  }
+
+  function removeReceiptForm(id: string) {
+    setReceiptForms(prev => {
+      const form = prev.find(f => f.id === id)
+      if (form?.previewUrl) URL.revokeObjectURL(form.previewUrl)
+      return prev.filter(f => f.id !== id)
+    })
+  }
+
+  async function saveReceiptForm(form: ReceiptForm) {
+    if (!form.vendor_name.trim() || form.total_amount <= 0) {
+      toast.error('請填寫廠商名稱與金額')
+      return
+    }
+    setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: true } : f))
+    const supabase = createClient()
+    let photo_url = ''
+    if (form.file) {
+      const ext = form.file.name.split('.').pop() || 'jpg'
+      const path = `receipts/${store.id}/${today}/${form.id}.${ext}`
+      const { error } = await supabase.storage.from('receipts').upload(path, form.file, { upsert: true })
+      if (!error) {
+        const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(path)
+        photo_url = publicUrl
+      }
+    }
+    const { data: saved, error } = await supabase.from('receipts').insert({
+      store_id: store.id,
+      business_date: today,
+      vendor_name: form.vendor_name.trim(),
+      receipt_type: 'receipt',
+      total_amount: form.total_amount,
+      tax_amount: form.tax_amount || 0,
+      photo_url: photo_url || null,
+    }).select('id').single()
+    if (error) {
+      toast.error('儲存失敗：' + error.message)
+      setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: false } : f))
+      return
+    }
+    const newR: TodayReceipt = {
+      id: saved.id,
+      vendor_name: form.vendor_name.trim(),
+      total_amount: form.total_amount,
+      tax_amount: form.tax_amount,
+      receipt_type: 'receipt',
+      photo_url,
+      receipt_items: [],
+    }
+    const updated = [...localReceipts, newR]
+    setLocalReceipts(updated)
+    const ckTotal = updated.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
+    set('ck_total', ckTotal)
+    setExpenses(receiptsToExpenses(updated, ckPrices))
+    if (form.previewUrl) URL.revokeObjectURL(form.previewUrl)
+    setReceiptForms(prev => prev.filter(f => f.id !== form.id))
+    toast.success(`已儲存：${form.vendor_name} $${fmt(form.total_amount)}`)
+  }
+
+  async function handleDeleteReceipt(receiptId: string) {
+    const supabase = createClient()
+    await supabase.from('receipts').delete().eq('id', receiptId)
+    const updated = localReceipts.filter(r => r.id !== receiptId)
+    setLocalReceipts(updated)
+    setExpenses(receiptsToExpenses(updated, ckPrices))
+    const ckTotal = updated.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
+    set('ck_total', ckTotal)
+    toast.success('已刪除')
+  }
+
+  async function startAIVerification() {
+    const receiptsWithPhotos = localReceipts.filter(r => r.photo_url)
+    setAiTriggered(true)
+    if (receiptsWithPhotos.length === 0) return
+    setAiRunning(true)
+    const results: AIItem[] = []
+    for (const r of receiptsWithPhotos) {
+      try {
+        const res = await fetch('/api/recognize-receipt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageUrl: r.photo_url }),
+        })
+        const result = await res.json()
+        const recognized = result.total_amount ?? 0
+        const diff = Math.abs(recognized - r.total_amount)
+        const matched = recognized > 0 && diff <= Math.max(r.total_amount * 0.03, 100)
+        results.push({ receiptId: r.id, vendor: r.vendor_name, inputAmount: r.total_amount, recognized, matched, accepted: false })
+      } catch {
+        results.push({ receiptId: r.id, vendor: r.vendor_name, inputAmount: r.total_amount, recognized: 0, matched: true, accepted: false })
+      }
+    }
+    setAiItems(results)
+    setAiRunning(false)
   }
 
   function openChannelUpload(key: string, amount: number) {
@@ -697,6 +840,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     { id: 'revenue',   label: '營業額'  },
     { id: 'cash',      label: '現金清點' },
     { id: 'summary',   label: '確認結帳' },
+    { id: 'ai_verify', label: 'AI 核對' },
     { id: 'submit',    label: '送出'    },
     { id: 'result',    label: '摘要'    },
     { id: 'petty',     label: '零用金核對' },
@@ -710,11 +854,24 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const stepId = STEPS[step]?.id
   const stepNum = step + 1
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (stepId === 'ai_verify' && !aiTriggered) {
+      startAIVerification()
+    }
+  }, [stepId, aiTriggered])
+
   function goNext() {
     if (stepId === 'receipts' && !isLocked) {
-      const missing = localReceipts.filter(r => !isCKReceipt(r, ckPrices) && !r.vendor_name?.trim())
-      if (missing.length > 0) {
-        toast.error(`請先填寫 ${missing.length} 筆收據的廠商名稱`)
+      if (receiptForms.length > 0) {
+        toast.error(`請先儲存 ${receiptForms.length} 筆未儲存的收據`)
+        return
+      }
+    }
+    if (stepId === 'ai_verify' && !isLocked) {
+      const unresolved = aiItems.filter(a => !a.matched && !a.accepted)
+      if (unresolved.length > 0) {
+        toast.error(`尚有 ${unresolved.length} 筆差異未處理，請確認後繼續`)
         return
       }
     }
@@ -792,211 +949,249 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         {/* ── STEP 1: 上傳單據 ──────────────────────────────────────────── */}
         {(stepId === 'receipts' || isLocked) && (
           <>
-            {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="上傳單據與央廚配送"
-              desc="上傳今日所有發票與收據，AI 自動辨識後歸入支出；再填入央廚今日配送費。" />}
+            {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="上傳單據"
+              desc="上傳今日所有發票與收據，手動填寫金額，送出前 AI 統一核對。" />}
 
-            {/* 嵌入式上傳 */}
-            {showReceiptUpload && !isLocked ? (
-              <div className="bg-white rounded-2xl overflow-hidden p-4" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                <ReceiptUpload
-                  storeId={store.id}
-                  today={today}
-                  mappings={{}}
-                  onSaved={handleReceiptSaved}
-                  onCancel={() => setShowReceiptUpload(false)}
-                />
+            {/* 隱藏多選上傳 input */}
+            <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden"
+              onChange={handleMultiUpload} />
+
+            {!isLocked && (
+              <div className="space-y-2 mb-1">
+                {/* 上傳區塊 */}
+                <button onClick={() => fileInputRef.current?.click()}
+                  className="w-full rounded-2xl flex flex-col items-center justify-center gap-2 py-6 transition-colors"
+                  style={{ border: '2px dashed #c7d2fe', background: '#f8f9ff', color: '#6366f1' }}>
+                  <UploadCloud className="h-8 w-8" />
+                  <p className="text-sm font-semibold">點此上傳照片（可一次多張）</p>
+                  <p className="text-xs" style={{ color: '#a1a1aa' }}>支援 JPG、PNG、HEIC</p>
+                </button>
+
+                {/* 無照片新增 */}
+                <button onClick={addNoPhotoReceipt}
+                  className="w-full h-10 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold"
+                  style={{ border: '1.5px solid #e4e4e7', background: 'white', color: '#52525b' }}>
+                  <FileText className="h-4 w-4" />
+                  無照片新增收據
+                </button>
               </div>
-            ) : (
-              <>
-                {/* 今日收據清單 */}
-                <SectionCard icon={<Camera className="h-4 w-4" />} title="今日發票 / 收據" subtitle="AI 自動辨識，上傳後自動歸入支出" iconColor="#6366f1">
-                  {!isLocked && (
-                    <button onClick={() => setShowReceiptUpload(true)}
-                      className="w-full h-12 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 text-sm font-semibold mb-3 transition-colors"
-                      style={{ borderColor: '#c7d2fe', color: '#6366f1', background: '#f8f9ff' }}>
-                      <Camera className="h-4 w-4" />
-                      拍照或選擇圖片上傳
-                    </button>
-                  )}
+            )}
 
-                  {localReceipts.length > 0 && (
-                    <div className="space-y-2 mb-1">
-                      {localReceipts.map(r => {
-                        const isCK = isCKReceipt(r, ckPrices)
-                        const missingVendor = !isCK && !r.vendor_name?.trim()
-                        const isEditing = editingReceiptId === r.id
-
-                        if (isEditing) {
-                          return (
-                            <div key={r.id} className="rounded-xl p-3 space-y-2"
-                              style={{ background: '#f8f9ff', border: '1.5px solid #c7d2fe' }}>
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <Pencil className="h-3.5 w-3.5 shrink-0" style={{ color: '#6366f1' }} />
-                                <p className="text-xs font-semibold" style={{ color: '#6366f1' }}>編輯收據資訊</p>
-                              </div>
-                              <div className="flex gap-2">
-                                <input
-                                  placeholder="廠商名稱（必填）"
-                                  style={{ flex: 1, padding: '9px 12px', border: `1.5px solid ${editVendor.trim() ? '#c7d2fe' : '#fda4af'}`, borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit' }}
-                                  value={editVendor}
-                                  onChange={e => setEditVendor(e.target.value)}
-                                  autoFocus
-                                />
-                                <input type="number" min="0" inputMode="numeric"
-                                  style={{ width: '96px', padding: '9px 10px', border: '1.5px solid #c7d2fe', borderRadius: '10px', fontSize: '14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', background: 'white', outline: 'none', fontFamily: 'inherit' }}
-                                  value={editAmount || ''}
-                                  placeholder="金額"
-                                  onChange={e => setEditAmount(parseInt(e.target.value) || 0)}
-                                />
-                              </div>
-                              {/* 品項編輯 */}
-                              <div>
-                                <div className="flex items-center justify-between mb-1.5">
-                                  <p className="text-[11px] font-semibold" style={{ color: '#52525b' }}>品項明細</p>
-                                  <button
-                                    onClick={() => setEditItems(prev => [...prev, { item_name: '', amount: 0 }])}
-                                    className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: '#6366f1' }}>
-                                    <Plus className="h-3 w-3" /> 新增品項
-                                  </button>
-                                </div>
-                                {editItems.length === 0 && (
-                                  <p className="text-[11px] text-center py-1.5" style={{ color: '#a1a1aa' }}>尚無品項</p>
-                                )}
-                                {editItems.map((item, idx) => (
-                                  <div key={idx} className="flex items-center gap-1.5 mb-1.5">
-                                    <input
-                                      placeholder="品項名稱"
-                                      style={{ flex: 1, padding: '7px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: 'white', outline: 'none', fontFamily: 'inherit' }}
-                                      value={item.item_name}
-                                      onChange={e => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, item_name: e.target.value } : it))}
-                                    />
-                                    <input type="number" min="0" inputMode="numeric"
-                                      placeholder="金額"
-                                      style={{ width: '80px', padding: '7px 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', background: 'white', outline: 'none', fontFamily: 'inherit' }}
-                                      value={item.amount || ''}
-                                      onChange={e => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, amount: parseInt(e.target.value) || 0 } : it))}
-                                    />
-                                    <button onClick={() => setEditItems(prev => prev.filter((_, i) => i !== idx))}
-                                      className="p-1.5 rounded-lg shrink-0" style={{ background: '#ffe4e6', color: '#be123c' }}>
-                                      <Trash2 className="h-3 w-3" />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                              <div className="flex gap-2">
-                                <button onClick={handleSaveReceiptEdit} disabled={!editVendor.trim()}
-                                  className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
-                                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', opacity: !editVendor.trim() ? 0.5 : 1 }}>
-                                  儲存
-                                </button>
-                                <button onClick={() => setEditingReceiptId(null)}
-                                  className="px-4 py-2 rounded-xl text-xs font-semibold"
-                                  style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b' }}>
-                                  取消
-                                </button>
-                              </div>
-                            </div>
-                          )
-                        }
-
-                        return (
-                          <div key={r.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
-                            style={{ background: isCK ? '#fff7ed' : missingVendor ? '#fff8f8' : '#f8fafc', border: `1px solid ${isCK ? '#fed7aa' : missingVendor ? '#fda4af' : '#f4f4f5'}` }}>
-                            <span className="text-base shrink-0">{isCK ? '🚚' : '🧾'}</span>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold truncate" style={{ color: missingVendor ? '#be123c' : '#18181b' }}>
-                                {r.vendor_name || '⚠ 請填寫廠商名稱'}
-                              </p>
-                              <p className="text-xs" style={{ color: '#a1a1aa' }}>
-                                {isCK ? 'AI 辨識 · 央廚配送' : 'AI 辨識 · 現金支出'}
-                              </p>
-                            </div>
-                            <p className="text-sm font-bold tabular-nums shrink-0" style={{ color: '#18181b' }}>
-                              ${fmt(r.total_amount)}
-                            </p>
-                            {!isLocked && (
-                              <button onClick={() => { setEditingReceiptId(r.id); setEditVendor(r.vendor_name || ''); setEditAmount(r.total_amount); setEditItems((r.receipt_items ?? []).map(i => ({ item_name: i.item_name, amount: i.amount }))) }}
-                                className="p-1.5 rounded-lg shrink-0"
-                                style={{ background: missingVendor ? '#ffe4e6' : '#f4f4f5', color: missingVendor ? '#be123c' : '#a1a1aa' }}>
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            {!missingVendor && (
-                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
-                                style={{ background: '#d1fae5', color: '#047857' }}>✓ 已辨識</span>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                  {localReceipts.length === 0 && !isLocked && (
-                    <p className="text-xs text-center py-1" style={{ color: '#a1a1aa' }}>尚未上傳任何收據</p>
-                  )}
-                  {totalExpenses > 0 && (
-                    <SummaryBlock label={`今日支出小計（${expenses.length} 筆）`} value={`$${fmt(totalExpenses)}`} />
-                  )}
-
-                  {/* 手動支出 */}
-                  {!isLocked && (
-                    <div className="mt-3 pt-3" style={{ borderTop: '1px solid #f4f4f5' }}>
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs font-semibold" style={{ color: '#52525b' }}>手動新增支出</p>
-                        <button onClick={addExpense} className="flex items-center gap-1 text-xs font-semibold" style={{ color: '#7c3aed' }}>
-                          <Plus className="h-3.5 w-3.5" /> 新增
-                        </button>
-                      </div>
-                      <div className="space-y-2">
-                        {expenses.filter(e => !localReceipts.some(r => r.vendor_name === e.description)).map(e => (
-                          <div key={e.id} className="flex items-center gap-2">
-                            <input placeholder="說明（例：菜商、雜貨）"
-                              style={{ flex: 1, padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit' }}
-                              value={e.description} onChange={ev => updateExpense(e.id, 'description', ev.target.value)} />
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <span className="text-xs" style={{ color: '#a1a1aa' }}>$</span>
-                              <input type="number" min="0" inputMode="numeric"
-                                style={{ width: '88px', padding: '10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
-                                value={e.amount || ''} placeholder="0"
-                                onChange={ev => updateExpense(e.id, 'amount', parseFloat(ev.target.value) || 0)} />
-                            </div>
-                            <button onClick={() => removeExpense(e.id)} className="p-2 rounded-xl shrink-0"
-                              style={{ background: '#fff8f8', border: '1px solid #fecdd3' }}>
-                              <Trash2 className="h-4 w-4" style={{ color: '#be123c' }} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {isLocked && expenses.length > 0 && (
-                    <div className="space-y-2 mt-2">
-                      {expenses.map(e => (
-                        <div key={e.id} className="flex items-center gap-2">
-                          <input disabled style={{ flex: 1, padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: '#fafafa', outline: 'none', fontFamily: 'inherit', opacity: 0.5 }} value={e.description} onChange={() => {}} />
-                          <input type="number" disabled style={{ width: '88px', padding: '10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', background: '#fafafa', outline: 'none', textAlign: 'right', opacity: 0.5 }} value={e.amount || ''} onChange={() => {}} />
+            {/* 待儲存表單 */}
+            {receiptForms.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold px-1" style={{ color: '#f97316' }}>
+                  ⬇ 填寫後點「儲存」 — {receiptForms.length} 筆待確認
+                </p>
+                {receiptForms.map(form => (
+                  <div key={form.id} className="bg-white rounded-2xl overflow-hidden"
+                    style={{ border: '1.5px solid #fed7aa', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                    {/* 縮圖 + 刪除 */}
+                    <div className="relative">
+                      {form.previewUrl ? (
+                        <img src={form.previewUrl} alt="receipt"
+                          className="w-full object-cover"
+                          style={{ maxHeight: '160px', background: '#f8fafc' }} />
+                      ) : (
+                        <div className="w-full h-14 flex items-center justify-center"
+                          style={{ background: '#f8fafc', borderBottom: '1px solid #f4f4f5' }}>
+                          <FileText className="h-5 w-5" style={{ color: '#a1a1aa' }} />
+                          <span className="text-xs ml-2" style={{ color: '#a1a1aa' }}>無照片</span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </SectionCard>
-
-                {/* 央廚配送 */}
-                <SectionCard icon={<Package className="h-4 w-4" />} title="央廚配送" subtitle="配送總金額（月底結帳用）" iconColor="#f97316">
-                  {!isLocked && (
-                    <div className="flex justify-end mb-3">
-                      <button onClick={syncFromReceipts} disabled={syncing}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
-                        style={{ background: '#fff7ed', color: '#f97316', border: '1px solid #fed7aa', opacity: syncing ? 0.6 : 1 }}>
-                        {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                        從收據同步
+                      )}
+                      <button onClick={() => removeReceiptForm(form.id)}
+                        className="absolute top-2 right-2 h-7 w-7 rounded-full flex items-center justify-center"
+                        style={{ background: 'rgba(0,0,0,0.5)' }}>
+                        <X className="h-3.5 w-3.5 text-white" />
                       </button>
                     </div>
-                  )}
-                  <SInput value={data.ck_total || 0} onChange={v => set('ck_total', v)} disabled={isLocked} />
-                  {data.ck_total > 0 && <SummaryBlock label="配送費小計" value={`$${fmt(s.deliveryFee)}`} warm />}
-                </SectionCard>
-              </>
+
+                    <div className="p-4 space-y-3">
+                      {/* 類別 */}
+                      <div>
+                        <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>類別</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {RECEIPT_CATEGORIES.map(cat => (
+                            <button key={cat} onClick={() => updateReceiptForm(form.id, 'category', cat)}
+                              className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
+                              style={{
+                                background: form.category === cat ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : '#f4f4f5',
+                                color: form.category === cat ? 'white' : '#52525b',
+                              }}>
+                              {cat}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 廠商 + 金額 */}
+                      <div className="flex gap-2">
+                        <input placeholder="廠商名稱（必填）"
+                          style={{ flex: 1, padding: '10px 12px', border: `1.5px solid ${form.vendor_name.trim() ? '#e4e4e7' : '#fda4af'}`, borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}
+                          value={form.vendor_name}
+                          onChange={e => updateReceiptForm(form.id, 'vendor_name', e.target.value)} />
+                        <div style={{ width: '110px' }}>
+                          <div className="flex items-center" style={{ border: `1.5px solid ${form.total_amount > 0 ? '#e4e4e7' : '#fda4af'}`, borderRadius: '10px', background: 'white', overflow: 'hidden' }}>
+                            <span className="text-xs pl-2.5" style={{ color: '#a1a1aa' }}>$</span>
+                            <input type="number" min="0" inputMode="numeric" placeholder="金額"
+                              style={{ width: '100%', padding: '10px 10px 10px 4px', border: 'none', fontSize: '14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', background: 'transparent', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}
+                              value={form.total_amount || ''}
+                              onChange={e => updateReceiptForm(form.id, 'total_amount', parseInt(e.target.value) || 0)} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 稅額 + 備註（摺疊） */}
+                      <div className="flex gap-2">
+                        <div style={{ flex: 1 }}>
+                          <p className="text-[11px] mb-1" style={{ color: '#a1a1aa' }}>稅額（選填）</p>
+                          <input type="number" min="0" inputMode="numeric" placeholder="0"
+                            style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', background: 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}
+                            value={form.tax_amount || ''}
+                            onChange={e => updateReceiptForm(form.id, 'tax_amount', parseInt(e.target.value) || 0)} />
+                        </div>
+                        <div style={{ flex: 2 }}>
+                          <p className="text-[11px] mb-1" style={{ color: '#a1a1aa' }}>備註（選填）</p>
+                          <input placeholder="例：本週菜單"
+                            style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}
+                            value={form.notes}
+                            onChange={e => updateReceiptForm(form.id, 'notes', e.target.value)} />
+                        </div>
+                      </div>
+
+                      {/* 儲存按鈕 */}
+                      <button onClick={() => saveReceiptForm(form)} disabled={form.uploading}
+                        className="w-full py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+                        style={{
+                          background: (form.vendor_name.trim() && form.total_amount > 0)
+                            ? 'linear-gradient(135deg,#6366f1,#8b5cf6)'
+                            : '#d4d4d8',
+                          cursor: (form.vendor_name.trim() && form.total_amount > 0) ? 'pointer' : 'not-allowed',
+                          opacity: form.uploading ? 0.7 : 1,
+                        }}>
+                        {form.uploading ? <><Loader2 className="h-4 w-4 animate-spin" />儲存中…</> : '儲存'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
+
+            {/* 已儲存收據清單 */}
+            {localReceipts.length > 0 && (
+              <SectionCard icon={<Camera className="h-4 w-4" />}
+                title={`今日收據（${localReceipts.filter(r => !isCKReceipt(r, ckPrices)).length} 筆支出${localReceipts.some(r => isCKReceipt(r, ckPrices)) ? ' + 央廚' : ''}）`}
+                subtitle="AI 將於送出前統一核對" iconColor="#6366f1">
+                <div className="space-y-2">
+                  {localReceipts.map(r => {
+                    const isCK = isCKReceipt(r, ckPrices)
+                    const isEditing = editingReceiptId === r.id
+                    if (isEditing) {
+                      return (
+                        <div key={r.id} className="rounded-xl p-3 space-y-2"
+                          style={{ background: '#f8f9ff', border: '1.5px solid #c7d2fe' }}>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <Pencil className="h-3.5 w-3.5 shrink-0" style={{ color: '#6366f1' }} />
+                            <p className="text-xs font-semibold" style={{ color: '#6366f1' }}>編輯收據</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <input placeholder="廠商名稱"
+                              style={{ flex: 1, padding: '9px 12px', border: '1.5px solid #c7d2fe', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}
+                              value={editVendor} onChange={e => setEditVendor(e.target.value)} autoFocus />
+                            <input type="number" min="0" inputMode="numeric"
+                              style={{ width: '96px', padding: '9px 10px', border: '1.5px solid #c7d2fe', borderRadius: '10px', fontSize: '14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', background: 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}
+                              value={editAmount || ''} placeholder="金額"
+                              onChange={e => setEditAmount(parseInt(e.target.value) || 0)} />
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={handleSaveReceiptEdit} disabled={!editVendor.trim()}
+                              className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
+                              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', opacity: !editVendor.trim() ? 0.5 : 1 }}>
+                              儲存
+                            </button>
+                            <button onClick={() => setEditingReceiptId(null)}
+                              className="px-4 py-2 rounded-xl text-xs font-semibold"
+                              style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b' }}>
+                              取消
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div key={r.id} className="rounded-xl overflow-hidden"
+                        style={{ border: `1px solid ${isCK ? '#fed7aa' : '#f4f4f5'}`, background: isCK ? '#fff7ed' : 'white' }}>
+                        <div className="flex items-center gap-3 px-3 py-2.5">
+                          {r.photo_url ? (
+                            <img src={r.photo_url} alt="receipt"
+                              className="h-12 w-12 object-cover rounded-lg shrink-0"
+                              style={{ border: '1px solid #f4f4f5' }} />
+                          ) : (
+                            <div className="h-12 w-12 rounded-lg flex items-center justify-center shrink-0"
+                              style={{ background: isCK ? '#ffedd5' : '#f4f4f5' }}>
+                              <span className="text-xl">{isCK ? '🚚' : '🧾'}</span>
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold truncate" style={{ color: '#18181b' }}>
+                              {r.vendor_name || '（未填廠商）'}
+                            </p>
+                            <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
+                              {isCK ? '央廚配送' : '現金支出'}
+                              {r.photo_url ? ' · 有照片' : ' · 無照片'}
+                            </p>
+                          </div>
+                          <p className="text-sm font-bold tabular-nums shrink-0" style={{ color: '#18181b' }}>
+                            ${fmt(r.total_amount)}
+                          </p>
+                          {!isLocked && (
+                            <div className="flex gap-1 shrink-0">
+                              <button onClick={() => { setEditingReceiptId(r.id); setEditVendor(r.vendor_name || ''); setEditAmount(r.total_amount); setEditItems((r.receipt_items ?? []).map(i => ({ item_name: i.item_name, amount: i.amount }))) }}
+                                className="p-1.5 rounded-lg" style={{ background: '#f4f4f5', color: '#52525b' }}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button onClick={() => handleDeleteReceipt(r.id)}
+                                className="p-1.5 rounded-lg" style={{ background: '#ffe4e6', color: '#be123c' }}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                {totalExpenses > 0 && (
+                  <div className="mt-3">
+                    <SummaryBlock label={`今日支出小計（${expenses.length} 筆）`} value={`$${fmt(totalExpenses)}`} />
+                  </div>
+                )}
+              </SectionCard>
+            )}
+
+            {localReceipts.length === 0 && receiptForms.length === 0 && !isLocked && (
+              <div className="text-center py-6 rounded-2xl" style={{ background: 'white', border: '1px solid #f4f4f5' }}>
+                <Camera className="h-8 w-8 mx-auto mb-2" style={{ color: '#a1a1aa' }} />
+                <p className="text-sm" style={{ color: '#52525b' }}>尚未上傳任何收據</p>
+                <p className="text-xs mt-1" style={{ color: '#a1a1aa' }}>點上方「上傳照片」或「無照片新增」</p>
+              </div>
+            )}
+
+            {/* 央廚配送 */}
+            <SectionCard icon={<Package className="h-4 w-4" />} title="央廚配送" subtitle="配送總金額（月底結帳用）" iconColor="#f97316">
+              {!isLocked && (
+                <div className="flex justify-end mb-3">
+                  <button onClick={syncFromReceipts} disabled={syncing}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
+                    style={{ background: '#fff7ed', color: '#f97316', border: '1px solid #fed7aa', opacity: syncing ? 0.6 : 1 }}>
+                    {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    從收據同步
+                  </button>
+                </div>
+              )}
+              <SInput value={data.ck_total || 0} onChange={v => set('ck_total', v)} disabled={isLocked} />
+              {data.ck_total > 0 && <SummaryBlock label="配送費小計" value={`$${fmt(s.deliveryFee)}`} warm />}
+            </SectionCard>
           </>
         )}
 
@@ -1361,6 +1556,132 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           </>
         )}
 
+        {/* ── STEP: AI 核對 ────────────────────────────────────────────── */}
+        {stepId === 'ai_verify' && (
+          <>
+            <GradientTitle step={stepNum} total={totalSteps} title="AI 核對"
+              desc="AI 正在比對您填入的金額與照片辨識結果，請確認差異後繼續。" />
+
+            {/* 狀態橫幅 */}
+            {aiRunning ? (
+              <div className="rounded-2xl p-8 flex flex-col items-center gap-3 text-center"
+                style={{ background: 'linear-gradient(135deg,#eef2ff,#f5f3ff)', border: '1.5px solid #c7d2fe' }}>
+                <Loader2 className="h-10 w-10 animate-spin" style={{ color: '#6366f1' }} />
+                <p className="text-sm font-semibold" style={{ color: '#4338ca' }}>AI 核對中，請稍候…</p>
+                <p className="text-xs" style={{ color: '#a1a1aa' }}>
+                  共 {localReceipts.filter(r => r.photo_url).length} 張照片待辨識
+                </p>
+              </div>
+            ) : !aiTriggered ? (
+              <div className="rounded-2xl p-6 flex flex-col items-center gap-3 text-center"
+                style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }}>
+                <Sparkles className="h-8 w-8" style={{ color: '#6366f1' }} />
+                <p className="text-sm font-semibold" style={{ color: '#18181b' }}>準備中…</p>
+              </div>
+            ) : (
+              <>
+                {/* 無照片收據提示 */}
+                {localReceipts.filter(r => r.photo_url).length === 0 && (
+                  <div className="rounded-2xl p-5 flex items-center gap-3"
+                    style={{ background: '#d1fae5', border: '1px solid #6ee7b7' }}>
+                    <CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: '#047857' }} />
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: '#065f46' }}>本次收據皆無照片</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#047857' }}>無法進行 AI 辨識，請直接送出</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* 差異清單 */}
+                {aiItems.filter(a => !a.matched).length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold px-1 mb-2" style={{ color: '#be123c' }}>
+                      ⚠ 發現 {aiItems.filter(a => !a.matched).length} 筆差異，請確認
+                    </p>
+                    <div className="space-y-2">
+                      {aiItems.filter(a => !a.matched).map(item => (
+                        <div key={item.receiptId} className="rounded-2xl p-4"
+                          style={{
+                            background: item.accepted ? '#d1fae5' : '#ffe4e6',
+                            border: `1.5px solid ${item.accepted ? '#6ee7b7' : '#fda4af'}`,
+                          }}>
+                          <div className="flex items-start justify-between gap-2 mb-3">
+                            <div>
+                              <p className="text-sm font-semibold" style={{ color: '#18181b' }}>{item.vendor}</p>
+                              <p className="text-xs mt-0.5" style={{ color: item.accepted ? '#047857' : '#be123c' }}>
+                                {item.accepted ? '已接受差異，繼續送出' : `您填入 $${fmt(item.inputAmount)} · AI 辨識 $${fmt(item.recognized)}`}
+                              </p>
+                            </div>
+                            {!item.accepted && (
+                              <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0"
+                                style={{ background: '#ffe4e6', color: '#be123c' }}>
+                                差 ${fmt(Math.abs(item.inputAmount - item.recognized))}
+                              </span>
+                            )}
+                          </div>
+                          {!item.accepted && (
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setAiItems(prev => prev.map(a => a.receiptId === item.receiptId ? { ...a, accepted: true } : a))}
+                                className="flex-1 py-2 rounded-xl text-xs font-bold"
+                                style={{ background: '#fff', border: '1.5px solid #fda4af', color: '#be123c' }}>
+                                保留我的金額
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  const supabase = createClient()
+                                  await supabase.from('receipts').update({ total_amount: item.recognized }).eq('id', item.receiptId)
+                                  setLocalReceipts(prev => prev.map(r => r.id === item.receiptId ? { ...r, total_amount: item.recognized } : r))
+                                  setAiItems(prev => prev.map(a => a.receiptId === item.receiptId ? { ...a, inputAmount: item.recognized, matched: true, accepted: true } : a))
+                                  toast.success(`已更新為 AI 辨識金額 $${fmt(item.recognized)}`)
+                                }}
+                                className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
+                                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                                採用 AI 金額 ${fmt(item.recognized)}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 通過清單 */}
+                {aiItems.filter(a => a.matched || a.accepted).length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold px-1 mb-2" style={{ color: '#047857' }}>
+                      ✓ {aiItems.filter(a => a.matched).length} 筆金額核對通過
+                    </p>
+                    <div className="space-y-1.5">
+                      {aiItems.filter(a => a.matched).map(item => (
+                        <div key={item.receiptId} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                          style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                          <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: '#16a34a' }} />
+                          <span className="text-sm flex-1 min-w-0 truncate" style={{ color: '#166534' }}>{item.vendor}</span>
+                          <span className="text-sm font-bold tabular-nums shrink-0" style={{ color: '#166534' }}>${fmt(item.inputAmount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 全數通過 */}
+                {aiItems.length > 0 && aiItems.every(a => a.matched || a.accepted) && (
+                  <div className="rounded-2xl p-5 flex items-center gap-3"
+                    style={{ background: 'linear-gradient(135deg,#d1fae5,#ecfdf5)', border: '1px solid #6ee7b7' }}>
+                    <CheckCircle2 className="h-6 w-6 shrink-0" style={{ color: '#059669' }} />
+                    <div>
+                      <p className="text-sm font-bold" style={{ color: '#065f46' }}>所有差異已確認，可以送出！</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#047857' }}>點下方「繼續」進入送出步驟</p>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
+
         {/* ── STEP 6: 送出 ─────────────────────────────────────────────── */}
         {stepId === 'submit' && (
           <>
@@ -1535,21 +1856,25 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </>
             )}
 
-            {/* Steps 1-5: 上一步 + 繼續 */}
+            {/* Steps 1-5 + ai_verify: 上一步 + 繼續 */}
             {step < submitStepIdx && (
               <>
                 {step > 0 && (
-                  <button onClick={goPrev} disabled={saving}
+                  <button onClick={goPrev} disabled={saving || aiRunning}
                     className="flex items-center justify-center gap-2 py-3 px-5 rounded-2xl text-sm font-semibold"
-                    style={{ background: '#f4f4f5', color: '#52525b', opacity: saving ? 0.6 : 1 }}>
+                    style={{ background: '#f4f4f5', color: '#52525b', opacity: (saving || aiRunning) ? 0.6 : 1 }}>
                     ← 上一步
                   </button>
                 )}
-                <button onClick={goNext} disabled={saving}
+                <button onClick={goNext} disabled={saving || aiRunning}
                   className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white"
-                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', opacity: saving ? 0.7 : 1 }}>
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  繼續 →
+                  style={{
+                    background: aiRunning ? '#d4d4d8' : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+                    boxShadow: aiRunning ? 'none' : '0 4px 12px rgba(99,102,241,0.3)',
+                    opacity: (saving || aiRunning) ? 0.7 : 1,
+                  }}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : aiRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {aiRunning ? 'AI 核對中…' : stepId === 'ai_verify' ? '確認，繼續送出 →' : '繼續 →'}
                 </button>
               </>
             )}
