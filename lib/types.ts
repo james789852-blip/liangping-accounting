@@ -22,6 +22,7 @@ export interface CKPrice {
   id: string
   item_name: string
   unit_price: number
+  unit?: string
   excel_column: string
 }
 

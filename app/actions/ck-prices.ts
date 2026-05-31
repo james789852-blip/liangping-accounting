@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
-export async function updateCKPrice(id: string, newPrice: number, reason: string) {
+export async function updateCKPrice(id: string, newPrice: number, reason: string, unit?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '未登入' }
@@ -21,10 +21,12 @@ export async function updateCKPrice(id: string, newPrice: number, reason: string
 
   if (!current) return { error: '找不到該品項' }
 
-  // 更新單價
+  // 更新單價（含單位）
+  const updatePayload: Record<string, any> = { unit_price: newPrice, updated_by: user.id, updated_at: new Date().toISOString() }
+  if (unit !== undefined) updatePayload.unit = unit
   const { error } = await supabase
     .from('central_kitchen_prices')
-    .update({ unit_price: newPrice, updated_by: user.id, updated_at: new Date().toISOString() })
+    .update(updatePayload)
     .eq('id', id)
 
   if (error) return { error: error.message }

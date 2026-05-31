@@ -5,11 +5,12 @@ import { updateCKPrice } from '@/app/actions/ck-prices'
 import { toast } from 'sonner'
 import { Loader2, Pencil, Check, X } from 'lucide-react'
 
-interface CKItem { id: string; item_name: string; unit_price: number; updated_at: string }
+interface CKItem { id: string; item_name: string; unit_price: number; unit?: string; updated_at: string }
 
 export default function CKPriceEditor({ items, priceHistory = [], canEdit }: { items: CKItem[]; priceHistory?: any[]; canEdit: boolean }) {
   const [editing, setEditing] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [editUnit, setEditUnit] = useState('')
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
   const [prices, setPrices] = useState<CKItem[]>(items)
@@ -17,20 +18,21 @@ export default function CKPriceEditor({ items, priceHistory = [], canEdit }: { i
   function startEdit(item: CKItem) {
     setEditing(item.id)
     setEditValue(String(item.unit_price))
+    setEditUnit(item.unit || '份')
     setReason('')
   }
 
-  function cancelEdit() { setEditing(null); setEditValue(''); setReason('') }
+  function cancelEdit() { setEditing(null); setEditValue(''); setEditUnit(''); setReason('') }
 
   async function saveEdit(id: string) {
     const newPrice = parseFloat(editValue)
     if (isNaN(newPrice) || newPrice < 0) { toast.error('請輸入有效的金額'); return }
     setLoading(true)
-    const result = await updateCKPrice(id, newPrice, reason)
+    const result = await updateCKPrice(id, newPrice, reason, editUnit)
     if (result.error) { toast.error(result.error) }
     else {
-      setPrices(prev => prev.map(p => p.id === id ? { ...p, unit_price: newPrice } : p))
-      toast.success('單價已更新')
+      setPrices(prev => prev.map(p => p.id === id ? { ...p, unit_price: newPrice, unit: editUnit } : p))
+      toast.success('已更新')
       setEditing(null)
     }
     setLoading(false)
@@ -56,14 +58,21 @@ export default function CKPriceEditor({ items, priceHistory = [], canEdit }: { i
                   <span className="text-sm" style={{ color: '#a1a1aa' }}>$</span>
                   <input
                     type="number" min="0" step="0.5" autoFocus
-                    style={{ width: '88px', height: '34px', padding: '0 10px', border: '1.5px solid #6366f1', borderRadius: '10px', fontSize: '14px', textAlign: 'right', outline: 'none', fontVariantNumeric: 'tabular-nums', boxShadow: '0 0 0 4px rgba(99,102,241,0.1)' }}
+                    style={{ width: '80px', height: '34px', padding: '0 10px', border: '1.5px solid #6366f1', borderRadius: '10px', fontSize: '14px', textAlign: 'right', outline: 'none', fontVariantNumeric: 'tabular-nums', boxShadow: '0 0 0 4px rgba(99,102,241,0.1)' }}
                     value={editValue}
                     onChange={e => setEditValue(e.target.value)}
+                  />
+                  <span className="text-xs" style={{ color: '#a1a1aa' }}>／</span>
+                  <input
+                    placeholder="單位"
+                    style={{ width: '52px', height: '34px', padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', outline: 'none', fontFamily: 'inherit', textAlign: 'center' }}
+                    value={editUnit}
+                    onChange={e => setEditUnit(e.target.value)}
                   />
                 </div>
                 <input
                   placeholder="異動原因（選填）"
-                  style={{ width: '136px', height: '28px', padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', outline: 'none', fontFamily: 'inherit' }}
+                  style={{ width: '160px', height: '28px', padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', outline: 'none', fontFamily: 'inherit' }}
                   value={reason}
                   onChange={e => setReason(e.target.value)}
                 />
@@ -79,6 +88,7 @@ export default function CKPriceEditor({ items, priceHistory = [], canEdit }: { i
             </div>
           ) : (
             <div className="flex items-center gap-3">
+              <span className="text-xs px-2 py-0.5 rounded-lg" style={{ background: '#f4f4f5', color: '#71717a' }}>／{item.unit || '份'}</span>
               <span className="text-xl font-bold tabular-nums" style={{ color: '#18181b' }}>${item.unit_price}</span>
               {canEdit && (
                 <button onClick={() => startEdit(item)} className="p-1.5 rounded-lg"

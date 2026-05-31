@@ -366,6 +366,23 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [addingCatForId, setAddingCatForId] = useState<string | null>(null)
   const [newCatText, setNewCatText] = useState('')
   const allCategories = [...RECEIPT_CATEGORIES, ...customCategories]
+  const [ckQuantities, setCkQuantities] = useState<Record<string, number>>(() => {
+    const result: Record<string, number> = {}
+    ckPrices.forEach(p => { result[p.id] = 0 })
+    if (existingClosing) {
+      const items = existingClosing.order_items ?? []
+      ckPrices.forEach(p => {
+        const found = items.find((i: any) => i.vendor === '央廚' && i.item_name === p.item_name)
+        if (found) result[p.id] = found.quantity ?? 0
+      })
+    }
+    return result
+  })
+  const ckQuantitiesRef = useRef(ckQuantities)
+  ckQuantitiesRef.current = ckQuantities
+  const [ckPhotoPreview, setCkPhotoPreview] = useState<string | undefined>(undefined)
+  const [ckPhotoUrl, setCkPhotoUrl] = useState<string | undefined>(existingClosing?.ck_delivery_photo_url ?? undefined)
+  const ckPhotoInputRef = useRef<HTMLInputElement>(null)
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
   const [currentStep, setCurrentStep] = useState(0)
   const [submitDone, setSubmitDone] = useState(false)
@@ -418,27 +435,28 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [data, expenses, handwriteOrders, isLocked, isDisputed, submitDone])
 
   useEffect(() => {
-    if (isLocked) return
-    async function autoSyncCK() {
-      if (document.hidden) return
-      const supabase = createClient()
-      const { data: receipts } = await supabase
-        .from('receipts')
-        .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, amount)')
-        .eq('store_id', store.id)
-        .eq('business_date', today)
-      if (!receipts) return
-      const ckTotal = (receipts as TodayReceipt[])
-        .filter(r => isCKReceipt(r, ckPrices))
-        .reduce((s, r) => s + r.total_amount, 0)
-      set('ck_total', ckTotal)
-    }
-    document.addEventListener('visibilitychange', autoSyncCK)
-    return () => document.removeEventListener('visibilitychange', autoSyncCK)
-  }, [isLocked, store.id, today, ckPrices, set])
+    const total = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * p.unit_price, 0)
+    set('ck_total', total)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ckQuantities])
 
 
 
+
+  async function handleCkPhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setCkPhotoPreview(URL.createObjectURL(file))
+    const supabase = createClient()
+    const ext = file.name.split('.').pop() || 'jpg'
+    const path = `ck-delivery/${store.id}/${today}.${ext}`
+    const { error } = await supabase.storage.from('receipts').upload(path, file, { upsert: true })
+    if (error) { toast.error('照片上傳失敗'); return }
+    const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(path)
+    setCkPhotoUrl(publicUrl)
+    toast.success('配送單照片已上傳')
+  }
 
   async function syncFromReceipts() {
     setSyncing(true)
@@ -745,6 +763,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         total_revenue: s.totalRevenue, total_cost: s.deliveryFee, total_expenses: totalExpenses,
         expected_remit: s.netToHQ, actual_remit: s.actualRemit,
         should_include_delivery: s.shouldEnvelope, variance: s.variance, note: d.note,
+        ck_delivery_photo_url: ckPhotoUrl ?? null,
       }
       if (!cid) {
         const { data: nc, error } = await supabase.from('daily_closings').insert(payload).select('id').single()
@@ -775,12 +794,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       const cashResult = await saveCashCounts(cid, cashPayload)
       if (cashResult.error) throw new Error('現金清點儲存失敗：' + cashResult.error)
       await supabase.from('order_items').delete().eq('closing_id', cid)
-      if (d.ck_total > 0) {
-        await supabase.from('order_items').insert({
-          closing_id: cid, vendor: '央廚', item_name: '央廚配送',
-          unit_price: d.ck_total, quantity: 1, total_amount: d.ck_total,
-        })
-      }
+      const ckItems = ckPrices
+        .filter(p => (ckQuantitiesRef.current[p.id] || 0) > 0)
+        .map(p => ({
+          closing_id: cid,
+          vendor: '央廚',
+          item_name: p.item_name,
+          unit_price: p.unit_price,
+          quantity: ckQuantitiesRef.current[p.id],
+          total_amount: Math.round(p.unit_price * (ckQuantitiesRef.current[p.id] || 0)),
+        }))
+      if (ckItems.length) await supabase.from('order_items').insert(ckItems)
       await supabase.from('expense_items').delete().eq('closing_id', cid)
       const expItems = expenses
         .filter(e => e.description.trim() || e.amount > 0)
@@ -1236,22 +1260,89 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         {(stepId === 'ck_delivery' || isLocked) && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="央廚配送"
-              desc="輸入今日央廚配送總金額，可從收據自動同步。" />}
+              desc="填寫今日各品項配送數量，上傳配送單照片供總公司核對。" />}
 
-            <SectionCard icon={<Package className="h-4 w-4" />} title="央廚配送" subtitle="配送總金額（月底結帳用）" iconColor="#f97316">
-              {!isLocked && (
-                <div className="flex justify-end mb-3">
-                  <button onClick={syncFromReceipts} disabled={syncing}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
-                    style={{ background: '#fff7ed', color: '#f97316', border: '1px solid #fed7aa', opacity: syncing ? 0.6 : 1 }}>
-                    {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    從收據同步
+            {/* 照片上傳 */}
+            <input ref={ckPhotoInputRef} type="file" accept="image/*" className="hidden" onChange={handleCkPhotoUpload} />
+            {!isLocked && (
+              <div>
+                {(ckPhotoPreview || ckPhotoUrl) ? (
+                  <div className="relative rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
+                    <img src={ckPhotoPreview || ckPhotoUrl} alt="配送單"
+                      className="w-full object-contain" style={{ maxHeight: '220px', background: '#f8fafc' }} />
+                    <button onClick={() => ckPhotoInputRef.current?.click()}
+                      className="absolute bottom-2 right-2 flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-white"
+                      style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
+                      <Camera className="h-3.5 w-3.5" />
+                      重新上傳
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => ckPhotoInputRef.current?.click()}
+                    className="w-full rounded-2xl flex flex-col items-center justify-center gap-2 py-5"
+                    style={{ border: '2px dashed #fed7aa', background: '#fff7ed', color: '#f97316' }}>
+                    <Camera className="h-7 w-7" />
+                    <p className="text-sm font-semibold">上傳配送單照片</p>
+                    <p className="text-xs" style={{ color: '#fdba74' }}>供總公司核對品項與數量</p>
                   </button>
+                )}
+              </div>
+            )}
+            {isLocked && ckPhotoUrl && (
+              <img src={ckPhotoUrl} alt="配送單" className="w-full rounded-2xl object-contain"
+                style={{ maxHeight: '220px', background: '#f8fafc', border: '1px solid #f4f4f5' }} />
+            )}
+
+            {/* 品項數量輸入 */}
+            <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: '1px solid #f4f4f5' }}>
+                <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#fff7ed' }}>
+                  <Package className="h-4 w-4" style={{ color: '#f97316' }} />
                 </div>
-              )}
-              <SInput value={data.ck_total || 0} onChange={v => set('ck_total', v)} disabled={isLocked} />
-              {data.ck_total > 0 && <SummaryBlock label="配送費小計" value={`$${fmt(s.deliveryFee)}`} warm />}
-            </SectionCard>
+                <p className="text-sm font-semibold" style={{ color: '#18181b' }}>配送品項</p>
+                <p className="text-xs ml-auto" style={{ color: '#a1a1aa' }}>單價由總公司設定</p>
+              </div>
+
+              {ckPrices.map((p, idx) => {
+                const qty = ckQuantities[p.id] || 0
+                const subtotal = qty * p.unit_price
+                return (
+                  <div key={p.id} className="flex items-center gap-3 px-4 py-3"
+                    style={{ borderBottom: idx !== ckPrices.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
+                    <span className="w-14 text-sm font-semibold shrink-0" style={{ color: '#18181b' }}>{p.item_name}</span>
+                    {isLocked ? (
+                      <span className="text-sm tabular-nums" style={{ color: qty > 0 ? '#18181b' : '#d4d4d8' }}>
+                        {qty > 0 ? qty : '—'}
+                      </span>
+                    ) : (
+                      <input
+                        type="number" min="0" inputMode="numeric"
+                        placeholder="0"
+                        value={qty || ''}
+                        onChange={e => setCkQuantities(prev => ({ ...prev, [p.id]: parseInt(e.target.value) || 0 }))}
+                        style={{ width: '60px', height: '36px', padding: '0 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '15px', textAlign: 'center', outline: 'none', background: 'white', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit' }}
+                        onFocus={e => (e.target as HTMLInputElement).style.borderColor = '#f97316'}
+                        onBlur={e => (e.target as HTMLInputElement).style.borderColor = '#e4e4e7'}
+                      />
+                    )}
+                    <span className="text-xs shrink-0" style={{ color: '#a1a1aa' }}>{p.unit || '份'}</span>
+                    <span className="text-xs shrink-0" style={{ color: '#d4d4d8' }}>×</span>
+                    <span className="text-xs tabular-nums shrink-0" style={{ color: '#71717a' }}>${p.unit_price}</span>
+                    <span className="ml-auto text-sm font-semibold tabular-nums shrink-0"
+                      style={{ color: qty > 0 ? '#f97316' : '#d4d4d8' }}>
+                      {qty > 0 ? `$${fmt(subtotal)}` : '—'}
+                    </span>
+                  </div>
+                )
+              })}
+
+              <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid #f4f4f5', background: '#fafafa' }}>
+                <span className="text-sm font-bold" style={{ color: '#18181b' }}>配送總計</span>
+                <span className="text-xl font-bold tabular-nums" style={{ color: data.ck_total > 0 ? '#f97316' : '#d4d4d8' }}>
+                  {data.ck_total > 0 ? `$${fmt(data.ck_total)}` : '$0'}
+                </span>
+              </div>
+            </div>
           </>
         )}
 
