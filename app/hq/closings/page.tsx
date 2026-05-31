@@ -37,7 +37,7 @@ export default async function ClosingsPage({
   let query = admin
     .from('daily_closings')
     .select(`
-      id, business_date, status, note, dispute_note,
+      id, business_date, status, note, dispute_note, submitted_by,
       total_revenue, total_cost, total_expenses, expected_remit, variance,
       ck_delivery_photo_url, channel_photo_urls,
       stores(id, name),
@@ -52,6 +52,15 @@ export default async function ClosingsPage({
   if (params.storeId) query = query.eq('store_id', params.storeId)
 
   const { data: closings } = await query
+
+  // 提交者名稱
+  const submitterIds = [...new Set((closings ?? []).map((c: any) => c.submitted_by).filter(Boolean))]
+  const submitterNames: Record<string, string> = {}
+  if (submitterIds.length > 0) {
+    const { data: profiles } = await admin
+      .from('user_profiles').select('user_id, name').in('user_id', submitterIds)
+    profiles?.forEach((p: any) => { if (p.name) submitterNames[p.user_id] = p.name })
+  }
 
   // 收據照片
   const receiptsByClosing: Record<string, any[]> = {}
@@ -117,6 +126,7 @@ export default async function ClosingsPage({
           month={month}
           storeId={params.storeId ?? ''}
           canReview={canReview}
+          submitterNames={submitterNames}
         />
       </div>
     </div>

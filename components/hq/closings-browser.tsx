@@ -9,6 +9,7 @@ import { verifyClosing, disputeClosing, deleteClosing } from '@/app/actions/clos
 interface Store { id: string; name: string }
 interface Closing {
   id: string; business_date: string; status: string; note?: string; dispute_note?: string
+  submitted_by?: string
   total_revenue: number; total_cost: number; total_expenses: number
   expected_remit: number; variance: number
   ck_delivery_photo_url?: string; channel_photo_urls?: Record<string, string>
@@ -28,6 +29,7 @@ interface Props {
   month: string
   storeId: string
   canReview: boolean
+  submitterNames: Record<string, string>
 }
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -236,9 +238,9 @@ function ReviewPanel({ closingId, status, canReview }: { closingId: string; stat
 }
 
 function ClosingCard({
-  closing, receipts, video, canReview,
+  closing, receipts, video, canReview, submitterName,
 }: {
-  closing: Closing; receipts: ReceiptRow[]; video?: VideoRow; canReview: boolean
+  closing: Closing; receipts: ReceiptRow[]; video?: VideoRow; canReview: boolean; submitterName?: string
 }) {
   const [expanded, setExpanded] = useState(closing.status === 'submitted' || closing.status === 'disputed')
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
@@ -284,6 +286,7 @@ function ClosingCard({
           <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
             {parseInt(mo)}/{parseInt(d)}
             {closing.total_revenue > 0 && <span className="ml-2 tabular-nums font-semibold" style={{ color: '#18181b' }}>${fmt(closing.total_revenue)}</span>}
+            {submitterName && <span className="ml-2 font-medium" style={{ color: '#6366f1' }}>由 {submitterName} 提交</span>}
           </p>
         </div>
         <span className="text-xs font-semibold px-2 py-0.5 rounded-lg shrink-0" style={{ background: st.bg, color: st.color }}>{st.label}</span>
@@ -412,7 +415,7 @@ function ClosingCard({
   )
 }
 
-export default function ClosingsBrowser({ closings, receiptsByClosing, videosByClosing, stores, month, storeId, canReview }: Props) {
+export default function ClosingsBrowser({ closings, receiptsByClosing, videosByClosing, stores, month, storeId, canReview, submitterNames }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [statusFilter, setStatusFilter] = useState('all')
@@ -476,6 +479,7 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
               receipts={receiptsByClosing[c.id] ?? []}
               video={videosByClosing[c.id]}
               canReview={canReview}
+              submitterName={c.submitted_by ? submitterNames[c.submitted_by] : undefined}
             />
           ))}
         </div>

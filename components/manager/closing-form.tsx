@@ -844,7 +844,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const supabase = createClient()
     try {
       await supabase.from('daily_closings')
-        .update({ status: 'submitted', submitted_at: new Date().toISOString() })
+        .update({ status: 'submitted', submitted_at: new Date().toISOString(), submitted_by: userId })
         .eq('id', cid)
       setStatus('submitted')
       toast.success('今日結帳已送出！')
