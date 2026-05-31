@@ -1053,7 +1053,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       {/* 表單 */}
                       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: '10px', minWidth: 0, overflow: 'hidden' }}>
                         {/* 類別 */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', gridColumn: addingCatForId === form.id ? '1/-1' : undefined }}>
                           <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>類別</label>
                           {addingCatForId === form.id ? (
                             <div style={{ display: 'flex', gap: '4px' }}>
