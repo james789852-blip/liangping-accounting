@@ -1051,7 +1051,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       </div>
 
                       {/* 表單 */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: '10px', minWidth: 0, overflow: 'hidden' }}>
                         {/* 類別 */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>類別</label>
