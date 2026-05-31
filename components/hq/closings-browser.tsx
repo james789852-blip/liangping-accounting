@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, ChevronDown, ChevronUp, Camera, Package, Video, FileText, Search, CheckCircle, RotateCcw, Trash2, Loader2 } from 'lucide-react'
+import { X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Camera, Package, Video, FileText, Search, CheckCircle, RotateCcw, Trash2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { verifyClosing, disputeClosing, deleteClosing } from '@/app/actions/closings'
 
@@ -45,37 +45,101 @@ function channelName(key: string) {
   return CHANNEL_LABEL[key] ?? key
 }
 
-function Lightbox({ url, onClose }: { url: string; onClose: () => void }) {
+function Lightbox({ photos, index, onClose, onPrev, onNext }: {
+  photos: { url: string; label: string }[]
+  index: number
+  onClose: () => void
+  onPrev: () => void
+  onNext: () => void
+}) {
+  const touchStartX = useRef<number | null>(null)
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+      if (e.key === 'ArrowLeft') onPrev()
+      if (e.key === 'ArrowRight') onNext()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose, onPrev, onNext])
+
+  const photo = photos[index]
+  const hasPrev = index > 0
+  const hasNext = index < photos.length - 1
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.88)' }} onClick={onClose}>
-      <button className="absolute top-4 right-4 p-2 rounded-full"
+      style={{ background: 'rgba(0,0,0,0.92)' }}
+      onClick={onClose}
+      onTouchStart={e => { touchStartX.current = e.touches[0].clientX }}
+      onTouchEnd={e => {
+        if (touchStartX.current === null) return
+        const diff = e.changedTouches[0].clientX - touchStartX.current
+        if (diff > 50) onPrev()
+        else if (diff < -50) onNext()
+        touchStartX.current = null
+      }}>
+      {/* 關閉 */}
+      <button className="absolute top-4 right-4 z-10 p-2 rounded-full"
         style={{ background: 'rgba(255,255,255,0.15)' }} onClick={onClose}>
         <X className="h-6 w-6 text-white" />
       </button>
-      <img src={url} alt="photo"
-        className="max-w-[95vw] max-h-[92vh] object-contain rounded-xl"
+
+      {/* 計數 */}
+      {photos.length > 1 && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 px-3 py-1 rounded-full text-xs font-semibold text-white"
+          style={{ background: 'rgba(0,0,0,0.45)' }}>
+          {index + 1} / {photos.length}
+        </div>
+      )}
+
+      {/* 左箭頭 */}
+      {hasPrev && (
+        <button className="absolute left-3 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full transition-opacity hover:opacity-80"
+          style={{ background: 'rgba(255,255,255,0.18)' }}
+          onClick={e => { e.stopPropagation(); onPrev() }}>
+          <ChevronLeft className="h-7 w-7 text-white" />
+        </button>
+      )}
+
+      {/* 右箭頭 */}
+      {hasNext && (
+        <button className="absolute right-3 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full transition-opacity hover:opacity-80"
+          style={{ background: 'rgba(255,255,255,0.18)' }}
+          onClick={e => { e.stopPropagation(); onNext() }}>
+          <ChevronRight className="h-7 w-7 text-white" />
+        </button>
+      )}
+
+      {/* 照片 */}
+      <img src={photo.url} alt={photo.label}
+        className="max-w-[88vw] max-h-[88vh] object-contain rounded-xl"
         onClick={e => e.stopPropagation()} />
+
+      {/* 標籤 */}
+      {photo.label && (
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs text-white font-medium"
+          style={{ background: 'rgba(0,0,0,0.5)' }}>
+          {photo.label}
+        </div>
+      )}
     </div>
   )
 }
 
-function PhotoThumb({ url, label }: { url: string; label?: string }) {
-  const [open, setOpen] = useState(false)
+function PhotoThumb({ url, label, onClick }: { url: string; label?: string; onClick: () => void }) {
   return (
-    <>
-      <button onClick={() => setOpen(true)} title={label}
-        className="relative rounded-xl overflow-hidden shrink-0 group"
-        style={{ width: 72, height: 72, border: '1px solid #e4e4e7', background: '#f8fafc' }}>
-        <img src={url} alt={label} className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-        {label && (
-          <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 text-[10px] text-white font-medium truncate"
-            style={{ background: 'rgba(0,0,0,0.5)' }}>{label}</div>
-        )}
-      </button>
-      {open && <Lightbox url={url} onClose={() => setOpen(false)} />}
-    </>
+    <button onClick={onClick} title={label}
+      className="relative rounded-xl overflow-hidden shrink-0 group"
+      style={{ width: 72, height: 72, border: '1px solid #e4e4e7', background: '#f8fafc' }}>
+      <img src={url} alt={label} className="w-full h-full object-cover" />
+      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+      {label && (
+        <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 text-[10px] text-white font-medium truncate"
+          style={{ background: 'rgba(0,0,0,0.5)' }}>{label}</div>
+      )}
+    </button>
   )
 }
 
@@ -177,6 +241,7 @@ function ClosingCard({
   closing: Closing; receipts: ReceiptRow[]; video?: VideoRow; canReview: boolean
 }) {
   const [expanded, setExpanded] = useState(closing.status === 'submitted' || closing.status === 'disputed')
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const st = STATUS[closing.status] ?? STATUS.draft
   const [, mo, d] = closing.business_date.split('-')
 
@@ -185,12 +250,28 @@ function ClosingCard({
   const receiptPhotos = receipts.filter(r => r.photo_url)
   const hasPhotos = receiptPhotos.length > 0 || ckPhoto || Object.keys(channelPhotos).length > 0
 
+  const allPhotos: { url: string; label: string }[] = [
+    ...receiptPhotos.map(r => ({ url: r.photo_url!, label: r.vendor_name || '收據' })),
+    ...(ckPhoto ? [{ url: ckPhoto, label: '央廚配送單' }] : []),
+    ...Object.entries(channelPhotos).map(([k, url]) => ({ url: url as string, label: channelName(k) })),
+  ]
+
   const ckItems = (closing.order_items ?? []).filter(o => o.item_name !== '央廚配送')
   const hwOrders = (closing.handwrite_orders ?? []).filter(o => o.order_number)
   const hwValid = hwOrders.filter(o => !o.voided && o.amount > 0)
   const hwVoided = hwOrders.filter(o => o.voided)
 
   return (
+    <>
+    {lightboxIndex !== null && allPhotos.length > 0 && (
+      <Lightbox
+        photos={allPhotos}
+        index={lightboxIndex}
+        onClose={() => setLightboxIndex(null)}
+        onPrev={() => setLightboxIndex(i => (i !== null && i > 0 ? i - 1 : i))}
+        onNext={() => setLightboxIndex(i => (i !== null && i < allPhotos.length - 1 ? i + 1 : i))}
+      />
+    )}
     <div className="bg-white rounded-2xl overflow-hidden" style={{ border: `2px solid ${closing.status === 'submitted' ? '#c7d2fe' : closing.status === 'disputed' ? '#fecdd3' : '#f4f4f5'}`, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
       {/* 標頭 */}
       <button className="w-full flex items-center gap-3 px-4 py-4 text-left" onClick={() => setExpanded(!expanded)}>
@@ -303,31 +384,15 @@ function ClosingCard({
             <div>
               <div className="flex items-center gap-1.5 mb-2">
                 <Camera className="h-3.5 w-3.5" style={{ color: '#6366f1' }} />
-                <p className="text-xs font-semibold" style={{ color: '#52525b' }}>上傳照片</p>
+                <p className="text-xs font-semibold" style={{ color: '#52525b' }}>
+                  上傳照片
+                  <span className="ml-1.5 font-normal" style={{ color: '#a1a1aa' }}>（點擊可左右切換）</span>
+                </p>
               </div>
-              <div className="space-y-2">
-                {receiptPhotos.length > 0 && (
-                  <div>
-                    <p className="text-[11px] mb-1.5" style={{ color: '#a1a1aa' }}>收據 {receiptPhotos.length} 張</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {receiptPhotos.map(r => <PhotoThumb key={r.id} url={r.photo_url!} label={r.vendor_name || '收據'} />)}
-                    </div>
-                  </div>
-                )}
-                {ckPhoto && (
-                  <div>
-                    <p className="text-[11px] mb-1.5" style={{ color: '#a1a1aa' }}>央廚配送單</p>
-                    <PhotoThumb url={ckPhoto} label="配送單" />
-                  </div>
-                )}
-                {Object.keys(channelPhotos).length > 0 && (
-                  <div>
-                    <p className="text-[11px] mb-1.5" style={{ color: '#a1a1aa' }}>平台截圖</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {Object.entries(channelPhotos).map(([k, url]) => <PhotoThumb key={k} url={url as string} label={channelName(k)} />)}
-                    </div>
-                  </div>
-                )}
+              <div className="flex flex-wrap gap-1.5">
+                {allPhotos.map((p, idx) => (
+                  <PhotoThumb key={idx} url={p.url} label={p.label} onClick={() => setLightboxIndex(idx)} />
+                ))}
               </div>
             </div>
           )}
@@ -343,6 +408,7 @@ function ClosingCard({
         </div>
       )}
     </div>
+    </>
   )
 }
 
