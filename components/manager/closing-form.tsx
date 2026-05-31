@@ -577,7 +577,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const supabase = createClient()
     let photo_url = ''
     if (form.file) {
-      const ext = form.file.name.split('.').pop() || 'jpg'
+      const ext = form.file.name.split('.').pop()?.toLowerCase() || 'jpg'
       const path = `receipts/${store.id}/${today}/${form.id}.${ext}`
       const { error } = await supabase.storage.from('receipts').upload(path, form.file, { upsert: true })
       if (!error) {
@@ -691,8 +691,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setChannelPhotos(prev => ({ ...prev, [key]: { previewUrl, status: 'uploading' } }))
 
     const supabase = createClient()
-    const ext = file.name.split('.').pop() || 'jpg'
-    const path = `receipts/${store.id}/${today}/rev-${key}.${ext}`
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+    const safeKey = [...key].map(c => /[\w-]/.test(c) ? c : c.codePointAt(0)!.toString()).join('')
+    const path = `receipts/${store.id}/${today}/rev-${safeKey}.${ext}`
     const { error: upErr } = await supabase.storage.from('receipts').upload(path, file, { upsert: true })
     if (upErr) {
       toast.error(`照片上傳失敗：${upErr.message}`)
