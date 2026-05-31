@@ -695,7 +695,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const path = `receipts/${store.id}/revenue/${today}/${key}.${ext}`
     const { error: upErr } = await supabase.storage.from('receipts').upload(path, file, { upsert: true })
     if (upErr) {
-      toast.error('照片上傳失敗')
+      toast.error(`照片上傳失敗：${upErr.message}`)
       setChannelPhotos(prev => ({ ...prev, [key]: { previewUrl, status: 'idle' } }))
       return
     }
