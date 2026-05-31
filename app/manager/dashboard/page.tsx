@@ -5,7 +5,8 @@ import { format } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
-import { ChevronRight, ArrowRight } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
+import RecentClosingsList from '@/components/manager/recent-closings'
 
 export const dynamic = 'force-dynamic'
 
@@ -174,47 +175,7 @@ export default async function ManagerDashboard() {
               </Link>
             </div>
 
-            <div className="flex flex-col gap-2 p-3">
-              {recentClosings.map(c => {
-                const d = new Date(c.business_date + 'T00:00:00')
-                const mo = String(d.getMonth() + 1).padStart(2, '0')
-                const dd = String(d.getDate()).padStart(2, '0')
-                const ww = `星期${WEEKDAY[d.getDay()]}`
-                const varAbs = Math.abs(c.variance ?? 0)
-                const varOk = varAbs === 0
-                const varColor = varOk ? '#10b981' : varAbs <= 200 ? '#f59e0b' : '#f43f5e'
-                const statusLabel = HIST_STATUS[c.status] ?? c.status
-                const desc = c.status === 'verified'
-                  ? (varOk ? '已對帳' : `誤差 ${c.variance > 0 ? '+' : ''}${fmt(c.variance)}`)
-                  : c.status === 'submitted' ? '待審核'
-                  : c.status === 'disputed' ? '異議退回'
-                  : '草稿未送'
-
-                return (
-                  <Link key={c.id} href={`/manager/history/${c.id}`}
-                    className="grid items-center rounded-xl px-4 py-3.5 transition-colors hover:bg-slate-50"
-                    style={{ gridTemplateColumns: '80px 1fr 110px 90px 28px', gap: '14px', border: '1px solid #f4f4f5', fontSize: '13px' }}>
-
-                    <div>
-                      <p style={{ fontWeight: 600 }}>{mo}/{dd}</p>
-                      <p style={{ color: '#a1a1aa', fontSize: '12px' }}>{ww}</p>
-                    </div>
-
-                    <div style={{ color: '#52525b' }}>{desc}</div>
-
-                    <p style={{ fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                      {c.total_revenue > 0 ? `$${fmt(c.total_revenue)}` : '—'}
-                    </p>
-
-                    <p style={{ fontWeight: 600, fontSize: '12px', textAlign: 'right', color: varColor, fontVariantNumeric: 'tabular-nums' }}>
-                      {varOk ? '✓ $0' : `${(c.variance ?? 0) >= 0 ? '+' : ''}${fmt(c.variance ?? 0)}`}
-                    </p>
-
-                    <ChevronRight className="h-4 w-4 shrink-0" style={{ color: '#e4e4e7' }} />
-                  </Link>
-                )
-              })}
-            </div>
+            <RecentClosingsList closings={recentClosings} />
           </div>
         )}
 
