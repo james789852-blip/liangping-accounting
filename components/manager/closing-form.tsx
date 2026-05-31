@@ -836,7 +836,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   // ─── Wizard ───────────────────────────────────────────────────────────────
   const STEPS = [
-    { id: 'receipts',  label: '上傳單據' },
+    { id: 'receipts',    label: '上傳單據' },
+    { id: 'ck_delivery', label: '央廚配送' },
     ...(store.mode !== 'ichef' ? [{ id: 'handwrite', label: '手寫菜單' }] : []),
     { id: 'revenue',   label: '營業額'  },
     { id: 'cash',      label: '現金清點' },
@@ -1228,7 +1229,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </div>
             )}
 
-            {/* 央廚配送 */}
+          </>
+        )}
+
+        {/* ── STEP 2: 央廚配送 ─────────────────────────────────────────── */}
+        {(stepId === 'ck_delivery' || isLocked) && (
+          <>
+            {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="央廚配送"
+              desc="輸入今日央廚配送總金額，可從收據自動同步。" />}
+
             <SectionCard icon={<Package className="h-4 w-4" />} title="央廚配送" subtitle="配送總金額（月底結帳用）" iconColor="#f97316">
               {!isLocked && (
                 <div className="flex justify-end mb-3">
@@ -1246,7 +1255,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           </>
         )}
 
-        {/* ── STEP 2: 手寫菜單 ─────────────────────────────────────────── */}
+        {/* ── STEP 3: 手寫菜單 ─────────────────────────────────────────── */}
         {(stepId === 'handwrite' || isLocked) && store.mode !== 'ichef' && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="手寫菜單訂單"
