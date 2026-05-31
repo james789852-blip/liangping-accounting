@@ -430,9 +430,14 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
   const thisYear = parseInt(todayStr.slice(0, 4))
   const years = Array.from({ length: thisYear - 2023 }, (_, i) => 2024 + i)
 
-  // 解析目前月份選擇（用於 dropdown）
-  const monthForDropdown = currentMonth || currentDate.slice(0, 7) || todayStr.slice(0, 7)
-  const [selYear, selMon] = monthForDropdown.split('-').map(Number)
+  // 解析目前選擇（用於 dropdown）
+  const refDate = currentDate || (currentMonth ? currentMonth + '-01' : todayStr)
+  const [selYear, selMon, selDay] = refDate.split('-').map(Number)
+  // 全月模式下 selDay 為 0（顯示「全月」）
+  const dayMode = isDateMode ? selDay : 0
+
+  // 該月有幾天
+  const daysInMonth = new Date(selYear, selMon, 0).getDate()
 
   function navigateDate(date: string, sid: string) {
     const p = new URLSearchParams()
@@ -448,10 +453,39 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
     startTransition(() => router.push(`/hq/closings?${p.toString()}`))
   }
 
+  function handleYearChange(newYear: number) {
+    const month = `${newYear}-${String(selMon).padStart(2, '0')}`
+    if (dayMode > 0) {
+      const maxDay = new Date(newYear, selMon, 0).getDate()
+      const d = Math.min(dayMode, maxDay)
+      navigateDate(`${month}-${String(d).padStart(2, '0')}`, storeId)
+    } else {
+      navigateMonth(month, storeId)
+    }
+  }
+
+  function handleMonthChange(newMon: number) {
+    const month = `${selYear}-${String(newMon).padStart(2, '0')}`
+    if (dayMode > 0) {
+      const maxDay = new Date(selYear, newMon, 0).getDate()
+      const d = Math.min(dayMode, maxDay)
+      navigateDate(`${month}-${String(d).padStart(2, '0')}`, storeId)
+    } else {
+      navigateMonth(month, storeId)
+    }
+  }
+
+  function handleDayChange(newDay: number) {
+    if (newDay === 0) {
+      navigateMonth(`${selYear}-${String(selMon).padStart(2, '0')}`, storeId)
+    } else {
+      navigateDate(`${selYear}-${String(selMon).padStart(2, '0')}-${String(newDay).padStart(2, '0')}`, storeId)
+    }
+  }
+
   const filtered = statusFilter === 'all' ? closings : closings.filter(c => c.status === statusFilter)
   const pendingCount = closings.filter(c => c.status === 'submitted').length
 
-  // 顯示標籤
   const rangeLabel = isDateMode
     ? (currentDate === todayStr ? '今天' : currentDate)
     : `${selYear} 年 ${selMon} 月`
@@ -479,7 +513,7 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
         {/* 年份下拉 */}
         <select
           value={selYear}
-          onChange={e => navigateMonth(`${e.target.value}-${String(selMon).padStart(2, '0')}`, storeId)}
+          onChange={e => handleYearChange(parseInt(e.target.value))}
           style={{ height: '40px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '14px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b' }}>
           {years.map(y => <option key={y} value={y}>{y} 年</option>)}
         </select>
@@ -487,10 +521,21 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
         {/* 月份下拉 */}
         <select
           value={selMon}
-          onChange={e => navigateMonth(`${selYear}-${String(e.target.value).padStart(2, '0')}`, storeId)}
+          onChange={e => handleMonthChange(parseInt(e.target.value))}
           style={{ height: '40px', padding: '0 10px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '14px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b', minWidth: '80px' }}>
           {Array.from({ length: 12 }, (_, i) => i + 1).map(mo => (
             <option key={mo} value={mo}>{mo} 月</option>
+          ))}
+        </select>
+
+        {/* 日期下拉 */}
+        <select
+          value={dayMode}
+          onChange={e => handleDayChange(parseInt(e.target.value))}
+          style={{ height: '40px', padding: '0 10px', border: `1.5px solid ${dayMode > 0 ? '#c7d2fe' : '#e4e4e7'}`, borderRadius: '12px', fontSize: '14px', outline: 'none', background: dayMode > 0 ? '#eef2ff' : 'white', fontFamily: 'inherit', color: dayMode > 0 ? '#4338ca' : '#18181b', minWidth: '80px' }}>
+          <option value={0}>全月</option>
+          {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => (
+            <option key={d} value={d}>{d} 日</option>
           ))}
         </select>
 
