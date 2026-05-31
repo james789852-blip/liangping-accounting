@@ -82,7 +82,7 @@ export async function deleteClosingDraft(closingId: string) {
 
   revalidatePath('/manager/history')
   revalidatePath('/manager/dashboard')
-  redirect('/manager/history')
+  return { success: true }
 }
 
 export async function deleteClosing(closingId: string) {
