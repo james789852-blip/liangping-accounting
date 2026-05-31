@@ -353,7 +353,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [editingReceiptId, setEditingReceiptId] = useState<string | null>(null)
   const [editVendor, setEditVendor] = useState('')
   const [editAmount, setEditAmount] = useState(0)
+  const [editCategory, setEditCategory] = useState('')
   const [editItems, setEditItems] = useState<{ item_name: string; amount: number }[]>([])
+  const [photoLightbox, setPhotoLightbox] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [receiptForms, setReceiptForms] = useState<ReceiptForm[]>([])
   const [aiItems, setAiItems] = useState<AIItem[]>([])
@@ -492,7 +494,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (!oldReceipt) return
     const validItems = editItems.filter(i => i.item_name.trim())
     const updatedReceipts = localReceipts.map(r =>
-      r.id === editingReceiptId ? { ...r, vendor_name: editVendor, total_amount: editAmount, receipt_items: validItems } : r
+      r.id === editingReceiptId ? { ...r, vendor_name: editVendor, total_amount: editAmount, receipt_type: editCategory || r.receipt_type, receipt_items: validItems } : r
     )
     setLocalReceipts(updatedReceipts)
     const oldKey = oldReceipt.vendor_name || '（未填廠商）'
@@ -502,7 +504,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const ckTotal = updatedReceipts.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
     set('ck_total', ckTotal)
     const supabase = createClient()
-    await supabase.from('receipts').update({ vendor_name: editVendor, total_amount: editAmount }).eq('id', editingReceiptId)
+    await supabase.from('receipts').update({ vendor_name: editVendor, total_amount: editAmount, receipt_type: editCategory || undefined }).eq('id', editingReceiptId)
     await supabase.from('receipt_items').delete().eq('receipt_id', editingReceiptId)
     if (validItems.length > 0) {
       await supabase.from('receipt_items').insert(
@@ -935,6 +937,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
 
+      {/* 照片 Lightbox */}
+      {photoLightbox && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.9)' }} onClick={() => setPhotoLightbox(null)}>
+          <button className="absolute top-4 right-4 p-2 rounded-full" style={{ background: 'rgba(255,255,255,0.15)' }}>
+            <X className="h-6 w-6 text-white" />
+          </button>
+          <img src={photoLightbox} alt="receipt"
+            className="max-w-[95vw] max-h-[92vh] object-contain rounded-xl"
+            onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+
       {/* Sticky header + stepper */}
       <div className="bg-white sticky top-0 z-50" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #f4f4f5' }}>
@@ -1224,6 +1239,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               value={editAmount || ''} placeholder="金額"
                               onChange={e => setEditAmount(parseInt(e.target.value) || 0)} />
                           </div>
+                          <select value={editCategory}
+                            onChange={e => setEditCategory(e.target.value)}
+                            style={{ width: '100%', padding: '9px 12px', border: '1.5px solid #c7d2fe', borderRadius: '10px', fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}>
+                            <option value="">— 類別 —</option>
+                            {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
                           <div className="flex gap-2">
                             <button onClick={handleSaveReceiptEdit} disabled={!editVendor.trim()}
                               className="flex-1 py-2 rounded-xl text-xs font-bold text-white"
@@ -1244,9 +1265,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         style={{ border: `1px solid ${isCK ? '#fed7aa' : '#f4f4f5'}`, background: isCK ? '#fff7ed' : 'white' }}>
                         <div className="flex items-center gap-3 px-3 py-2.5">
                           {r.photo_url ? (
-                            <img src={r.photo_url} alt="receipt"
-                              className="h-12 w-12 object-cover rounded-lg shrink-0"
-                              style={{ border: '1px solid #f4f4f5' }} />
+                            <button onClick={() => setPhotoLightbox(r.photo_url!)}
+                              className="h-12 w-12 rounded-lg overflow-hidden shrink-0 transition-opacity hover:opacity-80"
+                              style={{ border: '1px solid #f4f4f5', padding: 0 }}>
+                              <img src={r.photo_url} alt="receipt" className="w-full h-full object-cover" />
+                            </button>
                           ) : (
                             <div className="h-12 w-12 rounded-lg flex items-center justify-center shrink-0"
                               style={{ background: isCK ? '#ffedd5' : '#f4f4f5' }}>
@@ -1267,7 +1290,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           </p>
                           {!isLocked && (
                             <div className="flex gap-1 shrink-0">
-                              <button onClick={() => { setEditingReceiptId(r.id); setEditVendor(r.vendor_name || ''); setEditAmount(r.total_amount); setEditItems((r.receipt_items ?? []).map(i => ({ item_name: i.item_name, amount: i.amount }))) }}
+                              <button onClick={() => { setEditingReceiptId(r.id); setEditVendor(r.vendor_name || ''); setEditAmount(r.total_amount); setEditCategory(r.receipt_type || ''); setEditItems((r.receipt_items ?? []).map(i => ({ item_name: i.item_name, amount: i.amount }))) }}
                                 className="p-1.5 rounded-lg" style={{ background: '#f4f4f5', color: '#52525b' }}>
                                 <Pencil className="h-3.5 w-3.5" />
                               </button>
