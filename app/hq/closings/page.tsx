@@ -5,10 +5,14 @@ import ClosingsBrowser from '@/components/hq/closings-browser'
 
 export const dynamic = 'force-dynamic'
 
+function getTaipeiDate() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
+}
+
 export default async function ClosingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; storeId?: string }>
+  searchParams: Promise<{ month?: string; date?: string; storeId?: string }>
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -23,11 +27,28 @@ export default async function ClosingsPage({
   const canReview = ['經理', '總監', '老闆'].includes(profile.role ?? '')
 
   const params = await searchParams
-  const now = new Date()
-  const month = params.month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const [y, m] = month.split('-')
-  const startDate = `${y}-${m}-01`
-  const endDate = new Date(parseInt(y), parseInt(m), 0).toISOString().slice(0, 10)
+  const now = getTaipeiDate()
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+  // 日期模式：date 優先，再 month，預設今天
+  let startDate: string
+  let endDate: string
+  let currentDate = params.date ?? ''
+  let currentMonth = params.month ?? ''
+
+  if (currentDate) {
+    startDate = currentDate
+    endDate = currentDate
+  } else if (currentMonth) {
+    const [y, m] = currentMonth.split('-')
+    startDate = `${y}-${m}-01`
+    endDate = new Date(parseInt(y), parseInt(m), 0).toISOString().slice(0, 10)
+  } else {
+    // 預設：今天
+    startDate = todayStr
+    endDate = todayStr
+    currentDate = todayStr
+  }
 
   const admin = createAdminClient()
 
@@ -123,7 +144,9 @@ export default async function ClosingsPage({
           receiptsByClosing={receiptsByClosing}
           videosByClosing={videosByClosing}
           stores={stores ?? []}
-          month={month}
+          currentDate={currentDate}
+          currentMonth={currentMonth}
+          todayStr={todayStr}
           storeId={params.storeId ?? ''}
           canReview={canReview}
           submitterNames={submitterNames}

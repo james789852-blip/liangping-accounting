@@ -26,7 +26,9 @@ interface Props {
   receiptsByClosing: Record<string, ReceiptRow[]>
   videosByClosing: Record<string, VideoRow>
   stores: Store[]
-  month: string
+  currentDate: string
+  currentMonth: string
+  todayStr: string
   storeId: string
   canReview: boolean
   submitterNames: Record<string, string>
@@ -415,36 +417,94 @@ function ClosingCard({
   )
 }
 
-export default function ClosingsBrowser({ closings, receiptsByClosing, videosByClosing, stores, month, storeId, canReview, submitterNames }: Props) {
+export default function ClosingsBrowser({ closings, receiptsByClosing, videosByClosing, stores, currentDate, currentMonth, todayStr, storeId, canReview, submitterNames }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [statusFilter, setStatusFilter] = useState('all')
 
-  function navigate(newMonth: string, newStoreId: string) {
-    const params = new URLSearchParams()
-    if (newMonth) params.set('month', newMonth)
-    if (newStoreId) params.set('storeId', newStoreId)
-    startTransition(() => router.push(`/hq/closings?${params.toString()}`))
+  // 判斷目前模式：date（單日）或 month（整月）
+  const isDateMode = !!currentDate && !currentMonth
+  const isMonthMode = !!currentMonth
+
+  // 年份選項（2024 到今年 + 1）
+  const thisYear = parseInt(todayStr.slice(0, 4))
+  const years = Array.from({ length: thisYear - 2023 }, (_, i) => 2024 + i)
+
+  // 解析目前月份選擇（用於 dropdown）
+  const monthForDropdown = currentMonth || currentDate.slice(0, 7) || todayStr.slice(0, 7)
+  const [selYear, selMon] = monthForDropdown.split('-').map(Number)
+
+  function navigateDate(date: string, sid: string) {
+    const p = new URLSearchParams()
+    if (date) p.set('date', date)
+    if (sid) p.set('storeId', sid)
+    startTransition(() => router.push(`/hq/closings?${p.toString()}`))
+  }
+
+  function navigateMonth(month: string, sid: string) {
+    const p = new URLSearchParams()
+    if (month) p.set('month', month)
+    if (sid) p.set('storeId', sid)
+    startTransition(() => router.push(`/hq/closings?${p.toString()}`))
   }
 
   const filtered = statusFilter === 'all' ? closings : closings.filter(c => c.status === statusFilter)
   const pendingCount = closings.filter(c => c.status === 'submitted').length
-  const [y, m] = month.split('-')
+
+  // 顯示標籤
+  const rangeLabel = isDateMode
+    ? (currentDate === todayStr ? '今天' : currentDate)
+    : `${selYear} 年 ${selMon} 月`
+
+  const isToday = isDateMode && currentDate === todayStr
 
   return (
     <div className="space-y-4">
       {/* 篩選器 */}
       <div className="flex gap-2 flex-wrap items-center">
-        <input type="month" defaultValue={month}
-          onChange={e => navigate(e.target.value, storeId)}
-          style={{ height: '40px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '14px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b' }} />
+
+        {/* 今天按鈕 */}
+        <button
+          onClick={() => navigateDate(todayStr, storeId)}
+          className="px-3 h-10 rounded-xl text-sm font-semibold transition-all"
+          style={{
+            background: isToday ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'white',
+            color: isToday ? 'white' : '#52525b',
+            border: `1.5px solid ${isToday ? 'transparent' : '#e4e4e7'}`,
+            boxShadow: isToday ? '0 2px 8px rgba(99,102,241,0.3)' : 'none',
+          }}>
+          今天
+        </button>
+
+        {/* 年份下拉 */}
+        <select
+          value={selYear}
+          onChange={e => navigateMonth(`${e.target.value}-${String(selMon).padStart(2, '0')}`, storeId)}
+          style={{ height: '40px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '14px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b' }}>
+          {years.map(y => <option key={y} value={y}>{y} 年</option>)}
+        </select>
+
+        {/* 月份下拉 */}
+        <select
+          value={selMon}
+          onChange={e => navigateMonth(`${selYear}-${String(e.target.value).padStart(2, '0')}`, storeId)}
+          style={{ height: '40px', padding: '0 10px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '14px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b', minWidth: '80px' }}>
+          {Array.from({ length: 12 }, (_, i) => i + 1).map(mo => (
+            <option key={mo} value={mo}>{mo} 月</option>
+          ))}
+        </select>
+
+        {/* 店家 */}
         {stores.length > 1 && (
-          <select defaultValue={storeId} onChange={e => navigate(month, e.target.value)}
+          <select
+            defaultValue={storeId}
+            onChange={e => isDateMode ? navigateDate(currentDate, e.target.value) : navigateMonth(currentMonth, e.target.value)}
             style={{ height: '40px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '14px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b', minWidth: '110px' }}>
             <option value="">全部店家</option>
             {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         )}
+
         {/* 狀態快篩 */}
         {(['all', 'submitted', 'verified', 'disputed'] as const).map(s => {
           const labels: Record<string, string> = { all: `全部 ${closings.length}`, submitted: `待審 ${pendingCount}`, verified: '已審', disputed: '退回' }
@@ -467,7 +527,7 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
         <div className="text-center py-16 bg-white rounded-2xl" style={{ border: '1px solid #f4f4f5' }}>
           <Search className="h-10 w-10 mx-auto mb-3" style={{ color: '#d4d4d8' }} />
           <p className="text-sm font-medium" style={{ color: '#52525b' }}>
-            {y} 年 {parseInt(m)} 月尚無{statusFilter !== 'all' ? '符合的' : ''}帳目
+            {rangeLabel}尚無{statusFilter !== 'all' ? '符合的' : ''}帳目
           </p>
         </div>
       ) : (
