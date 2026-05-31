@@ -39,7 +39,7 @@ export default async function ClosingsPage({
     .select(`
       id, business_date, status, note, dispute_note,
       total_revenue, total_cost, total_expenses, expected_remit, variance,
-      ck_delivery_photo_url,
+      ck_delivery_photo_url, channel_photo_urls,
       stores(id, name),
       revenue_items(channel, account_name, gross_amount),
       order_items(item_name, quantity, unit_price, total_amount),
