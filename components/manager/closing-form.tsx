@@ -450,7 +450,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setCkPhotoPreview(URL.createObjectURL(file))
     const supabase = createClient()
     const ext = file.name.split('.').pop() || 'jpg'
-    const path = `ck-delivery/${store.id}/${today}.${ext}`
+    const path = `receipts/${store.id}/ck-delivery/${today}.${ext}`
     const { error } = await supabase.storage.from('receipts').upload(path, file, { upsert: true })
     if (error) { toast.error('照片上傳失敗'); return }
     const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(path)
@@ -692,7 +692,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
     const supabase = createClient()
     const ext = file.name.split('.').pop() || 'jpg'
-    const path = `revenue-photos/${store.id}/${today}/${key}.${ext}`
+    const path = `receipts/${store.id}/revenue/${today}/${key}.${ext}`
     const { error: upErr } = await supabase.storage.from('receipts').upload(path, file, { upsert: true })
     if (upErr) {
       toast.error('照片上傳失敗')
