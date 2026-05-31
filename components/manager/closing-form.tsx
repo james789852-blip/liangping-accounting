@@ -383,6 +383,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [ckPhotoPreview, setCkPhotoPreview] = useState<string | undefined>(undefined)
   const [ckPhotoUrl, setCkPhotoUrl] = useState<string | undefined>(existingClosing?.ck_delivery_photo_url ?? undefined)
   const ckPhotoInputRef = useRef<HTMLInputElement>(null)
+  const [videoUploaded, setVideoUploaded] = useState(false)
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
   const [currentStep, setCurrentStep] = useState(0)
   const [submitDone, setSubmitDone] = useState(false)
@@ -899,6 +900,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         toast.error(`請先儲存 ${receiptForms.length} 筆未儲存的收據`)
         return
       }
+    }
+    if (stepId === 'handwrite' && !isLocked && !videoUploaded) {
+      toast.error('請先上傳今日手寫菜單影片')
+      return
     }
     if (stepId === 'ai_verify' && !isLocked) {
       const unresolved = aiItems.filter(a => !a.matched && !a.accepted)
@@ -1464,8 +1469,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   : null}
             </SectionCard>
 
-            <SectionCard icon={<Video className="h-4 w-4" />} title="今日菜單影片" subtitle="上傳今日菜單影片（選填）" iconColor="#3b82f6">
-              <VideoUploader storeId={store.id} businessDate={today} userId={userId} disabled={isLocked} />
+            <SectionCard icon={<Video className="h-4 w-4" />} title="今日菜單影片" subtitle="必填：上傳今日菜單錄影（約 10 分鐘）" iconColor="#3b82f6">
+              <VideoUploader storeId={store.id} businessDate={today} userId={userId} disabled={isLocked} onStatusChange={setVideoUploaded} />
             </SectionCard>
           </>
         )}

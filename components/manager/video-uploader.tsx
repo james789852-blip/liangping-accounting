@@ -11,12 +11,12 @@ interface Props {
   businessDate: string
   userId: string
   disabled?: boolean
+  onStatusChange?: (hasVideo: boolean) => void
 }
 
 const BUCKET = 'menu-videos'
-const MAX_MB = 500
 
-export default function VideoUploader({ storeId, businessDate, userId, disabled }: Props) {
+export default function VideoUploader({ storeId, businessDate, userId, disabled, onStatusChange }: Props) {
   const [existing, setExisting] = useState<{ id: string; file_path: string; file_name: string } | null>(null)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -36,17 +36,15 @@ export default function VideoUploader({ storeId, businessDate, userId, disabled 
       setExisting(data)
       const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(data.file_path, 3600)
       setVideoUrl(signed?.signedUrl ?? null)
+      onStatusChange?.(true)
     } else {
       setExisting(null)
       setVideoUrl(null)
+      onStatusChange?.(false)
     }
   }
 
   async function handleFile(file: File) {
-    if (file.size > MAX_MB * 1024 * 1024) {
-      toast.error(`檔案過大，最大支援 ${MAX_MB}MB`)
-      return
-    }
     const ext = file.name.split('.').pop() ?? 'mp4'
     const filePath = `${storeId}/${businessDate}/${Date.now()}.${ext}`
     setUploading(true)
@@ -67,6 +65,7 @@ export default function VideoUploader({ storeId, businessDate, userId, disabled 
       })
       if (dbErr) throw dbErr
       toast.success('影片上傳成功')
+      onStatusChange?.(true)
       await loadExisting()
     } catch (err: any) {
       toast.error('上傳失敗：' + err.message)
@@ -82,6 +81,7 @@ export default function VideoUploader({ storeId, businessDate, userId, disabled 
     await supabase.from('menu_videos').delete().eq('id', existing.id)
     setExisting(null)
     setVideoUrl(null)
+    onStatusChange?.(false)
     toast.success('影片已刪除')
   }
 
@@ -130,7 +130,7 @@ export default function VideoUploader({ storeId, businessDate, userId, disabled 
             <>
               <Upload className="h-6 w-6" />
               <span className="text-sm">點擊上傳今日菜單影片</span>
-              <span className="text-xs opacity-60">mp4、mov 等格式，最大 {MAX_MB}MB</span>
+              <span className="text-xs opacity-60">mp4、mov 等格式，無容量限制</span>
             </>
           )}
         </button>

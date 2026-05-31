@@ -33,10 +33,9 @@ const hqSections = [
   {
     label: '帳目',
     items: [
-      { href: '/hq/closings',  label: '帳目瀏覽',   icon: BookOpen },
-      { href: '/hq/reviews',   label: '審核中心',   icon: CheckSquare },
-      { href: '/hq/dashboard', label: '即時儀表板', icon: LayoutDashboard },
-      { href: '/hq/stores',    label: '店家管理',   icon: Store },
+      { href: '/hq/closings',  label: '帳目瀏覽・審核', icon: BookOpen },
+      { href: '/hq/dashboard', label: '即時儀表板',     icon: LayoutDashboard },
+      { href: '/hq/stores',    label: '店家管理',       icon: Store },
     ],
   },
   {
@@ -60,10 +59,10 @@ const managerSections = [
 ]
 
 const mobileHQTabs = [
-  { href: '/hq/closings',  label: '帳目',  icon: BookOpen },
-  { href: '/hq/reviews',   label: '審核',  icon: CheckSquare },
-  { href: '/hq/dashboard', label: '儀表板', icon: LayoutDashboard },
-  { href: '/hq/ck-prices', label: '央廚',  icon: Package },
+  { href: '/hq/closings',  label: '帳目審核', icon: BookOpen },
+  { href: '/hq/dashboard', label: '儀表板',   icon: LayoutDashboard },
+  { href: '/hq/stores',    label: '店家',     icon: Store },
+  { href: '/hq/ck-prices', label: '央廚',     icon: Package },
 ]
 const mobileManagerTabs = [
   { href: '/manager/dashboard',  label: '今日結帳', icon: ClipboardList },
