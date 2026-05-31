@@ -359,6 +359,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [aiItems, setAiItems] = useState<AIItem[]>([])
   const [aiRunning, setAiRunning] = useState(false)
   const [aiTriggered, setAiTriggered] = useState(false)
+  const STORAGE_KEY = `receipt-categories-${store.id}`
+  const [customCategories, setCustomCategories] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]') } catch { return [] }
+  })
+  const [addingCatForId, setAddingCatForId] = useState<string | null>(null)
+  const [newCatText, setNewCatText] = useState('')
+  const allCategories = [...RECEIPT_CATEGORIES, ...customCategories]
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
   const [currentStep, setCurrentStep] = useState(0)
   const [submitDone, setSubmitDone] = useState(false)
@@ -520,6 +527,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   function updateReceiptForm(id: string, field: keyof ReceiptForm, value: any) {
     setReceiptForms(prev => prev.map(f => f.id === id ? { ...f, [field]: value } : f))
+  }
+
+  function confirmNewCategory(formId: string) {
+    const cat = newCatText.trim()
+    if (!cat) { setAddingCatForId(null); setNewCatText(''); return }
+    if (!allCategories.includes(cat)) {
+      const updated = [...customCategories, cat]
+      setCustomCategories(updated)
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(updated)) } catch {}
+    }
+    updateReceiptForm(formId, 'category', cat)
+    setAddingCatForId(null)
+    setNewCatText('')
   }
 
   function removeReceiptForm(id: string) {
@@ -999,11 +1019,34 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         {/* 類別 */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>類別</label>
-                          <select value={form.category} onChange={e => updateReceiptForm(form.id, 'category', e.target.value)}
-                            style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
-                            <option value="">— 選擇 —</option>
-                            {RECEIPT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
+                          {addingCatForId === form.id ? (
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <input autoFocus placeholder="輸入新類別"
+                                style={{ flex: 1, padding: '8px 10px', border: '1.5px solid #6366f1', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
+                                value={newCatText}
+                                onChange={e => setNewCatText(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') confirmNewCategory(form.id); if (e.key === 'Escape') { setAddingCatForId(null); setNewCatText('') } }} />
+                              <button onClick={() => confirmNewCategory(form.id)}
+                                style={{ padding: '6px 10px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                ✓
+                              </button>
+                              <button onClick={() => { setAddingCatForId(null); setNewCatText('') }}
+                                style={{ padding: '6px 10px', background: '#f4f4f5', color: '#52525b', border: 'none', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <select value={form.category}
+                              onChange={e => {
+                                if (e.target.value === '__new__') { setAddingCatForId(form.id); setNewCatText('') }
+                                else updateReceiptForm(form.id, 'category', e.target.value)
+                              }}
+                              style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
+                              <option value="">— 選擇 —</option>
+                              {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                              <option value="__new__">＋ 新增類別</option>
+                            </select>
+                          )}
                         </div>
 
                         {/* 廠商 */}
