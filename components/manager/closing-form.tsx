@@ -1133,7 +1133,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         {/* 備註 */}
                         <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>備註（可空）</label>
-                          <input placeholder="例：本週菜價漲"
+                          <input placeholder=""
                             style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
                             value={form.notes}
                             onChange={e => updateReceiptForm(form.id, 'notes', e.target.value)} />
