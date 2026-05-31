@@ -6,10 +6,9 @@ import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, CheckSquare,
-  Store, FileSpreadsheet, Shield,
-  Settings, Users, LogOut,
-  ClipboardList, FileText, History, LineChart,
-  ArrowRightLeft, Package,
+  Store, Users, LogOut,
+  ClipboardList, History, LineChart,
+  ArrowRightLeft, Package, BookOpen,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
@@ -32,27 +31,19 @@ function useClock() {
 
 const hqSections = [
   {
-    label: '營運',
+    label: '帳目',
     items: [
-      { href: '/hq/dashboard', label: '即時儀表板', icon: LayoutDashboard },
+      { href: '/hq/closings',  label: '帳目瀏覽',   icon: BookOpen },
       { href: '/hq/reviews',   label: '審核中心',   icon: CheckSquare },
+      { href: '/hq/dashboard', label: '即時儀表板', icon: LayoutDashboard },
       { href: '/hq/stores',    label: '店家管理',   icon: Store },
-    ],
-  },
-  {
-    label: '分析',
-    items: [
-      { href: '/hq/excel',         label: 'Excel 匯出', icon: FileSpreadsheet },
-      { href: '/hq/audit',         label: '稽核中心',   icon: Shield },
-      { href: '/hq/item-mappings', label: '品項對應',   icon: FileText },
     ],
   },
   {
     label: '設定',
     items: [
       { href: '/hq/ck-prices', label: '央廚單價', icon: Package },
-      { href: '/hq/settings', label: '系統設定', icon: Settings },
-      { href: '/hq/users',    label: '帳號管理', icon: Users },
+      { href: '/hq/users',     label: '帳號管理', icon: Users },
     ],
   },
 ]
@@ -69,10 +60,10 @@ const managerSections = [
 ]
 
 const mobileHQTabs = [
+  { href: '/hq/closings',  label: '帳目',  icon: BookOpen },
+  { href: '/hq/reviews',   label: '審核',  icon: CheckSquare },
   { href: '/hq/dashboard', label: '儀表板', icon: LayoutDashboard },
-  { href: '/hq/reviews',   label: '審核',   icon: CheckSquare },
-  { href: '/hq/stores',    label: '店家',   icon: Store },
-  { href: '/hq/settings',  label: '設定',   icon: Settings },
+  { href: '/hq/ck-prices', label: '央廚',  icon: Package },
 ]
 const mobileManagerTabs = [
   { href: '/manager/dashboard',  label: '今日結帳', icon: ClipboardList },

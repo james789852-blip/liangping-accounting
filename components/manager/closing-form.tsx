@@ -765,6 +765,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         expected_remit: s.netToHQ, actual_remit: s.actualRemit,
         should_include_delivery: s.shouldEnvelope, variance: s.variance, note: d.note,
         ck_delivery_photo_url: ckPhotoUrl ?? null,
+        channel_photo_urls: Object.fromEntries(
+          Object.entries(channelPhotos)
+            .filter(([, v]) => v.publicUrl)
+            .map(([k, v]) => [k, v.publicUrl])
+        ),
       }
       if (!cid) {
         const { data: nc, error } = await supabase.from('daily_closings').insert(payload).select('id').single()
