@@ -108,14 +108,9 @@ export default async function ManagerDashboard() {
                 {dateLabel} · {weekdayLabel}
               </p>
 
-              <h2 style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: storeName ? '6px' : '16px' }}>
-                今日結帳
+              <h2 style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '16px' }}>
+                {storeName || '今日結帳'}
               </h2>
-              {storeName && (
-                <p className="mb-4" style={{ fontSize: '14px', opacity: 0.85, fontWeight: 600 }}>
-                  {storeName}
-                </p>
-              )}
 
               {/* 進度條 */}
               <div className="rounded-full overflow-hidden mb-2" style={{ background: 'rgba(255,255,255,0.2)', height: '6px' }}>
