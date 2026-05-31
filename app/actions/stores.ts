@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
 interface StoreSettings {
@@ -12,23 +13,30 @@ interface StoreSettings {
   twpay_enabled: boolean
   online_enabled: boolean
   petty_cash: number
+  name?: string
+}
+
+async function requireManager() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { user: null, profile: null, error: '未登入' as string }
+  const { data: profile } = await supabase
+    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
+  if (!profile || !['經理', '總監', '老闆'].includes(profile.role ?? '')) {
+    return { user: null, profile: null, error: '權限不足，僅限經理以上操作' as string }
+  }
+  return { user, profile, error: null }
 }
 
 export async function updateStoreSettings(storeId: string, settings: StoreSettings) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
+  const { profile, error } = await requireManager()
+  if (error) return { error }
 
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role').eq('user_id', user.id).single()
-
-  if (!profile || !['經理', '總監', '老闆'].includes(profile.role)) {
-    return { error: '權限不足，僅限經理以上操作' }
-  }
-
-  const { error } = await supabase
+  const admin = createAdminClient()
+  const { error: dbErr } = await admin
     .from('stores')
     .update({
+      ...(settings.name ? { name: settings.name.trim() } : {}),
       mode: settings.mode,
       ichef_uber_linked: settings.ichef_uber_linked,
       uber_enabled: settings.uber_enabled,
@@ -40,11 +48,31 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
     })
     .eq('id', storeId)
 
-  if (error) return { error: error.message }
+  if (dbErr) return { error: dbErr.message }
 
   revalidatePath('/hq/stores')
   revalidatePath('/manager', 'layout')
   revalidatePath('/manager/closing')
-
   return { success: true }
+}
+
+export async function createStore(name: string, mode: string) {
+  const { error } = await requireManager()
+  if (error) return { error }
+
+  const trimmed = name.trim()
+  if (!trimmed) return { error: '請填寫店家名稱' }
+
+  const admin = createAdminClient()
+  const { data, error: dbErr } = await admin
+    .from('stores')
+    .insert({ name: trimmed, mode, active: true })
+    .select('id')
+    .single()
+
+  if (dbErr) return { error: dbErr.message }
+
+  revalidatePath('/hq/stores')
+  revalidatePath('/manager', 'layout')
+  return { success: true, id: data.id }
 }

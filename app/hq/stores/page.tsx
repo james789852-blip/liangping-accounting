@@ -1,7 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { Store as StoreIcon } from 'lucide-react'
 import StoreEditor from '@/components/hq/store-editor'
+import AddStoreForm from '@/components/hq/add-store-form'
+
+export const dynamic = 'force-dynamic'
 
 export default async function StoresPage() {
   const supabase = await createClient()
@@ -9,20 +13,29 @@ export default async function StoresPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, store_ids').eq('user_id', user.id).single()
+    .from('user_profiles').select('role, is_hq, store_ids').eq('user_id', user.id).single()
 
-  if (!profile?.store_ids?.length) {
-    return <div className="p-6" style={{ color: '#a1a1aa' }}>尚未指派店家</div>
+  if (!profile?.is_hq && !['老闆', '經理', '總監'].includes(profile?.role ?? '')) {
+    return <div className="p-6" style={{ color: '#be123c' }}>權限不足</div>
   }
 
-  const { data: stores } = await supabase
+  const canEdit = ['老闆', '經理', '總監'].includes(profile?.role ?? '')
+  const isAdmin = profile?.is_hq || profile?.role === '老闆'
+
+  const admin = createAdminClient()
+
+  // 老闆 / is_hq 看全部店家，其他只看自己負責的
+  let query = admin
     .from('stores')
     .select('id, name, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, petty_cash')
     .eq('active', true)
-    .in('id', profile.store_ids)
     .order('name')
 
-  const canEdit = ['經理', '總監'].includes(profile.role ?? '')
+  if (!isAdmin && profile?.store_ids?.length) {
+    query = query.in('id', profile.store_ids) as typeof query
+  }
+
+  const { data: stores } = await query
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -46,6 +59,9 @@ export default async function StoresPage() {
             canEdit={canEdit}
           />
         ))}
+
+        {canEdit && <AddStoreForm />}
+
         {!canEdit && (
           <p className="text-xs text-center pt-2" style={{ color: '#a1a1aa' }}>顧問角色僅可檢視，無法修改設定</p>
         )}
