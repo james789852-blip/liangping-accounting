@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { uploadToStorage } from '@/app/actions/upload'
+import { createSignedUploadUrl } from '@/app/actions/upload'
 import { toast } from 'sonner'
 import { Video, Upload, Loader2, Trash2, RefreshCw, CheckCircle2 } from 'lucide-react'
 
@@ -67,10 +67,14 @@ export default function VideoUploader({ storeId, businessDate, userId, disabled,
         setExisting(null)
       }
 
-      const fd = new FormData()
-      fd.append('file', file)
-      const result = await uploadToStorage(fd, BUCKET, filePath)
-      if ('error' in result) throw new Error(result.error)
+      // 向 server 取得 signed upload URL，再由 client 直接上傳（繞過 Next.js body limit）
+      const urlResult = await createSignedUploadUrl(BUCKET, filePath)
+      if ('error' in urlResult) throw new Error(urlResult.error)
+
+      const { error: uploadError } = await supabase.storage
+        .from(BUCKET)
+        .uploadToSignedUrl(filePath, urlResult.token, file, { upsert: true })
+      if (uploadError) throw uploadError
 
       const { error: dbErr } = await supabase.from('menu_videos').insert({
         store_id: storeId, business_date: businessDate,

@@ -17,3 +17,14 @@ export async function uploadToStorage(
   const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(path)
   return { publicUrl }
 }
+
+// 產生 signed upload URL，讓 client 直接上傳大檔案到 Storage（不經過 Next.js）
+export async function createSignedUploadUrl(
+  bucket: string,
+  path: string
+): Promise<{ signedUrl: string; token: string } | { error: string }> {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase.storage.from(bucket).createSignedUploadUrl(path)
+  if (error) return { error: error.message }
+  return { signedUrl: data.signedUrl, token: data.token }
+}
