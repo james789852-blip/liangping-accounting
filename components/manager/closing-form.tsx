@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
-import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, Video, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, Sparkles, ZoomIn } from 'lucide-react'
+import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, Video, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn } from 'lucide-react'
 import VideoUploader from '@/components/manager/video-uploader'
 import { saveCashCounts } from '@/app/actions/closings'
 import { uploadToStorage } from '@/app/actions/upload'
@@ -50,20 +50,13 @@ interface ReceiptForm {
   uploading: boolean
 }
 
-interface AIItem {
+interface VerifyItem {
   key: string
   type: 'receipt' | 'channel'
   label: string
   photoUrl: string
   inputAmount: number
-  recognized: number
-  matched: boolean
-  accepted: boolean
-  checking: boolean
-  recognizedItems?: { name: string; amount: number }[]
-  itemsSum?: number
-  itemsSumMismatch?: boolean
-  error?: string
+  confirmed: boolean
 }
 
 function isCKReceipt(receipt: TodayReceipt, ckPrices: CKPrice[]): boolean {
@@ -418,10 +411,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [photoLightbox, setPhotoLightbox] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [receiptForms, setReceiptForms] = useState<ReceiptForm[]>([])
-  const [aiItems, setAiItems] = useState<AIItem[]>([])
-  const [aiRunning, setAiRunning] = useState(false)
-  const [aiTriggered, setAiTriggered] = useState(false)
-  const aiVerifiedFingerprintRef = useRef('')
+  const [verifyItems, setVerifyItems] = useState<VerifyItem[]>([])
   const categories = receiptCategories
   const [ckQuantities, setCkQuantities] = useState<Record<string, number>>(() => {
     const result: Record<string, number> = {}
@@ -739,83 +729,24 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     toast.success('已刪除')
   }
 
-  function buildAIFingerprint(): string {
-    const receipts = localReceipts
-      .filter(r => r.photo_url)
-      .map(r => `${r.id}:${Math.round(r.total_amount)}:${r.photo_url}`)
-      .sort().join('|')
-    const channels = Object.entries(channelPhotos)
-      .filter(([, p]) => p.publicUrl && p.status === 'uploaded')
-      .map(([k, p]) => {
-        const amt = k === 'pos' ? dataRef.current.pos_cash
-          : k.startsWith('uber_') ? (dataRef.current.uber_amounts[k.slice(5)] ?? 0)
-          : k === 'panda' ? dataRef.current.panda_amount
-          : k === 'twpay' ? dataRef.current.twpay_amount
-          : k === 'online' ? dataRef.current.online_amount : 0
-        return `${k}:${Math.round(amt)}:${p.publicUrl}`
-      })
-      .sort().join('|')
-    return `${receipts}__${channels}`
-  }
-
-  async function startAIVerification() {
-    setAiTriggered(true)
-    aiVerifiedFingerprintRef.current = buildAIFingerprint()
-    const items: AIItem[] = []
-
+  function buildVerifyItems() {
+    const items: VerifyItem[] = []
     for (const r of localReceipts.filter(r => r.photo_url)) {
-      items.push({ key: r.id, type: 'receipt', label: `${r.vendor_name || '收據'}`, photoUrl: r.photo_url!, inputAmount: r.total_amount, recognized: 0, matched: false, accepted: false, checking: true })
+      items.push({ key: r.id, type: 'receipt', label: r.vendor_name || '收據', photoUrl: r.photo_url!, inputAmount: r.total_amount, confirmed: false })
     }
-
     const channelLabelMap: Record<string, { label: string; amount: number }> = {}
     if (store.mode !== 'handwrite') channelLabelMap['pos'] = { label: store.ichef_uber_linked ? 'iChef 結帳總金額' : 'iChef 現場 POS', amount: dataRef.current.pos_cash }
     ;(store.uber_accounts ?? []).forEach(acc => { channelLabelMap[`uber_${acc}`] = { label: `Uber Eats${(store.uber_accounts ?? []).length > 1 ? ' — ' + acc : ''}`, amount: dataRef.current.uber_amounts[acc] ?? 0 } })
     if (store.panda_enabled) channelLabelMap['panda'] = { label: '熊貓 foodpanda', amount: dataRef.current.panda_amount }
     if (store.twpay_enabled) channelLabelMap['twpay'] = { label: '台灣 Pay', amount: dataRef.current.twpay_amount }
     if (store.online_enabled) channelLabelMap['online'] = { label: '線上點餐', amount: dataRef.current.online_amount }
-
     for (const [key, photo] of Object.entries(channelPhotos)) {
       if (photo.publicUrl && channelLabelMap[key]) {
         const info = channelLabelMap[key]
-        items.push({ key, type: 'channel', label: info.label, photoUrl: photo.publicUrl, inputAmount: info.amount, recognized: 0, matched: false, accepted: false, checking: true })
+        items.push({ key, type: 'channel', label: info.label, photoUrl: photo.publicUrl, inputAmount: info.amount, confirmed: false })
       }
     }
-
-    if (items.length === 0) return
-    setAiItems(items)
-    setAiRunning(true)
-
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i]
-      try {
-        const res = await fetch('/api/recognize-receipt', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageUrl: item.photoUrl, type: item.type }),
-        })
-        const result = await res.json()
-        if (!res.ok) {
-          const errorMsg = result.error ?? '辨識失敗'
-          setAiItems(prev => prev.map((a, idx) => idx === i ? { ...a, recognized: 0, matched: false, checking: false, error: errorMsg } : a))
-          continue
-        }
-        const recognized = result.total_amount ?? 0
-        const diff = Math.abs(recognized - item.inputAmount)
-        const matched = recognized > 0 && diff <= Math.max(item.inputAmount * 0.005, 5)
-        const recognizedItems = (result.items ?? []) as { name: string; amount: number }[]
-        const itemsSum = recognizedItems.length > 0
-          ? recognizedItems.reduce((s, x) => s + (x.amount ?? 0), 0)
-          : undefined
-        const itemsSumMismatch = itemsSum !== undefined && recognized > 0 && Math.abs(itemsSum - recognized) > 1
-        setAiItems(prev => prev.map((a, idx) => idx === i ? { ...a, recognized, matched, checking: false, recognizedItems, itemsSum, itemsSumMismatch, error: undefined } : a))
-      } catch (e: any) {
-        setAiItems(prev => prev.map((a, idx) => idx === i ? { ...a, recognized: 0, matched: false, checking: false, error: '網路錯誤，請稍後重試' } : a))
-      }
-      if (i < items.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 3000))
-      }
-    }
-    setAiRunning(false)
+    setVerifyItems(items)
   }
 
   function openChannelUpload(key: string, amount: number) {
@@ -1024,7 +955,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     { id: 'revenue',   label: '營業額'  },
     { id: 'cash',      label: '現金清點' },
     { id: 'summary',   label: '確認結帳' },
-    { id: 'ai_verify', label: 'AI 核對' },
+    { id: 'ai_verify', label: '照片核對' },
     { id: 'submit',    label: '送出'    },
     { id: 'result',    label: '摘要'    },
     { id: 'petty',     label: '零用金核對' },
@@ -1040,10 +971,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (stepId === 'ai_verify' && !aiTriggered) {
-      startAIVerification()
-    }
-  }, [stepId, aiTriggered])
+    if (stepId === 'ai_verify') buildVerifyItems()
+  }, [stepId])
 
   function goNext() {
     if (stepId === 'receipts' && !isLocked) {
@@ -1057,9 +986,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return
     }
     if (stepId === 'ai_verify' && !isLocked) {
-      const unresolved = aiItems.filter(a => !a.matched && !a.accepted)
-      if (unresolved.length > 0) {
-        toast.error(`尚有 ${unresolved.length} 筆差異未處理，請確認後繼續`)
+      const unconfirmed = verifyItems.filter(v => !v.confirmed)
+      if (unconfirmed.length > 0) {
+        toast.error(`還有 ${unconfirmed.length} 張照片尚未核對，請確認後繼續`)
         return
       }
     }
@@ -2157,215 +2086,105 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
         {/* ── STEP: AI 核對 ────────────────────────────────────────────── */}
         {stepId === 'ai_verify' && (() => {
-          const totalItems = aiItems.length
-          const doneItems = aiItems.filter(a => !a.checking).length
-          const failItems = aiItems.filter(a => !a.checking && !a.matched && !a.accepted)
-          const passItems = aiItems.filter(a => !a.checking && (a.matched || a.accepted))
-          const allDone = totalItems > 0 && doneItems === totalItems
-          const allPass = allDone && failItems.length === 0
-          const isStale = aiTriggered && !aiRunning
-            && aiVerifiedFingerprintRef.current !== ''
-            && buildAIFingerprint() !== aiVerifiedFingerprintRef.current
+          const confirmedCount = verifyItems.filter(v => v.confirmed).length
+          const allConfirmed = verifyItems.length > 0 && confirmedCount === verifyItems.length
 
           return (
             <>
-              <GradientTitle step={stepNum} total={totalSteps} title="AI 智能核對"
-                desc="系統逐一比對所有照片金額與你的輸入，請確認差異後才能送出。" />
+              <GradientTitle step={stepNum} total={totalSteps} title="照片核對"
+                desc="請逐一放大查看每張照片，確認與輸入金額一致後按下「已核對」。" />
 
-              {/* 資料變更警告 */}
-              {isStale && (
-                <div className="rounded-2xl px-4 py-3.5 flex items-center justify-between gap-3"
-                  style={{ background: '#fffbeb', border: '1.5px solid #fcd34d' }}>
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <AlertCircle className="h-4 w-4 shrink-0" style={{ color: '#b45309' }} />
-                    <p className="text-sm font-medium" style={{ color: '#92400e' }}>
-                      偵測到資料已變更（收據或平台截圖有更新），上次核對結果可能不準確
-                    </p>
-                  </div>
-                  <button type="button"
-                    onClick={() => { setAiItems([]); setAiTriggered(false) }}
-                    className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold"
-                    style={{ background: '#f59e0b', color: 'white', border: 'none', cursor: 'pointer' }}>
-                    重新核對
-                  </button>
-                </div>
-              )}
-
-              {/* Hero 橫幅 */}
-              {!aiTriggered || (aiRunning && totalItems === 0) ? (
-                <div className="rounded-3xl p-8 text-center text-white"
-                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ position: 'absolute', top: '-40%', right: '-10%', width: '300px', height: '300px', background: 'radial-gradient(circle,rgba(255,255,255,0.15),transparent)', borderRadius: '50%', pointerEvents: 'none' }} />
-                  <Loader2 className="animate-spin" style={{ width: '80px', height: '80px', color: 'white', margin: '0 auto 16px' }} />
-                  <h2 className="text-2xl font-bold mb-2" style={{ letterSpacing: '-0.01em' }}>準備核對中</h2>
-                  <p className="text-sm" style={{ opacity: 0.9 }}>正在收集今日所有照片…</p>
-                </div>
-              ) : aiRunning ? (
-                <div className="rounded-3xl p-8 text-center text-white"
-                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ position: 'absolute', top: '-40%', right: '-10%', width: '300px', height: '300px', background: 'radial-gradient(circle,rgba(255,255,255,0.15),transparent)', borderRadius: '50%', pointerEvents: 'none' }} />
-                  <Loader2 className="animate-spin" style={{ width: '80px', height: '80px', color: 'white', margin: '0 auto 16px' }} />
-                  <h2 className="text-2xl font-bold mb-2" style={{ letterSpacing: '-0.01em' }}>核對中，請稍候</h2>
-                  <p className="text-sm" style={{ opacity: 0.9 }}>正在比對 {totalItems} 張照片 · 已完成 {doneItems}/{totalItems}</p>
-                  {totalItems > 1 && <p className="text-xs mt-1" style={{ opacity: 0.7 }}>每張間隔 3 秒，避免超出 API 限制（約 {totalItems * 3} 秒）</p>}
-                </div>
-              ) : totalItems === 0 ? (
+              {verifyItems.length === 0 ? (
                 <div className="rounded-3xl p-8 text-center text-white"
                   style={{ background: 'linear-gradient(135deg,#10b981,#06b6d4)', position: 'relative', overflow: 'hidden' }}>
                   <div style={{ position: 'absolute', top: '-40%', right: '-10%', width: '300px', height: '300px', background: 'radial-gradient(circle,rgba(255,255,255,0.15),transparent)', borderRadius: '50%', pointerEvents: 'none' }} />
-                  <div style={{ width: '80px', height: '80px', background: 'rgba(255,255,255,0.2)', borderRadius: '50%', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(10px)' }}>
+                  <div style={{ width: '80px', height: '80px', background: 'rgba(255,255,255,0.2)', borderRadius: '50%', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <CheckCircle2 style={{ width: '44px', height: '44px', color: 'white' }} />
                   </div>
                   <h2 className="text-2xl font-bold mb-2">本次無照片需核對</h2>
                   <p className="text-sm" style={{ opacity: 0.9 }}>可直接送出至總公司</p>
                 </div>
-              ) : allPass ? (
-                <div className="rounded-3xl p-8 text-center text-white"
-                  style={{ background: 'linear-gradient(135deg,#10b981,#06b6d4)', position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ position: 'absolute', top: '-40%', right: '-10%', width: '300px', height: '300px', background: 'radial-gradient(circle,rgba(255,255,255,0.15),transparent)', borderRadius: '50%', pointerEvents: 'none' }} />
-                  <div style={{ width: '80px', height: '80px', background: 'rgba(255,255,255,0.2)', borderRadius: '50%', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(10px)' }}>
-                    <CheckCircle2 style={{ width: '44px', height: '44px', color: 'white' }} />
-                  </div>
-                  <h2 className="text-2xl font-bold mb-2">全部核對通過！</h2>
-                  <p className="text-sm" style={{ opacity: 0.9 }}>所有 {totalItems} 項照片金額都與輸入一致 · 沒有發現異常</p>
-                </div>
               ) : (
-                <div className="rounded-3xl p-8 text-center text-white"
-                  style={{ background: 'linear-gradient(135deg,#f59e0b,#ef4444)', position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ position: 'absolute', top: '-40%', right: '-10%', width: '300px', height: '300px', background: 'radial-gradient(circle,rgba(255,255,255,0.15),transparent)', borderRadius: '50%', pointerEvents: 'none' }} />
-                  <div style={{ width: '80px', height: '80px', background: 'rgba(255,255,255,0.2)', borderRadius: '50%', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(10px)' }}>
-                    <AlertCircle style={{ width: '44px', height: '44px', color: 'white' }} />
-                  </div>
-                  <h2 className="text-2xl font-bold mb-2">發現 {failItems.length} 項需要確認</h2>
-                  <p className="text-sm" style={{ opacity: 0.9 }}>{passItems.length} 項通過 · {failItems.length} 項輸入金額與照片不符 · 請點下方項目進行處理</p>
-                </div>
-              )}
-
-              {/* 核對項目清單 */}
-              {aiItems.length > 0 && (
                 <div className="bg-white rounded-2xl overflow-hidden"
                   style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                   <div className="px-4 pt-4 pb-3 flex items-center justify-between" style={{ borderBottom: '1px solid #f4f4f5' }}>
                     <div className="flex items-center gap-2">
                       <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#eef2ff' }}>
-                        <Sparkles className="h-4 w-4" style={{ color: '#6366f1' }} />
+                        <CheckCircle2 className="h-4 w-4" style={{ color: '#6366f1' }} />
                       </div>
-                      <p className="text-sm font-semibold" style={{ color: '#18181b' }}>核對項目</p>
+                      <p className="text-sm font-semibold" style={{ color: '#18181b' }}>核對清單</p>
                     </div>
                     <span className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                      style={{ background: '#f4f4f5', color: '#52525b' }}>
-                      {doneItems}/{totalItems} 已完成
+                      style={{ background: allConfirmed ? '#d1fae5' : '#f4f4f5', color: allConfirmed ? '#065f46' : '#52525b' }}>
+                      {confirmedCount}/{verifyItems.length} 已核對
                     </span>
                   </div>
                   <div className="p-4 space-y-2">
-                    {aiItems.map(item => (
-                      <div key={item.key} className="rounded-xl p-3 flex gap-3 items-start"
+                    {verifyItems.map(item => (
+                      <div key={item.key} className="rounded-xl p-3 flex gap-3 items-center"
                         style={{
-                          background: item.checking ? 'white'
-                            : item.error ? '#fff8f8'
-                            : (item.matched || item.accepted) ? '#f0fdf4'
-                            : '#fff8f8',
-                          border: `1px solid ${item.checking ? '#f4f4f5' : item.error ? '#fda4af' : (item.matched || item.accepted) ? '#bbf7d0' : '#fda4af'}`,
+                          background: item.confirmed ? '#f0fdf4' : 'white',
+                          border: `1px solid ${item.confirmed ? '#bbf7d0' : '#e4e4e7'}`,
                         }}>
                         {/* 狀態圖示 */}
                         <div style={{
                           width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-                          background: item.checking ? '#a1a1aa'
-                            : item.error ? '#f43f5e'
-                            : (item.matched || item.accepted) ? '#10b981'
-                            : '#f43f5e',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: item.confirmed ? '#10b981' : '#f4f4f5',
                         }}>
-                          {item.checking
-                            ? <Loader2 className="animate-spin" style={{ width: '18px', height: '18px' }} />
-                            : (item.matched || item.accepted)
-                              ? <CheckCircle2 style={{ width: '18px', height: '18px' }} />
-                              : <AlertCircle style={{ width: '18px', height: '18px' }} />
+                          {item.confirmed
+                            ? <CheckCircle2 style={{ width: '18px', height: '18px', color: 'white' }} />
+                            : <FileText style={{ width: '18px', height: '18px', color: '#a1a1aa' }} />
                           }
                         </div>
 
-                        {/* 內容 */}
-                        <div style={{ flex: 1, fontSize: '13px' }}>
-                          <div className="font-semibold text-sm mb-0.5" style={{ color: '#18181b' }}>
+                        {/* 標籤 + 金額 */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="font-semibold text-sm" style={{ color: '#18181b' }}>
                             {item.type === 'receipt' ? '單據' : '平台'} · {item.label}
                           </div>
-                          {item.checking ? (
-                            <span style={{ color: '#a1a1aa' }}>辨識中…</span>
-                          ) : item.error ? (
-                            <span style={{ color: '#9f1239', fontSize: '12px' }}>辨識失敗：{item.error}</span>
-                          ) : (item.matched || item.accepted) ? (
-                            <span style={{ color: '#047857' }}>
-                              {item.accepted && !item.matched ? `已確認差異（$${fmt(item.inputAmount)}）` : `照片金額 $${fmt(item.recognized)} ✓ 符合`}
-                            </span>
-                          ) : (
-                            <>
-                              <div style={{ color: '#71717a', marginBottom: '6px' }}>
-                                你輸入 <span style={{ fontWeight: 600, color: '#52525b' }}>${fmt(item.inputAmount)}</span>
-                                {' → '} 照片顯示 <span style={{ fontWeight: 600, color: '#be123c' }}>${fmt(item.recognized)}</span>
-                                <span style={{ fontSize: '11px', marginLeft: '4px', color: '#be123c' }}>（差 ${fmt(Math.abs(item.inputAmount - item.recognized))}）</span>
-                              </div>
-                              <div className="flex gap-1.5 flex-wrap">
-                                <button
-                                  onClick={async () => {
-                                    if (item.type === 'receipt') {
-                                      const supabase = createClient()
-                                      await supabase.from('receipts').update({ total_amount: item.recognized }).eq('id', item.key)
-                                      setLocalReceipts(prev => prev.map(r => r.id === item.key ? { ...r, total_amount: item.recognized } : r))
-                                    } else {
-                                      if (item.key === 'pos') set('pos_cash', item.recognized)
-                                      else if (item.key === 'panda') set('panda_amount', item.recognized)
-                                      else if (item.key === 'twpay') set('twpay_amount', item.recognized)
-                                      else if (item.key === 'online') set('online_amount', item.recognized)
-                                      else if (item.key.startsWith('uber_')) {
-                                        const acc = item.key.replace('uber_', '')
-                                        set('uber_amounts', { ...dataRef.current.uber_amounts, [acc]: item.recognized })
-                                      }
-                                    }
-                                    setAiItems(prev => prev.map(a => a.key === item.key ? { ...a, inputAmount: item.recognized, matched: true } : a))
-                                    toast.success(`已改為 $${fmt(item.recognized)}`)
-                                  }}
-                                  style={{ background: '#f43f5e', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                  ✓ 改為 ${fmt(item.recognized)}
-                                </button>
-                                <button
-                                  onClick={() => setAiItems(prev => prev.map(a => a.key === item.key ? { ...a, accepted: true } : a))}
-                                  style={{ background: 'white', color: '#be123c', border: '1.5px solid #be123c', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                  保留 ${fmt(item.inputAmount)}
-                                </button>
-                              </div>
-                            </>
-                          )}
-                          {!item.checking && item.itemsSumMismatch && item.type === 'receipt' && (
-                            <div style={{ marginTop: '6px', padding: '6px 10px', background: '#fff7ed', borderRadius: '8px', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px', fontWeight: 500 }}>
-                              ⚠ 品項加總 ${fmt(item.itemsSum!)} ≠ 收據合計 ${fmt(item.recognized)}，廠商計算疑有誤差
-                            </div>
-                          )}
+                          <div className="text-xs mt-0.5" style={{ color: '#71717a' }}>
+                            輸入金額：<span style={{ fontWeight: 600, color: '#52525b' }}>${fmt(item.inputAmount)}</span>
+                          </div>
                         </div>
 
                         {/* 照片縮圖 */}
                         <button
                           onClick={() => setPhotoLightbox(item.photoUrl)}
                           title="點擊放大查看"
-                          style={{ flexShrink: 0, width: '52px', height: '52px', borderRadius: '10px', overflow: 'hidden', border: '1.5px solid #e4e4e7', padding: 0, cursor: 'zoom-in', position: 'relative', background: '#f4f4f5' }}>
+                          style={{ flexShrink: 0, width: '48px', height: '48px', borderRadius: '10px', overflow: 'hidden', border: '1.5px solid #e4e4e7', padding: 0, cursor: 'zoom-in', position: 'relative', background: '#f4f4f5' }}>
                           <img src={item.photoUrl} alt="photo" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                           <div style={{ position: 'absolute', bottom: 0, right: 0, background: 'rgba(0,0,0,0.45)', borderTopLeftRadius: '6px', padding: '2px 4px', lineHeight: 1 }}>
-                            <ZoomIn style={{ width: '11px', height: '11px', color: 'white' }} />
+                            <ZoomIn style={{ width: '10px', height: '10px', color: 'white' }} />
                           </div>
                         </button>
+
+                        {/* 已核對按鈕 */}
+                        {item.confirmed ? (
+                          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', color: '#047857', fontSize: '12px', fontWeight: 600, minWidth: '56px' }}>
+                            <CheckCircle2 style={{ width: '15px', height: '15px' }} />
+                            已核對
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setVerifyItems(prev => prev.map(v => v.key === item.key ? { ...v, confirmed: true } : v))}
+                            style={{ flexShrink: 0, background: '#6366f1', color: 'white', border: 'none', padding: '7px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                            已核對
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* 全通過卡片 */}
-              {allDone && allPass && totalItems > 0 && (
+              {allConfirmed && verifyItems.length > 0 && (
                 <div className="rounded-2xl p-5" style={{ background: 'linear-gradient(135deg,#d1fae5,#ecfdf5)', border: '1px solid #6ee7b7' }}>
                   <div className="flex items-start gap-3">
                     <CheckCircle2 className="h-5 w-5 shrink-0 mt-0.5" style={{ color: '#059669' }} />
                     <div>
-                      <p className="text-sm font-bold" style={{ color: '#065f46' }}>所有資料已通過 AI 核對，可放心送出</p>
-                      <p className="text-xs mt-1" style={{ color: '#047857' }}>送出後總公司會收到完整的單據照片、輸入金額、AI 核對紀錄</p>
+                      <p className="text-sm font-bold" style={{ color: '#065f46' }}>所有照片已核對完成，可放心送出</p>
+                      <p className="text-xs mt-1" style={{ color: '#047857' }}>送出後總公司會收到完整的單據照片與輸入金額</p>
                     </div>
                   </div>
                 </div>
@@ -2556,21 +2375,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {step < submitStepIdx && (
               <>
                 {step > 0 && (
-                  <button onClick={goPrev} disabled={saving || aiRunning}
+                  <button onClick={goPrev} disabled={saving}
                     className="flex items-center justify-center gap-2 py-3 px-5 rounded-2xl text-sm font-semibold"
-                    style={{ background: '#f4f4f5', color: '#52525b', opacity: (saving || aiRunning) ? 0.6 : 1 }}>
+                    style={{ background: '#f4f4f5', color: '#52525b', opacity: saving ? 0.6 : 1 }}>
                     ← 上一步
                   </button>
                 )}
-                <button onClick={goNext} disabled={saving || aiRunning}
+                <button onClick={goNext} disabled={saving}
                   className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white"
                   style={{
-                    background: aiRunning ? '#d4d4d8' : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
-                    boxShadow: aiRunning ? 'none' : '0 4px 12px rgba(99,102,241,0.3)',
-                    opacity: (saving || aiRunning) ? 0.7 : 1,
+                    background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+                    boxShadow: '0 4px 12px rgba(99,102,241,0.3)',
+                    opacity: saving ? 0.7 : 1,
                   }}>
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : aiRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {aiRunning ? 'AI 核對中…' : stepId === 'ai_verify' ? '確認，繼續送出 →' : '繼續 →'}
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {stepId === 'ai_verify' ? '確認，繼續送出 →' : '繼續 →'}
                 </button>
               </>
             )}
