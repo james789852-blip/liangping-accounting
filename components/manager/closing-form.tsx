@@ -411,6 +411,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [receiptForms, setReceiptForms] = useState<ReceiptForm[]>([])
   const [verifyItems, setVerifyItems] = useState<VerifyItem[]>([])
+  const [reviewIndex, setReviewIndex] = useState<number | null>(null)
   const categories = receiptCategories
   const [ckQuantities, setCkQuantities] = useState<Record<string, number>>(() => {
     const result: Record<string, number> = {}
@@ -460,6 +461,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const stepLsKey = `closing_step_${store.id}_${today}`
   const [currentStep, setCurrentStep] = useState(0)
   useEffect(() => {
+    if (existingClosing?.status === 'disputed') {
+      sessionStorage.removeItem(stepLsKey)
+      return
+    }
     const saved = parseInt(sessionStorage.getItem(stepLsKey) ?? '0') || 0
     if (saved > 0) setCurrentStep(saved)
   }, [])
@@ -745,6 +750,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       }
     }
     setVerifyItems(items)
+    setReviewIndex(null)
   }
 
   function openChannelUpload(key: string, amount: number) {
@@ -2079,11 +2085,117 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         {stepId === 'ai_verify' && (() => {
           const confirmedCount = verifyItems.filter(v => v.confirmed).length
           const allConfirmed = verifyItems.length > 0 && confirmedCount === verifyItems.length
+          const firstUnconfirmed = verifyItems.findIndex(v => !v.confirmed)
+          const reviewItem = reviewIndex !== null ? verifyItems[reviewIndex] : null
+
+          function startReview() {
+            const idx = verifyItems.findIndex(v => !v.confirmed)
+            setReviewIndex(idx >= 0 ? idx : 0)
+          }
+
+          function confirmCurrent() {
+            if (reviewIndex === null) return
+            setVerifyItems(prev => prev.map((v, i) => i === reviewIndex ? { ...v, confirmed: true } : v))
+            // advance to next unconfirmed
+            const next = verifyItems.findIndex((v, i) => i > reviewIndex && !v.confirmed)
+            if (next >= 0) {
+              setReviewIndex(next)
+            } else {
+              // all done
+              setReviewIndex(null)
+            }
+          }
 
           return (
             <>
               <GradientTitle step={stepNum} total={totalSteps} title="照片核對"
-                desc="請逐一放大查看每張照片，確認與輸入金額一致後按下「已核對」。" />
+                desc="逐一查看照片，確認金額正確後按下「已核對」。" />
+
+              {/* 全螢幕核對 overlay */}
+              {reviewIndex !== null && reviewItem && (
+                <div style={{
+                  position: 'fixed', inset: 0, zIndex: 9998,
+                  background: '#0a0a0a',
+                  display: 'flex', flexDirection: 'column',
+                }}>
+                  {/* 頂部列 */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(0,0,0,0.6)', flexShrink: 0 }}>
+                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px', fontWeight: 500 }}>
+                      {reviewIndex + 1} / {verifyItems.length}
+                    </span>
+                    <span style={{ color: 'white', fontSize: '14px', fontWeight: 600, flex: 1, textAlign: 'center', padding: '0 12px' }}>
+                      {reviewItem.type === 'receipt' ? '單據' : '平台'} · {reviewItem.label}
+                    </span>
+                    <button
+                      onClick={() => setReviewIndex(null)}
+                      style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                      <X style={{ width: '16px', height: '16px', color: 'white' }} />
+                    </button>
+                  </div>
+
+                  {/* 照片區域 */}
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: '8px' }}>
+                    <img
+                      src={reviewItem.photoUrl}
+                      alt="receipt"
+                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px', display: 'block' }}
+                    />
+                  </div>
+
+                  {/* 底部資訊 + 按鈕 */}
+                  <div style={{ background: 'white', borderRadius: '24px 24px 0 0', padding: '20px 20px 32px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                      <div>
+                        <div style={{ fontSize: '12px', color: '#71717a', marginBottom: '4px' }}>
+                          {reviewItem.type === 'receipt' ? '單據名稱' : '平台名稱'}
+                        </div>
+                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#18181b' }}>{reviewItem.label}</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '12px', color: '#71717a', marginBottom: '4px' }}>輸入金額</div>
+                        <div style={{ fontSize: '24px', fontWeight: 800, color: '#4338ca', fontVariantNumeric: 'tabular-nums' }}>
+                          ${fmt(reviewItem.inputAmount)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 進度列 */}
+                    <div style={{ height: '4px', borderRadius: '2px', background: '#f4f4f5', marginBottom: '16px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', borderRadius: '2px', background: '#6366f1', width: `${(confirmedCount / verifyItems.length) * 100}%`, transition: 'width 0.3s' }} />
+                    </div>
+
+                    {reviewItem.confirmed ? (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '16px', background: '#f0fdf4', borderRadius: '14px', color: '#047857', fontWeight: 700, fontSize: '15px' }}>
+                        <CheckCircle2 style={{ width: '20px', height: '20px' }} />
+                        已核對
+                      </div>
+                    ) : (
+                      <button
+                        onClick={confirmCurrent}
+                        style={{ width: '100%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white', border: 'none', padding: '16px', borderRadius: '14px', fontSize: '16px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                        <CheckCircle2 style={{ width: '20px', height: '20px' }} />
+                        已核對，下一張
+                      </button>
+                    )}
+
+                    {/* 上下張瀏覽 */}
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                      <button
+                        onClick={() => setReviewIndex(Math.max(0, reviewIndex - 1))}
+                        disabled={reviewIndex === 0}
+                        style={{ flex: 1, background: '#f4f4f5', border: 'none', padding: '11px', borderRadius: '12px', fontSize: '13px', fontWeight: 600, color: reviewIndex === 0 ? '#d4d4d8' : '#52525b', cursor: reviewIndex === 0 ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                        ← 上一張
+                      </button>
+                      <button
+                        onClick={() => setReviewIndex(Math.min(verifyItems.length - 1, reviewIndex + 1))}
+                        disabled={reviewIndex === verifyItems.length - 1}
+                        style={{ flex: 1, background: '#f4f4f5', border: 'none', padding: '11px', borderRadius: '12px', fontSize: '13px', fontWeight: 600, color: reviewIndex === verifyItems.length - 1 ? '#d4d4d8' : '#52525b', cursor: reviewIndex === verifyItems.length - 1 ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                        下一張 →
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {verifyItems.length === 0 ? (
                 <div className="rounded-3xl p-8 text-center text-white"
@@ -2098,6 +2210,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               ) : (
                 <div className="bg-white rounded-2xl overflow-hidden"
                   style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                  {/* 標題列 */}
                   <div className="px-4 pt-4 pb-3 flex items-center justify-between" style={{ borderBottom: '1px solid #f4f4f5' }}>
                     <div className="flex items-center gap-2">
                       <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#eef2ff' }}>
@@ -2110,62 +2223,52 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       {confirmedCount}/{verifyItems.length} 已核對
                     </span>
                   </div>
-                  <div className="p-4 space-y-2">
-                    {verifyItems.map(item => (
-                      <div key={item.key} className="rounded-xl p-3 flex gap-3 items-center"
-                        style={{
-                          background: item.confirmed ? '#f0fdf4' : 'white',
-                          border: `1px solid ${item.confirmed ? '#bbf7d0' : '#e4e4e7'}`,
-                        }}>
-                        {/* 狀態圖示 */}
-                        <div style={{
-                          width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          background: item.confirmed ? '#10b981' : '#f4f4f5',
-                        }}>
-                          {item.confirmed
-                            ? <CheckCircle2 style={{ width: '18px', height: '18px', color: 'white' }} />
-                            : <FileText style={{ width: '18px', height: '18px', color: '#a1a1aa' }} />
-                          }
-                        </div>
 
-                        {/* 標籤 + 金額 */}
+                  {/* 清單 */}
+                  <div className="p-4 space-y-2">
+                    {verifyItems.map((item, idx) => (
+                      <button
+                        key={item.key}
+                        onClick={() => setReviewIndex(idx)}
+                        style={{
+                          width: '100%', textAlign: 'left', padding: '10px 12px',
+                          borderRadius: '12px', border: `1.5px solid ${item.confirmed ? '#bbf7d0' : '#e4e4e7'}`,
+                          background: item.confirmed ? '#f0fdf4' : 'white',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontFamily: 'inherit',
+                        }}>
+                        {/* 縮圖 */}
+                        <div style={{ width: '52px', height: '52px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: '#f4f4f5', border: '1px solid #e4e4e7' }}>
+                          <img src={item.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        </div>
+                        {/* 文字 */}
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div className="font-semibold text-sm" style={{ color: '#18181b' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: '#18181b', marginBottom: '2px' }}>
                             {item.type === 'receipt' ? '單據' : '平台'} · {item.label}
                           </div>
-                          <div className="text-xs mt-0.5" style={{ color: '#71717a' }}>
-                            輸入金額：<span style={{ fontWeight: 600, color: '#52525b' }}>${fmt(item.inputAmount)}</span>
+                          <div style={{ fontSize: '12px', color: '#71717a' }}>
+                            輸入金額：<span style={{ fontWeight: 600, color: '#4338ca' }}>${fmt(item.inputAmount)}</span>
                           </div>
                         </div>
-
-                        {/* 照片縮圖 */}
-                        <button
-                          onClick={() => setPhotoLightbox(item.photoUrl)}
-                          title="點擊放大查看"
-                          style={{ flexShrink: 0, width: '48px', height: '48px', borderRadius: '10px', overflow: 'hidden', border: '1.5px solid #e4e4e7', padding: 0, cursor: 'zoom-in', position: 'relative', background: '#f4f4f5' }}>
-                          <img src={item.photoUrl} alt="photo" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                          <div style={{ position: 'absolute', bottom: 0, right: 0, background: 'rgba(0,0,0,0.45)', borderTopLeftRadius: '6px', padding: '2px 4px', lineHeight: 1 }}>
-                            <ZoomIn style={{ width: '10px', height: '10px', color: 'white' }} />
-                          </div>
-                        </button>
-
-                        {/* 已核對按鈕 */}
-                        {item.confirmed ? (
-                          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', color: '#047857', fontSize: '12px', fontWeight: 600, minWidth: '56px' }}>
-                            <CheckCircle2 style={{ width: '15px', height: '15px' }} />
-                            已核對
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setVerifyItems(prev => prev.map(v => v.key === item.key ? { ...v, confirmed: true } : v))}
-                            style={{ flexShrink: 0, background: '#6366f1', color: 'white', border: 'none', padding: '7px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                            已核對
-                          </button>
-                        )}
-                      </div>
+                        {/* 狀態 */}
+                        {item.confirmed
+                          ? <CheckCircle2 style={{ width: '20px', height: '20px', color: '#10b981', flexShrink: 0 }} />
+                          : <ZoomIn style={{ width: '18px', height: '18px', color: '#a1a1aa', flexShrink: 0 }} />
+                        }
+                      </button>
                     ))}
                   </div>
+
+                  {/* 開始核對按鈕 */}
+                  {!allConfirmed && (
+                    <div className="px-4 pb-4">
+                      <button
+                        onClick={startReview}
+                        style={{ width: '100%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white', border: 'none', padding: '14px', borderRadius: '14px', fontSize: '15px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                        <Camera style={{ width: '18px', height: '18px' }} />
+                        {confirmedCount > 0 ? `繼續核對（剩 ${verifyItems.length - confirmedCount} 張）` : '開始核對'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
