@@ -288,9 +288,6 @@ function ClosingCard({
     .reduce((s, r) => s + r.gross_amount, 0)
 
   const ckItems = (closing.order_items ?? []).filter(o => o.item_name !== '央廚配送')
-  const hwOrders = (closing.handwrite_orders ?? []).filter(o => o.order_number)
-  const hwValid = hwOrders.filter(o => !o.voided && o.amount > 0)
-  const hwVoided = hwOrders.filter(o => o.voided)
 
   return (
     <>
@@ -386,35 +383,7 @@ function ClosingCard({
             </div>
           </div>
 
-          {/* ── 3. 手寫菜單訂單 ──────────────────────────── */}
-          {hwOrders.length > 0 && (
-            <div>
-              <SectionLabel icon={<FileText className="h-3.5 w-3.5" />} color="#10b981"
-                title={`手寫訂單（${hwValid.length} 筆有效${hwVoided.length > 0 ? ` · ${hwVoided.length} 筆作廢` : ''}）`} />
-              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
-                <div className="flex gap-2 px-3 py-1.5" style={{ background: '#f8fafc', borderBottom: '1px solid #f4f4f5' }}>
-                  <span className="flex-1 text-[10px] font-semibold uppercase" style={{ color: '#a1a1aa' }}>單號</span>
-                  <span className="w-20 text-right text-[10px] font-semibold uppercase" style={{ color: '#a1a1aa' }}>金額</span>
-                </div>
-                {hwOrders.slice(0, 30).map((o, idx) => (
-                  <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-xs"
-                    style={{ borderBottom: idx !== Math.min(hwOrders.length, 30) - 1 ? '1px solid #f4f4f5' : 'none', background: o.voided ? '#fff8f8' : 'white' }}>
-                    <span className="flex-1 font-mono" style={{ color: o.voided ? '#a1a1aa' : '#52525b', textDecoration: o.voided ? 'line-through' : 'none' }}>{o.order_number}</span>
-                    <span className="w-20 text-right tabular-nums font-medium" style={{ color: o.voided ? '#f43f5e' : o.amount === 0 ? '#d4d4d8' : '#18181b' }}>
-                      {o.voided ? '作廢' : o.amount === 0 ? '—' : `$${fmt(o.amount)}`}
-                    </span>
-                  </div>
-                ))}
-                {hwOrders.length > 30 && (
-                  <div className="px-3 py-1.5 text-[11px] text-center" style={{ color: '#a1a1aa', borderTop: '1px solid #f4f4f5' }}>
-                    還有 {hwOrders.length - 30} 筆…
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ── 4. 央廚配送 ──────────────────────────────── */}
+          {/* ── 3. 央廚配送 ──────────────────────────────── */}
           {ckItems.length > 0 && (
             <div>
               <SectionLabel icon={<Package className="h-3.5 w-3.5" />} color="#f97316"
