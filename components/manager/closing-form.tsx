@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
-import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, Video, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn } from 'lucide-react'
-import VideoUploader from '@/components/manager/video-uploader'
+import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn } from 'lucide-react'
 import { saveCashCounts } from '@/app/actions/closings'
 import { uploadToStorage } from '@/app/actions/upload'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
@@ -439,7 +438,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
   }, [])
   const ckPhotoInputRef = useRef<HTMLInputElement>(null)
-  const [videoUploaded, setVideoUploaded] = useState(false)
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
   const [adjustments, setAdjustments] = useState<RemittanceAdjustment[]>(() => {
     const saved = existingClosing?.remittance_adjustments
@@ -980,10 +978,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         toast.error(`請先儲存 ${receiptForms.length} 筆未儲存的收據`)
         return
       }
-    }
-    if (stepId === 'handwrite' && !isLocked && !videoUploaded) {
-      toast.error('請先上傳今日手寫菜單影片')
-      return
     }
     if (stepId === 'ai_verify' && !isLocked) {
       const unconfirmed = verifyItems.filter(v => !v.confirmed)
@@ -1702,9 +1696,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   : null}
             </SectionCard>
 
-            <SectionCard icon={<Video className="h-4 w-4" />} title="今日菜單影片" subtitle="必填：上傳今日菜單錄影（約 10 分鐘）" iconColor="#3b82f6">
-              <VideoUploader storeId={store.id} businessDate={today} userId={userId} disabled={isLocked} onStatusChange={setVideoUploaded} />
-            </SectionCard>
           </>
         )}
 
