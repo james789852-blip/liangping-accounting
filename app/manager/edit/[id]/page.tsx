@@ -46,13 +46,13 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
 
   const { data: ckPrices } = await supabase
     .from('central_kitchen_prices')
-    .select('id, item_name, unit_price, excel_column')
+    .select('id, item_name, unit_price, unit, excel_column')
     .eq('active', true)
     .order('sort_order').order('item_name')
 
   const { data: todayReceipts } = await supabase
     .from('receipts')
-    .select('id, vendor_name, total_amount, receipt_type, receipt_items(item_name, amount)')
+    .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, amount)')
     .eq('store_id', storeId)
     .eq('business_date', closing.business_date)
     .order('created_at')

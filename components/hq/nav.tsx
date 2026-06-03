@@ -8,7 +8,7 @@ import {
   LayoutDashboard, CheckSquare,
   Store, Users, LogOut,
   ClipboardList, History, LineChart,
-  ArrowRightLeft, Package, BookOpen,
+  ArrowRightLeft, Package, BookOpen, Settings,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
@@ -56,6 +56,12 @@ const managerSections = [
       { href: '/manager/analytics',  label: '營運洞察', icon: LineChart },
     ],
   },
+  {
+    label: '設定',
+    items: [
+      { href: '/manager/settings', label: '收據設定', icon: Settings },
+    ],
+  },
 ]
 
 const mobileHQTabs = [
@@ -68,6 +74,7 @@ const mobileManagerTabs = [
   { href: '/manager/dashboard',  label: '今日結帳', icon: ClipboardList },
   { href: '/manager/history',    label: '歷史紀錄', icon: History },
   { href: '/manager/analytics',  label: '營運洞察', icon: LineChart },
+  { href: '/manager/settings',   label: '收據設定', icon: Settings },
 ]
 
 interface Props {

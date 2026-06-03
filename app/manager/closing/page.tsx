@@ -6,6 +6,7 @@ import ClosingDoneCard from '@/components/manager/closing-done-card'
 import { Store, CKPrice } from '@/lib/types'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
+import { getReceiptSettings } from '@/app/actions/receipt-settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,7 +38,7 @@ export default async function ClosingPage() {
 
   const { data: ckPrices } = await supabase
     .from('central_kitchen_prices')
-    .select('id, item_name, unit_price, excel_column')
+    .select('id, item_name, unit_price, unit, excel_column')
     .eq('active', true)
     .order('sort_order').order('item_name')
 
@@ -75,10 +76,12 @@ export default async function ClosingPage() {
   // 撈今日收據，供結帳表單自動填入「當日現金支出」
   const { data: todayReceipts } = await supabase
     .from('receipts')
-    .select('id, vendor_name, total_amount, receipt_type, receipt_items(item_name, amount)')
+    .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, amount)')
     .eq('store_id', storeId)
     .eq('business_date', today)
     .order('created_at')
+
+  const receiptCategories = await getReceiptSettings(storeId)
 
   return (
     <ClosingForm
@@ -88,6 +91,7 @@ export default async function ClosingPage() {
       userId={user.id}
       today={today}
       todayReceipts={todayReceipts ?? []}
+      receiptCategories={receiptCategories}
     />
   )
 }

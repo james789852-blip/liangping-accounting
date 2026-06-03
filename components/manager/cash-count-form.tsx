@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useTransition } from 'react'
+import { useState, useRef, useTransition, useCallback } from 'react'
 import { Calculator, CheckCircle2, AlertTriangle, Info, Save, History } from 'lucide-react'
 import { savePettyCashCount } from '@/app/actions/petty-cash'
 
@@ -68,10 +68,14 @@ const BASE_INPUT: React.CSSProperties = {
   width: '100%', textAlign: 'right', fontVariantNumeric: 'tabular-nums',
 }
 
-function NumInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+function NumInput({ value, onChange, inputRef, onEnter }: {
+  value: number; onChange: (v: number) => void
+  inputRef?: (el: HTMLInputElement | null) => void; onEnter?: () => void
+}) {
   const [focused, setFocused] = useState(false)
   return (
     <input
+      ref={inputRef}
       type="number" min="0" inputMode="numeric"
       style={{
         ...BASE_INPUT,
@@ -79,9 +83,10 @@ function NumInput({ value, onChange }: { value: number; onChange: (v: number) =>
         boxShadow: focused ? '0 0 0 4px rgba(99,102,241,0.1)' : 'none',
       }}
       value={value === 0 ? '' : value} placeholder="0"
-      onFocus={() => setFocused(true)}
+      onFocus={e => { setFocused(true); e.target.select() }}
       onBlur={e => { setFocused(false); onChange(parseInt(e.target.value) || 0) }}
       onChange={e => onChange(parseInt(e.target.value) || 0)}
+      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onEnter?.() } }}
     />
   )
 }
@@ -95,6 +100,13 @@ export default function CashCountForm({
   const [isPending, startTransition] = useTransition()
   const valuesRef = useRef(values)
   valuesRef.current = values
+
+  // inputRefs[0..6] = 左欄（張/枚），inputRefs[7..13] = 右欄（整筆金額）
+  const inputRefs = useRef<(HTMLInputElement | null)[]>(Array(14).fill(null))
+  const focusNext = useCallback((idx: number) => {
+    const next = inputRefs.current[idx + 1]
+    if (next) { next.focus(); next.select() }
+  }, [])
 
   const set = (key: string, val: number) => {
     setSaveStatus('idle')
@@ -186,7 +198,7 @@ export default function CashCountForm({
           </div>
 
           <div className="px-4 pb-4 space-y-2.5">
-            {DENOMS.map(({ label, countKey, lumpKey, unit, unitLabel }) => {
+            {DENOMS.map(({ label, countKey, lumpKey, unit, unitLabel }, rowIdx) => {
               const countVal = values[countKey] || 0
               const lumpVal  = values[lumpKey]  || 0
               const subtotal = countVal * unit + lumpVal
@@ -194,10 +206,14 @@ export default function CashCountForm({
                 <div key={countKey} style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px', alignItems: 'center' }}>
                   <span className="text-xs shrink-0" style={{ color: '#52525b' }}>{label}</span>
                   <div className="flex items-center gap-1">
-                    <NumInput value={countVal} onChange={v => set(countKey, v)} />
+                    <NumInput value={countVal} onChange={v => set(countKey, v)}
+                      inputRef={el => { inputRefs.current[rowIdx] = el }}
+                      onEnter={() => focusNext(rowIdx)} />
                     <span className="text-[10px] shrink-0" style={{ color: '#a1a1aa' }}>{unitLabel}</span>
                   </div>
-                  <NumInput value={lumpVal} onChange={v => set(lumpKey, v)} />
+                  <NumInput value={lumpVal} onChange={v => set(lumpKey, v)}
+                    inputRef={el => { inputRefs.current[rowIdx + 7] = el }}
+                    onEnter={() => focusNext(rowIdx + 7)} />
                   <span className="text-right text-xs tabular-nums shrink-0"
                     style={{ color: subtotal > 0 ? '#18181b' : '#d4d4d8', fontWeight: subtotal > 0 ? 600 : 400 }}>
                     ${fmt(subtotal)}

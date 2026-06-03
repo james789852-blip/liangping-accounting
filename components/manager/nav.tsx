@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { Zap, History, LineChart, LogOut } from 'lucide-react'
+import { Zap, History, LineChart, LogOut, Settings } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 function useClock() {
@@ -27,6 +27,7 @@ const NAV_ITEMS = [
   { href: '/manager/dashboard',  label: '今日結帳', icon: Zap },
   { href: '/manager/history',    label: '歷史紀錄', icon: History },
   { href: '/manager/analytics',  label: '營運洞察', icon: LineChart },
+  { href: '/manager/settings',   label: '收據設定', icon: Settings },
 ]
 
 interface Props { userName: string; storeName: string; role: string }

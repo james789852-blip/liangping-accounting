@@ -4,11 +4,12 @@ import { redirect } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { Banknote, Package, Calculator, BarChart3, AlertTriangle, ArrowLeft, Video } from 'lucide-react'
+import { Banknote, Package, Calculator, BarChart3, AlertTriangle, ArrowLeft, Video, Camera } from 'lucide-react'
 import Link from 'next/link'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import DeleteDraftButton from '@/components/manager/delete-draft-button'
 import ReceiptPhotoViewer from '@/components/manager/receipt-photo-viewer'
+import PhotoGrid from '@/components/manager/photo-grid'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -55,7 +56,7 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
 
   const { data: receipts } = await admin
     .from('receipts')
-    .select('id, vendor_name, total_amount, receipt_type, photo_url, tax_amount')
+    .select('id, vendor_name, total_amount, receipt_type, photo_url, tax_amount, receipt_items(item_name, amount)')
     .eq('store_id', storeId)
     .eq('business_date', closing.business_date)
     .order('created_at')
@@ -94,6 +95,11 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
     pos: 'POS 現金', uber: 'Uber Eats', panda: '熊貓',
     twpay: '台灣Pay', online: '線上點餐', handwrite: '手寫訂單',
   }
+  function channelPhotoLabel(key: string) {
+    if (key.startsWith('uber_')) return `Uber Eats（${key.slice(5)}）`
+    return channelLabel[key] ?? key
+  }
+  const channelPhotoEntries = Object.entries((closing.channel_photo_urls as Record<string, string> | null) ?? {}).filter(([, v]) => !!v)
   const platformTotal = rev
     .filter((r: any) => ['uber','panda','twpay','online'].includes(r.channel))
     .reduce((s: number, r: any) => s + r.gross_amount, 0)
@@ -174,6 +180,50 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
         </CardContent>
       </Card>
 
+      {/* 匯款調整 */}
+      {(() => {
+        const adjustments = (closing.remittance_adjustments as any[]) ?? []
+        if (adjustments.length === 0) return null
+        const adjTypeMap: Record<string, { label: string; color: string }> = {
+          advance:           { label: '代墊補款', color: '#059669' },
+          reimburse:         { label: '代墊還款', color: '#d97706' },
+          customer_transfer: { label: '顧客轉帳', color: '#2563eb' },
+          carryover:         { label: '昨日結轉', color: '#7c3aed' },
+          other:             { label: '其他',     color: '#71717a' },
+        }
+        const adjustmentTotal = adjustments.reduce((sum: number, a: any) => sum + (a.amount ?? 0), 0)
+        return (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
+                <Banknote className="h-4 w-4 text-indigo-500" /> 匯款調整
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {adjustments.map((adj: any, i: number) => {
+                const meta = adjTypeMap[adj.type] ?? adjTypeMap.other
+                return (
+                  <div key={adj.id ?? i} className="flex justify-between items-center text-sm">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-md shrink-0" style={{ background: meta.color + '18', color: meta.color }}>{meta.label}</span>
+                      <span className="text-slate-600 truncate">{adj.label || meta.label}{adj.person ? `（${adj.person}）` : ''}</span>
+                    </div>
+                    <span className="tabular-nums font-medium ml-2 shrink-0" style={{ color: adj.amount >= 0 ? '#059669' : '#dc2626' }}>
+                      {adj.amount >= 0 ? '+' : ''}{fmt(adj.amount)}
+                    </span>
+                  </div>
+                )
+              })}
+              <Separator />
+              <div className="flex justify-between text-sm font-semibold">
+                <span>調整後實匯入</span>
+                <span className="tabular-nums">${fmt((closing.actual_remit ?? 0) + adjustmentTotal)}</span>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      })()}
+
       {/* 營收明細 */}
       {rev.filter((r: any) => r.channel !== 'handwrite').length > 0 && (
         <Card>
@@ -197,6 +247,20 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
               <span>總計</span>
               <span className="tabular-nums">${fmt(closing.total_revenue)}</span>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 平台營業額存證照片 */}
+      {channelPhotoEntries.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
+              <Camera className="h-4 w-4 text-blue-500" /> 營業額存證照片
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PhotoGrid photos={channelPhotoEntries.map(([key, url]) => ({ label: channelPhotoLabel(key), url }))} />
           </CardContent>
         </Card>
       )}
@@ -278,6 +342,20 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
         </Card>
       )}
 
+      {/* 央廚配送照片 */}
+      {closing.ck_delivery_photo_url && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
+              <Camera className="h-4 w-4 text-orange-500" /> 配送單照片
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PhotoGrid photos={[{ label: '配送單', url: closing.ck_delivery_photo_url }]} />
+          </CardContent>
+        </Card>
+      )}
+
       {/* 當日現金支出 */}
       {expenseItems.length > 0 && (
         <Card>
@@ -302,9 +380,9 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
         </Card>
       )}
 
-      {/* 收據照片 */}
-      {receipts && receipts.length > 0 && receipts.some(r => r.photo_url) && (
-        <ReceiptPhotoViewer receipts={receipts} />
+      {/* 今日收據 */}
+      {receipts && receipts.length > 0 && (
+        <ReceiptPhotoViewer receipts={receipts as any} />
       )}
 
       {/* 現金清點 */}
@@ -412,7 +490,16 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
       )}
 
       {closing.status === 'draft' && (
-        <DeleteDraftButton closingId={closing.id} />
+        <div className="space-y-2">
+          <Link
+            href={`/manager/edit/${closing.id}`}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold text-white"
+            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}
+          >
+            繼續編輯此草稿
+          </Link>
+          <DeleteDraftButton closingId={closing.id} />
+        </div>
       )}
     </div>
   )

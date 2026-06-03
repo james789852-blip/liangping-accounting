@@ -4,10 +4,12 @@ import { useState } from 'react'
 import { Trash2, Loader2, X } from 'lucide-react'
 import { deleteClosingDraft } from '@/app/actions/closings'
 import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
 
 export default function DeleteDraftButton({ closingId }: { closingId: string }) {
   const [confirm, setConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
+  const router = useRouter()
 
   async function handleDelete() {
     setLoading(true)
@@ -16,6 +18,9 @@ export default function DeleteDraftButton({ closingId }: { closingId: string }) 
       toast.error(result.error)
       setLoading(false)
       setConfirm(false)
+    } else {
+      toast.success('草稿已刪除')
+      router.push('/manager/history')
     }
   }
 
