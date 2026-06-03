@@ -60,11 +60,13 @@ export default async function ClosingsPage({
     .select(`
       id, business_date, status, note, dispute_note, submitted_by,
       total_revenue, total_cost, total_expenses, expected_remit, variance,
+      actual_remit, should_include_delivery, remittance_adjustments,
       ck_delivery_photo_url, channel_photo_urls,
       stores(id, name),
       revenue_items(channel, account_name, gross_amount),
       order_items(item_name, quantity, unit_price, total_amount),
-      handwrite_orders(order_number, amount, voided, void_reason)
+      handwrite_orders(order_number, amount, voided, void_reason),
+      expense_items(description, amount)
     `)
     .gte('business_date', startDate)
     .lte('business_date', endDate)
@@ -92,10 +94,9 @@ export default async function ClosingsPage({
         if (!store?.id) return
         const { data: receipts } = await admin
           .from('receipts')
-          .select('id, vendor_name, total_amount, photo_url')
+          .select('id, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, amount)')
           .eq('store_id', store.id)
           .eq('business_date', c.business_date)
-          .not('photo_url', 'is', null)
           .order('created_at')
         receiptsByClosing[c.id] = receipts ?? []
       })

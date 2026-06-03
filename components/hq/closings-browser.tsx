@@ -2,23 +2,32 @@
 
 import { useState, useTransition, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Camera, Package, Video, FileText, Search, CheckCircle, RotateCcw, Trash2, Loader2 } from 'lucide-react'
+import { X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Camera, Package, Video, FileText, Search, CheckCircle, RotateCcw, Trash2, Loader2, BarChart2 as BarChart, Banknote, Wallet, ArrowLeftRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { verifyClosing, disputeClosing, deleteClosing } from '@/app/actions/closings'
 
 interface Store { id: string; name: string }
+interface RemittanceAdjustment {
+  id: string; type: string; label: string; amount: number; person?: string
+}
 interface Closing {
   id: string; business_date: string; status: string; note?: string; dispute_note?: string
   submitted_by?: string
   total_revenue: number; total_cost: number; total_expenses: number
   expected_remit: number; variance: number
+  actual_remit?: number; should_include_delivery?: number
+  remittance_adjustments?: RemittanceAdjustment[]
   ck_delivery_photo_url?: string; channel_photo_urls?: Record<string, string>
   stores: { id: string; name: string }
   revenue_items: { channel: string; account_name?: string; gross_amount: number }[]
   order_items: { item_name: string; quantity: number; unit_price: number; total_amount: number }[]
   handwrite_orders?: { order_number: string; amount: number; voided: boolean; void_reason?: string }[]
+  expense_items?: { description: string; amount: number }[]
 }
-interface ReceiptRow { id: string; vendor_name: string; total_amount: number; photo_url?: string }
+interface ReceiptRow {
+  id: string; vendor_name: string; receipt_type?: string; total_amount: number
+  photo_url?: string; receipt_items?: { item_name: string; amount: number }[]
+}
 interface VideoRow { closing_id: string; signed_url: string; file_name: string }
 
 interface Props {
@@ -147,6 +156,15 @@ function PhotoThumb({ url, label, onClick }: { url: string; label?: string; onCl
   )
 }
 
+function SectionLabel({ icon, color, title }: { icon: React.ReactNode; color: string; title: string }) {
+  return (
+    <div className="flex items-center gap-1.5 mb-2">
+      <span style={{ color }}>{icon}</span>
+      <p className="text-xs font-semibold" style={{ color: '#52525b' }}>{title}</p>
+    </div>
+  )
+}
+
 function ReviewPanel({ closingId, status, canReview }: { closingId: string; status: string; canReview: boolean }) {
   const [loading, setLoading] = useState(false)
   const [mode, setMode] = useState<'idle' | 'dispute' | 'delete'>('idle')
@@ -252,13 +270,22 @@ function ClosingCard({
   const channelPhotos = closing.channel_photo_urls ?? {}
   const ckPhoto = closing.ck_delivery_photo_url
   const receiptPhotos = receipts.filter(r => r.photo_url)
-  const hasPhotos = receiptPhotos.length > 0 || ckPhoto || Object.keys(channelPhotos).length > 0
 
+  // allPhotos: receipt photos first, then CK + channel (for lightbox continuity)
   const allPhotos: { url: string; label: string }[] = [
     ...receiptPhotos.map(r => ({ url: r.photo_url!, label: r.vendor_name || '收據' })),
     ...(ckPhoto ? [{ url: ckPhoto, label: '央廚配送單' }] : []),
     ...Object.entries(channelPhotos).map(([k, url]) => ({ url: url as string, label: channelName(k) })),
   ]
+  // non-receipt photos (CK + channels), shown in 平台截圖 section
+  const otherPhotos: { url: string; label: string }[] = [
+    ...(ckPhoto ? [{ url: ckPhoto, label: '央廚配送單' }] : []),
+    ...Object.entries(channelPhotos).map(([k, url]) => ({ url: url as string, label: channelName(k) })),
+  ]
+
+  const platformTotal = closing.revenue_items
+    .filter(r => ['uber', 'panda', 'twpay', 'online'].some(k => r.channel === k || r.channel.startsWith('uber_')))
+    .reduce((s, r) => s + r.gross_amount, 0)
 
   const ckItems = (closing.order_items ?? []).filter(o => o.item_name !== '央廚配送')
   const hwOrders = (closing.handwrite_orders ?? []).filter(o => o.order_number)
@@ -305,28 +332,65 @@ function ClosingCard({
             </div>
           )}
 
-          {/* 數字摘要 */}
-          <div className="grid grid-cols-2 gap-2 pt-4">
-            {[
-              { label: '總收入', val: closing.total_revenue, color: '#4338ca' },
-              { label: '應繳金額', val: closing.expected_remit, color: '#047857' },
-              { label: '央廚配送費', val: closing.total_cost, color: '#f97316' },
-              { label: '差異', val: closing.variance, color: Math.abs(closing.variance) > 200 ? '#be123c' : '#047857' },
-            ].map(({ label, val, color }) => (
-              <div key={label} className="rounded-xl px-3 py-2" style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }}>
-                <p className="text-[11px] mb-0.5" style={{ color: '#a1a1aa' }}>{label}</p>
-                <p className="text-base font-bold tabular-nums" style={{ color }}>${fmt(val)}</p>
+          {/* ── 1. 各渠道收入 ─────────────────────────────── */}
+          {closing.revenue_items.length > 0 && (
+            <div className="pt-3">
+              <SectionLabel icon={<BarChart className="h-3.5 w-3.5" />} color="#6366f1" title="各渠道收入" />
+              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
+                {closing.revenue_items.map((r, idx) => (
+                  <div key={idx} className="flex items-center justify-between px-3 py-2 text-xs"
+                    style={{ borderBottom: idx !== closing.revenue_items.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
+                    <span style={{ color: '#52525b' }}>
+                      {channelName(r.channel)}{r.account_name ? `（${r.account_name}）` : ''}
+                    </span>
+                    <span className="tabular-nums font-semibold" style={{ color: '#18181b' }}>${fmt(r.gross_amount)}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between px-3 py-2 text-xs font-bold"
+                  style={{ background: '#f8fafc', borderTop: '1px solid #e4e4e7' }}>
+                  <span style={{ color: '#18181b' }}>總收入</span>
+                  <span className="tabular-nums" style={{ color: '#4338ca' }}>${fmt(closing.total_revenue)}</span>
+                </div>
               </div>
-            ))}
+            </div>
+          )}
+
+          {/* ── 2. 結算摘要 ──────────────────────────────── */}
+          <div>
+            <SectionLabel icon={<Banknote className="h-3.5 w-3.5" />} color="#10b981" title="結算摘要" />
+            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
+              {[
+                { label: '總收入', val: closing.total_revenue, color: '#18181b' },
+                ...(platformTotal > 0 ? [{ label: '　− 平台收款', val: -platformTotal, color: '#71717a' }] : []),
+                ...(closing.total_expenses > 0 ? [{ label: '　− 現金支出', val: -closing.total_expenses, color: '#71717a' }] : []),
+                { label: '應包進信封', val: closing.should_include_delivery ?? closing.expected_remit, color: '#6366f1', bold: true },
+                ...(closing.total_cost > 0 ? [{ label: '　− 央廚費', val: -closing.total_cost, color: '#f97316' }] : []),
+                { label: '應匯總公司', val: closing.expected_remit, color: '#047857', bold: true },
+                { label: '實際包進信封', val: closing.actual_remit ?? closing.expected_remit, color: '#18181b', bold: true },
+              ].map(({ label, val, color, bold }, idx, arr) => (
+                <div key={idx} className="flex items-center justify-between px-3 py-2 text-xs"
+                  style={{ borderBottom: idx !== arr.length - 1 ? '1px solid #f4f4f5' : 'none', background: (bold && (label === '應包進信封' || label === '應匯總公司')) ? '#f8fafc' : 'white' }}>
+                  <span style={{ color: '#52525b', fontWeight: bold ? 700 : 400 }}>{label}</span>
+                  <span className="tabular-nums" style={{ color, fontWeight: bold ? 700 : 500 }}>
+                    {val < 0 ? `−$${fmt(-val)}` : `$${fmt(val)}`}
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between px-3 py-2 text-xs font-bold"
+                style={{ background: Math.abs(closing.variance) > 200 ? '#fff8f8' : '#f0fdf4', borderTop: '1px solid #e4e4e7' }}>
+                <span style={{ color: '#52525b' }}>誤差</span>
+                <span className="tabular-nums" style={{ color: Math.abs(closing.variance) > 200 ? '#be123c' : '#047857' }}>
+                  {closing.variance >= 0 ? '+' : ''}{fmt(closing.variance)}
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* 手寫菜單訂單 */}
+          {/* ── 3. 手寫菜單訂單 ──────────────────────────── */}
           {hwOrders.length > 0 && (
             <div>
-              <div className="flex items-center gap-1.5 mb-2">
-                <FileText className="h-3.5 w-3.5" style={{ color: '#10b981' }} />
-                <p className="text-xs font-semibold" style={{ color: '#52525b' }}>手寫訂單（{hwValid.length} 筆有效 · {hwVoided.length} 筆作廢）</p>
-              </div>
+              <SectionLabel icon={<FileText className="h-3.5 w-3.5" />} color="#10b981"
+                title={`手寫訂單（${hwValid.length} 筆有效${hwVoided.length > 0 ? ` · ${hwVoided.length} 筆作廢` : ''}）`} />
               <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
                 <div className="flex gap-2 px-3 py-1.5" style={{ background: '#f8fafc', borderBottom: '1px solid #f4f4f5' }}>
                   <span className="flex-1 text-[10px] font-semibold uppercase" style={{ color: '#a1a1aa' }}>單號</span>
@@ -350,13 +414,11 @@ function ClosingCard({
             </div>
           )}
 
-          {/* 央廚品項 */}
+          {/* ── 4. 央廚配送 ──────────────────────────────── */}
           {ckItems.length > 0 && (
             <div>
-              <div className="flex items-center gap-1.5 mb-2">
-                <Package className="h-3.5 w-3.5" style={{ color: '#f97316' }} />
-                <p className="text-xs font-semibold" style={{ color: '#52525b' }}>央廚配送明細</p>
-              </div>
+              <SectionLabel icon={<Package className="h-3.5 w-3.5" />} color="#f97316"
+                title={`央廚配送（$${fmt(closing.total_cost)}）`} />
               <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
                 {ckItems.map((item, idx) => (
                   <div key={idx} className="flex items-center justify-between px-3 py-2 text-xs"
@@ -371,7 +433,115 @@ function ClosingCard({
             </div>
           )}
 
-          {/* 影片 */}
+          {/* ── 5. 現金支出 ──────────────────────────────── */}
+          {(closing.expense_items ?? []).length > 0 && (
+            <div>
+              <SectionLabel icon={<Wallet className="h-3.5 w-3.5" />} color="#ef4444"
+                title={`現金支出（$${fmt(closing.total_expenses)}）`} />
+              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
+                {(closing.expense_items ?? []).map((e, idx, arr) => (
+                  <div key={idx} className="flex items-center justify-between px-3 py-2 text-xs"
+                    style={{ borderBottom: idx !== arr.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
+                    <span style={{ color: '#52525b' }}>{e.description || '支出'}</span>
+                    <span className="tabular-nums font-semibold" style={{ color: '#be123c' }}>${fmt(e.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── 6. 匯款調整 ──────────────────────────────── */}
+          {(closing.remittance_adjustments ?? []).length > 0 && (
+            <div>
+              <SectionLabel icon={<ArrowLeftRight className="h-3.5 w-3.5" />} color="#8b5cf6" title="匯款調整" />
+              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
+                {(closing.remittance_adjustments ?? []).map((adj, idx, arr) => (
+                  <div key={idx} className="flex items-center justify-between px-3 py-2 text-xs"
+                    style={{ borderBottom: idx !== arr.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
+                    <span style={{ color: '#52525b' }}>
+                      {adj.label}{adj.person ? `（${adj.person}）` : ''}
+                    </span>
+                    <span className="tabular-nums font-semibold"
+                      style={{ color: adj.amount >= 0 ? '#047857' : '#be123c' }}>
+                      {adj.amount >= 0 ? '+' : ''}${fmt(adj.amount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── 7. 當日收據 ──────────────────────────────── */}
+          {receipts.length > 0 && (
+            <div>
+              <SectionLabel icon={<FileText className="h-3.5 w-3.5" />} color="#0ea5e9"
+                title={`當日收據（${receipts.length} 筆 · $${fmt(receipts.reduce((s, r) => s + r.total_amount, 0))}）`} />
+              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
+                {receipts.map((r, idx) => (
+                  <div key={r.id} style={{ borderBottom: idx !== receipts.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
+                    <div className="flex items-center gap-2.5 px-3 py-2.5">
+                      {/* 縮圖 */}
+                      {r.photo_url ? (
+                        <button
+                          onClick={() => {
+                            const photoIdx = allPhotos.findIndex(p => p.url === r.photo_url)
+                            if (photoIdx >= 0) setLightboxIndex(photoIdx)
+                          }}
+                          style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, border: '1px solid #e4e4e7', background: '#f8fafc', padding: 0, cursor: 'zoom-in' }}>
+                          <img src={r.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        </button>
+                      ) : (
+                        <div style={{ width: 44, height: 44, borderRadius: 8, flexShrink: 0, border: '1px solid #e4e4e7', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <FileText style={{ width: 18, height: 18, color: '#d4d4d8' }} />
+                        </div>
+                      )}
+                      {/* 文字 */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-semibold" style={{ color: '#18181b' }}>{r.vendor_name || '（未填廠商）'}</span>
+                          {r.receipt_type && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: '#f4f4f5', color: '#71717a' }}>
+                              {{ invoice: '發票', receipt: '收據', delivery_note: '估價單' }[r.receipt_type] ?? r.receipt_type}
+                            </span>
+                          )}
+                        </div>
+                        {(r.receipt_items ?? []).length > 0 && (
+                          <p className="text-[11px] mt-0.5 truncate" style={{ color: '#a1a1aa' }}>
+                            {(r.receipt_items ?? []).map(i => i.item_name).join('、')}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-xs font-bold tabular-nums shrink-0" style={{ color: '#18181b' }}>${fmt(r.total_amount)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── 8. 平台照片 ──────────────────────────────── */}
+          {otherPhotos.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-2">
+                <Camera className="h-3.5 w-3.5" style={{ color: '#6366f1' }} />
+                <p className="text-xs font-semibold" style={{ color: '#52525b' }}>
+                  平台截圖 / 配送單
+                  <span className="ml-1.5 font-normal" style={{ color: '#a1a1aa' }}>（點擊可左右切換）</span>
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {otherPhotos.map((p) => (
+                  <PhotoThumb key={p.url} url={p.url} label={p.label}
+                    onClick={() => {
+                      const idx = allPhotos.findIndex(x => x.url === p.url)
+                      setLightboxIndex(idx >= 0 ? idx : 0)
+                    }} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── 9. 影片 ──────────────────────────────────── */}
           {video && (
             <div>
               <div className="flex items-center gap-1.5 mb-2">
@@ -384,24 +554,7 @@ function ClosingCard({
             </div>
           )}
 
-          {/* 照片 */}
-          {hasPhotos && (
-            <div>
-              <div className="flex items-center gap-1.5 mb-2">
-                <Camera className="h-3.5 w-3.5" style={{ color: '#6366f1' }} />
-                <p className="text-xs font-semibold" style={{ color: '#52525b' }}>
-                  上傳照片
-                  <span className="ml-1.5 font-normal" style={{ color: '#a1a1aa' }}>（點擊可左右切換）</span>
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {allPhotos.map((p, idx) => (
-                  <PhotoThumb key={idx} url={p.url} label={p.label} onClick={() => setLightboxIndex(idx)} />
-                ))}
-              </div>
-            </div>
-          )}
-
+          {/* ── 10. 備註 ─────────────────────────────────── */}
           {closing.note && (
             <p className="text-xs px-3 py-2 rounded-xl" style={{ background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a' }}>
               備註：{closing.note}
