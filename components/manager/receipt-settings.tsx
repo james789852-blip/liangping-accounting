@@ -341,7 +341,7 @@ function VendorRow({ vendor, onDelete, onRefresh }: {
               <input autoFocus placeholder="品項名稱（例：空心菜）"
                 style={{ flex: 2, padding: '7px 10px', border: '1.5px solid #6366f1', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', minWidth: 0 }}
                 value={newItemName} onChange={e => setNewItemName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleAddTemplate(); if (e.key === 'Escape') { setAddingTemplate(false) } }} />
+                onKeyDown={e => { if (e.key === 'Escape') setAddingTemplate(false) }} />
               <input placeholder="單位（例：斤）"
                 style={{ flex: 1, padding: '7px 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', minWidth: 0 }}
                 value={newUnit} onChange={e => setNewUnit(e.target.value)}
