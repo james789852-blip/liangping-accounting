@@ -131,6 +131,18 @@ export async function addVendorItemTemplate(vendorId: string, itemName: string, 
   return { success: true }
 }
 
+export async function updateVendorItemTemplate(templateId: string, itemName: string, unit: string) {
+  await requireAuth()
+  if (!itemName.trim()) return { error: '請輸入品項名稱' }
+  const admin = createAdminClient()
+  const { error } = await admin.from('vendor_item_templates')
+    .update({ item_name: itemName.trim(), unit: unit.trim() })
+    .eq('id', templateId)
+  if (error) return { error: error.message }
+  revalidatePath('/manager/settings')
+  return { success: true }
+}
+
 export async function deleteVendorItemTemplate(templateId: string) {
   await requireAuth()
   const admin = createAdminClient()

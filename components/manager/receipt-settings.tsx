@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import type { CategoryWithVendors, VendorItemTemplate } from '@/app/actions/receipt-settings'
 import {
   addCategoryWithVendors, deleteCategory, updateCategoryName,
-  addVendor, deleteVendor, addVendorItemTemplate, deleteVendorItemTemplate,
+  addVendor, deleteVendor, addVendorItemTemplate, updateVendorItemTemplate, deleteVendorItemTemplate,
 } from '@/app/actions/receipt-settings'
 
 interface Props {
@@ -324,15 +324,12 @@ function VendorRow({ vendor, onDelete, onRefresh }: {
           )}
           <div className="space-y-1.5 mb-2">
             {vendor.item_templates.map(t => (
-              <div key={t.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg"
-                style={{ background: 'white', border: '1px solid #f4f4f5' }}>
-                <span style={{ flex: 1, fontSize: '13px', color: '#18181b' }}>{t.item_name}</span>
-                {t.unit && <span style={{ fontSize: '12px', color: '#71717a', background: '#f4f4f5', padding: '1px 8px', borderRadius: '8px' }}>{t.unit}</span>}
-                <button onClick={() => handleDeleteTemplate(t.id, t.item_name)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', padding: '2px', flexShrink: 0 }}>
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
+              <TemplateRow
+                key={t.id}
+                template={t}
+                onDelete={() => handleDeleteTemplate(t.id, t.item_name)}
+                onRefresh={onRefresh}
+              />
             ))}
           </div>
 
@@ -345,7 +342,7 @@ function VendorRow({ vendor, onDelete, onRefresh }: {
               <input placeholder="單位（例：斤）"
                 style={{ flex: 1, padding: '7px 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', minWidth: 0 }}
                 value={newUnit} onChange={e => setNewUnit(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleAddTemplate() }} />
+                onKeyDown={e => { if (e.key === 'Escape') setAddingTemplate(false) }} />
               <button onClick={handleAddTemplate} disabled={templatePending || !newItemName.trim()}
                 style={{ padding: '6px 10px', background: '#6366f1', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: templatePending || !newItemName.trim() ? 'not-allowed' : 'pointer', opacity: templatePending || !newItemName.trim() ? 0.5 : 1, fontFamily: 'inherit', flexShrink: 0 }}>
                 {templatePending ? <Loader2 className="h-3 w-3 animate-spin" /> : '新增'}
@@ -364,6 +361,73 @@ function VendorRow({ vendor, onDelete, onRefresh }: {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function TemplateRow({ template, onDelete, onRefresh }: {
+  template: VendorItemTemplate
+  onDelete: () => void
+  onRefresh: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [nameVal, setNameVal] = useState(template.item_name)
+  const [unitVal, setUnitVal] = useState(template.unit)
+  const [pending, startPending] = useTransition()
+
+  function handleSave() {
+    if (!nameVal.trim()) { toast.error('請輸入品項名稱'); return }
+    startPending(async () => {
+      const r = await updateVendorItemTemplate(template.id, nameVal.trim(), unitVal.trim())
+      if (r.error) { toast.error(r.error); return }
+      toast.success('已更新')
+      setEditing(false)
+      onRefresh()
+    })
+  }
+
+  function handleCancel() {
+    setNameVal(template.item_name)
+    setUnitVal(template.unit)
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <div style={{ display: 'flex', gap: '5px', alignItems: 'center', background: 'white', border: '1.5px solid #6366f1', borderRadius: '8px', padding: '6px 8px' }}>
+        <input autoFocus
+          style={{ flex: 2, padding: '4px 6px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: '#18181b', minWidth: 0 }}
+          value={nameVal} onChange={e => setNameVal(e.target.value)} />
+        <input placeholder="單位"
+          style={{ width: '52px', padding: '4px 6px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }}
+          value={unitVal} onChange={e => setUnitVal(e.target.value)} />
+        <button onClick={handleSave} disabled={pending || !nameVal.trim()}
+          style={{ padding: '4px 8px', background: '#6366f1', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: pending || !nameVal.trim() ? 'not-allowed' : 'pointer', opacity: pending || !nameVal.trim() ? 0.5 : 1, fontFamily: 'inherit', flexShrink: 0 }}>
+          {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+        </button>
+        <button onClick={handleCancel}
+          style={{ padding: '4px 6px', background: '#f4f4f5', border: 'none', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}>
+          <X className="h-3 w-3" style={{ color: '#71717a' }} />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg"
+      style={{ background: 'white', border: '1px solid #f4f4f5' }}>
+      <span style={{ flex: 1, fontSize: '13px', color: '#18181b' }}>{template.item_name}</span>
+      {template.unit && (
+        <span style={{ fontSize: '12px', color: '#71717a', background: '#f4f4f5', padding: '1px 8px', borderRadius: '8px' }}>{template.unit}</span>
+      )}
+      <button onClick={() => setEditing(true)}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a1a1aa', padding: '2px', flexShrink: 0 }}>
+        <Pencil className="h-3 w-3" />
+      </button>
+      <button onClick={onDelete}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', padding: '2px', flexShrink: 0 }}>
+        <Trash2 className="h-3 w-3" />
+      </button>
     </div>
   )
 }
