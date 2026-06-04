@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronRight, Loader2, Pencil, Check, X } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronRight, Loader2, Pencil, Check, X, ListPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
-import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
+import type { CategoryWithVendors, VendorItemTemplate } from '@/app/actions/receipt-settings'
 import {
   addCategoryWithVendors, deleteCategory, updateCategoryName,
-  addVendor, deleteVendor,
+  addVendor, deleteVendor, addVendorItemTemplate, deleteVendorItemTemplate,
 } from '@/app/actions/receipt-settings'
 
 interface Props {
@@ -22,7 +22,6 @@ export default function ReceiptSettings({ storeId, initialCategories }: Props) {
 
   useEffect(() => { setCategories(initialCategories) }, [initialCategories])
 
-  // 新增類別（含廠商）
   const [newCatName, setNewCatName] = useState('')
   const [newVendors, setNewVendors] = useState<string[]>([''])
   const [addingCat, setAddingCat] = useState(false)
@@ -45,18 +44,16 @@ export default function ReceiptSettings({ storeId, initialCategories }: Props) {
     })
   }
 
-  function updateVendor(i: number, val: string) {
+  function updateVendorField(i: number, val: string) {
     setNewVendors(prev => prev.map((v, idx) => idx === i ? val : v))
   }
-  function addVendorField() {
-    setNewVendors(prev => [...prev, ''])
-  }
+  function addVendorField() { setNewVendors(prev => [...prev, '']) }
   function removeVendorField(i: number) {
     setNewVendors(prev => prev.length === 1 ? [''] : prev.filter((_, idx) => idx !== i))
   }
 
   async function handleDeleteCategory(cat: CategoryWithVendors) {
-    if (!confirm(`確定刪除「${cat.name}」？底下所有廠商也會一併刪除。`)) return
+    if (!confirm(`確定刪除「${cat.name}」？底下所有廠商與細項也會一併刪除。`)) return
     const r = await deleteCategory(cat.id)
     if (r.error) { toast.error(r.error); return }
     toast.success('已刪除')
@@ -65,7 +62,6 @@ export default function ReceiptSettings({ storeId, initialCategories }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* 類別列表 */}
       {categories.map(cat => (
         <CategoryCard
           key={cat.id}
@@ -84,7 +80,6 @@ export default function ReceiptSettings({ storeId, initialCategories }: Props) {
         </div>
       )}
 
-      {/* 新增類別 */}
       {addingCat ? (
         <div className="bg-white rounded-2xl p-4 space-y-4" style={{ border: '2px solid #c7d2fe' }}>
           <div className="flex items-center justify-between">
@@ -94,16 +89,12 @@ export default function ReceiptSettings({ storeId, initialCategories }: Props) {
               <X className="h-4 w-4" />
             </button>
           </div>
-
-          {/* 類別名稱 */}
           <div className="space-y-1.5">
             <p style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>類別名稱 *</p>
             <input autoFocus placeholder="例：菜商"
               style={{ width: '100%', padding: '9px 12px', border: '1.5px solid #c7d2fe', borderRadius: '10px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', boxSizing: 'border-box' }}
               value={newCatName} onChange={e => setNewCatName(e.target.value)} />
           </div>
-
-          {/* 廠商列表 */}
           <div className="space-y-1.5">
             <p style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>廠商名稱（可空）</p>
             <div className="space-y-2">
@@ -111,7 +102,7 @@ export default function ReceiptSettings({ storeId, initialCategories }: Props) {
                 <div key={i} className="flex gap-2">
                   <input placeholder={`廠商 ${i + 1}`}
                     style={{ flex: 1, padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
-                    value={v} onChange={e => updateVendor(i, e.target.value)} />
+                    value={v} onChange={e => updateVendorField(i, e.target.value)} />
                   <button type="button" onClick={() => removeVendorField(i)}
                     style={{ padding: '6px 8px', background: '#fef2f2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#fca5a5' }}>
                     <X className="h-4 w-4" />
@@ -122,11 +113,9 @@ export default function ReceiptSettings({ storeId, initialCategories }: Props) {
             <button type="button" onClick={addVendorField}
               className="flex items-center gap-1.5 text-sm"
               style={{ background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', padding: '2px 0', fontFamily: 'inherit' }}>
-              <Plus className="h-3.5 w-3.5" />
-              新增廠商欄位
+              <Plus className="h-3.5 w-3.5" />新增廠商欄位
             </button>
           </div>
-
           <button onClick={handleAddCategory} disabled={catPending || !newCatName.trim()}
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white"
             style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', opacity: catPending || !newCatName.trim() ? 0.5 : 1, border: 'none', fontFamily: 'inherit', cursor: catPending || !newCatName.trim() ? 'not-allowed' : 'pointer' }}>
@@ -138,8 +127,7 @@ export default function ReceiptSettings({ storeId, initialCategories }: Props) {
         <button onClick={() => setAddingCat(true)}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold transition-all hover:opacity-80"
           style={{ background: 'white', border: '2px dashed #c7d2fe', color: '#4338ca' }}>
-          <Plus className="h-4 w-4" />
-          新增類別
+          <Plus className="h-4 w-4" />新增類別
         </button>
       )}
     </div>
@@ -147,17 +135,12 @@ export default function ReceiptSettings({ storeId, initialCategories }: Props) {
 }
 
 function CategoryCard({ cat, storeId, expanded, onToggle, onDelete, onRefresh }: {
-  cat: CategoryWithVendors
-  storeId: string
-  expanded: boolean
-  onToggle: () => void
-  onDelete: () => void
-  onRefresh: () => void
+  cat: CategoryWithVendors; storeId: string; expanded: boolean
+  onToggle: () => void; onDelete: () => void; onRefresh: () => void
 }) {
   const [editingName, setEditingName] = useState(false)
   const [nameVal, setNameVal] = useState(cat.name)
   const [renamePending, startRename] = useTransition()
-
   const [addingVendor, setAddingVendor] = useState(false)
   const [newVendorName, setNewVendorName] = useState('')
   const [vendorPending, startVendor] = useTransition()
@@ -192,6 +175,8 @@ function CategoryCard({ cat, storeId, expanded, onToggle, onDelete, onRefresh }:
     onRefresh()
   }
 
+  const totalTemplates = cat.vendors.reduce((s, v) => s + v.item_templates.length, 0)
+
   return (
     <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
       {/* 類別 header */}
@@ -208,6 +193,9 @@ function CategoryCard({ cat, storeId, expanded, onToggle, onDelete, onRefresh }:
           )}
         </button>
         <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#f4f4f5', color: '#71717a' }}>{cat.vendors.length} 間廠商</span>
+        {totalTemplates > 0 && (
+          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#eef2ff', color: '#4338ca' }}>{totalTemplates} 細項</span>
+        )}
         {editingName ? (
           <>
             <button onClick={handleRename} disabled={renamePending}
@@ -239,16 +227,14 @@ function CategoryCard({ cat, storeId, expanded, onToggle, onDelete, onRefresh }:
           {cat.vendors.length === 0 && !addingVendor && (
             <p style={{ fontSize: '13px', color: '#a1a1aa', marginBottom: '10px' }}>尚無廠商，點下方新增</p>
           )}
-          <div className="space-y-1.5 mb-3">
+          <div className="space-y-2 mb-3">
             {cat.vendors.map(v => (
-              <div key={v.id} className="flex items-center justify-between px-3 py-2 rounded-xl"
-                style={{ background: 'white', border: '1px solid #e4e4e7' }}>
-                <span style={{ fontSize: '14px', color: '#18181b' }}>{v.name}</span>
-                <button onClick={() => handleDeleteVendor(v.id, v.name)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', padding: '2px' }}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
+              <VendorRow
+                key={v.id}
+                vendor={v}
+                onDelete={() => handleDeleteVendor(v.id, v.name)}
+                onRefresh={onRefresh}
+              />
             ))}
           </div>
 
@@ -271,8 +257,109 @@ function CategoryCard({ cat, storeId, expanded, onToggle, onDelete, onRefresh }:
             <button onClick={() => setAddingVendor(true)}
               className="flex items-center gap-1.5 text-sm font-medium"
               style={{ background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', padding: '4px 0', fontFamily: 'inherit' }}>
-              <Plus className="h-3.5 w-3.5" />
-              新增廠商
+              <Plus className="h-3.5 w-3.5" />新增廠商
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function VendorRow({ vendor, onDelete, onRefresh }: {
+  vendor: { id: string; name: string; item_templates: VendorItemTemplate[] }
+  onDelete: () => void
+  onRefresh: () => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [addingTemplate, setAddingTemplate] = useState(false)
+  const [newItemName, setNewItemName] = useState('')
+  const [newUnit, setNewUnit] = useState('')
+  const [templatePending, startTemplate] = useTransition()
+
+  function handleAddTemplate() {
+    if (!newItemName.trim()) { toast.error('請輸入品項名稱'); return }
+    startTemplate(async () => {
+      const r = await addVendorItemTemplate(vendor.id, newItemName.trim(), newUnit.trim())
+      if (r.error) { toast.error(r.error); return }
+      toast.success(`已新增「${newItemName.trim()}」`)
+      setNewItemName('')
+      setNewUnit('')
+      setAddingTemplate(false)
+      onRefresh()
+    })
+  }
+
+  async function handleDeleteTemplate(templateId: string, name: string) {
+    const r = await deleteVendorItemTemplate(templateId)
+    if (r.error) { toast.error(r.error); return }
+    toast.success(`已刪除「${name}」`)
+    onRefresh()
+  }
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: 'white', border: '1px solid #e4e4e7' }}>
+      {/* 廠商 header */}
+      <div className="flex items-center px-3 py-2 gap-2">
+        <button onClick={() => setExpanded(!expanded)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: expanded ? '#6366f1' : '#a1a1aa', flexShrink: 0 }}>
+          {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        </button>
+        <span style={{ flex: 1, fontSize: '14px', color: '#18181b' }}>{vendor.name}</span>
+        {vendor.item_templates.length > 0 && (
+          <span style={{ fontSize: '11px', color: '#6366f1', background: '#eef2ff', padding: '2px 8px', borderRadius: '10px' }}>
+            {vendor.item_templates.length} 細項
+          </span>
+        )}
+        <button onClick={onDelete} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', padding: '2px', flexShrink: 0 }}>
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* 細項列表 */}
+      {expanded && (
+        <div style={{ borderTop: '1px solid #f4f4f5', padding: '10px 12px', background: '#fafafa' }}>
+          {vendor.item_templates.length === 0 && !addingTemplate && (
+            <p style={{ fontSize: '12px', color: '#a1a1aa', marginBottom: '8px' }}>尚無細項，點下方新增</p>
+          )}
+          <div className="space-y-1.5 mb-2">
+            {vendor.item_templates.map(t => (
+              <div key={t.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg"
+                style={{ background: 'white', border: '1px solid #f4f4f5' }}>
+                <span style={{ flex: 1, fontSize: '13px', color: '#18181b' }}>{t.item_name}</span>
+                {t.unit && <span style={{ fontSize: '12px', color: '#71717a', background: '#f4f4f5', padding: '1px 8px', borderRadius: '8px' }}>{t.unit}</span>}
+                <button onClick={() => handleDeleteTemplate(t.id, t.item_name)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', padding: '2px', flexShrink: 0 }}>
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {addingTemplate ? (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <input autoFocus placeholder="品項名稱（例：空心菜）"
+                style={{ flex: 2, padding: '7px 10px', border: '1.5px solid #6366f1', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', minWidth: 0 }}
+                value={newItemName} onChange={e => setNewItemName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddTemplate(); if (e.key === 'Escape') { setAddingTemplate(false) } }} />
+              <input placeholder="單位（例：斤）"
+                style={{ flex: 1, padding: '7px 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', minWidth: 0 }}
+                value={newUnit} onChange={e => setNewUnit(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddTemplate() }} />
+              <button onClick={handleAddTemplate} disabled={templatePending || !newItemName.trim()}
+                style={{ padding: '6px 10px', background: '#6366f1', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: templatePending || !newItemName.trim() ? 'not-allowed' : 'pointer', opacity: templatePending || !newItemName.trim() ? 0.5 : 1, fontFamily: 'inherit', flexShrink: 0 }}>
+                {templatePending ? <Loader2 className="h-3 w-3 animate-spin" /> : '新增'}
+              </button>
+              <button onClick={() => { setAddingTemplate(false); setNewItemName(''); setNewUnit('') }}
+                style={{ padding: '6px 8px', background: '#f4f4f5', border: 'none', borderRadius: '8px', color: '#52525b', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setAddingTemplate(true)}
+              className="flex items-center gap-1.5 text-xs font-medium"
+              style={{ background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', padding: '2px 0', fontFamily: 'inherit' }}>
+              <ListPlus className="h-3.5 w-3.5" />新增細項
             </button>
           )}
         </div>

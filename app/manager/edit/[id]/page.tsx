@@ -52,7 +52,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
 
   const { data: todayReceipts } = await supabase
     .from('receipts')
-    .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, amount)')
+    .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, unit, quantity, amount)')
     .eq('store_id', storeId)
     .eq('business_date', closing.business_date)
     .order('created_at')

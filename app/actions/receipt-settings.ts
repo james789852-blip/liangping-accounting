@@ -4,10 +4,16 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+export interface VendorItemTemplate {
+  id: string
+  item_name: string
+  unit: string
+}
+
 export interface CategoryWithVendors {
   id: string
   name: string
-  vendors: { id: string; name: string }[]
+  vendors: { id: string; name: string; item_templates: VendorItemTemplate[] }[]
 }
 
 async function requireAuth() {
@@ -21,14 +27,26 @@ export async function getReceiptSettings(storeId: string): Promise<CategoryWithV
   const admin = createAdminClient()
   const { data } = await admin
     .from('receipt_categories')
-    .select('id, name, sort_order, receipt_vendors(id, name, sort_order)')
+    .select(`
+      id, name, sort_order,
+      receipt_vendors(
+        id, name, sort_order,
+        vendor_item_templates(id, item_name, unit, sort_order)
+      )
+    `)
     .eq('store_id', storeId)
     .order('sort_order')
     .order('created_at', { referencedTable: 'receipt_vendors' })
   return (data ?? []).map((c: any) => ({
     id: c.id,
     name: c.name,
-    vendors: (c.receipt_vendors ?? []).map((v: any) => ({ id: v.id, name: v.name })),
+    vendors: (c.receipt_vendors ?? []).map((v: any) => ({
+      id: v.id,
+      name: v.name,
+      item_templates: (v.vendor_item_templates ?? [])
+        .sort((a: any, b: any) => a.sort_order - b.sort_order)
+        .map((t: any) => ({ id: t.id, item_name: t.item_name, unit: t.unit })),
+    })),
   }))
 }
 
@@ -94,6 +112,29 @@ export async function deleteVendor(vendorId: string) {
   await requireAuth()
   const admin = createAdminClient()
   const { error } = await admin.from('receipt_vendors').delete().eq('id', vendorId)
+  if (error) return { error: error.message }
+  revalidatePath('/manager/settings')
+  return { success: true }
+}
+
+export async function addVendorItemTemplate(vendorId: string, itemName: string, unit: string) {
+  await requireAuth()
+  if (!itemName.trim()) return { error: '請輸入品項名稱' }
+  const admin = createAdminClient()
+  const { error } = await admin.from('vendor_item_templates').insert({
+    vendor_id: vendorId,
+    item_name: itemName.trim(),
+    unit: unit.trim(),
+  })
+  if (error) return { error: error.message }
+  revalidatePath('/manager/settings')
+  return { success: true }
+}
+
+export async function deleteVendorItemTemplate(templateId: string) {
+  await requireAuth()
+  const admin = createAdminClient()
+  const { error } = await admin.from('vendor_item_templates').delete().eq('id', templateId)
   if (error) return { error: error.message }
   revalidatePath('/manager/settings')
   return { success: true }

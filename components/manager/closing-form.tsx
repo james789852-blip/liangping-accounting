@@ -25,7 +25,7 @@ interface TodayReceipt {
   tax_amount?: number
   receipt_type: string
   photo_url?: string
-  receipt_items?: { item_name: string; amount: number }[]
+  receipt_items?: { item_name: string; unit: string; quantity: number; amount: number }[]
 }
 
 interface ChannelPhoto {
@@ -35,6 +35,14 @@ interface ChannelPhoto {
   recognized?: number
 }
 
+
+interface ReceiptFormItem {
+  id: string
+  item_name: string
+  unit: string
+  quantity: number
+  amount: number
+}
 
 interface ReceiptForm {
   id: string
@@ -47,6 +55,7 @@ interface ReceiptForm {
   tax_amount: number
   notes: string
   uploading: boolean
+  items: ReceiptFormItem[]
 }
 
 interface VerifyItem {
@@ -56,6 +65,7 @@ interface VerifyItem {
   photoUrl: string
   inputAmount: number
   confirmed: boolean
+  items?: { item_name: string; unit: string; quantity: number; amount: number }[]
 }
 
 function isCKReceipt(receipt: TodayReceipt, ckPrices: CKPrice[]): boolean {
@@ -406,7 +416,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null)
   const [editUploading, setEditUploading] = useState(false)
   const editPhotoInputRef = useRef<HTMLInputElement>(null)
-  const [editItems, setEditItems] = useState<{ item_name: string; amount: number }[]>([])
+  const [editItems, setEditItems] = useState<{ item_name: string; unit: string; quantity: number; amount: number }[]>([])
   const [photoLightbox, setPhotoLightbox] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [receiptForms, setReceiptForms] = useState<ReceiptForm[]>([])
@@ -549,7 +559,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const supabase = createClient()
     const { data: receipts } = await supabase
       .from('receipts')
-      .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, amount)')
+      .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, unit, quantity, amount)')
       .eq('store_id', store.id)
       .eq('business_date', today)
       .order('created_at')
@@ -596,7 +606,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         ...r, vendor_name: editVendor, total_amount: finalTotal,
         tax_amount: editHasTax ? editTaxAmount : 0,
         receipt_type: editCategory || r.receipt_type,
-        photo_url: newPhotoUrl, receipt_items: validItems,
+        photo_url: newPhotoUrl, receipt_items: validItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, amount: i.amount })),
       } : r
     )
     setLocalReceipts(updatedReceipts)
@@ -617,7 +627,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     await supabase.from('receipt_items').delete().eq('receipt_id', editingReceiptId)
     if (validItems.length > 0) {
       await supabase.from('receipt_items').insert(
-        validItems.map(i => ({ receipt_id: editingReceiptId, item_name: i.item_name, amount: i.amount, item_category: '食材', excel_column: '' }))
+        validItems.map(i => ({ receipt_id: editingReceiptId, item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, amount: i.amount, item_category: '食材', excel_column: '' }))
       )
     }
     setEditUploading(false)
@@ -641,6 +651,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       tax_amount: 0,
       notes: '',
       uploading: false,
+      items: [],
     }))
     setReceiptForms(prev => [...prev, ...newForms])
   }
@@ -655,6 +666,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       tax_amount: 0,
       notes: '',
       uploading: false,
+      items: [],
     }])
   }
 
@@ -702,6 +714,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: false } : f))
       return
     }
+    const validItems = (form.items ?? []).filter(i => i.item_name.trim())
+    if (validItems.length > 0) {
+      await supabase.from('receipt_items').insert(
+        validItems.map(i => ({
+          receipt_id: saved.id,
+          item_name: i.item_name.trim(),
+          unit: i.unit,
+          quantity: i.quantity,
+          amount: i.amount,
+          item_category: '食材',
+          excel_column: '',
+        }))
+      )
+    }
+
     const newR: TodayReceipt = {
       id: saved.id,
       vendor_name: form.vendor_name.trim(),
@@ -709,7 +736,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       tax_amount: form.has_tax ? form.tax_amount : 0,
       receipt_type: 'receipt',
       photo_url,
-      receipt_items: [],
+      receipt_items: validItems,
     }
     const updated = [...localReceipts, newR]
     setLocalReceipts(updated)
@@ -735,7 +762,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   function buildVerifyItems() {
     const items: VerifyItem[] = []
     for (const r of localReceipts.filter(r => r.photo_url)) {
-      items.push({ key: r.id, type: 'receipt', label: r.vendor_name || '收據', photoUrl: r.photo_url!, inputAmount: r.total_amount, confirmed: false })
+      items.push({ key: r.id, type: 'receipt', label: r.vendor_name || '收據', photoUrl: r.photo_url!, inputAmount: r.total_amount, confirmed: false, items: r.receipt_items })
     }
     const channelLabelMap: Record<string, { label: string; amount: number }> = {}
     if (store.mode !== 'handwrite') channelLabelMap['pos'] = { label: store.ichef_uber_linked ? 'iChef 結帳總金額' : 'iChef 現場 POS', amount: dataRef.current.pos_cash }
@@ -1253,6 +1280,80 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             onChange={e => updateReceiptForm(form.id, 'notes', e.target.value)} />
                         </div>
 
+                        {/* 細項明細 */}
+                        {(() => {
+                          const catObj = categories?.find(c => c.name === form.category)
+                          const vendorObj = catObj?.vendors.find(v => v.name === form.vendor_name)
+                          const templates = (vendorObj as any)?.item_templates ?? []
+
+                          function addItem(name = '', unit = '') {
+                            updateReceiptForm(form.id, 'items', [
+                              ...(form.items ?? []),
+                              { id: crypto.randomUUID(), item_name: name, unit, quantity: 1, amount: 0 },
+                            ])
+                          }
+                          function updateItem(itemId: string, field: string, value: any) {
+                            updateReceiptForm(form.id, 'items', (form.items ?? []).map(i =>
+                              i.id === itemId ? { ...i, [field]: value } : i
+                            ))
+                          }
+                          function removeItem(itemId: string) {
+                            updateReceiptForm(form.id, 'items', (form.items ?? []).filter(i => i.id !== itemId))
+                          }
+
+                          return (
+                            <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>細項明細（可空）</label>
+                                <button type="button" onClick={() => addItem()}
+                                  style={{ fontSize: '11px', color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px', padding: 0 }}>
+                                  <Plus style={{ width: '12px', height: '12px' }} />新增
+                                </button>
+                              </div>
+
+                              {/* 模板快速新增 */}
+                              {templates.length > 0 && (
+                                <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                                  {templates.map((t: any) => (
+                                    <button key={t.id} type="button" onClick={() => addItem(t.item_name, t.unit)}
+                                      style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                                      + {t.item_name}{t.unit ? `（${t.unit}）` : ''}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* 細項列表 */}
+                              <div className="space-y-1.5">
+                                {(form.items ?? []).map(item => (
+                                  <div key={item.id} style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                                    <input placeholder="品項名稱"
+                                      style={{ flex: 2, padding: '6px 8px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', minWidth: 0, color: '#18181b' }}
+                                      value={item.item_name}
+                                      onChange={e => updateItem(item.id, 'item_name', e.target.value)} />
+                                    <input type="number" placeholder="數量"
+                                      style={{ width: '50px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }}
+                                      value={item.quantity || ''}
+                                      onChange={e => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)} />
+                                    <input placeholder="單位"
+                                      style={{ width: '40px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }}
+                                      value={item.unit}
+                                      onChange={e => updateItem(item.id, 'unit', e.target.value)} />
+                                    <input type="number" placeholder="小計"
+                                      style={{ width: '64px', padding: '6px 6px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b' }}
+                                      value={item.amount || ''}
+                                      onChange={e => updateItem(item.id, 'amount', parseInt(e.target.value) || 0)} />
+                                    <button type="button" onClick={() => removeItem(item.id)}
+                                      style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', flexShrink: 0 }}>
+                                      <X style={{ width: '13px', height: '13px' }} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })()}
+
                         {/* 刪除 + 儲存 */}
                         <div style={{ gridColumn: '1/-1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <button onClick={() => removeReceiptForm(form.id)}
@@ -1451,7 +1552,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 setEditNotes('')
                                 setEditPhotoFile(null)
                                 setEditPhotoPreview(r.photo_url || null)
-                                setEditItems((r.receipt_items ?? []).map(i => ({ item_name: i.item_name, amount: i.amount })))
+                                setEditItems((r.receipt_items ?? []).map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, amount: i.amount })))
                               }}
                                 className="p-1.5 rounded-lg" style={{ background: '#f4f4f5', color: '#52525b' }}>
                                 <Pencil className="h-3.5 w-3.5" />
@@ -2158,6 +2259,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         </div>
                       </div>
                     </div>
+
+                    {/* 細項明細 */}
+                    {(reviewItem.items ?? []).filter(i => i.item_name.trim()).length > 0 && (
+                      <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '10px 12px', marginBottom: '16px' }}>
+                        <p style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, marginBottom: '6px' }}>細項明細</p>
+                        {(reviewItem.items ?? []).filter(i => i.item_name.trim()).map((item, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '2px 0' }}>
+                            <span style={{ color: '#52525b' }}>
+                              {item.item_name}
+                              {(item.quantity > 0 && (item.unit || item.quantity !== 1)) ? ` × ${item.quantity}${item.unit}` : ''}
+                            </span>
+                            <span style={{ fontWeight: 600, color: '#18181b', fontVariantNumeric: 'tabular-nums' }}>${fmt(item.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     {/* 進度列 */}
                     <div style={{ height: '4px', borderRadius: '2px', background: '#f4f4f5', marginBottom: '16px', overflow: 'hidden' }}>
