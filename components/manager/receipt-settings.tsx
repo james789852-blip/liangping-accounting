@@ -275,16 +275,18 @@ function VendorRow({ vendor, onDelete, onRefresh }: {
   const [addingTemplate, setAddingTemplate] = useState(false)
   const [newItemName, setNewItemName] = useState('')
   const [newUnit, setNewUnit] = useState('')
+  const [newUnitPrice, setNewUnitPrice] = useState('')
   const [templatePending, startTemplate] = useTransition()
 
   function handleAddTemplate() {
     if (!newItemName.trim()) { toast.error('請輸入品項名稱'); return }
     startTemplate(async () => {
-      const r = await addVendorItemTemplate(vendor.id, newItemName.trim(), newUnit.trim())
+      const r = await addVendorItemTemplate(vendor.id, newItemName.trim(), newUnit.trim(), parseFloat(newUnitPrice) || 0)
       if (r.error) { toast.error(r.error); return }
       toast.success(`已新增「${newItemName.trim()}」`)
       setNewItemName('')
       setNewUnit('')
+      setNewUnitPrice('')
       setAddingTemplate(false)
       onRefresh()
     })
@@ -334,20 +336,24 @@ function VendorRow({ vendor, onDelete, onRefresh }: {
           </div>
 
           {addingTemplate ? (
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
               <input autoFocus placeholder="品項名稱（例：空心菜）"
-                style={{ flex: 2, padding: '7px 10px', border: '1.5px solid #6366f1', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', minWidth: 0 }}
+                style={{ flex: '2 1 120px', padding: '7px 10px', border: '1.5px solid #6366f1', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', minWidth: 0 }}
                 value={newItemName} onChange={e => setNewItemName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Escape') setAddingTemplate(false) }} />
-              <input placeholder="單位（例：斤）"
-                style={{ flex: 1, padding: '7px 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', minWidth: 0 }}
+              <input placeholder="單位（斤）"
+                style={{ flex: '0 0 60px', padding: '7px 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', textAlign: 'center' }}
                 value={newUnit} onChange={e => setNewUnit(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') setAddingTemplate(false) }} />
+              <input type="number" placeholder="單價"
+                style={{ flex: '0 0 72px', padding: '7px 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', textAlign: 'right' }}
+                value={newUnitPrice} onChange={e => setNewUnitPrice(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Escape') setAddingTemplate(false) }} />
               <button onClick={handleAddTemplate} disabled={templatePending || !newItemName.trim()}
                 style={{ padding: '6px 10px', background: '#6366f1', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: templatePending || !newItemName.trim() ? 'not-allowed' : 'pointer', opacity: templatePending || !newItemName.trim() ? 0.5 : 1, fontFamily: 'inherit', flexShrink: 0 }}>
                 {templatePending ? <Loader2 className="h-3 w-3 animate-spin" /> : '新增'}
               </button>
-              <button onClick={() => { setAddingTemplate(false); setNewItemName(''); setNewUnit('') }}
+              <button onClick={() => { setAddingTemplate(false); setNewItemName(''); setNewUnit(''); setNewUnitPrice('') }}
                 style={{ padding: '6px 8px', background: '#f4f4f5', border: 'none', borderRadius: '8px', color: '#52525b', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -373,12 +379,13 @@ function TemplateRow({ template, onDelete, onRefresh }: {
   const [editing, setEditing] = useState(false)
   const [nameVal, setNameVal] = useState(template.item_name)
   const [unitVal, setUnitVal] = useState(template.unit)
+  const [unitPriceVal, setUnitPriceVal] = useState(String(template.unit_price ?? 0))
   const [pending, startPending] = useTransition()
 
   function handleSave() {
     if (!nameVal.trim()) { toast.error('請輸入品項名稱'); return }
     startPending(async () => {
-      const r = await updateVendorItemTemplate(template.id, nameVal.trim(), unitVal.trim())
+      const r = await updateVendorItemTemplate(template.id, nameVal.trim(), unitVal.trim(), parseFloat(unitPriceVal) || 0)
       if (r.error) { toast.error(r.error); return }
       toast.success('已更新')
       setEditing(false)
@@ -389,6 +396,7 @@ function TemplateRow({ template, onDelete, onRefresh }: {
   function handleCancel() {
     setNameVal(template.item_name)
     setUnitVal(template.unit)
+    setUnitPriceVal(String(template.unit_price ?? 0))
     setEditing(false)
   }
 
@@ -399,8 +407,11 @@ function TemplateRow({ template, onDelete, onRefresh }: {
           style={{ flex: 2, padding: '4px 6px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: '#18181b', minWidth: 0 }}
           value={nameVal} onChange={e => setNameVal(e.target.value)} />
         <input placeholder="單位"
-          style={{ width: '52px', padding: '4px 6px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }}
+          style={{ width: '48px', padding: '4px 6px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }}
           value={unitVal} onChange={e => setUnitVal(e.target.value)} />
+        <input type="number" placeholder="單價"
+          style={{ width: '64px', padding: '4px 6px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b' }}
+          value={unitPriceVal} onChange={e => setUnitPriceVal(e.target.value)} />
         <button onClick={handleSave} disabled={pending || !nameVal.trim()}
           style={{ padding: '4px 8px', background: '#6366f1', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: pending || !nameVal.trim() ? 'not-allowed' : 'pointer', opacity: pending || !nameVal.trim() ? 0.5 : 1, fontFamily: 'inherit', flexShrink: 0 }}>
           {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
@@ -419,6 +430,9 @@ function TemplateRow({ template, onDelete, onRefresh }: {
       <span style={{ flex: 1, fontSize: '13px', color: '#18181b' }}>{template.item_name}</span>
       {template.unit && (
         <span style={{ fontSize: '12px', color: '#71717a', background: '#f4f4f5', padding: '1px 8px', borderRadius: '8px' }}>{template.unit}</span>
+      )}
+      {(template.unit_price ?? 0) > 0 && (
+        <span style={{ fontSize: '12px', color: '#059669', background: '#ecfdf5', padding: '1px 8px', borderRadius: '8px' }}>${template.unit_price}</span>
       )}
       <button onClick={() => setEditing(true)}
         style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a1a1aa', padding: '2px', flexShrink: 0 }}>

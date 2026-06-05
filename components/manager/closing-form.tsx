@@ -25,7 +25,7 @@ interface TodayReceipt {
   tax_amount?: number
   receipt_type: string
   photo_url?: string
-  receipt_items?: { item_name: string; unit: string; quantity: number; amount: number }[]
+  receipt_items?: { item_name: string; unit: string; quantity: number; unit_price: number; amount: number }[]
 }
 
 interface ChannelPhoto {
@@ -41,6 +41,7 @@ interface ReceiptFormItem {
   item_name: string
   unit: string
   quantity: number
+  unit_price: number
   amount: number
 }
 
@@ -65,7 +66,7 @@ interface VerifyItem {
   photoUrl: string
   inputAmount: number
   confirmed: boolean
-  items?: { item_name: string; unit: string; quantity: number; amount: number }[]
+  items?: { item_name: string; unit: string; quantity: number; unit_price: number; amount: number }[]
 }
 
 function isCKReceipt(receipt: TodayReceipt, ckPrices: CKPrice[]): boolean {
@@ -416,7 +417,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null)
   const [editUploading, setEditUploading] = useState(false)
   const editPhotoInputRef = useRef<HTMLInputElement>(null)
-  const [editItems, setEditItems] = useState<{ item_name: string; unit: string; quantity: number; amount: number }[]>([])
+  const [editItems, setEditItems] = useState<{ item_name: string; unit: string; quantity: number; unit_price: number; amount: number }[]>([])
   const [photoLightbox, setPhotoLightbox] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [receiptForms, setReceiptForms] = useState<ReceiptForm[]>([])
@@ -559,7 +560,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const supabase = createClient()
     const { data: receipts } = await supabase
       .from('receipts')
-      .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, unit, quantity, amount)')
+      .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, unit, quantity, unit_price, amount)')
       .eq('store_id', store.id)
       .eq('business_date', today)
       .order('created_at')
@@ -606,7 +607,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         ...r, vendor_name: editVendor, total_amount: finalTotal,
         tax_amount: editHasTax ? editTaxAmount : 0,
         receipt_type: editCategory || r.receipt_type,
-        photo_url: newPhotoUrl, receipt_items: validItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, amount: i.amount })),
+        photo_url: newPhotoUrl, receipt_items: validItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: i.amount })),
       } : r
     )
     setLocalReceipts(updatedReceipts)
@@ -627,7 +628,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     await supabase.from('receipt_items').delete().eq('receipt_id', editingReceiptId)
     if (validItems.length > 0) {
       await supabase.from('receipt_items').insert(
-        validItems.map(i => ({ receipt_id: editingReceiptId, item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, amount: i.amount, item_category: '食材', excel_column: '' }))
+        validItems.map(i => ({ receipt_id: editingReceiptId, item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: i.amount, item_category: '食材', excel_column: '' }))
       )
     }
     setEditUploading(false)
@@ -722,6 +723,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           item_name: i.item_name.trim(),
           unit: i.unit,
           quantity: i.quantity,
+          unit_price: i.unit_price ?? 0,
           amount: i.amount,
           item_category: '食材',
           excel_column: '',
@@ -1286,16 +1288,23 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           const vendorObj = catObj?.vendors.find(v => v.name === form.vendor_name)
                           const templates = (vendorObj as any)?.item_templates ?? []
 
-                          function addItem(name = '', unit = '') {
+                          function addItem(name = '', unit = '', unitPrice = 0) {
                             updateReceiptForm(form.id, 'items', [
                               ...(form.items ?? []),
-                              { id: crypto.randomUUID(), item_name: name, unit, quantity: 1, amount: 0 },
+                              { id: crypto.randomUUID(), item_name: name, unit, quantity: 1, unit_price: unitPrice, amount: unitPrice > 0 ? unitPrice : 0 },
                             ])
                           }
                           function updateItem(itemId: string, field: string, value: any) {
-                            updateReceiptForm(form.id, 'items', (form.items ?? []).map(i =>
-                              i.id === itemId ? { ...i, [field]: value } : i
-                            ))
+                            updateReceiptForm(form.id, 'items', (form.items ?? []).map(i => {
+                              if (i.id !== itemId) return i
+                              const updated = { ...i, [field]: value }
+                              if (field === 'quantity' || field === 'unit_price') {
+                                const qty = field === 'quantity' ? value : i.quantity
+                                const price = field === 'unit_price' ? value : i.unit_price
+                                if (qty > 0 && price > 0) updated.amount = Math.round(qty * price)
+                              }
+                              return updated
+                            }))
                           }
                           function removeItem(itemId: string) {
                             updateReceiptForm(form.id, 'items', (form.items ?? []).filter(i => i.id !== itemId))
@@ -1315,9 +1324,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               {templates.length > 0 && (
                                 <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '8px' }}>
                                   {templates.map((t: any) => (
-                                    <button key={t.id} type="button" onClick={() => addItem(t.item_name, t.unit)}
+                                    <button key={t.id} type="button" onClick={() => addItem(t.item_name, t.unit, t.unit_price ?? 0)}
                                       style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                                      + {t.item_name}{t.unit ? `（${t.unit}）` : ''}
+                                      + {t.item_name}{t.unit ? `（${t.unit}）` : ''}{(t.unit_price ?? 0) > 0 ? ` $${t.unit_price}` : ''}
                                     </button>
                                   ))}
                                 </div>
@@ -1326,21 +1335,26 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               {/* 細項列表 */}
                               <div className="space-y-1.5">
                                 {(form.items ?? []).map(item => (
-                                  <div key={item.id} style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                                  <div key={item.id} style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
                                     <input placeholder="品項名稱"
-                                      style={{ flex: 2, padding: '6px 8px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', minWidth: 0, color: '#18181b' }}
+                                      style={{ flex: '2 1 100px', padding: '6px 8px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', minWidth: 0, color: '#18181b' }}
                                       value={item.item_name}
                                       onChange={e => updateItem(item.id, 'item_name', e.target.value)} />
                                     <input type="number" placeholder="數量"
-                                      style={{ width: '50px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }}
+                                      style={{ flex: '0 0 48px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }}
                                       value={item.quantity || ''}
                                       onChange={e => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)} />
                                     <input placeholder="單位"
-                                      style={{ width: '40px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }}
+                                      style={{ flex: '0 0 38px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }}
                                       value={item.unit}
                                       onChange={e => updateItem(item.id, 'unit', e.target.value)} />
+                                    <input type="number" placeholder="單價"
+                                      style={{ flex: '0 0 58px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b' }}
+                                      value={item.unit_price || ''}
+                                      onChange={e => updateItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)} />
+                                    <span style={{ fontSize: '11px', color: '#a1a1aa', flexShrink: 0 }}>×</span>
                                     <input type="number" placeholder="小計"
-                                      style={{ width: '64px', padding: '6px 6px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b' }}
+                                      style={{ flex: '0 0 62px', padding: '6px 6px', border: '1px solid #c7d2fe', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b', background: '#f5f5ff' }}
                                       value={item.amount || ''}
                                       onChange={e => updateItem(item.id, 'amount', parseInt(e.target.value) || 0)} />
                                     <button type="button" onClick={() => removeItem(item.id)}
@@ -1552,7 +1566,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 setEditNotes('')
                                 setEditPhotoFile(null)
                                 setEditPhotoPreview(r.photo_url || null)
-                                setEditItems((r.receipt_items ?? []).map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, amount: i.amount })))
+                                setEditItems((r.receipt_items ?? []).map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: i.amount })))
                               }}
                                 className="p-1.5 rounded-lg" style={{ background: '#f4f4f5', color: '#52525b' }}>
                                 <Pencil className="h-3.5 w-3.5" />
@@ -2265,12 +2279,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '10px 12px', marginBottom: '16px' }}>
                         <p style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, marginBottom: '6px' }}>細項明細</p>
                         {(reviewItem.items ?? []).filter(i => i.item_name.trim()).map((item, idx) => (
-                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '2px 0' }}>
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '3px 0', borderBottom: idx < (reviewItem.items ?? []).filter(i => i.item_name.trim()).length - 1 ? '1px solid #f0f0f0' : 'none' }}>
                             <span style={{ color: '#52525b' }}>
                               {item.item_name}
-                              {(item.quantity > 0 && (item.unit || item.quantity !== 1)) ? ` × ${item.quantity}${item.unit}` : ''}
+                              {item.quantity > 0 && item.quantity !== 1 ? ` × ${item.quantity}` : ''}
+                              {item.unit ? item.unit : ''}
                             </span>
-                            <span style={{ fontWeight: 600, color: '#18181b', fontVariantNumeric: 'tabular-nums' }}>${fmt(item.amount)}</span>
+                            <span style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              {(item.unit_price ?? 0) > 0 && (
+                                <span style={{ fontSize: '12px', color: '#71717a', fontVariantNumeric: 'tabular-nums' }}>${fmt(item.unit_price)}/單</span>
+                              )}
+                              <span style={{ fontWeight: 600, color: '#18181b', fontVariantNumeric: 'tabular-nums' }}>${fmt(item.amount)}</span>
+                            </span>
                           </div>
                         ))}
                       </div>

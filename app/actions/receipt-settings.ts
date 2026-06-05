@@ -8,6 +8,7 @@ export interface VendorItemTemplate {
   id: string
   item_name: string
   unit: string
+  unit_price: number
 }
 
 export interface CategoryWithVendors {
@@ -31,7 +32,7 @@ export async function getReceiptSettings(storeId: string): Promise<CategoryWithV
       id, name, sort_order,
       receipt_vendors(
         id, name, sort_order,
-        vendor_item_templates(id, item_name, unit, sort_order)
+        vendor_item_templates(id, item_name, unit, unit_price, sort_order)
       )
     `)
     .eq('store_id', storeId)
@@ -45,7 +46,7 @@ export async function getReceiptSettings(storeId: string): Promise<CategoryWithV
       name: v.name,
       item_templates: (v.vendor_item_templates ?? [])
         .sort((a: any, b: any) => a.sort_order - b.sort_order)
-        .map((t: any) => ({ id: t.id, item_name: t.item_name, unit: t.unit })),
+        .map((t: any) => ({ id: t.id, item_name: t.item_name, unit: t.unit, unit_price: t.unit_price ?? 0 })),
     })),
   }))
 }
@@ -117,7 +118,7 @@ export async function deleteVendor(vendorId: string) {
   return { success: true }
 }
 
-export async function addVendorItemTemplate(vendorId: string, itemName: string, unit: string) {
+export async function addVendorItemTemplate(vendorId: string, itemName: string, unit: string, unitPrice: number) {
   await requireAuth()
   if (!itemName.trim()) return { error: '請輸入品項名稱' }
   const admin = createAdminClient()
@@ -125,18 +126,19 @@ export async function addVendorItemTemplate(vendorId: string, itemName: string, 
     vendor_id: vendorId,
     item_name: itemName.trim(),
     unit: unit.trim(),
+    unit_price: unitPrice,
   })
   if (error) return { error: error.message }
   revalidatePath('/manager/settings')
   return { success: true }
 }
 
-export async function updateVendorItemTemplate(templateId: string, itemName: string, unit: string) {
+export async function updateVendorItemTemplate(templateId: string, itemName: string, unit: string, unitPrice: number) {
   await requireAuth()
   if (!itemName.trim()) return { error: '請輸入品項名稱' }
   const admin = createAdminClient()
   const { error } = await admin.from('vendor_item_templates')
-    .update({ item_name: itemName.trim(), unit: unit.trim() })
+    .update({ item_name: itemName.trim(), unit: unit.trim(), unit_price: unitPrice })
     .eq('id', templateId)
   if (error) return { error: error.message }
   revalidatePath('/manager/settings')

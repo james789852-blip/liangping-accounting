@@ -94,7 +94,7 @@ export default async function ClosingsPage({
         if (!store?.id) return
         const { data: receipts } = await admin
           .from('receipts')
-          .select('id, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, amount)')
+          .select('id, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, unit_price, amount)')
           .eq('store_id', store.id)
           .eq('business_date', c.business_date)
           .order('created_at')

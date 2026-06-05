@@ -26,7 +26,7 @@ interface Closing {
 }
 interface ReceiptRow {
   id: string; vendor_name: string; receipt_type?: string; total_amount: number
-  photo_url?: string; receipt_items?: { item_name: string; amount: number }[]
+  photo_url?: string; receipt_items?: { item_name: string; unit_price: number; amount: number }[]
 }
 interface VideoRow { closing_id: string; signed_url: string; file_name: string }
 
