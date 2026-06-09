@@ -1267,7 +1267,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                         {/* 金額 */}
                         {(() => {
-                          const itemsTotal = (form.items ?? []).filter(i => i.item_name.trim() && i.amount > 0).reduce((s, i) => s + i.amount, 0)
+                          const itemsTotal = (form.items ?? []).filter(i => i.amount > 0).reduce((s, i) => s + i.amount, 0)
                           const hasItemsTotal = itemsTotal > 0
                           return (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1322,9 +1322,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           const catObj = categories?.find(c => c.name === form.category)
                           const vendorObj = catObj?.vendors.find(v => v.name === form.vendor_name)
                           const templates = (vendorObj as any)?.item_templates ?? []
+                          const defaultUnits = ['斤', '台斤', '公斤', '個', '盒', '袋', '包', '罐', '瓶', '份', '束', '條']
+                          const unitOptions = Array.from(new Set([...templates.map((t: any) => t.unit).filter(Boolean), ...defaultUnits]))
 
                           function syncItems(newItems: ReceiptFormItem[]) {
-                            const total = newItems.filter(i => i.item_name.trim() && i.amount > 0).reduce((s, i) => s + i.amount, 0)
+                            const total = newItems.filter(i => i.amount > 0).reduce((s, i) => s + i.amount, 0)
                             setReceiptForms(prev => prev.map(f =>
                               f.id === form.id ? { ...f, items: newItems, ...(total > 0 ? { total_amount: total } : {}) } : f
                             ))
@@ -1374,33 +1376,52 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               )}
 
                               {/* 細項列表 */}
-                              <div className="space-y-1.5">
+                              <div className="space-y-2">
                                 {(form.items ?? []).map(item => (
-                                  <div key={item.id} style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                    <input placeholder="品項名稱"
-                                      style={{ flex: '2 1 100px', padding: '6px 8px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', minWidth: 0, color: '#18181b' }}
-                                      value={item.item_name}
-                                      onChange={e => updateItem(item.id, 'item_name', e.target.value)} />
-                                    <DecimalInput value={item.quantity}
-                                      onChange={v => updateItem(item.id, 'quantity', v)}
-                                      style={{ flex: '0 0 48px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }} />
-                                    <input placeholder="單位"
-                                      style={{ flex: '0 0 38px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }}
-                                      value={item.unit}
-                                      onChange={e => updateItem(item.id, 'unit', e.target.value)} />
-                                    <input type="number" placeholder="單價"
-                                      style={{ flex: '0 0 58px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b' }}
-                                      value={item.unit_price || ''}
-                                      onChange={e => updateItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)} />
-                                    <span style={{ fontSize: '11px', color: '#a1a1aa', flexShrink: 0 }}>×</span>
-                                    <input type="number" placeholder="小計"
-                                      style={{ flex: '0 0 62px', padding: '6px 6px', border: '1px solid #c7d2fe', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b', background: '#f5f5ff' }}
-                                      value={item.amount || ''}
-                                      onChange={e => updateItem(item.id, 'amount', parseInt(e.target.value) || 0)} />
-                                    <button type="button" onClick={() => removeItem(item.id)}
-                                      style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', flexShrink: 0 }}>
-                                      <X style={{ width: '13px', height: '13px' }} />
-                                    </button>
+                                  <div key={item.id} style={{ border: '1px solid #e4e4e7', borderRadius: '10px', padding: '8px 10px', background: '#fafafa' }}>
+                                    {/* 品項名稱 + 刪除 */}
+                                    <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                                      <input placeholder="品項名稱"
+                                        style={{ flex: 1, padding: '6px 8px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: '#18181b', background: 'white' }}
+                                        value={item.item_name}
+                                        onChange={e => updateItem(item.id, 'item_name', e.target.value)} />
+                                      <button type="button" onClick={() => removeItem(item.id)}
+                                        style={{ padding: '4px 6px', background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', flexShrink: 0 }}>
+                                        <X style={{ width: '14px', height: '14px' }} />
+                                      </button>
+                                    </div>
+                                    {/* 數量 / 單位 / 單價 / 小計 with labels */}
+                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: '0 0 52px' }}>
+                                        <span style={{ fontSize: '10px', color: '#a1a1aa', fontWeight: 600 }}>數量</span>
+                                        <DecimalInput value={item.quantity}
+                                          onChange={v => updateItem(item.id, 'quantity', v)}
+                                          style={{ padding: '5px 4px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b', background: 'white', width: '100%', boxSizing: 'border-box' as const }} />
+                                      </div>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: '1 1 60px', minWidth: 0 }}>
+                                        <span style={{ fontSize: '10px', color: '#a1a1aa', fontWeight: 600 }}>單位</span>
+                                        <select value={item.unit} onChange={e => updateItem(item.id, 'unit', e.target.value)}
+                                          style={{ padding: '5px 4px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '12px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', width: '100%' }}>
+                                          <option value="">—</option>
+                                          {unitOptions.map((u: string) => <option key={u} value={u}>{u}</option>)}
+                                        </select>
+                                      </div>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: '0 0 68px' }}>
+                                        <span style={{ fontSize: '10px', color: '#a1a1aa', fontWeight: 600 }}>單價</span>
+                                        <input type="number" placeholder="0" min="0"
+                                          style={{ padding: '5px 4px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b', background: 'white', width: '100%', boxSizing: 'border-box' as const }}
+                                          value={item.unit_price || ''}
+                                          onChange={e => updateItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)} />
+                                      </div>
+                                      <span style={{ fontSize: '11px', color: '#a1a1aa', flexShrink: 0, paddingBottom: '6px' }}>=</span>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: '0 0 68px' }}>
+                                        <span style={{ fontSize: '10px', color: '#6366f1', fontWeight: 600 }}>小計</span>
+                                        <input type="number" placeholder="0" min="0"
+                                          style={{ padding: '5px 6px', border: '1px solid #c7d2fe', borderRadius: '6px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b', background: '#f5f5ff', width: '100%', boxSizing: 'border-box' as const }}
+                                          value={item.amount || ''}
+                                          onChange={e => updateItem(item.id, 'amount', parseInt(e.target.value) || 0)} />
+                                      </div>
+                                    </div>
                                   </div>
                                 ))}
                               </div>
