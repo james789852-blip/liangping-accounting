@@ -8,7 +8,7 @@ import {
   LayoutDashboard, CheckSquare,
   Store, Users, LogOut,
   ClipboardList, History, LineChart,
-  ArrowRightLeft, Package, BookOpen, Settings,
+  ArrowRightLeft, Package, BookOpen, Settings, FileBarChart2,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
@@ -33,9 +33,10 @@ const hqSections = [
   {
     label: '帳目',
     items: [
-      { href: '/hq/closings',  label: '帳目瀏覽・審核', icon: BookOpen },
-      { href: '/hq/dashboard', label: '即時儀表板',     icon: LayoutDashboard },
-      { href: '/hq/stores',    label: '店家管理',       icon: Store },
+      { href: '/hq/closings',            label: '帳目瀏覽・審核', icon: BookOpen },
+      { href: '/hq/food-cost-preview',   label: '食耗成本預覽',   icon: FileBarChart2 },
+      { href: '/hq/dashboard',           label: '即時儀表板',     icon: LayoutDashboard },
+      { href: '/hq/stores',              label: '店家管理',       icon: Store },
     ],
   },
   {

@@ -63,9 +63,9 @@ export async function GET(req: NextRequest) {
   const lastDay  = new Date(year, monthNum, 0).toISOString().slice(0, 10)
 
   const admin = createAdminClient()
-  const [{ data: receipts }, { data: closings }, { data: storeRow }] = await Promise.all([
+  const [{ data: receipts }, { data: closings }, { data: storeRow }, { data: mappingsRaw }] = await Promise.all([
     admin.from('receipts')
-      .select('business_date, total_amount, tax_amount, receipt_type, receipt_items(excel_column, amount)')
+      .select('business_date, total_amount, tax_amount, receipt_type, receipt_items(item_name, excel_column, amount)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('daily_closings')
@@ -73,7 +73,10 @@ export async function GET(req: NextRequest) {
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('stores').select('name, uber_accounts, ichef_uber_linked').eq('id', storeId).single(),
+    admin.from('item_column_mappings').select('item_name, excel_column'),
   ])
+  const mappingLookup: Record<string, string> = {}
+  for (const m of mappingsRaw ?? []) mappingLookup[m.item_name] = m.excel_column
 
   const uberAccounts: string[] = storeRow?.uber_accounts ?? []
   const ichefLinked: boolean = storeRow?.ichef_uber_linked ?? false
@@ -131,11 +134,15 @@ export async function GET(req: NextRequest) {
   let invoiceTotal = 0, receiptTotal = 0
   for (const r of (receipts ?? []) as any[]) {
     const dd = ensureDay(r.business_date)
-    const validItems = (r.receipt_items ?? []).filter((it: any) => it.excel_column && (it.amount || 0) > 0)
+    const resolvedItems = (r.receipt_items ?? []).map((it: any) => ({
+      ...it,
+      resolved_col: mappingLookup[it.item_name] ?? it.excel_column ?? '',
+    }))
+    const validItems = resolvedItems.filter((it: any) => it.resolved_col && (it.amount || 0) > 0)
     const itemsSum = validItems.reduce((s: number, it: any) => s + (it.amount as number), 0)
     // Add item amounts
     for (const it of validItems) {
-      dd.items[it.excel_column] = (dd.items[it.excel_column] || 0) + (it.amount as number)
+      dd.items[it.resolved_col] = (dd.items[it.resolved_col] || 0) + (it.amount as number)
     }
     // Distribute unallocated amount (total - items) to columns proportionally
     // This handles tax that is stored in total_amount but not split into receipt_items
@@ -143,7 +150,7 @@ export async function GET(req: NextRequest) {
     if (unallocated > 0 && itemsSum > 0) {
       for (const it of validItems) {
         const share = Math.round(unallocated * (it.amount as number) / itemsSum)
-        dd.items[it.excel_column] = (dd.items[it.excel_column] || 0) + share
+        dd.items[it.resolved_col] = (dd.items[it.resolved_col] || 0) + share
       }
     }
     if (r.receipt_type === 'invoice') invoiceTotal += r.total_amount ?? 0
