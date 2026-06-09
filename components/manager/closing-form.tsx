@@ -1238,15 +1238,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         </div>
 
                         {/* 金額 */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>
-                            {form.has_tax ? '金額（未稅）*' : '金額 *'}
-                          </label>
-                          <input type="number" min="0" inputMode="numeric" placeholder="0"
-                            style={{ padding: '8px 10px', border: `1.5px solid ${form.total_amount > 0 ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
-                            value={form.total_amount || ''}
-                            onChange={e => updateReceiptForm(form.id, 'total_amount', parseInt(e.target.value) || 0)} />
-                        </div>
+                        {(() => {
+                          const itemsTotal = (form.items ?? []).filter(i => i.item_name.trim() && i.amount > 0).reduce((s, i) => s + i.amount, 0)
+                          const hasItemsTotal = itemsTotal > 0
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                {form.has_tax ? '金額（未稅）*' : '金額 *'}
+                                {hasItemsTotal && <span style={{ fontSize: '10px', color: '#6366f1', background: '#eef2ff', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
+                              </label>
+                              <input type="number" min="0" inputMode="numeric" placeholder="0" readOnly={hasItemsTotal}
+                                style={{ padding: '8px 10px', border: `1.5px solid ${hasItemsTotal ? '#c7d2fe' : form.total_amount > 0 ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: hasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: '#18181b', cursor: hasItemsTotal ? 'default' : 'text' }}
+                                value={form.total_amount || ''}
+                                onChange={e => { if (!hasItemsTotal) updateReceiptForm(form.id, 'total_amount', parseInt(e.target.value) || 0) }} />
+                            </div>
+                          )
+                        })()}
 
                         {/* 稅 */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1288,14 +1295,20 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           const vendorObj = catObj?.vendors.find(v => v.name === form.vendor_name)
                           const templates = (vendorObj as any)?.item_templates ?? []
 
+                          function syncItems(newItems: ReceiptFormItem[]) {
+                            const total = newItems.filter(i => i.item_name.trim() && i.amount > 0).reduce((s, i) => s + i.amount, 0)
+                            setReceiptForms(prev => prev.map(f =>
+                              f.id === form.id ? { ...f, items: newItems, ...(total > 0 ? { total_amount: total } : {}) } : f
+                            ))
+                          }
                           function addItem(name = '', unit = '', unitPrice = 0) {
-                            updateReceiptForm(form.id, 'items', [
+                            syncItems([
                               ...(form.items ?? []),
                               { id: crypto.randomUUID(), item_name: name, unit, quantity: 1, unit_price: unitPrice, amount: unitPrice > 0 ? unitPrice : 0 },
                             ])
                           }
                           function updateItem(itemId: string, field: string, value: any) {
-                            updateReceiptForm(form.id, 'items', (form.items ?? []).map(i => {
+                            syncItems((form.items ?? []).map(i => {
                               if (i.id !== itemId) return i
                               const updated = { ...i, [field]: value }
                               if (field === 'quantity' || field === 'unit_price') {
@@ -1307,7 +1320,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             }))
                           }
                           function removeItem(itemId: string) {
-                            updateReceiptForm(form.id, 'items', (form.items ?? []).filter(i => i.id !== itemId))
+                            syncItems((form.items ?? []).filter(i => i.id !== itemId))
                           }
 
                           return (
@@ -1340,7 +1353,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                       style={{ flex: '2 1 100px', padding: '6px 8px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', minWidth: 0, color: '#18181b' }}
                                       value={item.item_name}
                                       onChange={e => updateItem(item.id, 'item_name', e.target.value)} />
-                                    <input type="number" placeholder="數量"
+                                    <input type="number" placeholder="數量" step="any" min="0"
                                       style={{ flex: '0 0 48px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }}
                                       value={item.quantity || ''}
                                       onChange={e => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)} />
