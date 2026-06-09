@@ -378,6 +378,34 @@ function SummaryBlock({ label, value, warm }: { label: string; value: string; wa
   )
 }
 
+function DecimalInput({ value, onChange, style, placeholder }: {
+  value: number; onChange: (v: number) => void
+  style?: React.CSSProperties; placeholder?: string
+}) {
+  const [raw, setRaw] = useState(value === 0 ? '' : String(value))
+  const prevValue = useRef(value)
+
+  useEffect(() => {
+    if (prevValue.current !== value && parseFloat(raw) !== value) {
+      setRaw(value === 0 ? '' : String(value))
+    }
+    prevValue.current = value
+  }, [value])
+
+  return (
+    <input type="text" inputMode="decimal" placeholder={placeholder ?? '數量'}
+      style={style} value={raw}
+      onChange={e => {
+        const val = e.target.value
+        if (val === '' || /^[0-9]*\.?[0-9]*$/.test(val)) {
+          setRaw(val)
+          const num = parseFloat(val)
+          onChange(isNaN(num) ? 0 : num)
+        }
+      }} />
+  )
+}
+
 export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [] }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
@@ -1353,10 +1381,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                       style={{ flex: '2 1 100px', padding: '6px 8px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', minWidth: 0, color: '#18181b' }}
                                       value={item.item_name}
                                       onChange={e => updateItem(item.id, 'item_name', e.target.value)} />
-                                    <input type="number" placeholder="數量" step="any" min="0"
-                                      style={{ flex: '0 0 48px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }}
-                                      value={item.quantity || ''}
-                                      onChange={e => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)} />
+                                    <DecimalInput value={item.quantity}
+                                      onChange={v => updateItem(item.id, 'quantity', v)}
+                                      style={{ flex: '0 0 48px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }} />
                                     <input placeholder="單位"
                                       style={{ flex: '0 0 38px', padding: '6px 4px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b' }}
                                       value={item.unit}
