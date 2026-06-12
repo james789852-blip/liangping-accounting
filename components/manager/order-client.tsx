@@ -77,7 +77,7 @@ function VendorCard({ vendor, items }: { vendor: string; items: Receipt[] }) {
                       {r.photo_url && (
                         <button onClick={() => setPhotoId(photoId === r.id ? null : r.id)}
                           className="text-xs font-medium px-2 py-0.5 rounded-lg"
-                          style={{ background: '#eef2ff', color: '#4338ca' }}>
+                          style={{ background: '#FFFBEB', color: '#92400E' }}>
                           {photoId === r.id ? '收起' : '照片'}
                         </button>
                       )}

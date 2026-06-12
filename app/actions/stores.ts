@@ -14,6 +14,7 @@ interface StoreSettings {
   online_enabled: boolean
   petty_cash: number
   name?: string
+  type?: string
 }
 
 async function requireManager() {
@@ -37,6 +38,7 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
     .from('stores')
     .update({
       ...(settings.name ? { name: settings.name.trim() } : {}),
+      ...(settings.type ? { type: settings.type } : {}),
       mode: settings.mode,
       ichef_uber_linked: settings.ichef_uber_linked,
       uber_enabled: settings.uber_enabled,
@@ -56,7 +58,7 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
   return { success: true }
 }
 
-export async function createStore(name: string, mode: string) {
+export async function createStore(name: string, mode: string, type = '店面') {
   const { error } = await requireManager()
   if (error) return { error }
 
@@ -66,7 +68,7 @@ export async function createStore(name: string, mode: string) {
   const admin = createAdminClient()
   const { data, error: dbErr } = await admin
     .from('stores')
-    .insert({ name: trimmed, mode, active: true })
+    .insert({ name: trimmed, mode, type, active: true })
     .select('id')
     .single()
 

@@ -10,7 +10,7 @@ function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
 const STATUS: Record<string, { label: string; dot: string; ring: string }> = {
   draft:     { label: '草稿',   dot: '#a1a1aa', ring: '#f4f4f5' },
-  submitted: { label: '已送出', dot: '#6366f1', ring: '#e0e7ff' },
+  submitted: { label: '已送出', dot: '#F59E0B', ring: '#FEF3C7' },
   verified:  { label: '已審核', dot: '#10b981', ring: '#d1fae5' },
   disputed:  { label: '退回中', dot: '#f43f5e', ring: '#ffe4e6' },
 }
@@ -100,7 +100,7 @@ export default async function HistoryPage({
             />
             <button type="submit"
               className="px-4 rounded-xl text-sm font-semibold text-white"
-              style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', height: '40px' }}>
+              style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', height: '40px' }}>
               搜尋
             </button>
             {(searchDate || searchMonth) && (

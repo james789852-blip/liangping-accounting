@@ -39,11 +39,11 @@ export default async function ReceiptsPage() {
 
   const [{ data: store }, { data: mappingRows }] = await Promise.all([
     supabase.from('stores').select('name').eq('id', storeId).single(),
-    admin.from('item_column_mappings').select('item_name, excel_column, item_category'),
+    admin.from('item_column_mappings').select('item_name, excel_column, item_category, vendor_group').eq('store_id', storeId),
   ])
 
   const mappings = Object.fromEntries(
-    (mappingRows ?? []).map(r => [r.item_name, { excel_column: r.excel_column, item_category: r.item_category }])
+    (mappingRows ?? []).map(r => [r.item_name, { excel_column: r.excel_column, item_category: r.item_category, vendor_group: (r as any).vendor_group ?? null }])
   )
 
   return (

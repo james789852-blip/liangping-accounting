@@ -1,4 +1,4 @@
-export type Role = '店長' | '副店長' | '助理' | '顧問' | '經理' | '總監' | '老闆'
+export type Role = '店長' | '副店長' | '助理' | '顧問' | '經理' | '總監' | '老闆' | '廠長' | '副廠長'
 export type StoreMode = 'ichef' | 'handwrite' | 'mixed'
 export type ClosingStatus = 'draft' | 'submitted' | 'verified' | 'disputed'
 
@@ -30,6 +30,9 @@ export interface UserProfile {
   user_id: string
   name: string
   role: Role
+  title?: string
+  employee_id?: string
   store_ids: string[]
   is_hq: boolean
+  active?: boolean
 }

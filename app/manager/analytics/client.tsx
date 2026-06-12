@@ -86,10 +86,10 @@ const ZERO: RevData = { total: 0, pos: 0, uber: 0, panda: 0, twpay: 0, online: 0
 const AVATAR_GRADS = [
   'linear-gradient(135deg,#f97316,#f59e0b)',
   'linear-gradient(135deg,#10b981,#06b6d4)',
-  'linear-gradient(135deg,#6366f1,#8b5cf6)',
-  'linear-gradient(135deg,#ec4899,#f43f5e)',
-  'linear-gradient(135deg,#06b6d4,#6366f1)',
-  'linear-gradient(135deg,#8b5cf6,#ec4899)',
+  'linear-gradient(135deg,#F59E0B,#F97316)',
+  'linear-gradient(135deg,#FBBF24,#f43f5e)',
+  'linear-gradient(135deg,#06b6d4,#F59E0B)',
+  'linear-gradient(135deg,#F97316,#FBBF24)',
   'linear-gradient(135deg,#f59e0b,#ef4444)',
 ]
 
@@ -138,7 +138,7 @@ function DailyTrendChart({ data }: { data: DayRev[] }) {
             ? 'linear-gradient(to top,#10b981,#a7f3d0)'
             : isLow
             ? 'linear-gradient(to top,#f43f5e,#fda4af)'
-            : 'linear-gradient(to top,#6366f1,#c7d2fe)'
+            : 'linear-gradient(to top,#F59E0B,#FDE68A)'
           const label = d.date.slice(5).replace(/^0/, '').replace('-', '/')
           const showLabel = data.length <= 14 ? true : i % Math.ceil(data.length / 10) === 0
           return (
@@ -157,7 +157,7 @@ function DailyTrendChart({ data }: { data: DayRev[] }) {
       </div>
       <div className="flex flex-wrap gap-3 mt-5" style={{ fontSize: '11px', color: '#71717a' }}>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: 'linear-gradient(135deg,#6366f1,#c7d2fe)' }} />一般
+          <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: 'linear-gradient(135deg,#F59E0B,#FDE68A)' }} />一般
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: 'linear-gradient(135deg,#10b981,#a7f3d0)' }} />表現好（前 25%）
@@ -352,7 +352,7 @@ export default function AnalyticsClient({ storeId, storeName }: { storeId: strin
 
       {/* Header */}
       <div className="bg-white px-5 py-4" style={{ borderBottom: '1px solid #f4f4f5' }}>
-        <h1 className="text-2xl font-extrabold" style={{ letterSpacing: '-0.02em', background: 'linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+        <h1 className="text-2xl font-extrabold" style={{ letterSpacing: '-0.02em', background: 'linear-gradient(135deg,#F59E0B,#F97316,#FBBF24)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
           營運洞察
         </h1>
         <p className="text-sm mt-0.5" style={{ color: '#71717a' }}>{storeName} · 系統幫你整理好雙週會議要報告的數字，並自動偵測異常</p>
@@ -394,7 +394,7 @@ export default function AnalyticsClient({ storeId, storeName }: { storeId: strin
                 <button key={key} onClick={() => applyPreset(key)}
                   className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
                   style={preset === key
-                    ? { background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white', border: '1.5px solid transparent', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }
+                    ? { background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white', border: '1.5px solid transparent', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }
                     : { background: 'white', color: '#52525b', border: '1.5px solid #e4e4e7' }}>
                   {label}
                 </button>
@@ -409,7 +409,7 @@ export default function AnalyticsClient({ storeId, storeName }: { storeId: strin
                   className="text-xs px-2 py-1.5 rounded-lg outline-none" style={{ border: '1.5px solid #e4e4e7', fontFamily: 'inherit' }} />
                 <button onClick={() => { setStart(customStart); setEnd(customEnd) }}
                   className="px-3 py-1.5 text-xs font-bold text-white rounded-lg"
-                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                  style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
                   查詢
                 </button>
               </div>
@@ -423,7 +423,7 @@ export default function AnalyticsClient({ storeId, storeName }: { storeId: strin
 
         {loading ? (
           <div className="text-center py-20">
-            <div className="h-9 w-9 border-[3px] rounded-full animate-spin mx-auto mb-3" style={{ borderColor: '#e0e7ff', borderTopColor: '#6366f1' }} />
+            <div className="h-9 w-9 border-[3px] rounded-full animate-spin mx-auto mb-3" style={{ borderColor: '#FEF3C7', borderTopColor: '#F59E0B' }} />
             <p className="text-sm" style={{ color: '#a1a1aa' }}>分析資料中…</p>
           </div>
         ) : (
@@ -432,7 +432,7 @@ export default function AnalyticsClient({ storeId, storeName }: { storeId: strin
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
 
               {/* Total Revenue */}
-              <div className="rounded-[18px] p-5 relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899)', color: 'white' }}>
+              <div className="rounded-[18px] p-5 relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316,#FBBF24)', color: 'white' }}>
                 <div className="absolute top-0 right-0 w-40 h-40 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle,rgba(255,255,255,0.15),transparent)', transform: 'translate(30%,-30%)' }} />
                 <div className="h-9 w-9 rounded-[10px] flex items-center justify-center mb-3" style={{ background: 'rgba(255,255,255,0.2)' }}>
                   <TrendingUp className="h-[18px] w-[18px]" />
@@ -473,11 +473,11 @@ export default function AnalyticsClient({ storeId, storeName }: { storeId: strin
 
               {/* Mobile / Online */}
               <div className="bg-white rounded-[18px] p-5 overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
-                <div className="h-9 w-9 rounded-[10px] flex items-center justify-center mb-3" style={{ background: '#e0e7ff', color: '#4338ca' }}>
+                <div className="h-9 w-9 rounded-[10px] flex items-center justify-center mb-3" style={{ background: '#FEF3C7', color: '#92400E' }}>
                   <Smartphone className="h-[18px] w-[18px]" />
                 </div>
                 <p className="text-xs mb-1" style={{ color: '#a1a1aa' }}>行動支付 / 線上</p>
-                <p className="text-2xl font-extrabold tabular-nums" style={{ color: '#4338ca', letterSpacing: '-0.02em' }}>${fmt(curRev.twpay + curRev.online)}</p>
+                <p className="text-2xl font-extrabold tabular-nums" style={{ color: '#92400E', letterSpacing: '-0.02em' }}>${fmt(curRev.twpay + curRev.online)}</p>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   <DeltaChip cur={curRev.twpay + curRev.online} prev={prevRev.twpay + prevRev.online} />
                   <span className="text-[11px]" style={{ color: '#a1a1aa' }}>前 ${fmt(prevRev.twpay + prevRev.online)}</span>
@@ -598,7 +598,7 @@ export default function AnalyticsClient({ storeId, storeName }: { storeId: strin
                 {/* Key comparison */}
                 <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5' }}>
                   <h3 className="text-sm font-semibold flex items-center gap-2 mb-4">
-                    <span className="h-8 w-8 rounded-[9px] flex items-center justify-center text-base" style={{ background: '#e0e7ff' }}>⚖️</span>
+                    <span className="h-8 w-8 rounded-[9px] flex items-center justify-center text-base" style={{ background: '#FEF3C7' }}>⚖️</span>
                     重點比較
                   </h3>
                   <div className="grid grid-cols-2 gap-3">
@@ -625,7 +625,7 @@ export default function AnalyticsClient({ storeId, storeName }: { storeId: strin
                         bg: prevDeliveryRatio > 0 && deliveryRatio > prevDeliveryRatio
                           ? 'linear-gradient(135deg,#ffe4e6,#fff1f2)'
                           : '#f8fafc',
-                        vc: deliveryRatio > 50 ? '#be123c' : '#4338ca',
+                        vc: deliveryRatio > 50 ? '#be123c' : '#92400E',
                       },
                       {
                         label: '平均單日營業額',
@@ -700,7 +700,7 @@ export default function AnalyticsClient({ storeId, storeName }: { storeId: strin
 
             {/* Export Bar */}
             <div className="rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap"
-              style={{ background: 'linear-gradient(135deg,#18181b,#4338ca)', color: 'white' }}>
+              style={{ background: 'linear-gradient(135deg,#18181b,#92400E)', color: 'white' }}>
               <div>
                 <p className="text-sm font-bold mb-1">📑 雙週會議報告</p>
                 <p className="text-xs" style={{ opacity: 0.85 }}>系統整理所有數字與警示，方便你會議時報告使用。</p>

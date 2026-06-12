@@ -4,6 +4,10 @@ import { redirect } from 'next/navigation'
 import ClosingForm from '@/components/manager/closing-form'
 import { Store, CKPrice } from '@/lib/types'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
+import { getReceiptSettings } from '@/app/actions/receipt-settings'
+import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
+
 
 export default async function EditClosingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -50,21 +54,41 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     .eq('active', true)
     .order('sort_order').order('item_name')
 
-  const { data: todayReceipts } = await supabase
-    .from('receipts')
-    .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, unit, quantity, unit_price, amount)')
-    .eq('store_id', storeId)
-    .eq('business_date', closing.business_date)
-    .order('created_at')
+  const admin2 = createAdminClient()
+  const [{ data: todayReceipts }, receiptCategories, { data: mappingRows }] = await Promise.all([
+    supabase
+      .from('receipts')
+      .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, unit, quantity, unit_price, amount)')
+      .eq('store_id', storeId)
+      .eq('business_date', closing.business_date)
+      .order('created_at'),
+    getReceiptSettings(storeId),
+    admin2.from('item_column_mappings').select('item_name, item_category, vendor_group').eq('store_id', storeId),
+  ])
+
+  const mappingColumns = (mappingRows ?? []).map((r: any) => ({
+    name: r.item_name,
+    category: r.item_category,
+    vendor_group: r.vendor_group ?? undefined,
+  }))
 
   return (
-    <ClosingForm
-      store={store as Store}
-      ckPrices={(ckPrices ?? []) as CKPrice[]}
-      existingClosing={closing}
-      userId={user.id}
-      today={closing.business_date}
-      todayReceipts={todayReceipts ?? []}
-    />
+    <>
+      <div className="bg-white px-6 py-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
+        <Link href={`/manager/history/${id}`} className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: '#a1a1aa' }}>
+          <ArrowLeft className="h-3.5 w-3.5" />返回歷史紀錄
+        </Link>
+      </div>
+      <ClosingForm
+        store={store as Store}
+        ckPrices={(ckPrices ?? []) as CKPrice[]}
+        existingClosing={closing}
+        userId={user.id}
+        today={closing.business_date}
+        todayReceipts={todayReceipts ?? []}
+        receiptCategories={receiptCategories}
+        mappingColumns={mappingColumns}
+      />
+    </>
   )
 }

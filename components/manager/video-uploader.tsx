@@ -183,9 +183,9 @@ export default function VideoUploader({ storeId, businessDate, userId, disabled,
           onClick={() => !disabled && !uploading && inputRef.current?.click()}
           className="w-full flex flex-col items-center gap-2.5 py-10 rounded-xl border-2 border-dashed transition-all select-none"
           style={{
-            borderColor: isDragging ? '#6366f1' : disabled ? '#e2e8f0' : '#cbd5e1',
-            background: isDragging ? '#eef2ff' : 'transparent',
-            color: isDragging ? '#6366f1' : disabled ? '#cbd5e1' : '#94a3b8',
+            borderColor: isDragging ? '#F59E0B' : disabled ? '#e2e8f0' : '#cbd5e1',
+            background: isDragging ? '#FFFBEB' : 'transparent',
+            color: isDragging ? '#F59E0B' : disabled ? '#cbd5e1' : '#94a3b8',
             cursor: disabled || uploading ? 'default' : 'pointer',
           }}>
           {uploading ? (
@@ -195,7 +195,7 @@ export default function VideoUploader({ storeId, businessDate, userId, disabled,
             </>
           ) : (
             <>
-              <Upload className="h-8 w-8" style={{ color: isDragging ? '#6366f1' : undefined }} />
+              <Upload className="h-8 w-8" style={{ color: isDragging ? '#F59E0B' : undefined }} />
               <div className="text-center">
                 <p className="text-sm font-medium">
                   {isDragging ? '放開以上傳影片' : '點擊或拖曳影片至此上傳'}

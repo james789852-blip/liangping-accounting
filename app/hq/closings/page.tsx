@@ -53,7 +53,7 @@ export default async function ClosingsPage({
   const admin = createAdminClient()
 
   const { data: stores } = await admin
-    .from('stores').select('id, name').eq('active', true).order('name')
+    .from('stores').select('id, name, type').eq('active', true).order('name')
 
   let query = admin
     .from('daily_closings')
@@ -94,7 +94,7 @@ export default async function ClosingsPage({
         if (!store?.id) return
         const { data: receipts } = await admin
           .from('receipts')
-          .select('id, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, unit_price, amount)')
+          .select('id, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount)')
           .eq('store_id', store.id)
           .eq('business_date', c.business_date)
           .order('created_at')

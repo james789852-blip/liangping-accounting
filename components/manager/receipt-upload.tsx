@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { saveReceipt } from '@/app/actions/receipts'
 import { saveItemMappingsBatch } from '@/app/actions/item-mappings'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
-import { Camera, Loader2, CheckCircle2, Plus, Trash2, X, Sparkles, AlertCircle } from 'lucide-react'
+import { Camera, Loader2, CheckCircle2, Plus, Trash2, X, Sparkles } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 
 interface MappingMap {
@@ -47,7 +47,18 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
   const [items, setItems] = useState<FormItem[]>([])
   const [error, setError] = useState('')
   const [isPending, startTransition] = useTransition()
+  const [openItemIdx, setOpenItemIdx] = useState<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  function selectMappedItem(i: number, name: string) {
+    const m = mappings[name]
+    setItems(prev => prev.map((item, idx) => idx !== i ? item : {
+      ...item, name,
+      excel_column: m?.excel_column ?? '',
+      item_category: m?.item_category ?? '食材',
+    }))
+    setOpenItemIdx(null)
+  }
 
   function applyMappings(rawItems: { name: string; amount: number }[]): FormItem[] {
     return rawItems.map(item => {
@@ -183,8 +194,6 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
     </div>
   )
 
-  const unmappedCount = items.filter(it => it.name.trim() && !it.excel_column).length
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -244,45 +253,56 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
           </button>
         </div>
 
-        {unmappedCount > 0 && (
-          <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mb-2">
-            <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-            <span>{unmappedCount} 個品項尚未對應 Excel 欄位，請選擇後儲存（系統會記住，下次自動填入）</span>
-          </div>
-        )}
-
         {/* 表頭 */}
-        <div className="grid grid-cols-[1fr_5rem_1fr_1.5rem] gap-x-1.5 text-[10px] text-slate-400 mb-1 px-0.5">
-          <span>品項名稱</span><span className="text-right">金額</span><span>Excel 欄位</span><span />
+        <div className="grid grid-cols-[1fr_5rem_1.5rem] gap-x-1.5 text-[10px] text-slate-400 mb-1 px-0.5">
+          <span>品項名稱</span><span className="text-right">金額</span><span />
         </div>
 
         <div className="space-y-1.5">
           {items.map((item, i) => (
-            <div key={i} className="grid grid-cols-[1fr_5rem_1fr_1.5rem] gap-x-1.5 items-center">
-              <input
-                className="h-9 px-2 text-sm rounded-lg border border-slate-200 outline-none focus:border-blue-500 min-w-0"
-                value={item.name} placeholder="品項名稱"
-                onChange={e => updateItem(i, 'name', e.target.value)} />
+            <div key={i} className="grid grid-cols-[1fr_5rem_1.5rem] gap-x-1.5 items-start">
+              <div style={{ position: 'relative' }}>
+                <input
+                  className="h-9 px-2 text-sm rounded-lg border border-slate-200 outline-none focus:border-blue-500 min-w-0 w-full"
+                  value={item.name} placeholder="搜尋或輸入品項名稱"
+                  onFocus={() => setOpenItemIdx(i)}
+                  onChange={e => { updateItem(i, 'name', e.target.value); setOpenItemIdx(i) }}
+                  onBlur={() => setTimeout(() => setOpenItemIdx(null), 200)}
+                />
+                {item.excel_column && (
+                  <p className="text-[10px] mt-0.5 px-0.5" style={{ color: '#F59E0B' }}>→ {item.excel_column}</p>
+                )}
+                {openItemIdx === i && (() => {
+                  const q = item.name.trim()
+                  const allNames = Object.keys(mappings)
+                  const filtered = q ? allNames.filter(n => n.includes(q)) : allNames
+                  if (filtered.length === 0) return null
+                  const grouped = (['食材', '耗材', '雜項'] as const)
+                    .map(cat => ({ cat, cols: filtered.filter(n => mappings[n]?.item_category === cat) }))
+                    .filter(g => g.cols.length > 0)
+                  return (
+                    <div style={{ position: 'absolute', top: '38px', left: 0, right: 0, zIndex: 50, background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 4px 16px rgba(0,0,0,0.1)', maxHeight: '220px', overflowY: 'auto' }}>
+                      {grouped.map(({ cat, cols }) => (
+                        <div key={cat}>
+                          <p style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', padding: '6px 12px 2px', letterSpacing: '0.05em' }}>{cat}</p>
+                          {cols.map(name => (
+                            <button key={name}
+                              onMouseDown={e => { e.preventDefault(); selectMappedItem(i, name) }}
+                              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: '13px', background: 'none', border: 'none', borderBottom: '1px solid #f8fafc', cursor: 'pointer', color: '#1e293b', fontFamily: 'inherit' }}>
+                              {name}
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
+              </div>
               <input type="number" min="0"
                 className="h-9 px-2 text-sm rounded-lg border border-slate-200 outline-none focus:border-blue-500 text-right tabular-nums"
                 value={item.amount || ''} placeholder="0"
                 onChange={e => updateItem(i, 'amount', parseInt(e.target.value) || 0)} />
-              <select
-                className={cn(
-                  'h-9 px-2 text-xs rounded-lg border outline-none focus:border-blue-500 bg-white min-w-0',
-                  item.excel_column ? 'border-slate-200 text-slate-700' : 'border-amber-300 text-slate-400'
-                )}
-                value={item.excel_column}
-                onChange={e => updateItem(i, 'excel_column', e.target.value)}
-              >
-                <option value="">請選擇欄位</option>
-                {Object.entries(EXCEL_COLUMNS).map(([cat, cols]) => (
-                  <optgroup key={cat} label={cat}>
-                    {cols.map(col => <option key={col} value={col}>{col}</option>)}
-                  </optgroup>
-                ))}
-              </select>
-              <button onClick={() => setItems(p => p.filter((_, idx) => idx !== i))} className="text-slate-300 hover:text-red-400">
+              <button onClick={() => setItems(p => p.filter((_, idx) => idx !== i))} className="text-slate-300 hover:text-red-400 mt-2">
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>

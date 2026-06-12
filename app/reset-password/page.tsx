@@ -37,7 +37,7 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-slate-900">梁平作帳系統</h1>
+          <h1 className="text-2xl font-bold text-slate-900">鑫系統-作帳</h1>
         </div>
 
         <Card>

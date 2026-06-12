@@ -58,7 +58,7 @@ export default function CKPriceEditor({ items, priceHistory = [], canEdit }: { i
                   <span className="text-sm" style={{ color: '#a1a1aa' }}>$</span>
                   <input
                     type="number" min="0" step="0.5" autoFocus
-                    style={{ width: '80px', height: '34px', padding: '0 10px', border: '1.5px solid #6366f1', borderRadius: '10px', fontSize: '14px', textAlign: 'right', outline: 'none', fontVariantNumeric: 'tabular-nums', boxShadow: '0 0 0 4px rgba(99,102,241,0.1)' }}
+                    style={{ width: '80px', height: '34px', padding: '0 10px', border: '1.5px solid #F59E0B', borderRadius: '10px', fontSize: '14px', textAlign: 'right', outline: 'none', fontVariantNumeric: 'tabular-nums', boxShadow: '0 0 0 4px rgba(245,158,11,0.12)' }}
                     value={editValue}
                     onChange={e => setEditValue(e.target.value)}
                   />
@@ -93,7 +93,7 @@ export default function CKPriceEditor({ items, priceHistory = [], canEdit }: { i
               {canEdit && (
                 <button onClick={() => startEdit(item)} className="p-1.5 rounded-lg"
                   style={{ background: '#f4f4f5', color: '#a1a1aa' }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#eef2ff'; (e.currentTarget as HTMLElement).style.color = '#4338ca' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#FFFBEB'; (e.currentTarget as HTMLElement).style.color = '#92400E' }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f4f4f5'; (e.currentTarget as HTMLElement).style.color = '#a1a1aa' }}>
                   <Pencil className="h-4 w-4" />
                 </button>
@@ -121,7 +121,7 @@ export default function CKPriceEditor({ items, priceHistory = [], canEdit }: { i
                   <span className="mx-1.5" style={{ color: '#a1a1aa' }}>
                     <span className="tabular-nums" style={{ color: '#71717a' }}>${h.old_price}</span>
                     <span className="mx-1" style={{ color: '#d4d4d8' }}>→</span>
-                    <span className="tabular-nums font-semibold" style={{ color: '#4338ca' }}>${h.new_price}</span>
+                    <span className="tabular-nums font-semibold" style={{ color: '#92400E' }}>${h.new_price}</span>
                   </span>
                   {h.reason && (
                     <span className="text-xs" style={{ color: '#a1a1aa' }}>（{h.reason}）</span>

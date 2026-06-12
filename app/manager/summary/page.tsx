@@ -15,7 +15,7 @@ function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
 const STATUS_CFG: Record<string, { label: string; bg: string; color: string }> = {
   draft:     { label: '草稿',    bg: '#f1f5f9', color: '#475569' },
-  submitted: { label: '已送出',  bg: '#eef2ff', color: '#4338ca' },
+  submitted: { label: '已送出',  bg: '#FFFBEB', color: '#92400E' },
   verified:  { label: '已審核',  bg: '#d1fae5', color: '#065f46' },
   disputed:  { label: '退回修改', bg: '#ffe4e6', color: '#be123c' },
 }
@@ -63,7 +63,7 @@ export default async function SummaryPage() {
           <p className="text-sm mb-6" style={{ color: '#a1a1aa' }}>請先完成今日結帳再查看結算結果</p>
           <Link href="/manager/closing"
             className="inline-flex items-center gap-2 px-5 py-3 text-white rounded-xl text-sm font-semibold"
-            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 14px rgba(99,102,241,0.3)' }}>
+            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 14px rgba(245,158,11,0.3)' }}>
             前往每日結帳
             <ChevronRight className="h-4 w-4" />
           </Link>
@@ -152,7 +152,7 @@ export default async function SummaryPage() {
 
         {/* Hero 卡片 */}
         <div className="rounded-3xl p-8 relative overflow-hidden text-white"
-          style={{ background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%)', boxShadow: '0 20px 50px -10px rgba(99,102,241,0.25)' }}>
+          style={{ background: 'linear-gradient(135deg,#FBBF24 0%,#F59E0B 50%,#F97316 100%)', boxShadow: '0 20px 50px -10px rgba(245,158,11,0.2)' }}>
           <div className="absolute -top-1/2 -right-[10%] w-96 h-96 rounded-full pointer-events-none"
             style={{ background: 'radial-gradient(circle,rgba(255,255,255,0.15),transparent)' }} />
           <div className="relative">
@@ -205,9 +205,9 @@ export default async function SummaryPage() {
             </div>
           ))}
           <div className="flex items-center justify-between py-3.5 rounded-xl px-3 mt-2"
-            style={{ background: 'linear-gradient(135deg,#eef2ff,#f5f3ff)' }}>
-            <p className="text-sm font-bold" style={{ color: '#4338ca' }}>＝ 應包進信封</p>
-            <span className="text-2xl font-extrabold tabular-nums" style={{ color: '#4338ca' }}>
+            style={{ background: 'linear-gradient(135deg,#FFFBEB,#f5f3ff)' }}>
+            <p className="text-sm font-bold" style={{ color: '#92400E' }}>＝ 應包進信封</p>
+            <span className="text-2xl font-extrabold tabular-nums" style={{ color: '#92400E' }}>
               ${fmt(closing.should_include_delivery)}
             </span>
           </div>
@@ -259,7 +259,7 @@ export default async function SummaryPage() {
             <div><strong style={{ color: '#52525b' }}>店名：</strong>{store?.name}</div>
             <div className="pt-2 mt-1" style={{ borderTop: '1px solid #f4f4f5' }}>
               <strong style={{ color: '#52525b' }}>實匯入金額：</strong>
-              <span className="font-extrabold text-2xl tabular-nums ml-1" style={{ color: '#4338ca', letterSpacing: '-0.02em' }}>
+              <span className="font-extrabold text-2xl tabular-nums ml-1" style={{ color: '#92400E', letterSpacing: '-0.02em' }}>
                 ${fmt(closing.actual_remit)}
               </span>
             </div>
@@ -271,8 +271,8 @@ export default async function SummaryPage() {
           <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
             <div className="flex items-center gap-2.5 mb-4">
               <span className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0"
-                style={{ background: '#eef2ff' }}>
-                <Banknote className="h-[18px] w-[18px]" style={{ color: '#4338ca' }} />
+                style={{ background: '#FFFBEB' }}>
+                <Banknote className="h-[18px] w-[18px]" style={{ color: '#92400E' }} />
               </span>
               <h3 className="text-sm font-semibold" style={{ color: '#18181b' }}>營收明細</h3>
             </div>
@@ -331,8 +331,8 @@ export default async function SummaryPage() {
         {videoUrl && (
           <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
             <div className="flex items-center gap-2.5 mb-3">
-              <span className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#eef2ff' }}>
-                <Video className="h-[18px] w-[18px]" style={{ color: '#4338ca' }} />
+              <span className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#FFFBEB' }}>
+                <Video className="h-[18px] w-[18px]" style={{ color: '#92400E' }} />
               </span>
               <h3 className="text-sm font-semibold" style={{ color: '#18181b' }}>今日菜單影片</h3>
             </div>
@@ -423,7 +423,7 @@ export default async function SummaryPage() {
               </div>
               <div className="flex justify-between items-center py-1">
                 <span className="text-xs" style={{ color: '#a1a1aa' }}>扣零用金（${fmt(store?.petty_cash ?? 0)}）</span>
-                <span className="text-sm font-semibold tabular-nums" style={{ color: '#4338ca' }}>${fmt(closing.actual_remit)}</span>
+                <span className="text-sm font-semibold tabular-nums" style={{ color: '#92400E' }}>${fmt(closing.actual_remit)}</span>
               </div>
             </div>
           </div>
@@ -443,7 +443,7 @@ export default async function SummaryPage() {
             <Link
               href={closing.status === 'draft' ? '/manager/closing' : `/manager/edit/${closing.id}`}
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white"
-              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 14px rgba(99,102,241,0.25)' }}>
+              style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 14px rgba(245,158,11,0.2)' }}>
               <BarChart3 className="h-4 w-4" />
               {closing.status === 'draft' ? '繼續填寫結帳' : '修改帳目'}
             </Link>

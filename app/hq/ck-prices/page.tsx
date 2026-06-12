@@ -22,7 +22,7 @@ export default async function CKPricesPage() {
 
   const admin = createAdminClient()
   const { data: prices } = await admin
-    .from('central_kitchen_prices').select('*').order('item_name')
+    .from('central_kitchen_prices').select('*').order('sort_order').order('item_name')
 
   let history: any[] = []
   try {

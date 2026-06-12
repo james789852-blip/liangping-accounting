@@ -2,9 +2,9 @@ import type { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: '梁平作帳系統',
-    short_name: '梁平作帳',
-    description: '梁平開發多店作帳管理系統',
+    name: '鑫系統-作帳',
+    short_name: '鑫系統',
+    description: '鑫系統多店作帳管理',
     start_url: '/',
     display: 'standalone',
     background_color: '#ffffff',

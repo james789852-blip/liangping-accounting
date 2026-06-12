@@ -5,9 +5,9 @@ import { toast } from 'sonner'
 import { Loader2, Plus, X } from 'lucide-react'
 import { createUser } from '@/app/actions/users'
 
-interface Store { id: string; name: string }
+interface Store { id: string; name: string; type?: string }
 
-const ROLES = ['店長', '副店長', '助理', '顧問', '經理', '總監', '老闆']
+const ROLES = ['老闆', '總監', '經理', '顧問', '廠長', '副廠長', '店長', '副店長', '助理']
 
 const INPUT_STYLE: React.CSSProperties = {
   width: '100%', padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px',
@@ -17,7 +17,9 @@ const INPUT_STYLE: React.CSSProperties = {
 export default function UserCreateDialog({ stores }: { stores: Store[] }) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: '店長' })
+  const [form, setForm] = useState({
+    name: '', account: '', password: '', role: '店長', title: '', employee_id: '',
+  })
   const [isHQ, setIsHQ] = useState(false)
   const [selectedStores, setSelectedStores] = useState<string[]>([])
 
@@ -29,18 +31,23 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
 
   function handleClose() {
     setOpen(false)
-    setForm({ name: '', email: '', password: '', role: '店長' })
+    setForm({ name: '', account: '', password: '', role: '店長', title: '', employee_id: '' })
     setIsHQ(false)
     setSelectedStores([])
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.name || !form.email || !form.password) { toast.error('請填寫所有必填欄位'); return }
+    if (!form.name || !form.account || !form.password) { toast.error('請填寫所有必填欄位'); return }
     if (!isOwner && selectedStores.length === 0) { toast.error('請至少選擇一家店'); return }
     setLoading(true)
     const result = await createUser({
-      ...form,
+      name: form.name,
+      account: form.account,
+      password: form.password,
+      role: form.role,
+      title: form.title || undefined,
+      employee_id: form.employee_id || undefined,
       is_hq: isOwner ? true : isHQ,
       store_ids: isOwner ? [] : selectedStores,
     })
@@ -53,7 +60,7 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
     <>
       <button onClick={() => setOpen(true)}
         className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-semibold"
-        style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}>
+        style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
         <Plus className="h-4 w-4" /> 新增帳號
       </button>
 
@@ -64,7 +71,6 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
           <div className="w-full max-w-md rounded-2xl overflow-hidden"
             style={{ background: 'white', boxShadow: '0 24px 64px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
 
-            {/* 彈窗標題 */}
             <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #f4f4f5' }}>
               <h2 className="text-base font-bold" style={{ color: '#18181b' }}>新增使用者帳號</h2>
               <button onClick={handleClose} className="p-1.5 rounded-lg" style={{ color: '#a1a1aa', background: '#f4f4f5' }}>
@@ -74,44 +80,56 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
 
             <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
 
-              {/* 姓名 */}
-              <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>姓名 *</label>
-                <input style={INPUT_STYLE} placeholder="王小明"
-                  value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>姓名 *</label>
+                  <input style={INPUT_STYLE} placeholder="王小明"
+                    value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>序號</label>
+                  <input style={INPUT_STYLE} placeholder="tw0030001"
+                    value={form.employee_id} onChange={e => setForm(p => ({ ...p, employee_id: e.target.value }))} />
+                </div>
               </div>
 
-              {/* Email */}
               <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>電子郵件 *</label>
-                <input type="email" style={INPUT_STYLE} placeholder="user@example.com"
-                  value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} />
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>帳號（身分證字號） *</label>
+                <input
+                  style={{ ...INPUT_STYLE, textTransform: 'uppercase', letterSpacing: '0.05em' }}
+                  placeholder="A123456789"
+                  value={form.account}
+                  onChange={e => setForm(p => ({ ...p, account: e.target.value.toUpperCase() }))}
+                />
               </div>
 
-              {/* 密碼 */}
               <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>初始密碼 *（8碼以上）</label>
-                <input type="password" style={INPUT_STYLE} placeholder="至少 8 個字元"
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>密碼（出生年月日 YYMMDD） *</label>
+                <input type="text" style={INPUT_STYLE} placeholder="如 830719"
                   value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} />
               </div>
 
-              {/* 職務 */}
-              <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>職務</label>
-                <select style={{ ...INPUT_STYLE, cursor: 'pointer' }}
-                  value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
-                  {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>系統角色</label>
+                  <select style={{ ...INPUT_STYLE, cursor: 'pointer' }}
+                    value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
+                    {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>顯示職稱</label>
+                  <input style={INPUT_STYLE} placeholder="如：廠長、營運總監"
+                    value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} />
+                </div>
               </div>
 
-              {/* 老闆說明 */}
               {isOwner && (
                 <div className="rounded-xl px-3 py-2.5 text-xs" style={{ background: '#fffbeb', border: '1px solid #fcd34d', color: '#b45309' }}>
                   老闆自動擁有全部店面及總公司後台存取權限
                 </div>
               )}
 
-              {/* 總公司後台開關 */}
               {!isOwner && (
                 <div className="flex items-center justify-between rounded-xl px-3 py-3"
                   style={{ border: '1px solid #f4f4f5', background: '#fafafa' }}>
@@ -122,7 +140,7 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
                   <button type="button" onClick={() => setIsHQ(v => !v)}
                     style={{
                       position: 'relative', width: '36px', height: '20px', borderRadius: '10px', flexShrink: 0,
-                      background: isHQ ? '#6366f1' : '#d4d4d8', border: 'none', cursor: 'pointer',
+                      background: isHQ ? '#F59E0B' : '#d4d4d8', border: 'none', cursor: 'pointer',
                       transition: 'background 0.2s',
                     }}>
                     <span style={{
@@ -134,30 +152,38 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
                 </div>
               )}
 
-              {/* 指派店家 */}
               {!isOwner && (
                 <div>
                   <label className="block text-xs font-semibold mb-2" style={{ color: '#52525b' }}>指派店家（可多選）</label>
-                  <div className="flex flex-wrap gap-2">
-                    {stores.map(s => (
-                      <button key={s.id} type="button" onClick={() => toggleStore(s.id)}
-                        className="px-3 py-1.5 rounded-full text-xs font-semibold"
-                        style={{
-                          background: selectedStores.includes(s.id) ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'white',
-                          color: selectedStores.includes(s.id) ? 'white' : '#52525b',
-                          border: selectedStores.includes(s.id) ? 'none' : '1px solid #e4e4e7',
-                        }}>
-                        {s.name}
-                      </button>
-                    ))}
-                  </div>
+                  {(['店面', '央廚'] as const).map(type => {
+                    const group = stores.filter(s => (s.type ?? '店面') === type)
+                    if (group.length === 0) return null
+                    return (
+                      <div key={type} className="mb-3">
+                        <p className="text-[10px] font-semibold mb-1.5 uppercase tracking-wide" style={{ color: '#a1a1aa' }}>{type}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {group.map(s => (
+                            <button key={s.id} type="button" onClick={() => toggleStore(s.id)}
+                              className="px-3 py-1.5 rounded-full text-xs font-semibold"
+                              style={{
+                                background: selectedStores.includes(s.id) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : 'white',
+                                color: selectedStores.includes(s.id) ? 'white' : '#52525b',
+                                border: selectedStores.includes(s.id) ? 'none' : '1px solid #e4e4e7',
+                              }}>
+                              {s.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
                   {selectedStores.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {selectedStores.map(id => {
                         const s = stores.find(x => x.id === id)
                         return (
                           <span key={id} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
-                            style={{ background: '#eef2ff', color: '#4338ca' }}>
+                            style={{ background: '#FFFBEB', color: '#92400E' }}>
                             {s?.name}
                             <X className="h-3 w-3 cursor-pointer" onClick={() => toggleStore(id)} />
                           </span>
@@ -176,7 +202,7 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
                 </button>
                 <button type="submit" disabled={loading}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
-                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', opacity: loading ? 0.7 : 1 }}>
+                  style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)', opacity: loading ? 0.7 : 1 }}>
                   {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                   建立帳號
                 </button>

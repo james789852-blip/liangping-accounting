@@ -1,18 +1,20 @@
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import UserCreateDialog from '@/components/hq/user-create-dialog'
-import UserToggle from '@/components/hq/user-toggle'
-import UserHQToggle from '@/components/hq/user-hq-toggle'
+import UserEditDialog from '@/components/hq/user-edit-dialog'
 import { Users, Building2 } from 'lucide-react'
 
 const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
-  '老闆':  { bg: '#fef3c7', color: '#b45309' },
-  '總監':  { bg: '#f3e8ff', color: '#7c3aed' },
-  '經理':  { bg: '#eef2ff', color: '#4338ca' },
-  '顧問':  { bg: '#e0f2fe', color: '#0369a1' },
-  '店長':  { bg: '#d1fae5', color: '#047857' },
+  '老闆':   { bg: '#fef3c7', color: '#b45309' },
+  '總監':   { bg: '#f3e8ff', color: '#7c3aed' },
+  '經理':   { bg: '#FFFBEB', color: '#92400E' },
+  '顧問':   { bg: '#e0f2fe', color: '#0369a1' },
+  '廠長':   { bg: '#fef9c3', color: '#854d0e' },
+  '副廠長': { bg: '#fefce8', color: '#a16207' },
+  '店長':   { bg: '#d1fae5', color: '#047857' },
   '副店長': { bg: '#ecfdf5', color: '#059669' },
-  '助理':  { bg: '#f4f4f5', color: '#71717a' },
+  '助理':   { bg: '#f4f4f5', color: '#71717a' },
 }
 
 export default async function UsersPage() {
@@ -27,17 +29,29 @@ export default async function UsersPage() {
     return <div className="p-6" style={{ color: '#be123c' }}>權限不足，僅限經理以上查看</div>
   }
 
-  const canManageHQ = ['總監', '老闆'].includes(profile.role)
-
   const { data: users } = await supabase
     .from('user_profiles')
-    .select('user_id, name, role, store_ids, is_hq, active, created_at')
+    .select('user_id, name, role, title, employee_id, store_ids, is_hq, active, created_at')
     .order('created_at', { ascending: false })
 
   const { data: stores } = await supabase
-    .from('stores').select('id, name').eq('active', true).order('name')
+    .from('stores').select('id, name, type').eq('active', true).order('name')
 
   const storeMap = Object.fromEntries((stores ?? []).map(s => [s.id, s.name]))
+
+  // 用 admin client 取得所有使用者帳號（email → 身分證字號）
+  const admin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+  const { data: authList } = await admin.auth.admin.listUsers({ perPage: 1000 })
+  const accountMap: Record<string, string> = Object.fromEntries(
+    (authList?.users ?? []).map(u => [
+      u.id,
+      (u.email ?? '').replace('@liang-ping.com', '').toUpperCase(),
+    ])
+  )
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -62,27 +76,34 @@ export default async function UsersPage() {
         <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
           {(users ?? []).map((u, idx) => {
             const isOwner = u.role === '老闆'
+            const displayTitle = u.title || u.role
             const roleSt = ROLE_STYLE[u.role] ?? { bg: '#f4f4f5', color: '#71717a' }
             return (
               <div key={u.user_id}
                 className="flex items-center gap-3 px-4 py-3.5"
                 style={{ borderBottom: idx !== (users?.length ?? 0) - 1 ? '1px solid #f4f4f5' : 'none' }}>
-                {/* 頭像 */}
+
                 <div className="h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
-                  style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                  style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
                   {(u.name || '?').slice(0, 1)}
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-sm" style={{ color: '#18181b' }}>{u.name}</span>
+                    {u.employee_id && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                        style={{ background: '#f4f4f5', color: '#71717a' }}>
+                        {u.employee_id}
+                      </span>
+                    )}
                     <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                       style={{ background: roleSt.bg, color: roleSt.color }}>
-                      {u.role}
+                      {displayTitle}
                     </span>
                     {(isOwner || u.is_hq) && (
                       <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold"
-                        style={{ background: '#eef2ff', color: '#4338ca', border: '1px solid #e0e7ff' }}>
+                        style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FEF3C7' }}>
                         <Building2 className="h-3 w-3" /> 總公司
                       </span>
                     )}
@@ -92,23 +113,17 @@ export default async function UsersPage() {
                     )}
                   </div>
                   <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>
-                    {isOwner
+                    {accountMap[u.user_id] && (
+                      <span className="font-mono mr-2">{accountMap[u.user_id]}</span>
+                    )}
+                    {isOwner || (stores && stores.length > 0 && (u.store_ids ?? []).length >= stores.length)
                       ? '全部店面'
-                      : (u.store_ids ?? []).map((id: string) => storeMap[id]).filter(Boolean).join('、') || '未指派店家'
+                      : [...new Set(u.store_ids ?? [])].map((id: string) => storeMap[id]).filter(Boolean).join('、') || '未指派店家'
                     }
                   </p>
                 </div>
 
-                {canManageHQ && !isOwner && (
-                  <div className="flex flex-col items-center gap-0.5 shrink-0">
-                    <UserHQToggle userId={u.user_id} isHQ={u.is_hq ?? false} />
-                    <span className="text-[10px]" style={{ color: '#a1a1aa' }}>總公司</span>
-                  </div>
-                )}
-
-                {canManageHQ && (
-                  <UserToggle userId={u.user_id} active={u.active} />
-                )}
+                <UserEditDialog user={{ ...u, account: accountMap[u.user_id] ?? '' }} stores={stores ?? []} />
               </div>
             )
           })}

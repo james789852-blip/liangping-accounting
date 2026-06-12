@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
-import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn } from 'lucide-react'
+import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn, PiggyBank } from 'lucide-react'
 import { saveCashCounts } from '@/app/actions/closings'
+import { syncStoreCKOrder } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
 
@@ -16,6 +17,13 @@ interface RemittanceAdjustment {
   label: string
   amount: number  // positive = adds to envelope, negative = deducts
   person?: string
+}
+
+interface ReserveItem {
+  id: string
+  reason: string
+  amount: number
+  total_bill?: number  // total bill amount (optional), for showing remaining across days
 }
 
 interface TodayReceipt {
@@ -49,6 +57,7 @@ interface ReceiptForm {
   id: string
   file?: File
   previewUrl?: string
+  uploadedPhotoUrl?: string
   category: string
   vendor_name: string
   total_amount: number
@@ -77,6 +86,11 @@ function isCKReceipt(receipt: TodayReceipt, ckPrices: CKPrice[]): boolean {
   )
 }
 
+interface PrevDayReserve {
+  business_date: string
+  items: { reason: string; amount: number; total_bill?: number }[]
+}
+
 interface Props {
   store: Store
   ckPrices: CKPrice[]
@@ -85,6 +99,8 @@ interface Props {
   today: string
   todayReceipts?: TodayReceipt[]
   receiptCategories?: CategoryWithVendors[]
+  mappingColumns?: { name: string; category: string; vendor_group?: string }[]
+  prevDayReserves?: PrevDayReserve | null
 }
 
 interface FormData {
@@ -200,7 +216,7 @@ function initHandwriteOrders(existing: any): HandwriteOrder[] {
   }))
 }
 
-function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExpenses: number, handwriteTotal: number, adjustments: RemittanceAdjustment[]) {
+function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExpenses: number, handwriteTotal: number, adjustments: RemittanceAdjustment[], reserves: ReserveItem[]) {
   const uberTotal = Object.values(data.uber_amounts).reduce((a, b) => a + b, 0)
   const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount
 
@@ -227,7 +243,9 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
   const adjustmentTotal = adjustments.reduce((sum, a) => sum + a.amount, 0)
   const finalRemit = actualRemit + adjustmentTotal
   const netVariance = finalRemit - shouldEnvelope
-  return { totalRevenue, platformTotal, storeRevenue, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashTotal, actualRemit, variance, adjustmentTotal, finalRemit, netVariance }
+  const totalReserved = reserves.reduce((sum, r) => sum + r.amount, 0)
+  const remitToHQ = finalRemit - totalReserved
+  return { totalRevenue, platformTotal, storeRevenue, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashTotal, actualRemit, variance, adjustmentTotal, finalRemit, netVariance, totalReserved, remitToHQ }
 }
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -259,8 +277,8 @@ function SInput({
         fontSize: '14px', background: disabled ? '#fafafa' : 'white', outline: 'none',
         fontFamily: 'inherit', width: '100%', fontVariantNumeric: 'tabular-nums',
         textAlign: textRight ? 'right' : 'left',
-        borderColor: focused ? '#6366f1' : '#e4e4e7',
-        boxShadow: focused ? '0 0 0 4px rgba(99,102,241,0.1)' : 'none',
+        borderColor: focused ? '#F59E0B' : '#e4e4e7',
+        boxShadow: focused ? '0 0 0 4px rgba(245,158,11,0.12)' : 'none',
         color: '#18181b', opacity: disabled ? 0.5 : 1,
         cursor: disabled ? 'not-allowed' : 'auto',
       }}
@@ -305,7 +323,7 @@ function GradientTitle({ step, total, title, desc }: { step: number; total: numb
     <div className="mb-5">
       <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>📍 步驟 {step} / {total}</p>
       <h2 className="text-2xl font-extrabold tracking-tight mb-1"
-        style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+        style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316,#FBBF24)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
         {title}
       </h2>
       <p className="text-sm" style={{ color: '#52525b' }}>{desc}</p>
@@ -313,10 +331,10 @@ function GradientTitle({ step, total, title, desc }: { step: number; total: numb
   )
 }
 
-function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo, onPhotoClick, onViewPhoto }: {
+function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo, onPhotoClick, onViewPhoto, onClearPhoto }: {
   channelKey: string; name: string; hint?: string; value: number
   onChange: (v: number) => void; disabled?: boolean
-  photo?: ChannelPhoto; onPhotoClick?: () => void; onViewPhoto?: () => void
+  photo?: ChannelPhoto; onPhotoClick?: () => void; onViewPhoto?: () => void; onClearPhoto?: () => void
 }) {
   const isUploading = photo?.status === 'uploading'
   const hasPhoto = photo && photo.status === 'uploaded' && photo.previewUrl
@@ -333,13 +351,13 @@ function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo,
           value={value || ''} placeholder="0"
           onChange={e => onChange(parseInt(e.target.value) || 0)} />
 
-        <div style={{ position: 'relative', height: '56px', width: '80px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '80px' }}>
           <button type="button"
             onClick={hasPhoto ? onViewPhoto : (disabled || isUploading ? undefined : onPhotoClick)}
             disabled={!hasPhoto && (disabled || isUploading)}
             style={{
               height: '56px', width: '80px', borderRadius: '12px',
-              border: hasPhoto ? 'none' : '2px dashed #e4e4e7',
+              border: hasPhoto ? '1.5px solid #e4e4e7' : '2px dashed #e4e4e7',
               background: hasPhoto ? 'transparent' : '#f8fafc',
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
               gap: '2px', fontSize: '10px', fontWeight: 600, color: '#a1a1aa',
@@ -348,7 +366,7 @@ function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo,
               padding: 0,
             }}>
             {hasPhoto ? (
-              <img src={photo!.previewUrl} alt="preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', borderRadius: '12px' }} />
+              <img src={photo!.previewUrl} alt="preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', borderRadius: '11px' }} />
             ) : (
               <>
                 <span>{isUploading ? <Loader2 style={{ width: '18px', height: '18px' }} className="animate-spin" /> : <Camera style={{ width: '18px', height: '18px' }} />}</span>
@@ -357,10 +375,16 @@ function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo,
             )}
           </button>
           {hasPhoto && !disabled && (
-            <button type="button" onClick={onPhotoClick}
-              style={{ position: 'absolute', bottom: '4px', right: '4px', background: 'rgba(0,0,0,0.55)', border: 'none', borderRadius: '6px', padding: '4px 5px', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
-              <Camera style={{ width: '12px', height: '12px' }} />
-            </button>
+            <div style={{ display: 'flex', gap: '3px' }}>
+              <button type="button" onClick={onPhotoClick}
+                style={{ flex: 1, padding: '4px 0', borderRadius: '8px', border: '1px solid #e4e4e7', background: 'white', fontSize: '11px', fontWeight: 600, color: '#F59E0B', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center' }}>
+                換
+              </button>
+              <button type="button" onClick={onClearPhoto}
+                style={{ padding: '4px 6px', borderRadius: '8px', border: '1px solid #fca5a5', background: 'white', fontSize: '11px', color: '#ef4444', cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1 }}>
+                ✕
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -371,47 +395,71 @@ function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo,
 function SummaryBlock({ label, value, warm }: { label: string; value: string; warm?: boolean }) {
   return (
     <div className="flex justify-between items-center mt-4 rounded-2xl px-4 py-3"
-      style={{ background: warm ? 'linear-gradient(135deg,#ffedd5,#fffbeb)' : 'linear-gradient(135deg,#eef2ff,#f5f3ff)' }}>
+      style={{ background: warm ? 'linear-gradient(135deg,#ffedd5,#fffbeb)' : 'linear-gradient(135deg,#FFFBEB,#f5f3ff)' }}>
       <span className="text-sm font-medium" style={{ color: warm ? '#7c2d12' : '#312e81' }}>{label}</span>
-      <span className="text-2xl font-extrabold tabular-nums" style={{ color: warm ? '#c2410c' : '#4338ca' }}>{value}</span>
+      <span className="text-2xl font-extrabold tabular-nums" style={{ color: warm ? '#c2410c' : '#92400E' }}>{value}</span>
     </div>
   )
 }
 
-function DecimalInput({ value, onChange, style, placeholder }: {
-  value: number; onChange: (v: number) => void
-  style?: React.CSSProperties; placeholder?: string
-}) {
-  const [raw, setRaw] = useState(value === 0 ? '' : String(value))
-  const prevValue = useRef(value)
 
-  useEffect(() => {
-    if (prevValue.current !== value && parseFloat(raw) !== value) {
-      setRaw(value === 0 ? '' : String(value))
-    }
-    prevValue.current = value
-  }, [value])
+const PINNED_CATEGORIES = ['菜商', '豆腐', '滷蛋', '免洗', '雜貨', '瓦斯']
+
+function CategoryPicker({ categories, value, onChange }: {
+  categories: CategoryWithVendors[]
+  value: string
+  onChange: (v: string) => void
+}) {
+  const pinned = PINNED_CATEGORIES.map(name => categories.find(c => c.name === name)).filter(Boolean) as CategoryWithVendors[]
+  const rest = categories.filter(c => !PINNED_CATEGORIES.includes(c.name))
+
+  if (value) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span style={{ padding: '6px 12px', borderRadius: '20px', background: '#F59E0B', color: 'white', fontSize: '13px', fontWeight: 600 }}>
+          {value}
+        </span>
+        <button type="button" onClick={() => onChange('')}
+          style={{ fontSize: '12px', color: '#71717a', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', fontFamily: 'inherit' }}>
+          ✕ 更換
+        </button>
+      </div>
+    )
+  }
 
   return (
-    <input type="text" inputMode="decimal" placeholder={placeholder ?? '數量'}
-      style={style} value={raw}
-      onChange={e => {
-        const val = e.target.value
-        if (val === '' || /^[0-9]*\.?[0-9]*$/.test(val)) {
-          setRaw(val)
-          const num = parseFloat(val)
-          onChange(isNaN(num) ? 0 : num)
-        }
-      }} />
+    <div>
+      {pinned.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '5px', marginBottom: '6px' }}>
+          {pinned.map(c => (
+            <button key={c.id} type="button" onClick={() => onChange(c.name)}
+              style={{ padding: '8px 4px', borderRadius: '8px', textAlign: 'center', border: '1.5px solid #F59E0B',
+                       background: '#FFFBEB', color: '#92400E', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '5px' }}>
+        {rest.map(c => (
+          <button key={c.id} type="button" onClick={() => onChange(c.name)}
+            style={{ padding: '8px 4px', borderRadius: '8px', textAlign: 'center', border: '1px solid #e4e4e7',
+                     background: '#fafafa', color: '#52525b', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+            {c.name}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 
-export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [] }: Props) {
+export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], prevDayReserves }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
   const [localReceipts, setLocalReceipts] = useState<TodayReceipt[]>(todayReceipts)
   const [syncing, setSyncing] = useState(false)
   const channelPhotoLsKey = `channel_photos_${store.id}_${today}`
+  const receiptFormsDraftKey = `receipt_forms_draft_${store.id}_${today}`
   const [channelPhotos, setChannelPhotos] = useState<Record<string, ChannelPhoto>>(() => {
     const savedUrls: Record<string, string> = (existingClosing?.channel_photo_urls as Record<string, string>) ?? {}
     const result: Record<string, ChannelPhoto> = {}
@@ -497,6 +545,65 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   useEffect(() => {
     try { localStorage.setItem(adjLsKey, JSON.stringify(adjustments)) } catch {}
   }, [adjustments])
+  const [reserves, setReserves] = useState<ReserveItem[]>(() => {
+    const saved = existingClosing?.reserve_items
+    if (Array.isArray(saved) && saved.length > 0) return saved
+    return []
+  })
+  const [showReserveForm, setShowReserveForm] = useState(false)
+  const [reserveForm, setReserveForm] = useState<Omit<ReserveItem, 'id'>>({ reason: '電費', amount: 0, total_bill: 0 })
+  const reserveLsKey = `reserve_items_${store.id}_${today}`
+  useEffect(() => {
+    if (existingClosing?.reserve_items && (existingClosing.reserve_items as any[]).length > 0) return
+    try {
+      const stored = JSON.parse(localStorage.getItem(reserveLsKey) ?? '[]')
+      if (Array.isArray(stored) && stored.length > 0) setReserves(stored)
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    try { localStorage.setItem(reserveLsKey, JSON.stringify(reserves)) } catch {}
+  }, [reserves])
+  const cashLsKey = `cash_counts_${store.id}_${today}`
+  const CASH_KEYS = ['bills_1000','bills_500','bills_100','coins_50','coins_10','coins_5','coins_1','lump_1000','lump_500','lump_100','lump_50','lump_10','lump_5','lump_1'] as const
+  useEffect(() => {
+    const dbTotal = CASH_KEYS.reduce((s, k) => s + ((existingClosing?.cash_counts?.[0]?.[k] ?? 0) as number), 0)
+    if (dbTotal > 0) return
+    try {
+      const stored = JSON.parse(localStorage.getItem(cashLsKey) ?? 'null')
+      if (stored && typeof stored === 'object') {
+        setData(prev => ({ ...prev, ...Object.fromEntries(CASH_KEYS.map(k => [k, stored[k] ?? 0])) }))
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    try {
+      const cashData = Object.fromEntries(CASH_KEYS.map(k => [k, data[k]]))
+      const total = CASH_KEYS.reduce((s, k) => s + (data[k] as number), 0)
+      if (total > 0) localStorage.setItem(cashLsKey, JSON.stringify(cashData))
+    } catch {}
+  }, [CASH_KEYS.map(k => data[k]).join(',')])
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(receiptFormsDraftKey)
+      if (stored) {
+        const parsed = JSON.parse(stored) as ReceiptForm[]
+        setReceiptForms(parsed.map(f => ({ ...f, file: undefined, previewUrl: undefined, uploading: false })))
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    try {
+      const toStore = receiptForms
+        .filter(f => !f.uploading)
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        .map(({ file, previewUrl, ...rest }) => rest)
+      if (toStore.length > 0) localStorage.setItem(receiptFormsDraftKey, JSON.stringify(toStore))
+      else localStorage.removeItem(receiptFormsDraftKey)
+    } catch {}
+  }, [receiptForms])
   const stepLsKey = `closing_step_${store.id}_${today}`
   const [currentStep, setCurrentStep] = useState(0)
   useEffect(() => {
@@ -508,8 +615,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (saved > 0) setCurrentStep(saved)
   }, [])
   const [submitDone, setSubmitDone] = useState(false)
+  const pettyLsKey = `petty_counts_${store.id}_${today}`
   const [pettyCounts, setPettyCounts] = useState<Record<string, number>>({})
   const [pettyLumps, setPettyLumps] = useState<Record<string, number>>({})
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(pettyLsKey) ?? 'null')
+      if (stored?.counts && Object.keys(stored.counts).length > 0) setPettyCounts(stored.counts)
+      if (stored?.lumps && Object.keys(stored.lumps).length > 0) setPettyLumps(stored.lumps)
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    const total = Object.values(pettyCounts).reduce((s, v) => s + v, 0) + Object.values(pettyLumps).reduce((s, v) => s + v, 0)
+    if (total > 0) try { localStorage.setItem(pettyLsKey, JSON.stringify({ counts: pettyCounts, lumps: pettyLumps })) } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(pettyCounts), JSON.stringify(pettyLumps)])
   const [newOrderNum, setNewOrderNum] = useState('')
   const [newOrderAmt, setNewOrderAmt] = useState(0)
   const [saving, setSaving] = useState(false)
@@ -530,7 +651,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0)
   const handwriteTotal = handwriteOrders.reduce((s, o) => s + (o.voided ? 0 : (o.amount || 0)), 0)
-  const s = calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal, adjustments)
+  const s = calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves)
   const isLocked = (status === 'submitted' || status === 'verified') && !submitDone
   const isDisputed = status === 'disputed'
   const disputeNote = existingClosing?.dispute_note ?? ''
@@ -543,7 +664,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
     draft:     { bg: '#f4f4f5', color: '#71717a', label: '草稿' },
-    submitted: { bg: '#eef2ff', color: '#4338ca', label: '已送出' },
+    submitted: { bg: '#FFFBEB', color: '#92400E', label: '已送出' },
     verified:  { bg: '#d1fae5', color: '#047857', label: '已審核' },
     disputed:  { bg: '#ffe4e6', color: '#be123c', label: '退回修改' },
   }
@@ -628,7 +749,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
 
     const finalTotal = editHasTax ? editAmount + editTaxAmount : editAmount
-    const validItems = editItems.filter(i => i.item_name.trim())
+    let validItems = editItems.filter(i => i.item_name.trim())
+    if (validItems.length === 0 && mappingColumns.some(c => c.name === editVendor.trim())) {
+      validItems = [{ item_name: editVendor.trim(), unit: '', quantity: 1, unit_price: 0, amount: finalTotal }]
+    }
 
     const updatedReceipts = localReceipts.map(r =>
       r.id === editingReceiptId ? {
@@ -683,6 +807,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       items: [],
     }))
     setReceiptForms(prev => [...prev, ...newForms])
+    // 立即背景上傳照片，URL 存入 uploadedPhotoUrl 以便 localStorage 保存
+    newForms.forEach(async form => {
+      if (!form.file) return
+      const ext = form.file.name.split('.').pop()?.toLowerCase() || 'jpg'
+      const path = `receipts/${store.id}/${today}/${form.id}.${ext}`
+      const fd = new FormData(); fd.append('file', form.file)
+      const result = await uploadToStorage(fd, 'receipts', path)
+      if (!('error' in result)) {
+        setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploadedPhotoUrl: result.publicUrl } : f))
+      }
+    })
   }
 
   function addNoPhotoReceipt() {
@@ -720,8 +855,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
     setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: true } : f))
     const supabase = createClient()
-    let photo_url = ''
-    if (form.file) {
+    let photo_url = form.uploadedPhotoUrl ?? ''
+    if (!photo_url && form.file) {
       const ext = form.file.name.split('.').pop()?.toLowerCase() || 'jpg'
       const path = `receipts/${store.id}/${today}/${form.id}.${ext}`
       const fd = new FormData(); fd.append('file', form.file)
@@ -743,7 +878,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: false } : f))
       return
     }
-    const validItems = (form.items ?? []).filter(i => i.item_name.trim())
+    let validItems = (form.items ?? []).filter(i => i.item_name.trim())
+    if (validItems.length === 0 && mappingColumns.some(c => c.name === form.vendor_name.trim())) {
+      validItems = [{ id: crypto.randomUUID(), item_name: form.vendor_name.trim(), unit: '', quantity: 1, unit_price: 0, amount: finalTotal }]
+    }
     if (validItems.length > 0) {
       await supabase.from('receipt_items').insert(
         validItems.map(i => ({
@@ -904,6 +1042,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         expected_remit: s.netToHQ, actual_remit: s.actualRemit,
         should_include_delivery: s.shouldEnvelope, variance: s.variance, note: d.note,
         remittance_adjustments: adjustments,
+        reserve_items: reserves,
         ck_delivery_photo_url: ckPhotoUrl ?? null,
         channel_photo_urls: Object.fromEntries(
           Object.entries(channelPhotos)
@@ -966,6 +1105,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           voided: o.voided, void_reason: o.void_reason || null,
         }))
       if (hwItems.length) await supabase.from('handwrite_orders').insert(hwItems)
+      // 同步央廚叫貨金額到央廚每日記錄
+      const ckTotal = ckItems.reduce((s, i) => s + i.total_amount, 0)
+      if (ckTotal > 0) {
+        syncStoreCKOrder(store.id, today, ckTotal).catch(() => {})
+      }
       if (!silent) toast.success('草稿已儲存')
       return cid
     } catch (err: any) {
@@ -989,6 +1133,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       localStorage.removeItem(ckPhotoLsKey)
       localStorage.removeItem(channelPhotoLsKey)
       localStorage.removeItem(adjLsKey)
+      localStorage.removeItem(reserveLsKey)
+      localStorage.removeItem(receiptFormsDraftKey)
+      localStorage.removeItem(cashLsKey)
       sessionStorage.removeItem(stepLsKey)
       toast.success('今日結帳已送出！')
       if (Math.abs(s.variance) > 200) {
@@ -1039,6 +1186,29 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (stepId === 'receipts' && !isLocked) {
       if (receiptForms.length > 0) {
         toast.error(`請先儲存 ${receiptForms.length} 筆未儲存的收據`)
+        return
+      }
+    }
+    if (stepId === 'ck_delivery' && !isLocked) {
+      if (!ckPhotoUrl && !ckPhotoPreview) {
+        toast.error('請先上傳央廚配送單照片')
+        return
+      }
+    }
+    if (stepId === 'revenue' && !isLocked) {
+      const missing: string[] = []
+      if (store.mode !== 'handwrite' && data.pos_cash > 0 && channelPhotos['pos']?.status !== 'uploaded')
+        missing.push(store.ichef_uber_linked ? 'iChef 結帳總金額' : 'iChef 現場 POS');
+      (store.uber_accounts ?? []).forEach(acc => {
+        if ((data.uber_amounts[acc] ?? 0) > 0 && channelPhotos[`uber_${acc}`]?.status !== 'uploaded')
+          missing.push(`Uber Eats${(store.uber_accounts ?? []).length > 1 ? ` — ${acc}` : ''}`)
+      })
+      if (store.panda_enabled && data.panda_amount > 0 && channelPhotos['panda']?.status !== 'uploaded')
+        missing.push('熊貓 foodpanda')
+      if (store.twpay_enabled && data.twpay_amount > 0 && channelPhotos['twpay']?.status !== 'uploaded')
+        missing.push('台灣 Pay')
+      if (missing.length > 0) {
+        toast.error(`請上傳以下通路的照片：${missing.join('、')}`)
         return
       }
     }
@@ -1121,15 +1291,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     style={{ cursor: i <= step ? 'pointer' : 'default' }}>
                     <div className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold transition-all"
                       style={{
-                        background: i === step ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : i < step ? '#10b981' : '#f4f4f5',
+                        background: i === step ? 'linear-gradient(135deg,#F59E0B,#F97316)' : i < step ? '#10b981' : '#f4f4f5',
                         color: i === step || i < step ? 'white' : '#a1a1aa',
-                        boxShadow: i === step ? '0 4px 14px rgba(99,102,241,0.3)' : 'none',
+                        boxShadow: i === step ? '0 4px 14px rgba(245,158,11,0.3)' : 'none',
                         transform: i === step ? 'scale(1.1)' : 'scale(1)',
                       }}>
                       {i < step ? '✓' : i + 1}
                     </div>
                     <span className="text-[10px] font-semibold whitespace-nowrap"
-                      style={{ color: i === step ? '#6366f1' : i < step ? '#10b981' : '#a1a1aa' }}>
+                      style={{ color: i === step ? '#F59E0B' : i < step ? '#10b981' : '#a1a1aa' }}>
                       {s.label}
                     </span>
                   </button>
@@ -1157,11 +1327,43 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           </div>
         )}
 
+        {/* 昨日預留款提醒 */}
+        {prevDayReserves && prevDayReserves.items.length > 0 && (
+          <div className="rounded-2xl px-4 py-3.5" style={{ background: '#fff7ed', border: '1.5px solid #fed7aa' }}>
+            <div className="flex items-center gap-2 mb-2">
+              <PiggyBank className="h-4 w-4 shrink-0" style={{ color: '#ea580c' }} />
+              <p className="text-sm font-semibold" style={{ color: '#c2410c' }}>
+                昨日（{prevDayReserves.business_date}）有預留款項尚未結清
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              {prevDayReserves.items.map((r, i) => {
+                const remaining = r.total_bill ? r.total_bill - r.amount : null
+                return (
+                  <div key={i} className="flex items-center justify-between text-sm">
+                    <span className="font-medium" style={{ color: '#c2410c' }}>{r.reason}</span>
+                    <div className="text-right">
+                      <span className="tabular-nums" style={{ color: '#ea580c' }}>
+                        昨日預留 ${fmt(r.amount)}
+                      </span>
+                      {remaining !== null && remaining > 0 && (
+                        <span className="ml-2 text-xs font-semibold tabular-nums" style={{ color: '#be123c' }}>
+                          尚差 ${fmt(remaining)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* ── STEP 1: 上傳單據 ──────────────────────────────────────────── */}
         {(stepId === 'receipts' || isLocked) && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="上傳單據"
-              desc="上傳今日所有發票與收據，手動填寫金額，送出前 AI 統一核對。" />}
+              desc="上傳今日所有發票與收據，手動填寫金額。" />}
 
             {/* 隱藏多選上傳 input */}
             {!isLocked && (
@@ -1169,7 +1371,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 {/* 上傳區塊 */}
                 <button onClick={() => fileInputRef.current?.click()}
                   className="w-full rounded-2xl flex flex-col items-center justify-center gap-2 py-6 transition-colors"
-                  style={{ border: '2px dashed #c7d2fe', background: '#f8f9ff', color: '#6366f1' }}>
+                  style={{ border: '2px dashed #FDE68A', background: '#f8f9ff', color: '#F59E0B' }}>
                   <UploadCloud className="h-8 w-8" />
                   <p className="text-sm font-semibold">點此上傳照片（可一次多張）</p>
                   <p className="text-xs" style={{ color: '#a1a1aa' }}>支援 JPG、PNG、HEIC</p>
@@ -1212,16 +1414,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         position: 'relative', flexShrink: 0,
                       }}>
-                        {form.previewUrl ? (
-                          <button type="button" onClick={() => setPhotoLightbox(form.previewUrl!)}
+                        {(form.previewUrl || form.uploadedPhotoUrl) ? (
+                          <button type="button" onClick={() => setPhotoLightbox((form.previewUrl || form.uploadedPhotoUrl)!)}
                             style={{ width: '100%', height: '100%', border: 'none', padding: 0, cursor: 'zoom-in', background: 'none' }}>
-                            <img src={form.previewUrl} alt="receipt" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <img src={form.previewUrl || form.uploadedPhotoUrl} alt="receipt" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           </button>
                         ) : (
                           <FileText className="h-8 w-8" style={{ color: '#a1a1aa' }} />
                         )}
                         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.55)', color: 'white', fontSize: '9px', padding: '3px', textAlign: 'center', borderRadius: '0 0 10px 10px', pointerEvents: 'none' }}>
-                          {form.file ? form.file.name.split('.')[0].slice(0, 8) : '無照片'}
+                          {(form.previewUrl || form.uploadedPhotoUrl) ? '有照片' : '無照片'}
                         </div>
                       </div>
 
@@ -1230,15 +1432,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         {/* 類別 */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>類別</label>
-                          <select value={form.category}
-                            onChange={e => {
-                              updateReceiptForm(form.id, 'category', e.target.value)
-                              updateReceiptForm(form.id, 'vendor_name', '')
+                          <CategoryPicker
+                            categories={categories}
+                            value={form.category}
+                            onChange={v => {
+                              const catObj = categories.find(c => c.name === v)
+                              const autoVendor = catObj && catObj.vendors.length === 0 ? v : ''
+                              updateReceiptForm(form.id, 'category', v)
+                              updateReceiptForm(form.id, 'vendor_name', autoVendor)
                             }}
-                            style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
-                            <option value="">— 選擇 —</option>
-                            {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                          </select>
+                          />
                         </div>
 
                         {/* 廠商 */}
@@ -1267,16 +1470,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                         {/* 金額 */}
                         {(() => {
-                          const itemsTotal = (form.items ?? []).filter(i => i.amount > 0).reduce((s, i) => s + i.amount, 0)
-                          const hasItemsTotal = itemsTotal > 0
+                          const itemsTotal = (form.items ?? []).filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
+                          const hasItemsTotal = itemsTotal !== 0
                           return (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 {form.has_tax ? '金額（未稅）*' : '金額 *'}
-                                {hasItemsTotal && <span style={{ fontSize: '10px', color: '#6366f1', background: '#eef2ff', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
+                                {hasItemsTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
                               </label>
                               <input type="number" min="0" inputMode="numeric" placeholder="0" readOnly={hasItemsTotal}
-                                style={{ padding: '8px 10px', border: `1.5px solid ${hasItemsTotal ? '#c7d2fe' : form.total_amount > 0 ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: hasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: '#18181b', cursor: hasItemsTotal ? 'default' : 'text' }}
+                                style={{ padding: '8px 10px', border: `1.5px solid ${hasItemsTotal ? '#FDE68A' : form.total_amount > 0 ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: hasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: '#18181b', cursor: hasItemsTotal ? 'default' : 'text' }}
                                 value={form.total_amount || ''}
                                 onChange={e => { if (!hasItemsTotal) updateReceiptForm(form.id, 'total_amount', parseInt(e.target.value) || 0) }} />
                             </div>
@@ -1319,35 +1522,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                         {/* 細項明細 */}
                         {(() => {
-                          const catObj = categories?.find(c => c.name === form.category)
-                          const vendorObj = catObj?.vendors.find(v => v.name === form.vendor_name)
-                          const templates = (vendorObj as any)?.item_templates ?? []
-                          const defaultUnits = ['斤', '台斤', '公斤', '個', '盒', '袋', '包', '罐', '瓶', '份', '束', '條']
-                          const unitOptions = Array.from(new Set([...templates.map((t: any) => t.unit).filter(Boolean), ...defaultUnits]))
-
                           function syncItems(newItems: ReceiptFormItem[]) {
-                            const total = newItems.filter(i => i.amount > 0).reduce((s, i) => s + i.amount, 0)
+                            const total = newItems.filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
                             setReceiptForms(prev => prev.map(f =>
-                              f.id === form.id ? { ...f, items: newItems, ...(total > 0 ? { total_amount: total } : {}) } : f
+                              f.id === form.id ? { ...f, items: newItems, ...(total !== 0 ? { total_amount: total } : {}) } : f
                             ))
                           }
-                          function addItem(name = '', unit = '', unitPrice = 0) {
-                            syncItems([
-                              ...(form.items ?? []),
-                              { id: crypto.randomUUID(), item_name: name, unit, quantity: 1, unit_price: unitPrice, amount: unitPrice > 0 ? unitPrice : 0 },
-                            ])
+                          function addItem() {
+                            syncItems([...(form.items ?? []), { id: crypto.randomUUID(), item_name: '', unit: '', quantity: 1, unit_price: 0, amount: 0 }])
                           }
                           function updateItem(itemId: string, field: string, value: any) {
-                            syncItems((form.items ?? []).map(i => {
-                              if (i.id !== itemId) return i
-                              const updated = { ...i, [field]: value }
-                              if (field === 'quantity' || field === 'unit_price') {
-                                const qty = field === 'quantity' ? value : i.quantity
-                                const price = field === 'unit_price' ? value : i.unit_price
-                                if (qty > 0 && price > 0) updated.amount = Math.round(qty * price)
-                              }
-                              return updated
-                            }))
+                            syncItems((form.items ?? []).map(i => i.id !== itemId ? i : { ...i, [field]: value }))
                           }
                           function removeItem(itemId: string) {
                             syncItems((form.items ?? []).filter(i => i.id !== itemId))
@@ -1357,71 +1542,51 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                                 <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>細項明細（可空）</label>
-                                <button type="button" onClick={() => addItem()}
-                                  style={{ fontSize: '11px', color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px', padding: 0 }}>
+                                <button type="button" onClick={addItem}
+                                  style={{ fontSize: '11px', color: '#F59E0B', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px', padding: 0 }}>
                                   <Plus style={{ width: '12px', height: '12px' }} />新增
                                 </button>
                               </div>
 
-                              {/* 模板快速新增 */}
-                              {templates.length > 0 && (
-                                <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                                  {templates.map((t: any) => (
-                                    <button key={t.id} type="button" onClick={() => addItem(t.item_name, t.unit, t.unit_price ?? 0)}
-                                      style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                                      + {t.item_name}{t.unit ? `（${t.unit}）` : ''}{(t.unit_price ?? 0) > 0 ? ` $${t.unit_price}` : ''}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-
-                              {/* 細項列表 */}
-                              <div className="space-y-2">
+                              {/* 細項列表：品項 + 金額 */}
+                              <div className="space-y-1.5">
                                 {(form.items ?? []).map(item => (
-                                  <div key={item.id} style={{ border: '1px solid #e4e4e7', borderRadius: '10px', padding: '8px 10px', background: '#fafafa' }}>
-                                    {/* 品項名稱 + 刪除 */}
-                                    <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                                  <div key={item.id} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                    {mappingColumns.length > 0 ? (
+                                      <select
+                                        value={item.item_name}
+                                        onChange={e => updateItem(item.id, 'item_name', e.target.value)}
+                                        style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
+                                        <option value="">— 選擇品項 —</option>
+                                        {(() => {
+                                          const groups: { group: string; items: typeof mappingColumns }[] = []
+                                          for (const col of mappingColumns) {
+                                            const g = col.vendor_group || col.category
+                                            const existing = groups.find(x => x.group === g)
+                                            if (existing) existing.items.push(col)
+                                            else groups.push({ group: g, items: [col] })
+                                          }
+                                          return groups.map(({ group, items }) => (
+                                            <optgroup key={group} label={group}>
+                                              {items.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                                            </optgroup>
+                                          ))
+                                        })()}
+                                      </select>
+                                    ) : (
                                       <input placeholder="品項名稱"
                                         style={{ flex: 1, padding: '6px 8px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: '#18181b', background: 'white' }}
                                         value={item.item_name}
                                         onChange={e => updateItem(item.id, 'item_name', e.target.value)} />
-                                      <button type="button" onClick={() => removeItem(item.id)}
-                                        style={{ padding: '4px 6px', background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', flexShrink: 0 }}>
-                                        <X style={{ width: '14px', height: '14px' }} />
-                                      </button>
-                                    </div>
-                                    {/* 數量 / 單位 / 單價 / 小計 with labels */}
-                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: '0 0 52px' }}>
-                                        <span style={{ fontSize: '10px', color: '#a1a1aa', fontWeight: 600 }}>數量</span>
-                                        <DecimalInput value={item.quantity}
-                                          onChange={v => updateItem(item.id, 'quantity', v)}
-                                          style={{ padding: '5px 4px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'center', color: '#18181b', background: 'white', width: '100%', boxSizing: 'border-box' as const }} />
-                                      </div>
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: '1 1 60px', minWidth: 0 }}>
-                                        <span style={{ fontSize: '10px', color: '#a1a1aa', fontWeight: 600 }}>單位</span>
-                                        <select value={item.unit} onChange={e => updateItem(item.id, 'unit', e.target.value)}
-                                          style={{ padding: '5px 4px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '12px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', width: '100%' }}>
-                                          <option value="">—</option>
-                                          {unitOptions.map((u: string) => <option key={u} value={u}>{u}</option>)}
-                                        </select>
-                                      </div>
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: '0 0 68px' }}>
-                                        <span style={{ fontSize: '10px', color: '#a1a1aa', fontWeight: 600 }}>單價</span>
-                                        <input type="number" placeholder="0" min="0"
-                                          style={{ padding: '5px 4px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b', background: 'white', width: '100%', boxSizing: 'border-box' as const }}
-                                          value={item.unit_price || ''}
-                                          onChange={e => updateItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)} />
-                                      </div>
-                                      <span style={{ fontSize: '11px', color: '#a1a1aa', flexShrink: 0, paddingBottom: '6px' }}>=</span>
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: '0 0 68px' }}>
-                                        <span style={{ fontSize: '10px', color: '#6366f1', fontWeight: 600 }}>小計</span>
-                                        <input type="number" placeholder="0" min="0"
-                                          style={{ padding: '5px 6px', border: '1px solid #c7d2fe', borderRadius: '6px', fontSize: '12px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b', background: '#f5f5ff', width: '100%', boxSizing: 'border-box' as const }}
-                                          value={item.amount || ''}
-                                          onChange={e => updateItem(item.id, 'amount', parseInt(e.target.value) || 0)} />
-                                      </div>
-                                    </div>
+                                    )}
+                                    <input type="number" placeholder="金額"
+                                      style={{ width: '80px', padding: '6px 8px', border: '1px solid #FDE68A', borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b', background: '#f5f5ff', flexShrink: 0, boxSizing: 'border-box' as const }}
+                                      value={item.amount === 0 ? '' : item.amount}
+                                      onChange={e => updateItem(item.id, 'amount', parseInt(e.target.value) || 0)} />
+                                    <button type="button" onClick={() => removeItem(item.id)}
+                                      style={{ padding: '4px 6px', background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', flexShrink: 0 }}>
+                                      <X style={{ width: '14px', height: '14px' }} />
+                                    </button>
                                   </div>
                                 ))}
                               </div>
@@ -1439,10 +1604,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           <button onClick={() => saveReceiptForm(form)} disabled={form.uploading}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
                             style={{
-                              background: (form.vendor_name.trim() && form.total_amount > 0) ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : '#d4d4d8',
+                              background: (form.vendor_name.trim() && form.total_amount > 0) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
                               cursor: (form.vendor_name.trim() && form.total_amount > 0) ? 'pointer' : 'not-allowed',
                               opacity: form.uploading ? 0.7 : 1, border: 'none', fontFamily: 'inherit',
-                              boxShadow: (form.vendor_name.trim() && form.total_amount > 0) ? '0 4px 12px rgba(99,102,241,0.3)' : 'none',
+                              boxShadow: (form.vendor_name.trim() && form.total_amount > 0) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
                             }}>
                             {form.uploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />儲存中…</> : '儲存'}
                           </button>
@@ -1458,7 +1623,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {localReceipts.length > 0 && (
               <SectionCard icon={<Camera className="h-4 w-4" />}
                 title={`今日收據（${localReceipts.filter(r => !isCKReceipt(r, ckPrices)).length} 筆支出${localReceipts.some(r => isCKReceipt(r, ckPrices)) ? ' + 央廚' : ''}）`}
-                subtitle="AI 將於送出前統一核對" iconColor="#6366f1">
+                iconColor="#F59E0B">
                 <div className="space-y-2">
                   {localReceipts.map(r => {
                     const isCK = isCKReceipt(r, ckPrices)
@@ -1467,7 +1632,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       return (
                         <div key={r.id} style={{
                           display: 'grid', gridTemplateColumns: '80px 1fr', gap: '14px',
-                          background: '#f8f9ff', border: '1.5px solid #c7d2fe',
+                          background: '#f8f9ff', border: '1.5px solid #FDE68A',
                           borderRadius: '14px', padding: '14px',
                         }}>
                           {/* 縮圖：點照片放大，相機icon重新上傳 */}
@@ -1496,12 +1661,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             {/* 類別 */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>類別</label>
-                              <select value={editCategory}
-                                onChange={e => { setEditCategory(e.target.value); setEditVendor('') }}
-                                style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
-                                <option value="">— 選擇 —</option>
-                                {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                              </select>
+                              <CategoryPicker
+                                categories={categories}
+                                value={editCategory}
+                                onChange={v => {
+                                  const catObj = categories.find(c => c.name === v)
+                                  setEditCategory(v)
+                                  setEditVendor(catObj && catObj.vendors.length === 0 ? v : '')
+                                }}
+                              />
                             </div>
 
                             {/* 廠商 */}
@@ -1527,12 +1695,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             </div>
 
                             {/* 金額 */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>{editHasTax ? '金額（未稅）*' : '金額 *'}</label>
-                              <input type="number" min="0" inputMode="numeric" placeholder="0"
-                                style={{ padding: '8px 10px', border: `1.5px solid ${editAmount > 0 ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
-                                value={editAmount || ''} onChange={e => setEditAmount(parseInt(e.target.value) || 0)} />
-                            </div>
+                            {(() => {
+                              const editItemsTotal = editItems.filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
+                              const editHasItemsTotal = editItemsTotal !== 0
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    {editHasTax ? '金額（未稅）*' : '金額 *'}
+                                    {editHasItemsTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
+                                  </label>
+                                  <input type="number" min="0" inputMode="numeric" placeholder="0" readOnly={editHasItemsTotal}
+                                    style={{ padding: '8px 10px', border: `1.5px solid ${editHasItemsTotal ? '#FDE68A' : editAmount > 0 ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: editHasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: '#18181b', cursor: editHasItemsTotal ? 'default' : 'text' }}
+                                    value={editAmount || ''}
+                                    onChange={e => { if (!editHasItemsTotal) setEditAmount(parseInt(e.target.value) || 0) }} />
+                                </div>
+                              )
+                            })()}
 
                             {/* 稅 */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1565,6 +1743,76 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 value={editNotes} onChange={e => setEditNotes(e.target.value)} />
                             </div>
 
+                            {/* 細項明細 */}
+                            {(() => {
+                              function syncEditItems(newItems: typeof editItems) {
+                                setEditItems(newItems)
+                                const total = newItems.filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
+                                if (total !== 0) setEditAmount(total)
+                              }
+                              function addEditItemFn() {
+                                syncEditItems([...editItems, { item_name: '', unit: '', quantity: 1, unit_price: 0, amount: 0 }])
+                              }
+                              function updateEditItemFn(idx: number, field: string, value: any) {
+                                syncEditItems(editItems.map((item, i) => i !== idx ? item : { ...item, [field]: value }))
+                              }
+                              function removeEditItemFn(idx: number) {
+                                syncEditItems(editItems.filter((_, i) => i !== idx))
+                              }
+
+                              return (
+                                <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                    <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>細項明細（可空）</label>
+                                    <button type="button" onClick={() => addEditItemFn()}
+                                      style={{ fontSize: '11px', color: '#F59E0B', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px', padding: 0 }}>
+                                      <Plus style={{ width: '12px', height: '12px' }} />新增
+                                    </button>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    {editItems.map((item, idx) => (
+                                      <div key={idx} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                        {mappingColumns.length > 0 ? (
+                                          <select value={item.item_name}
+                                            onChange={e => updateEditItemFn(idx, 'item_name', e.target.value)}
+                                            style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
+                                            <option value="">— 選擇品項 —</option>
+                                            {(() => {
+                                              const groups: { group: string; items: typeof mappingColumns }[] = []
+                                              for (const col of mappingColumns) {
+                                                const g = col.vendor_group || col.category
+                                                const existing = groups.find(x => x.group === g)
+                                                if (existing) existing.items.push(col)
+                                                else groups.push({ group: g, items: [col] })
+                                              }
+                                              return groups.map(({ group, items }) => (
+                                                <optgroup key={group} label={group}>
+                                                  {items.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                                                </optgroup>
+                                              ))
+                                            })()}
+                                          </select>
+                                        ) : (
+                                          <input placeholder="品項名稱"
+                                            style={{ flex: 1, padding: '6px 8px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: '#18181b', background: 'white' }}
+                                            value={item.item_name}
+                                            onChange={e => updateEditItemFn(idx, 'item_name', e.target.value)} />
+                                        )}
+                                        <input type="number" placeholder="金額"
+                                          style={{ width: '80px', padding: '6px 8px', border: '1px solid #FDE68A', borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b', background: '#f5f5ff', flexShrink: 0 }}
+                                          value={item.amount === 0 ? '' : item.amount}
+                                          onChange={e => updateEditItemFn(idx, 'amount', parseInt(e.target.value) || 0)} />
+                                        <button type="button" onClick={() => removeEditItemFn(idx)}
+                                          style={{ padding: '4px 6px', background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', flexShrink: 0 }}>
+                                          <X style={{ width: '14px', height: '14px' }} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            })()}
+
                             {/* 取消 + 儲存 */}
                             <div style={{ gridColumn: '1/-1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <button onClick={() => setEditingReceiptId(null)}
@@ -1575,10 +1823,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               <button onClick={handleSaveReceiptEdit} disabled={!editVendor.trim() || editAmount <= 0 || editUploading}
                                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
                                 style={{
-                                  background: (editVendor.trim() && editAmount > 0) ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : '#d4d4d8',
+                                  background: (editVendor.trim() && editAmount > 0) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
                                   cursor: (editVendor.trim() && editAmount > 0) ? 'pointer' : 'not-allowed',
                                   opacity: editUploading ? 0.7 : 1, border: 'none', fontFamily: 'inherit',
-                                  boxShadow: (editVendor.trim() && editAmount > 0) ? '0 4px 12px rgba(99,102,241,0.3)' : 'none',
+                                  boxShadow: (editVendor.trim() && editAmount > 0) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
                                 }}>
                                 {editUploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />儲存中…</> : '儲存'}
                               </button>
@@ -1902,7 +2150,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     disabled={isLocked}
                     photo={photo}
                     onPhotoClick={() => openChannelUpload(key, data.pos_cash)}
+
                     onViewPhoto={() => photo?.previewUrl && setPhotoLightbox(photo.previewUrl)}
+                    onClearPhoto={() => setChannelPhotos(prev => { const n = { ...prev }; delete n[key]; return n })}
                   />
                 )
               })()}
@@ -1927,7 +2177,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     disabled={isLocked}
                     photo={photo}
                     onPhotoClick={() => openChannelUpload(key, data.uber_amounts[acc] ?? 0)}
+
                     onViewPhoto={() => photo?.previewUrl && setPhotoLightbox(photo.previewUrl)}
+                    onClearPhoto={() => setChannelPhotos(prev => { const n = { ...prev }; delete n[key]; return n })}
                   />
                 )
               })}
@@ -1946,7 +2198,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     disabled={isLocked}
                     photo={photo}
                     onPhotoClick={() => openChannelUpload(key, data.panda_amount)}
+
                     onViewPhoto={() => photo?.previewUrl && setPhotoLightbox(photo.previewUrl)}
+                    onClearPhoto={() => setChannelPhotos(prev => { const n = { ...prev }; delete n[key]; return n })}
                   />
                 )
               })()}
@@ -1965,7 +2219,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     disabled={isLocked}
                     photo={photo}
                     onPhotoClick={() => openChannelUpload(key, data.twpay_amount)}
+
                     onViewPhoto={() => photo?.previewUrl && setPhotoLightbox(photo.previewUrl)}
+                    onClearPhoto={() => setChannelPhotos(prev => { const n = { ...prev }; delete n[key]; return n })}
                   />
                 )
               })()}
@@ -1984,7 +2240,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     disabled={isLocked}
                     photo={photo}
                     onPhotoClick={() => openChannelUpload(key, data.online_amount)}
+
                     onViewPhoto={() => photo?.previewUrl && setPhotoLightbox(photo.previewUrl)}
+                    onClearPhoto={() => setChannelPhotos(prev => { const n = { ...prev }; delete n[key]; return n })}
                   />
                 )
               })()}
@@ -2078,9 +2336,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   </div>
                 ))}
                 <div className="flex justify-between items-center py-3 px-3 -mx-3 my-2 rounded-xl"
-                  style={{ background: 'linear-gradient(135deg,#eef2ff,#f5f3ff)' }}>
+                  style={{ background: 'linear-gradient(135deg,#FFFBEB,#f5f3ff)' }}>
                   <span className="text-sm font-semibold" style={{ color: '#312e81' }}>應包進信封</span>
-                  <span className="text-xl font-extrabold tabular-nums" style={{ color: '#4338ca' }}>${fmt(s.shouldEnvelope)}</span>
+                  <span className="text-xl font-extrabold tabular-nums" style={{ color: '#92400E' }}>${fmt(s.shouldEnvelope)}</span>
                 </div>
                 <div className="pl-3 space-y-1.5 text-xs pb-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
                   <div className="flex justify-between">
@@ -2092,9 +2350,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     <span className="tabular-nums" style={{ color: '#52525b' }}>${fmt(s.netToHQ)}</span>
                   </div>
                 </div>
-                <div className="flex justify-between items-center py-3">
-                  <span className="text-sm font-semibold" style={{ color: '#52525b' }}>實際包進信封（現金 − 零用金）</span>
-                  <span className="text-base font-bold tabular-nums">${fmt(s.actualRemit)}</span>
+                <div className="flex justify-between items-center px-4 py-3 rounded-2xl mt-2"
+                  style={{ background: 'linear-gradient(135deg,#1e1b4b,#312e81)', border: '2px solid #92400E' }}>
+                  <span className="text-sm font-bold" style={{ color: '#FDE68A' }}>實際包進信封（現金 − 零用金）</span>
+                  <span className="text-2xl font-extrabold tabular-nums" style={{ color: '#fff', letterSpacing: '-0.02em' }}>${fmt(s.actualRemit)}</span>
                 </div>
               </div>
             </div>
@@ -2127,15 +2386,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   <div className="px-4 pt-4 pb-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#eef2ff' }}>
-                          <Wallet className="h-4 w-4" style={{ color: '#6366f1' }} />
+                        <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#FFFBEB' }}>
+                          <Wallet className="h-4 w-4" style={{ color: '#F59E0B' }} />
                         </div>
                         <p className="text-sm font-semibold" style={{ color: '#18181b' }}>匯款調整</p>
                       </div>
                       {!isLocked && (
                         <button type="button" onClick={() => { setShowAdjForm(v => !v); setAdjForm({ type: 'advance', label: '', amount: 0, person: '' }) }}
                           className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg"
-                          style={{ background: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe' }}>
+                          style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
                           <Plus className="h-3.5 w-3.5" />新增調整
                         </button>
                       )}
@@ -2172,7 +2431,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       )
                     })}
                     {!isLocked && showAdjForm && (
-                      <div className="rounded-xl p-3 space-y-3" style={{ background: '#f8f9ff', border: '1.5px solid #c7d2fe' }}>
+                      <div className="rounded-xl p-3 space-y-3" style={{ background: '#f8f9ff', border: '1.5px solid #FDE68A' }}>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-[10px] font-semibold mb-1" style={{ color: '#52525b' }}>類型</label>
@@ -2212,7 +2471,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             setShowAdjForm(false)
                             setAdjForm({ type: 'advance', label: '', amount: 0, person: '' })
                           }}
-                            className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ background: '#4338ca', color: 'white', border: 'none', cursor: 'pointer' }}>
+                            className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ background: '#92400E', color: 'white', border: 'none', cursor: 'pointer' }}>
                             儲存
                           </button>
                           <button type="button" onClick={() => { setShowAdjForm(false); setAdjForm({ type: 'advance', label: '', amount: 0, person: '' }) }}
@@ -2236,6 +2495,140 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               )
             })()}
 
+            {/* 預留款 */}
+            {(() => {
+              const RESERVE_REASONS = ['電費', '房租', '營業稅', '其他']
+              return (
+                <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                  <div className="px-4 pt-4 pb-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#fff7ed' }}>
+                          <PiggyBank className="h-4 w-4" style={{ color: '#ea580c' }} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold" style={{ color: '#18181b' }}>預留款</p>
+                          <p className="text-xs" style={{ color: '#a1a1aa' }}>電費／房租等大筆費用，從當日匯款中預留</p>
+                        </div>
+                      </div>
+                      {!isLocked && (
+                        <button type="button" onClick={() => { setShowReserveForm(v => !v); setReserveForm({ reason: '電費', amount: 0 }) }}
+                          className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg"
+                          style={{ background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa' }}>
+                          <Plus className="h-3.5 w-3.5" />新增預留
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="px-4 py-3 space-y-2">
+                    {reserves.length === 0 && !showReserveForm && (
+                      <p className="text-xs text-center py-2" style={{ color: '#a1a1aa' }}>尚無預留款項</p>
+                    )}
+                    {reserves.map(r => {
+                      const remaining = r.total_bill && r.total_bill > r.amount ? r.total_bill - r.amount : null
+                      return (
+                        <div key={r.id} className="py-2 px-3 rounded-xl" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-xs font-semibold px-2 py-0.5 rounded-md shrink-0" style={{ background: '#fff7ed', color: '#ea580c' }}>{r.reason}</span>
+                              {r.total_bill ? (
+                                <span className="text-xs tabular-nums" style={{ color: '#a1a1aa' }}>帳單 ${fmt(r.total_bill)}</span>
+                              ) : null}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0 ml-2">
+                              <span className="text-base font-bold tabular-nums" style={{ color: '#ea580c' }}>
+                                −{fmt(r.amount)}
+                              </span>
+                              {!isLocked && (
+                                <button type="button" onClick={() => setReserves(prev => prev.filter(x => x.id !== r.id))}
+                                  style={{ color: '#d4d4d8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                                  onMouseEnter={e => (e.currentTarget.style.color = '#be123c')} onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
+                                  <X className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {remaining !== null && (
+                            <p className="text-xs mt-1 tabular-nums" style={{ color: '#be123c' }}>
+                              尚差 ${fmt(remaining)}，明日繼續預留
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })}
+                    {!isLocked && showReserveForm && (
+                      <div className="rounded-xl p-3 space-y-3" style={{ background: '#fff7ed', border: '1.5px solid #fed7aa' }}>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-semibold mb-1" style={{ color: '#52525b' }}>原因</label>
+                            <select value={reserveForm.reason} onChange={e => setReserveForm(prev => ({ ...prev, reason: e.target.value }))}
+                              style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}>
+                              {RESERVE_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold mb-1" style={{ color: '#52525b' }}>今日預留金額</label>
+                            <input type="number" inputMode="numeric"
+                              value={reserveForm.amount || ''}
+                              placeholder="輸入金額"
+                              onChange={e => setReserveForm(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
+                              style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: 'white', outline: 'none', fontFamily: 'inherit', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#18181b' }} />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold mb-1" style={{ color: '#52525b' }}>
+                            帳單總金額（選填）
+                            <span className="ml-1 font-normal" style={{ color: '#a1a1aa' }}>— 填寫後系統會提醒明日尚差金額</span>
+                          </label>
+                          <input type="number" inputMode="numeric"
+                            value={reserveForm.total_bill || ''}
+                            placeholder="如：39891"
+                            onChange={e => setReserveForm(prev => ({ ...prev, total_bill: parseFloat(e.target.value) || 0 }))}
+                            style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: 'white', outline: 'none', fontFamily: 'inherit', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#18181b' }} />
+                        </div>
+                        {(reserveForm.total_bill ?? 0) > 0 && reserveForm.amount > 0 && (reserveForm.total_bill ?? 0) > reserveForm.amount && (
+                          <p className="text-xs px-2 py-1.5 rounded-lg" style={{ background: '#ffe4e6', color: '#be123c' }}>
+                            今日預留 ${fmt(reserveForm.amount)}，明日尚差 ${fmt((reserveForm.total_bill ?? 0) - reserveForm.amount)}
+                          </p>
+                        )}
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => {
+                            if (reserveForm.amount <= 0) { toast.error('請輸入預留金額'); return }
+                            const item: ReserveItem = {
+                              ...reserveForm,
+                              id: crypto.randomUUID(),
+                              total_bill: reserveForm.total_bill || undefined,
+                            }
+                            setReserves(prev => [...prev, item])
+                            setShowReserveForm(false)
+                            setReserveForm({ reason: '電費', amount: 0, total_bill: 0 })
+                          }}
+                            className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ background: '#ea580c', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+                            儲存
+                          </button>
+                          <button type="button" onClick={() => { setShowReserveForm(false); setReserveForm({ reason: '電費', amount: 0, total_bill: 0 }) }}
+                            className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: '#f4f4f5', color: '#71717a', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {reserves.length > 0 && (
+                      <div className="mt-1 pt-2" style={{ borderTop: '1px solid #f4f4f5' }}>
+                        <div className="flex justify-between text-sm font-semibold" style={{ color: '#18181b' }}>
+                          <span>今日實際匯入</span>
+                          <span className="tabular-nums" style={{ color: s.remitToHQ < 0 ? '#dc2626' : '#18181b' }}>${fmt(s.remitToHQ)}</span>
+                        </div>
+                        <p className="text-[10px] mt-1" style={{ color: '#a1a1aa' }}>
+                          實匯入 ${fmt(s.finalRemit)} 扣除預留款 ${fmt(s.totalReserved)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
+
             {/* 備註 */}
             <div>
               <label className="block text-xs font-semibold mb-2" style={{ color: '#a1a1aa' }}>備註</label>
@@ -2248,7 +2641,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {isLocked && !submitDone && (
               <div className="rounded-2xl px-4 py-3.5 flex items-center gap-2.5"
                 style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }}>
-                <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: status === 'verified' ? '#10b981' : '#6366f1' }} />
+                <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: status === 'verified' ? '#10b981' : '#F59E0B' }} />
                 <p className="text-sm" style={{ color: '#52525b' }}>
                   {status === 'verified' ? '此帳目已核准，如需修改請聯絡總公司' : '帳目已送出，等待總公司審核'}
                 </p>
@@ -2329,7 +2722,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ fontSize: '12px', color: '#71717a', marginBottom: '4px' }}>輸入金額</div>
-                        <div style={{ fontSize: '24px', fontWeight: 800, color: '#4338ca', fontVariantNumeric: 'tabular-nums' }}>
+                        <div style={{ fontSize: '24px', fontWeight: 800, color: '#92400E', fontVariantNumeric: 'tabular-nums' }}>
                           ${fmt(reviewItem.inputAmount)}
                         </div>
                       </div>
@@ -2359,7 +2752,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                     {/* 進度列 */}
                     <div style={{ height: '4px', borderRadius: '2px', background: '#f4f4f5', marginBottom: '16px', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', borderRadius: '2px', background: '#6366f1', width: `${(confirmedCount / verifyItems.length) * 100}%`, transition: 'width 0.3s' }} />
+                      <div style={{ height: '100%', borderRadius: '2px', background: '#F59E0B', width: `${(confirmedCount / verifyItems.length) * 100}%`, transition: 'width 0.3s' }} />
                     </div>
 
                     {reviewItem.confirmed ? (
@@ -2370,7 +2763,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     ) : (
                       <button
                         onClick={confirmCurrent}
-                        style={{ width: '100%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white', border: 'none', padding: '16px', borderRadius: '14px', fontSize: '16px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                        style={{ width: '100%', background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white', border: 'none', padding: '16px', borderRadius: '14px', fontSize: '16px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                         <CheckCircle2 style={{ width: '20px', height: '20px' }} />
                         已核對，下一張
                       </button>
@@ -2411,8 +2804,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   {/* 標題列 */}
                   <div className="px-4 pt-4 pb-3 flex items-center justify-between" style={{ borderBottom: '1px solid #f4f4f5' }}>
                     <div className="flex items-center gap-2">
-                      <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#eef2ff' }}>
-                        <CheckCircle2 className="h-4 w-4" style={{ color: '#6366f1' }} />
+                      <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#FFFBEB' }}>
+                        <CheckCircle2 className="h-4 w-4" style={{ color: '#F59E0B' }} />
                       </div>
                       <p className="text-sm font-semibold" style={{ color: '#18181b' }}>核對清單</p>
                     </div>
@@ -2444,7 +2837,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             {item.type === 'receipt' ? '單據' : '平台'} · {item.label}
                           </div>
                           <div style={{ fontSize: '12px', color: '#71717a' }}>
-                            輸入金額：<span style={{ fontWeight: 600, color: '#4338ca' }}>${fmt(item.inputAmount)}</span>
+                            輸入金額：<span style={{ fontWeight: 600, color: '#92400E' }}>${fmt(item.inputAmount)}</span>
                           </div>
                         </div>
                         {/* 狀態 */}
@@ -2461,7 +2854,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     <div className="px-4 pb-4">
                       <button
                         onClick={startReview}
-                        style={{ width: '100%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white', border: 'none', padding: '14px', borderRadius: '14px', fontSize: '15px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                        style={{ width: '100%', background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white', border: 'none', padding: '14px', borderRadius: '14px', fontSize: '15px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                         <Camera style={{ width: '18px', height: '18px' }} />
                         {confirmedCount > 0 ? `繼續核對（剩 ${verifyItems.length - confirmedCount} 張）` : '開始核對'}
                       </button>
@@ -2492,11 +2885,23 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               desc="送出後資料將上傳至總公司，請再次確認金額正確。" />
 
             <div className="rounded-3xl p-6 text-center mb-4"
-              style={{ background: 'linear-gradient(135deg,#eef2ff,#f5f3ff)', border: '1.5px solid #c7d2fe' }}>
-              <p className="text-xs mb-1 font-semibold" style={{ color: '#6366f1' }}>應包進信封的錢</p>
-              <p className="text-5xl font-extrabold tabular-nums tracking-tight mb-2" style={{ color: '#4338ca' }}>
-                ${fmt(s.actualRemit)}
+              style={{ background: 'linear-gradient(135deg,#FFFBEB,#f5f3ff)', border: '1.5px solid #FDE68A' }}>
+              <p className="text-xs mb-1 font-semibold" style={{ color: '#F59E0B' }}>
+                {s.totalReserved > 0 ? '今日實際匯入公司' : '應包進信封的錢'}
               </p>
+              <p className="text-5xl font-extrabold tabular-nums tracking-tight mb-2" style={{ color: '#92400E' }}>
+                ${fmt(s.totalReserved > 0 ? s.remitToHQ : s.actualRemit)}
+              </p>
+              {s.totalReserved > 0 && (
+                <div className="mt-2 mb-1 px-3 py-2 rounded-xl text-xs" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                  {reserves.map(r => (
+                    <div key={r.id} className="flex justify-between tabular-nums" style={{ color: '#c2410c' }}>
+                      <span>預留 {r.reason}</span>
+                      <span>−${fmt(r.amount)}{r.total_bill && r.total_bill > r.amount ? `（尚差 $${fmt(r.total_bill - r.amount)}）` : ''}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex justify-center gap-6 text-sm mt-3">
                 <div><p className="text-xs mb-0.5" style={{ color: '#a1a1aa' }}>總營業額</p><p className="font-bold tabular-nums">${fmt(s.totalRevenue)}</p></div>
                 <div><p className="text-xs mb-0.5" style={{ color: '#a1a1aa' }}>誤差</p>
@@ -2528,7 +2933,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             </div>
 
             <div className="rounded-3xl p-6 text-white relative overflow-hidden"
-              style={{ background: 'linear-gradient(135deg,#18181b,#4338ca)', boxShadow: '0 20px 50px -10px rgba(99,102,241,0.25)' }}>
+              style={{ background: 'linear-gradient(135deg,#18181b,#92400E)', boxShadow: '0 20px 50px -10px rgba(245,158,11,0.2)' }}>
               <div className="flex items-center gap-2.5 mb-5">
                 <Send className="h-5 w-5" />
                 <span className="font-semibold">信封袋資訊</span>
@@ -2542,8 +2947,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 ))}
               </div>
               <div className="rounded-2xl p-5 text-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
-                <p className="text-xs mb-1" style={{ opacity: 0.8 }}>請包入信封袋的金額</p>
-                <p className="text-4xl font-extrabold tabular-nums tracking-tight">${fmt(s.actualRemit)}</p>
+                <p className="text-xs mb-1" style={{ opacity: 0.8 }}>
+                  {s.totalReserved > 0 ? '今日實際匯入公司' : '請包入信封袋的金額'}
+                </p>
+                <p className="text-4xl font-extrabold tabular-nums tracking-tight">${fmt(s.totalReserved > 0 ? s.remitToHQ : s.actualRemit)}</p>
+                {s.totalReserved > 0 && (
+                  <p className="text-xs mt-2" style={{ opacity: 0.7 }}>
+                    （已預留 ${fmt(s.totalReserved)} 備付費用）
+                  </p>
+                )}
               </div>
             </div>
           </>
@@ -2561,9 +2973,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <p className="text-xs" style={{ color: '#a1a1aa' }}>包好信封後，請清點剩餘零用金是否等於零用金備付額</p>
               </div>
               <div className="px-5 py-4">
-                <div className="rounded-2xl p-4 text-center mb-4" style={{ background: 'linear-gradient(135deg,#eef2ff,#f5f3ff)' }}>
-                  <p className="text-xs mb-1" style={{ color: '#6366f1' }}>店面應剩餘零用金</p>
-                  <p className="text-3xl font-extrabold tabular-nums" style={{ color: '#4338ca' }}>${fmt(store.petty_cash)}</p>
+                <div className="rounded-2xl p-4 text-center mb-4" style={{ background: 'linear-gradient(135deg,#FFFBEB,#f5f3ff)' }}>
+                  <p className="text-xs mb-1" style={{ color: '#F59E0B' }}>店面應剩餘零用金</p>
+                  <p className="text-3xl font-extrabold tabular-nums" style={{ color: '#92400E' }}>${fmt(store.petty_cash)}</p>
                 </div>
                 <div className="space-y-2.5 mb-4">
                   <div style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px' }}>
@@ -2627,7 +3039,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {stepId === 'petty' && (
               <button onClick={() => router.push('/manager/summary')}
                 className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-base font-bold text-white"
-                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 8px 20px rgba(99,102,241,0.3)' }}>
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 8px 20px rgba(245,158,11,0.3)' }}>
                 <CheckCircle2 className="h-5 w-5" />
                 完成 · 結束今日
               </button>
@@ -2637,7 +3049,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {stepId === 'result' && (
               <button onClick={goNext}
                 className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white"
-                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}>
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
                 繼續 → 零用金核對
               </button>
             )}
@@ -2653,8 +3065,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <button onClick={handleSubmit} disabled={submitting}
                   className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white"
                   style={{
-                    background: isDisputed ? 'linear-gradient(135deg,#f97316,#ea580c)' : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
-                    boxShadow: isDisputed ? '0 4px 12px rgba(249,115,22,0.3)' : '0 4px 12px rgba(99,102,241,0.3)',
+                    background: isDisputed ? 'linear-gradient(135deg,#f97316,#ea580c)' : 'linear-gradient(135deg,#F59E0B,#F97316)',
+                    boxShadow: isDisputed ? '0 4px 12px rgba(249,115,22,0.3)' : '0 4px 12px rgba(245,158,11,0.3)',
                     opacity: submitting ? 0.7 : 1,
                   }}>
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -2676,8 +3088,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <button onClick={goNext} disabled={saving}
                   className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white"
                   style={{
-                    background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
-                    boxShadow: '0 4px 12px rgba(99,102,241,0.3)',
+                    background: 'linear-gradient(135deg,#F59E0B,#F97316)',
+                    boxShadow: '0 4px 12px rgba(245,158,11,0.3)',
                     opacity: saving ? 0.7 : 1,
                   }}>
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

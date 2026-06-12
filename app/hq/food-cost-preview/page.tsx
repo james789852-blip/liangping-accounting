@@ -21,7 +21,7 @@ export default async function FoodCostPreviewPage({
 
   const admin = createAdminClient()
   const { data: stores } = await admin
-    .from('stores').select('id, name').eq('active', true).order('name')
+    .from('stores').select('id, name, type').eq('active', true).order('name')
 
   const params = await searchParams
   const storeId = params.storeId ?? stores?.[0]?.id ?? ''
@@ -53,7 +53,9 @@ export default async function FoodCostPreviewPage({
       .gte('business_date', firstDay)
       .lte('business_date', lastDay)
       .order('business_date'),
-    admin.from('item_column_mappings').select('item_name, excel_column, item_category').order('item_name'),
+    admin.from('item_column_mappings')
+      .select('id, item_name, excel_column, item_category, vendor_group, store_id')
+      .or(`store_id.is.null,store_id.eq.${storeId}`),
     admin.from('daily_closings')
       .select('business_date, total_revenue')
       .eq('store_id', storeId)
@@ -61,9 +63,40 @@ export default async function FoodCostPreviewPage({
       .lte('business_date', lastDay),
   ])
 
-  const mappingMap: Record<string, { excel_column: string; item_category: string }> = {}
-  for (const m of mappings ?? []) {
-    mappingMap[m.item_name] = { excel_column: m.excel_column, item_category: m.item_category }
+  let hasTemplate = false
+  let templateColumns: Record<string, string[]> | null = null
+  let templateMeta: { filename: string; uploadedAt: string } | null = null
+  try {
+    const { data: tmplFiles } = await admin.storage.from('excel-templates').list('', { search: storeId })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    hasTemplate = (tmplFiles ?? []).some((f: any) => f.name === `${storeId}.xlsx`)
+    const [colFileRes, metaFileRes] = await Promise.allSettled([
+      admin.storage.from('excel-templates').download(`${storeId}-columns.json`),
+      admin.storage.from('excel-templates').download(`${storeId}-meta.json`),
+    ])
+    if (colFileRes.status === 'fulfilled' && colFileRes.value.data) {
+      const parsed = JSON.parse(await colFileRes.value.data.text())
+      if (Array.isArray(parsed['食材']) && Array.isArray(parsed['耗材']) && Array.isArray(parsed['雜項'])) {
+        templateColumns = parsed
+      }
+    }
+    if (metaFileRes.status === 'fulfilled' && metaFileRes.value.data) {
+      templateMeta = JSON.parse(await metaFileRes.value.data.text())
+    }
+  } catch { /* storage unavailable, features degrade gracefully */ }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const storeMappings = (mappings ?? []).filter((m: any) => m.store_id === storeId)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((m: any) => ({ id: m.id as string, item_name: m.item_name as string, excel_column: m.excel_column as string, item_category: m.item_category as string, vendor_group: (m.vendor_group ?? null) as string | null }))
+
+  // Build priority map: global first, then store-specific overrides
+  const mappingMap: Record<string, { excel_column: string; item_category: string; vendor_group: string | null }> = {}
+  for (const m of (mappings ?? []).filter((m: any) => !m.store_id)) {
+    mappingMap[m.item_name] = { excel_column: m.excel_column, item_category: m.item_category, vendor_group: m.vendor_group ?? null }
+  }
+  for (const m of (mappings ?? []).filter((m: any) => m.store_id === storeId)) {
+    mappingMap[m.item_name] = { excel_column: m.excel_column, item_category: m.item_category, vendor_group: m.vendor_group ?? null }
   }
 
   const revenueMap: Record<string, number> = {}
@@ -85,7 +118,7 @@ export default async function FoodCostPreviewPage({
     packTotal: number
     miscTotal: number
     grandTotal: number
-    mappedItems: { vendor: string; item_name: string; excel_column: string; category: string; amount: number }[]
+    mappedItems: { vendor: string; item_name: string; excel_column: string; category: string; vendor_group: string | null; amount: number }[]
     unmappedItems: { vendor: string; item_name: string; amount: number }[]
     receiptCount: number
   }
@@ -115,6 +148,7 @@ export default async function FoodCostPreviewPage({
           item_name: it.item_name,
           excel_column: mapping.excel_column,
           category: mapping.item_category,
+          vendor_group: mapping.vendor_group,
           amount: it.amount,
         })
         if (mapping.item_category === '食材') row.foodTotal += it.amount
@@ -135,6 +169,20 @@ export default async function FoodCostPreviewPage({
 
   const totalMapped = rows.reduce((s, r) => s + r.mappedItems.length, 0)
   const totalUnmapped = rows.reduce((s, r) => s + r.unmappedItems.length, 0)
+
+  const colBreakdownMap: Record<string, { category: string; vendor_group: string | null; total: number }> = {}
+  for (const row of rows) {
+    for (const item of row.mappedItems) {
+      if (!colBreakdownMap[item.excel_column]) {
+        colBreakdownMap[item.excel_column] = { category: item.category, vendor_group: item.vendor_group, total: 0 }
+      }
+      colBreakdownMap[item.excel_column].total += item.amount
+    }
+  }
+  const colBreakdown = Object.entries(colBreakdownMap)
+    .filter(([, v]) => v.total > 0)
+    .map(([col, v]) => ({ col, category: v.category, vendor_group: v.vendor_group, total: v.total }))
+    .sort((a, b) => (a.vendor_group || a.category).localeCompare(b.vendor_group || b.category) || b.total - a.total)
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -158,6 +206,11 @@ export default async function FoodCostPreviewPage({
         totalMapped={totalMapped}
         totalUnmapped={totalUnmapped}
         mappingCount={(mappings ?? []).length}
+        colBreakdown={colBreakdown}
+        hasTemplate={hasTemplate}
+        templateColumns={templateColumns}
+        templateMeta={templateMeta}
+        storeMappings={storeMappings}
       />
     </div>
   )

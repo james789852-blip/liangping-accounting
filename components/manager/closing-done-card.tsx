@@ -28,10 +28,10 @@ export default function ClosingDoneCard({ storeName, businessDate, status, total
           style={{
             background: isVerified
               ? 'linear-gradient(135deg,#10b981,#059669)'
-              : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+              : 'linear-gradient(135deg,#F59E0B,#F97316)',
             boxShadow: isVerified
               ? '0 12px 32px rgba(16,185,129,0.35)'
-              : '0 12px 32px rgba(99,102,241,0.35)',
+              : '0 12px 32px rgba(245,158,11,0.3)',
           }}>
           <CheckCircle2 className="h-12 w-12 text-white" />
         </div>
@@ -59,7 +59,7 @@ export default function ClosingDoneCard({ storeName, businessDate, status, total
           </div>
           <div className="flex justify-between items-center">
             <span className="text-sm" style={{ color: '#52525b' }}>帳目狀態</span>
-            <span className="text-sm font-semibold" style={{ color: isVerified ? '#047857' : '#4338ca' }}>
+            <span className="text-sm font-semibold" style={{ color: isVerified ? '#047857' : '#92400E' }}>
               {isVerified ? '已審核完成' : '等待總公司審核'}
             </span>
           </div>
@@ -73,7 +73,7 @@ export default function ClosingDoneCard({ storeName, businessDate, status, total
         <div className="flex flex-col gap-3 w-full">
           <Link href="/manager/summary"
             className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-semibold text-white"
-            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 14px rgba(99,102,241,0.25)' }}>
+            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 14px rgba(245,158,11,0.2)' }}>
             <BarChart3 className="h-4 w-4" />
             查看詳細結算結果
           </Link>

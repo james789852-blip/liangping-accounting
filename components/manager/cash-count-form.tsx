@@ -79,8 +79,8 @@ function NumInput({ value, onChange, inputRef, onEnter }: {
       type="number" min="0" inputMode="numeric"
       style={{
         ...BASE_INPUT,
-        borderColor: focused ? '#6366f1' : '#e4e4e7',
-        boxShadow: focused ? '0 0 0 4px rgba(99,102,241,0.1)' : 'none',
+        borderColor: focused ? '#F59E0B' : '#e4e4e7',
+        boxShadow: focused ? '0 0 0 4px rgba(245,158,11,0.12)' : 'none',
       }}
       value={value === 0 ? '' : value} placeholder="0"
       onFocus={e => { setFocused(true); e.target.select() }}
@@ -168,7 +168,7 @@ export default function CashCountForm({
             style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
             <div className="flex justify-between items-center">
               <span className="text-sm" style={{ color: '#52525b' }}>今日結帳</span>
-              <span className="text-sm font-semibold" style={{ color: '#4338ca' }}>{statusLabel[closing.status] ?? closing.status}</span>
+              <span className="text-sm font-semibold" style={{ color: '#92400E' }}>{statusLabel[closing.status] ?? closing.status}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm" style={{ color: '#52525b' }}>應包入信封</span>
@@ -177,9 +177,9 @@ export default function CashCountForm({
           </div>
         ) : (
           <div className="rounded-2xl px-4 py-3.5 flex items-start gap-2.5"
-            style={{ background: '#eef2ff', border: '1px solid #e0e7ff' }}>
-            <Info className="h-4 w-4 mt-0.5 shrink-0" style={{ color: '#4338ca' }} />
-            <span className="text-sm" style={{ color: '#4338ca' }}>今日尚未提交結帳，以下為零用金確認工具</span>
+            style={{ background: '#FFFBEB', border: '1px solid #FEF3C7' }}>
+            <Info className="h-4 w-4 mt-0.5 shrink-0" style={{ color: '#92400E' }} />
+            <span className="text-sm" style={{ color: '#92400E' }}>今日尚未提交結帳，以下為零用金確認工具</span>
           </div>
         )}
 
@@ -287,11 +287,11 @@ export default function CashCountForm({
                 ? '#f4f4f5'
                 : saveStatus === 'saved'
                 ? 'linear-gradient(135deg,#10b981,#059669)'
-                : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+                : 'linear-gradient(135deg,#F59E0B,#F97316)',
               color: total === 0 ? '#a1a1aa' : 'white',
               boxShadow: total === 0 ? 'none'
                 : saveStatus === 'saved' ? '0 4px 12px rgba(16,185,129,0.3)'
-                : '0 4px 12px rgba(99,102,241,0.3)',
+                : '0 4px 12px rgba(245,158,11,0.3)',
               cursor: total === 0 ? 'not-allowed' : 'pointer',
             }}>
             {isPending ? (

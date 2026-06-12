@@ -5,7 +5,11 @@ import ItemMappingsClient from '@/components/hq/item-mappings-client'
 
 export const dynamic = 'force-dynamic'
 
-export default async function ItemMappingsPage() {
+export default async function ItemMappingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ storeId?: string }>
+}) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -15,11 +19,19 @@ export default async function ItemMappingsPage() {
   if (!profile?.is_hq && profile?.role !== '老闆') redirect('/manager/dashboard')
 
   const admin = createAdminClient()
-  const { data: mappings } = await admin
-    .from('item_column_mappings')
-    .select('*')
-    .order('item_category')
-    .order('item_name')
+  const [{ data: stores }, { data: mappings }] = await Promise.all([
+    admin.from('stores').select('id, name').eq('active', true).order('name'),
+    admin.from('item_column_mappings').select('*').order('item_category').order('item_name'),
+  ])
 
-  return <ItemMappingsClient mappings={mappings ?? []} />
+  const params = await searchParams
+  const storeId = params.storeId ?? ''
+
+  return (
+    <ItemMappingsClient
+      mappings={mappings ?? []}
+      stores={stores ?? []}
+      selectedStoreId={storeId}
+    />
+  )
 }

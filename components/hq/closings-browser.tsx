@@ -6,7 +6,7 @@ import { X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Camera, Package, 
 import { toast } from 'sonner'
 import { verifyClosing, disputeClosing, deleteClosing } from '@/app/actions/closings'
 
-interface Store { id: string; name: string }
+interface Store { id: string; name: string; type?: string }
 interface RemittanceAdjustment {
   id: string; type: string; label: string; amount: number; person?: string
 }
@@ -26,7 +26,7 @@ interface Closing {
 }
 interface ReceiptRow {
   id: string; vendor_name: string; receipt_type?: string; total_amount: number
-  photo_url?: string; receipt_items?: { item_name: string; unit_price: number; amount: number }[]
+  photo_url?: string; receipt_items?: { item_name: string; quantity: number; unit: string; unit_price: number; amount: number }[]
 }
 interface VideoRow { closing_id: string; signed_url: string; file_name: string }
 
@@ -47,7 +47,7 @@ function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
 const STATUS: Record<string, { label: string; bg: string; color: string }> = {
   draft:     { label: '草稿',   bg: '#f4f4f5', color: '#71717a' },
-  submitted: { label: '待審核', bg: '#eef2ff', color: '#4338ca' },
+  submitted: { label: '待審核', bg: '#FFFBEB', color: '#92400E' },
   verified:  { label: '已審核', bg: '#d1fae5', color: '#047857' },
   disputed:  { label: '退回',   bg: '#ffe4e6', color: '#be123c' },
 }
@@ -300,19 +300,19 @@ function ClosingCard({
         onNext={() => setLightboxIndex(i => (i !== null && i < allPhotos.length - 1 ? i + 1 : i))}
       />
     )}
-    <div className="bg-white rounded-2xl overflow-hidden" style={{ border: `2px solid ${closing.status === 'submitted' ? '#c7d2fe' : closing.status === 'disputed' ? '#fecdd3' : '#f4f4f5'}`, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+    <div className="bg-white rounded-2xl overflow-hidden" style={{ border: `2px solid ${closing.status === 'submitted' ? '#FDE68A' : closing.status === 'disputed' ? '#fecdd3' : '#f4f4f5'}`, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
       {/* 標頭 */}
       <button className="w-full flex items-center gap-3 px-4 py-4 text-left" onClick={() => setExpanded(!expanded)}>
-        <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white text-xs font-bold shrink-0"
-          style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
-          {closing.stores?.name?.slice(0, 2) ?? '?'}
+        <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white font-bold shrink-0"
+          style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', fontSize: (closing.stores?.name?.length ?? 0) > 2 ? '10px' : '13px' }}>
+          {closing.stores?.name ?? '?'}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold" style={{ color: '#18181b' }}>{closing.stores?.name}</p>
           <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
             {parseInt(mo)}/{parseInt(d)}
             {closing.total_revenue > 0 && <span className="ml-2 tabular-nums font-semibold" style={{ color: '#18181b' }}>${fmt(closing.total_revenue)}</span>}
-            {submitterName && <span className="ml-2 font-medium" style={{ color: '#6366f1' }}>由 {submitterName} 提交</span>}
+            {submitterName && <span className="ml-2 font-medium" style={{ color: '#F59E0B' }}>由 {submitterName} 提交</span>}
           </p>
         </div>
         <span className="text-xs font-semibold px-2 py-0.5 rounded-lg shrink-0" style={{ background: st.bg, color: st.color }}>{st.label}</span>
@@ -332,7 +332,7 @@ function ClosingCard({
           {/* ── 1. 各渠道收入 ─────────────────────────────── */}
           {closing.revenue_items.length > 0 && (
             <div className="pt-3">
-              <SectionLabel icon={<BarChart className="h-3.5 w-3.5" />} color="#6366f1" title="各渠道收入" />
+              <SectionLabel icon={<BarChart className="h-3.5 w-3.5" />} color="#F59E0B" title="各渠道收入" />
               <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
                 {closing.revenue_items.map((r, idx) => (
                   <div key={idx} className="flex items-center justify-between px-3 py-2 text-xs"
@@ -346,7 +346,7 @@ function ClosingCard({
                 <div className="flex items-center justify-between px-3 py-2 text-xs font-bold"
                   style={{ background: '#f8fafc', borderTop: '1px solid #e4e4e7' }}>
                   <span style={{ color: '#18181b' }}>總收入</span>
-                  <span className="tabular-nums" style={{ color: '#4338ca' }}>${fmt(closing.total_revenue)}</span>
+                  <span className="tabular-nums" style={{ color: '#92400E' }}>${fmt(closing.total_revenue)}</span>
                 </div>
               </div>
             </div>
@@ -360,7 +360,7 @@ function ClosingCard({
                 { label: '總收入', val: closing.total_revenue, color: '#18181b' },
                 ...(platformTotal > 0 ? [{ label: '　− 平台收款', val: -platformTotal, color: '#71717a' }] : []),
                 ...(closing.total_expenses > 0 ? [{ label: '　− 現金支出', val: -closing.total_expenses, color: '#71717a' }] : []),
-                { label: '應包進信封', val: closing.should_include_delivery ?? closing.expected_remit, color: '#6366f1', bold: true },
+                { label: '應包進信封', val: closing.should_include_delivery ?? closing.expected_remit, color: '#F59E0B', bold: true },
                 ...(closing.total_cost > 0 ? [{ label: '　− 央廚費', val: -closing.total_cost, color: '#f97316' }] : []),
                 { label: '應匯總公司', val: closing.expected_remit, color: '#047857', bold: true },
                 { label: '實際包進信封', val: closing.actual_remit ?? closing.expected_remit, color: '#18181b', bold: true },
@@ -422,7 +422,7 @@ function ClosingCard({
           {/* ── 6. 匯款調整 ──────────────────────────────── */}
           {(closing.remittance_adjustments ?? []).length > 0 && (
             <div>
-              <SectionLabel icon={<ArrowLeftRight className="h-3.5 w-3.5" />} color="#8b5cf6" title="匯款調整" />
+              <SectionLabel icon={<ArrowLeftRight className="h-3.5 w-3.5" />} color="#F97316" title="匯款調整" />
               <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
                 {(closing.remittance_adjustments ?? []).map((adj, idx, arr) => (
                   <div key={idx} className="flex items-center justify-between px-3 py-2 text-xs"
@@ -475,9 +475,20 @@ function ClosingCard({
                           )}
                         </div>
                         {(r.receipt_items ?? []).length > 0 && (
-                          <p className="text-[11px] mt-0.5 truncate" style={{ color: '#a1a1aa' }}>
-                            {(r.receipt_items ?? []).map(i => i.item_name).join('、')}
-                          </p>
+                          <div className="mt-1.5 space-y-0.5">
+                            {(r.receipt_items ?? []).map((item, ii) => (
+                              <div key={ii} className="flex items-center gap-1.5 text-[11px]" style={{ color: '#71717a' }}>
+                                <span style={{ flex: '1 1 0', minWidth: 0, fontWeight: 500, color: '#52525b' }}>{item.item_name}</span>
+                                {item.quantity > 0 && (
+                                  <span className="tabular-nums" style={{ whiteSpace: 'nowrap' }}>
+                                    {item.quantity}{item.unit ? item.unit : ''}
+                                    {item.unit_price > 0 ? ` × $${fmt(item.unit_price)}` : ''}
+                                  </span>
+                                )}
+                                <span className="tabular-nums font-semibold shrink-0" style={{ color: '#18181b' }}>${fmt(item.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
                       <span className="text-xs font-bold tabular-nums shrink-0" style={{ color: '#18181b' }}>${fmt(r.total_amount)}</span>
@@ -492,7 +503,7 @@ function ClosingCard({
           {otherPhotos.length > 0 && (
             <div>
               <div className="flex items-center gap-1.5 mb-2">
-                <Camera className="h-3.5 w-3.5" style={{ color: '#6366f1' }} />
+                <Camera className="h-3.5 w-3.5" style={{ color: '#F59E0B' }} />
                 <p className="text-xs font-semibold" style={{ color: '#52525b' }}>
                   平台截圖 / 配送單
                   <span className="ml-1.5 font-normal" style={{ color: '#a1a1aa' }}>（點擊可左右切換）</span>
@@ -624,10 +635,10 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
           onClick={() => navigateDate(todayStr, storeId)}
           className="px-3 h-10 rounded-xl text-sm font-semibold transition-all"
           style={{
-            background: isToday ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'white',
+            background: isToday ? 'linear-gradient(135deg,#F59E0B,#F97316)' : 'white',
             color: isToday ? 'white' : '#52525b',
             border: `1.5px solid ${isToday ? 'transparent' : '#e4e4e7'}`,
-            boxShadow: isToday ? '0 2px 8px rgba(99,102,241,0.3)' : 'none',
+            boxShadow: isToday ? '0 2px 8px rgba(245,158,11,0.3)' : 'none',
           }}>
           今天
         </button>
@@ -654,7 +665,7 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
         <select
           value={dayMode}
           onChange={e => handleDayChange(parseInt(e.target.value))}
-          style={{ height: '40px', padding: '0 10px', border: `1.5px solid ${dayMode > 0 ? '#c7d2fe' : '#e4e4e7'}`, borderRadius: '12px', fontSize: '14px', outline: 'none', background: dayMode > 0 ? '#eef2ff' : 'white', fontFamily: 'inherit', color: dayMode > 0 ? '#4338ca' : '#18181b', minWidth: '80px' }}>
+          style={{ height: '40px', padding: '0 10px', border: `1.5px solid ${dayMode > 0 ? '#FDE68A' : '#e4e4e7'}`, borderRadius: '12px', fontSize: '14px', outline: 'none', background: dayMode > 0 ? '#FFFBEB' : 'white', fontFamily: 'inherit', color: dayMode > 0 ? '#92400E' : '#18181b', minWidth: '80px' }}>
           <option value={0}>全月</option>
           {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => (
             <option key={d} value={d}>{d} 日</option>
@@ -668,7 +679,15 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
             onChange={e => isDateMode ? navigateDate(currentDate, e.target.value) : navigateMonth(currentMonth, e.target.value)}
             style={{ height: '40px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '14px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b', minWidth: '110px' }}>
             <option value="">全部店家</option>
-            {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {(['店面', '央廚'] as const).map(type => {
+              const group = stores.filter(s => (s.type ?? '店面') === type)
+              if (group.length === 0) return null
+              return (
+                <optgroup key={type} label={`── ${type} ──`}>
+                  {group.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </optgroup>
+              )
+            })}
           </select>
         )}
 
@@ -680,8 +699,8 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
             <button key={s} onClick={() => setStatusFilter(s)}
               className="px-3 h-9 rounded-xl text-xs font-semibold transition-all"
               style={{
-                background: active ? (s === 'submitted' ? '#eef2ff' : s === 'verified' ? '#d1fae5' : s === 'disputed' ? '#ffe4e6' : '#18181b') : 'white',
-                color: active ? (s === 'submitted' ? '#4338ca' : s === 'verified' ? '#047857' : s === 'disputed' ? '#be123c' : 'white') : '#71717a',
+                background: active ? (s === 'submitted' ? '#FFFBEB' : s === 'verified' ? '#d1fae5' : s === 'disputed' ? '#ffe4e6' : '#18181b') : 'white',
+                color: active ? (s === 'submitted' ? '#92400E' : s === 'verified' ? '#047857' : s === 'disputed' ? '#be123c' : 'white') : '#71717a',
                 border: `1.5px solid ${active ? 'transparent' : '#e4e4e7'}`,
               }}>
               {labels[s]}

@@ -21,7 +21,7 @@ export default function UserHQToggle({ userId, isHQ }: { userId: string; isHQ: b
       title={value ? '取消總公司後台' : '設為總公司人員'}
       style={{
         position: 'relative', width: '36px', height: '20px', borderRadius: '10px', flexShrink: 0,
-        background: value ? '#6366f1' : '#d4d4d8', border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
+        background: value ? '#F59E0B' : '#d4d4d8', border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
         opacity: loading ? 0.5 : 1, transition: 'background 0.2s',
       }}>
       <span style={{

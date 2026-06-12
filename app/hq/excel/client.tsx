@@ -97,8 +97,8 @@ export default function HQExcelClient({ stores }: { stores: Store[] }) {
           disabled={loading || !storeId}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white font-semibold text-sm"
           style={{
-            background: (loading || !storeId) ? '#d4d4d8' : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
-            boxShadow: (loading || !storeId) ? 'none' : '0 4px 12px rgba(99,102,241,0.3)',
+            background: (loading || !storeId) ? '#d4d4d8' : 'linear-gradient(135deg,#F59E0B,#F97316)',
+            boxShadow: (loading || !storeId) ? 'none' : '0 4px 12px rgba(245,158,11,0.3)',
             cursor: (loading || !storeId) ? 'not-allowed' : 'pointer',
           }}>
           {loading

@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { Banknote, Package, Calculator, BarChart3, AlertTriangle, ArrowLeft, Video, Camera } from 'lucide-react'
+import { Banknote, Package, Calculator, BarChart3, AlertTriangle, ArrowLeft, Video, Camera, PiggyBank } from 'lucide-react'
 import Link from 'next/link'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import DeleteDraftButton from '@/components/manager/delete-draft-button'
@@ -218,6 +218,38 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
               <div className="flex justify-between text-sm font-semibold">
                 <span>調整後實匯入</span>
                 <span className="tabular-nums">${fmt((closing.actual_remit ?? 0) + adjustmentTotal)}</span>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      })()}
+
+      {/* 預留款 */}
+      {(() => {
+        const reserves = (closing.reserve_items as any[]) ?? []
+        if (reserves.length === 0) return null
+        const adjustments = (closing.remittance_adjustments as any[]) ?? []
+        const adjustmentTotal = adjustments.reduce((sum: number, a: any) => sum + (a.amount ?? 0), 0)
+        const totalReserved = reserves.reduce((sum: number, r: any) => sum + (r.amount ?? 0), 0)
+        const remitToHQ = (closing.actual_remit ?? 0) + adjustmentTotal - totalReserved
+        return (
+          <Card style={{ border: '1px solid #fed7aa' }}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2" style={{ color: '#ea580c' }}>
+                <PiggyBank className="h-4 w-4" /> 預留款
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {reserves.map((r: any, i: number) => (
+                <div key={r.id ?? i} className="flex justify-between items-center text-sm">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md" style={{ background: '#fff7ed', color: '#ea580c' }}>{r.reason}</span>
+                  <span className="tabular-nums font-medium" style={{ color: '#ea580c' }}>−{fmt(r.amount)}</span>
+                </div>
+              ))}
+              <Separator />
+              <div className="flex justify-between text-sm font-semibold">
+                <span>今日實際匯入</span>
+                <span className="tabular-nums" style={{ color: remitToHQ < 0 ? '#dc2626' : '#18181b' }}>${fmt(remitToHQ)}</span>
               </div>
             </CardContent>
           </Card>
@@ -494,7 +526,7 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
           <Link
             href={`/manager/edit/${closing.id}`}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold text-white"
-            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}
+            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}
           >
             繼續編輯此草稿
           </Link>

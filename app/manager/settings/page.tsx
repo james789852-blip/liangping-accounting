@@ -3,7 +3,8 @@ import { redirect } from 'next/navigation'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
 import ReceiptSettings from '@/components/manager/receipt-settings'
-import { Settings } from 'lucide-react'
+import { Settings, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,13 +21,18 @@ export default async function SettingsPage() {
     return <div className="p-6 text-red-500">您尚未被指派到任何店家，請聯絡系統管理員。</div>
   }
 
-  const { data: store } = await supabase.from('stores').select('name').eq('id', storeId).single()
-  const categories = await getReceiptSettings(storeId)
+  const [{ data: store }, categories] = await Promise.all([
+    supabase.from('stores').select('name').eq('id', storeId).single(),
+    getReceiptSettings(storeId),
+  ])
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
       <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         <div className="max-w-xl mx-auto">
+          <Link href="/manager/closing" className="inline-flex items-center gap-1 text-xs font-medium mb-3" style={{ color: '#a1a1aa' }}>
+            <ArrowLeft className="h-3.5 w-3.5" />今日結帳
+          </Link>
           <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
             <Settings className="h-3.5 w-3.5" />
             {store?.name ?? ''}

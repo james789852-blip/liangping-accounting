@@ -1,20 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import { FileText, Plus, Trash2, ChevronDown, ChevronUp, Edit2, Check, X, Receipt } from 'lucide-react'
+import { FileText, Plus, Trash2, ChevronDown, ChevronUp, Edit2, Check, X, Receipt, ArrowLeft } from 'lucide-react'
 import { deleteReceipt, updateReceipt } from '@/app/actions/receipts'
 import ReceiptUpload from './receipt-upload'
-import { EXCEL_COLUMNS } from '@/lib/excel-columns'
+import Link from 'next/link'
 
 interface ReceiptItem {
-  id: string; item_name: string; amount: number; excel_column: string; item_category: string
+  id: string; item_name: string; quantity?: number; unit?: string; unit_price?: number; amount: number; excel_column: string; item_category: string
 }
 interface ReceiptData {
   id: string; business_date: string; vendor_name: string; receipt_type: string
   total_amount: number; tax_amount: number; photo_url: string; status: string
   notes: string; created_at: string; receipt_items: ReceiptItem[]
 }
-interface MappingMap { [k: string]: { excel_column: string; item_category: string } }
+interface MappingMap { [k: string]: { excel_column: string; item_category: string; vendor_group?: string | null } }
 interface Props {
   storeId: string; storeName: string; today: string; receipts: ReceiptData[]; mappings: MappingMap
 }
@@ -24,7 +24,7 @@ const TYPE_LABEL: Record<string, string> = {
 }
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
   draft:     { bg: '#f1f5f9', color: '#475569' },
-  submitted: { bg: '#eef2ff', color: '#4338ca' },
+  submitted: { bg: '#FFFBEB', color: '#92400E' },
   verified:  { bg: '#d1fae5', color: '#065f46' },
 }
 const STATUS_LABEL: Record<string, string> = {
@@ -48,14 +48,26 @@ function inputStyle(extra?: object) {
   }
 }
 
-function ReceiptCard({ receipt, onDelete, onUpdated }: {
+function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
   receipt: ReceiptData; onDelete: (id: string) => void; onUpdated: (updated: ReceiptData) => void
+  mappings: MappingMap
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPhoto, setShowPhoto] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [openItemIdx, setOpenItemIdx] = useState<number | null>(null)
+
+  function selectMappedItem(idx: number, name: string) {
+    const m = mappings[name]
+    setEditItems(prev => prev.map((it, i) => i !== idx ? it : {
+      ...it, item_name: name,
+      excel_column: m?.excel_column ?? '',
+      item_category: m?.item_category ?? '食材',
+    }))
+    setOpenItemIdx(null)
+  }
 
   const [editVendor, setEditVendor] = useState(receipt.vendor_name)
   const [editType, setEditType] = useState(receipt.receipt_type)
@@ -100,6 +112,9 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
         id: receipt.receipt_items[idx]?.id ?? `local-${idx}`,
         item_name: item.item_name, amount: item.amount,
         excel_column: item.excel_column, item_category: item.item_category,
+        quantity: receipt.receipt_items[idx]?.quantity ?? 0,
+        unit: receipt.receipt_items[idx]?.unit ?? '',
+        unit_price: receipt.receipt_items[idx]?.unit_price ?? 0,
       })),
     })
   }
@@ -113,7 +128,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
 
   return (
     <div className="bg-white rounded-2xl overflow-hidden transition-all"
-      style={{ border: editing ? '1.5px solid #6366f1' : '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+      style={{ border: editing ? '1.5px solid #F59E0B' : '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
 
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3.5">
@@ -145,7 +160,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
           {receipt.photo_url && (
             <button onClick={() => setShowPhoto(!showPhoto)}
               className="h-8 w-8 flex items-center justify-center rounded-xl transition-colors"
-              style={{ color: showPhoto ? '#4338ca' : '#a1a1aa', background: showPhoto ? '#eef2ff' : 'transparent' }}>
+              style={{ color: showPhoto ? '#92400E' : '#a1a1aa', background: showPhoto ? '#FFFBEB' : 'transparent' }}>
               <FileText className="h-4 w-4" />
             </button>
           )}
@@ -156,7 +171,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
           </button>
           <button onClick={startEdit}
             className="h-8 w-8 flex items-center justify-center rounded-xl transition-colors hover:bg-indigo-50"
-            style={{ color: editing ? '#4338ca' : '#a1a1aa' }}>
+            style={{ color: editing ? '#92400E' : '#a1a1aa' }}>
             <Edit2 className="h-4 w-4" />
           </button>
           <button onClick={handleDelete} disabled={deleting}
@@ -182,12 +197,25 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
           {receipt.receipt_items.length > 0 ? (
             <>
               <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>品項明細</p>
-              {receipt.receipt_items.map(item => (
-                <div key={item.id} className="flex justify-between items-center">
-                  <span className="text-sm" style={{ color: '#52525b' }}>{item.item_name}</span>
-                  <span className="text-sm font-semibold tabular-nums" style={{ color: '#18181b' }}>${fmt(item.amount)}</span>
+              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
+                <div className="grid px-3 py-1.5" style={{ gridTemplateColumns: '1fr 3rem 2.5rem 4rem 4rem', gap: '8px', background: '#fafafa', borderBottom: '1px solid #f4f4f5' }}>
+                  {['品項', '數量', '單位', '單價', '小計'].map(h => (
+                    <span key={h} className="text-[10px] font-semibold" style={{ color: '#a1a1aa', textAlign: h === '品項' ? 'left' : 'right' }}>{h}</span>
+                  ))}
                 </div>
-              ))}
+                {receipt.receipt_items.map((item, idx) => (
+                  <div key={item.id} className="grid px-3 py-2" style={{
+                    gridTemplateColumns: '1fr 3rem 2.5rem 4rem 4rem', gap: '8px',
+                    borderBottom: idx !== receipt.receipt_items.length - 1 ? '1px solid #f4f4f5' : 'none'
+                  }}>
+                    <span className="text-xs font-medium" style={{ color: '#18181b' }}>{item.item_name}</span>
+                    <span className="text-xs text-right tabular-nums" style={{ color: '#52525b' }}>{(item.quantity ?? 0) > 0 ? item.quantity : '—'}</span>
+                    <span className="text-xs text-right" style={{ color: '#71717a' }}>{item.unit || '—'}</span>
+                    <span className="text-xs text-right tabular-nums" style={{ color: '#52525b' }}>{(item.unit_price ?? 0) > 0 ? `$${fmt(item.unit_price ?? 0)}` : '—'}</span>
+                    <span className="text-xs text-right font-semibold tabular-nums" style={{ color: '#18181b' }}>${fmt(item.amount)}</span>
+                  </div>
+                ))}
+              </div>
             </>
           ) : (
             <p className="text-xs" style={{ color: '#a1a1aa' }}>無品項明細</p>
@@ -206,8 +234,8 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
 
       {/* Edit mode */}
       {editing && (
-        <div className="px-4 pb-4 pt-4 space-y-3" style={{ borderTop: '1.5px solid #eef2ff', background: '#fafbff' }}>
-          <p className="text-xs font-bold" style={{ color: '#4338ca' }}>編輯單據</p>
+        <div className="px-4 pb-4 pt-4 space-y-3" style={{ borderTop: '1.5px solid #FFFBEB', background: '#fafbff' }}>
+          <p className="text-xs font-bold" style={{ color: '#92400E' }}>編輯單據</p>
 
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -245,31 +273,58 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
             <div className="flex items-center justify-between mb-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>品項明細</p>
               <button onClick={() => setEditItems(prev => [...prev, { item_name: '', amount: 0, excel_column: '', item_category: '食材' }])}
-                className="text-xs font-semibold flex items-center gap-1" style={{ color: '#4338ca' }}>
+                className="text-xs font-semibold flex items-center gap-1" style={{ color: '#92400E' }}>
                 <Plus className="h-3 w-3" /> 新增品項
               </button>
             </div>
             <div className="space-y-1.5">
               {editItems.map((item, idx) => (
-                <div key={idx} className="grid grid-cols-[1fr_5rem_1fr_1.5rem] gap-1.5 items-center">
-                  <input style={inputStyle({ padding: '7px 10px', fontSize: '13px' })}
-                    placeholder="品項名稱" value={item.item_name}
-                    onChange={e => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, item_name: e.target.value } : it))} />
+                <div key={idx} className="grid grid-cols-[1fr_5rem_1.5rem] gap-1.5 items-start">
+                  <div style={{ position: 'relative' }}>
+                    <input style={inputStyle({ padding: '7px 10px', fontSize: '13px' })}
+                      placeholder="搜尋或輸入品項名稱" value={item.item_name}
+                      onFocus={() => setOpenItemIdx(idx)}
+                      onChange={e => { setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, item_name: e.target.value } : it)); setOpenItemIdx(idx) }}
+                      onBlur={() => setTimeout(() => setOpenItemIdx(null), 200)}
+                    />
+                    {item.excel_column && (
+                      <p style={{ fontSize: '10px', color: '#F59E0B', marginTop: '2px', paddingLeft: '2px' }}>→ {item.excel_column}</p>
+                    )}
+                    {openItemIdx === idx && (() => {
+                      const q = item.item_name.trim()
+                      const allNames = Object.keys(mappings)
+                      const filtered = q ? allNames.filter(n => n.includes(q)) : allNames
+                      if (filtered.length === 0) return null
+                      const groups: { group: string; cols: string[] }[] = []
+                      for (const name of filtered) {
+                        const g = mappings[name]?.vendor_group || mappings[name]?.item_category || '其他'
+                        const existing = groups.find(x => x.group === g)
+                        if (existing) existing.cols.push(name)
+                        else groups.push({ group: g, cols: [name] })
+                      }
+                      return (
+                        <div style={{ position: 'absolute', top: '36px', left: 0, right: 0, zIndex: 50, background: 'white', border: '1px solid #e4e4e7', borderRadius: '10px', boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: '220px', overflowY: 'auto' }}>
+                          {groups.map(({ group, cols }) => (
+                            <div key={group}>
+                              <p style={{ fontSize: '10px', fontWeight: 700, color: '#a1a1aa', padding: '6px 12px 2px', letterSpacing: '0.05em' }}>{group}</p>
+                              {cols.map(name => (
+                                <button key={name}
+                                  onMouseDown={e => { e.preventDefault(); selectMappedItem(idx, name) }}
+                                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: '13px', background: 'none', border: 'none', borderBottom: '1px solid #f9f9f9', cursor: 'pointer', color: '#18181b', fontFamily: 'inherit' }}>
+                                  {name}
+                                </button>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
+                  </div>
                   <input type="number" style={inputStyle({ padding: '7px 10px', fontSize: '13px', textAlign: 'right' })}
                     placeholder="金額" value={item.amount || ''}
                     onChange={e => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, amount: parseFloat(e.target.value) || 0 } : it))} />
-                  <select style={inputStyle({ padding: '7px 6px', fontSize: '12px' })}
-                    value={item.excel_column}
-                    onChange={e => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, excel_column: e.target.value } : it))}>
-                    <option value="">欄位</option>
-                    {Object.entries(EXCEL_COLUMNS).map(([cat, cols]) => (
-                      <optgroup key={cat} label={cat}>
-                        {(cols as string[]).map(col => <option key={col} value={col}>{col}</option>)}
-                      </optgroup>
-                    ))}
-                  </select>
                   <button onClick={() => setEditItems(prev => prev.filter((_, i) => i !== idx))}
-                    className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors hover:bg-red-50"
+                    className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors hover:bg-red-50 mt-0.5"
                     style={{ color: '#a1a1aa' }}>
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -309,7 +364,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated }: {
           <div className="flex gap-2">
             <button onClick={handleSave} disabled={saving}
               className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
-              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.25)' }}>
+              style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.2)' }}>
               <Check className="h-4 w-4" />{saving ? '儲存中...' : '儲存修改'}
             </button>
             <button onClick={() => setEditing(false)}
@@ -349,6 +404,9 @@ export default function ReceiptsClient({ storeId, storeName, today, receipts: in
       <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         <div className="flex items-center justify-between max-w-xl mx-auto">
           <div>
+            <Link href="/manager/closing" className="inline-flex items-center gap-1 text-xs font-medium mb-3" style={{ color: '#a1a1aa' }}>
+              <ArrowLeft className="h-3.5 w-3.5" />今日結帳
+            </Link>
             <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
               <Receipt className="h-3.5 w-3.5" />
               發票收據
@@ -361,7 +419,7 @@ export default function ReceiptsClient({ storeId, storeName, today, receipts: in
           {!showUpload && (
             <button onClick={() => setShowUpload(true)}
               className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
-              style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.25)' }}>
+              style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.2)' }}>
               <Plus className="h-4 w-4" /> 新增
             </button>
           )}
@@ -374,7 +432,7 @@ export default function ReceiptsClient({ storeId, storeName, today, receipts: in
         {!showUpload && todayCount > 0 && (
           <div className="bg-white rounded-2xl p-4 relative overflow-hidden"
             style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <div className="absolute left-0 top-0 w-1 h-full rounded-l-2xl" style={{ background: '#6366f1' }} />
+            <div className="absolute left-0 top-0 w-1 h-full rounded-l-2xl" style={{ background: '#F59E0B' }} />
             <div className="flex items-center justify-between pl-2">
               <div>
                 <p className="text-xs font-medium" style={{ color: '#71717a' }}>今日單據</p>
@@ -387,7 +445,7 @@ export default function ReceiptsClient({ storeId, storeName, today, receipts: in
 
         {/* 上傳表單 */}
         {showUpload && (
-          <div className="bg-white rounded-2xl p-5" style={{ border: '1.5px solid #6366f1', boxShadow: '0 4px 16px rgba(99,102,241,0.1)' }}>
+          <div className="bg-white rounded-2xl p-5" style={{ border: '1.5px solid #F59E0B', boxShadow: '0 4px 16px rgba(245,158,11,0.12)' }}>
             <ReceiptUpload storeId={storeId} today={today} mappings={mappings}
               onSaved={handleSaved} onCancel={() => setShowUpload(false)} />
           </div>
@@ -415,7 +473,7 @@ export default function ReceiptsClient({ storeId, storeName, today, receipts: in
                 </p>
               </div>
               {grouped[date].map(r => (
-                <ReceiptCard key={r.id} receipt={r}
+                <ReceiptCard key={r.id} receipt={r} mappings={mappings}
                   onDelete={(id) => setReceipts(prev => prev.filter(r => r.id !== id))}
                   onUpdated={(updated) => setReceipts(prev => prev.map(r => r.id === updated.id ? updated : r))} />
               ))}

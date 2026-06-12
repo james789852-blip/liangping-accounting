@@ -1,29 +1,53 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
-import { deleteItemMapping, updateItemMapping, saveItemMapping } from '@/app/actions/item-mappings'
+import {
+  deleteItemMapping, updateItemMapping, saveItemMapping, copyGlobalMappingsToStore,
+} from '@/app/actions/item-mappings'
 import { useRouter } from 'next/navigation'
-import { Trash2, Edit2, Check, X, Plus, Tag } from 'lucide-react'
+import { Trash2, Edit2, Check, X, Plus, Tag, Copy } from 'lucide-react'
 
-interface Mapping { id: string; item_name: string; excel_column: string; item_category: string }
+interface Mapping {
+  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null
+}
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
   '食材': { bg: '#d1fae5', color: '#047857' },
-  '耗材': { bg: '#eef2ff', color: '#4338ca' },
+  '耗材': { bg: '#FFFBEB', color: '#92400E' },
   '雜項': { bg: '#f4f4f5', color: '#71717a' },
 }
 
 const SELECT_STYLE: React.CSSProperties = {
-  height: '32px', padding: '0 8px', border: '1.5px solid #6366f1', borderRadius: '8px',
+  height: '32px', padding: '0 8px', border: '1.5px solid #F59E0B', borderRadius: '8px',
   fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit',
 }
 
-export default function ItemMappingsClient({ mappings: initial }: { mappings: Mapping[] }) {
+const INPUT_STYLE: React.CSSProperties = {
+  width: '100%', height: '36px', padding: '0 10px', border: '1.5px solid #e4e4e7',
+  borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit',
+}
+
+const SELECT_ADD_STYLE: React.CSSProperties = {
+  width: '100%', height: '36px', padding: '0 8px', border: '1.5px solid #e4e4e7',
+  borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit',
+}
+
+export default function ItemMappingsClient({
+  mappings: initial,
+  stores,
+  selectedStoreId: initStoreId,
+}: {
+  mappings: Mapping[]
+  stores: { id: string; name: string }[]
+  selectedStoreId: string
+}) {
   const [mappings, setMappings] = useState(initial)
+  const [activeStoreId, setActiveStoreId] = useState(initStoreId)
   const [editId, setEditId] = useState<string | null>(null)
   const [editCol, setEditCol] = useState('')
   const [editCat, setEditCat] = useState('')
+  const [editVendorGroup, setEditVendorGroup] = useState('')
   const [newName, setNewName] = useState('')
   const [newCol, setNewCol] = useState('')
   const [newCat, setNewCat] = useState('食材')
@@ -31,11 +55,21 @@ export default function ItemMappingsClient({ mappings: initial }: { mappings: Ma
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
-  function startEdit(m: Mapping) { setEditId(m.id); setEditCol(m.excel_column); setEditCat(m.item_category) }
+  // Sync from server after router.refresh()
+  useEffect(() => { setMappings(initial) }, [initial])
+
+  const displayMappings = activeStoreId === ''
+    ? mappings.filter(m => !m.store_id)
+    : mappings.filter(m => m.store_id === activeStoreId)
+
+  const globalCount = mappings.filter(m => !m.store_id).length
+  const isStorePage = activeStoreId !== ''
+
+  function startEdit(m: Mapping) { setEditId(m.id); setEditCol(m.excel_column); setEditCat(m.item_category); setEditVendorGroup(m.vendor_group ?? '') }
 
   function handleUpdate(id: string) {
     startTransition(async () => {
-      await updateItemMapping(id, editCol, editCat)
+      await updateItemMapping(id, editCol, editCat, editVendorGroup || null)
       setMappings(prev => prev.map(m => m.id === id ? { ...m, excel_column: editCol, item_category: editCat } : m))
       setEditId(null)
       router.refresh()
@@ -52,14 +86,32 @@ export default function ItemMappingsClient({ mappings: initial }: { mappings: Ma
 
   function handleAdd() {
     if (!newName.trim() || !newCol) return
+    const storeIdParam = activeStoreId || undefined
     startTransition(async () => {
-      await saveItemMapping(newName.trim(), newCol, newCat)
+      await saveItemMapping(newName.trim(), newCol, newCat, storeIdParam)
+      setMappings(prev => [...prev, {
+        id: `tmp-${Date.now()}`,
+        item_name: newName.trim(),
+        excel_column: newCol,
+        item_category: newCat,
+        store_id: storeIdParam ?? null,
+      }])
       setShowAdd(false); setNewName(''); setNewCol(''); setNewCat('食材')
       router.refresh()
     })
   }
 
-  const grouped = mappings.reduce<Record<string, Mapping[]>>((acc, m) => {
+  function handleCopyGlobal() {
+    const storeName = stores.find(s => s.id === activeStoreId)?.name ?? '此店'
+    if (!confirm(`確定要把全域對應（${globalCount} 筆）複製到「${storeName}」嗎？\n這會覆蓋此店現有的所有對應。`)) return
+    startTransition(async () => {
+      const result = await copyGlobalMappingsToStore(activeStoreId)
+      if ('error' in result) { alert(result.error); return }
+      router.refresh()
+    })
+  }
+
+  const grouped = displayMappings.reduce<Record<string, Mapping[]>>((acc, m) => {
     const cat = m.item_category || '其他'
     if (!acc[cat]) acc[cat] = []
     acc[cat].push(m)
@@ -69,41 +121,81 @@ export default function ItemMappingsClient({ mappings: initial }: { mappings: Ma
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
 
+      {/* Header */}
       <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-        <div className="max-w-2xl mx-auto flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
-              <Tag className="h-3.5 w-3.5" />
-              品項對應
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
+                <Tag className="h-3.5 w-3.5" />
+                品項對應
+              </div>
+              <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>品項對應管理</h1>
+              <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>
+                {isStorePage ? '此店自訂對應（優先於全域預設）' : '全域預設對應（適用所有店）'}
+              </p>
             </div>
-            <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>品項對應管理</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>管理收據品項與 Excel 欄位的對應關係</p>
+            <div className="flex items-center gap-2 mt-1">
+              {isStorePage && globalCount > 0 && (
+                <button onClick={handleCopyGlobal} disabled={isPending}
+                  className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
+                  style={{ background: 'white', border: '1.5px solid #FEF3C7', color: '#92400E' }}>
+                  <Copy className="h-3.5 w-3.5" /> 複製全域
+                </button>
+              )}
+              <button onClick={() => { setShowAdd(!showAdd); setNewName(''); setNewCol(''); setNewCat('食材') }}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-white text-sm font-semibold"
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
+                <Plus className="h-4 w-4" /> 新增
+              </button>
+            </div>
           </div>
-          <button onClick={() => setShowAdd(!showAdd)}
-            className="mt-1 flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-white text-sm font-semibold"
-            style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}>
-            <Plus className="h-4 w-4" /> 新增
-          </button>
+
+          {/* Store tabs */}
+          {stores.length > 0 && (
+            <div className="flex gap-2 mt-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+              <button
+                onClick={() => { setActiveStoreId(''); setShowAdd(false); setEditId(null) }}
+                className="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+                style={activeStoreId === ''
+                  ? { background: '#F59E0B', color: 'white' }
+                  : { background: '#f4f4f5', color: '#52525b' }}>
+                全域預設 ({globalCount})
+              </button>
+              {stores.map(s => {
+                const count = mappings.filter(m => m.store_id === s.id).length
+                return (
+                  <button key={s.id}
+                    onClick={() => { setActiveStoreId(s.id); setShowAdd(false); setEditId(null) }}
+                    className="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+                    style={activeStoreId === s.id
+                      ? { background: '#F59E0B', color: 'white' }
+                      : { background: '#f4f4f5', color: '#52525b' }}>
+                    {s.name} ({count})
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 pb-28">
 
+        {/* Add form */}
         {showAdd && (
-          <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1.5px solid #e0e7ff', boxShadow: '0 2px 8px rgba(99,102,241,0.1)' }}>
-            <p className="text-sm font-semibold" style={{ color: '#4338ca' }}>新增品項對應</p>
+          <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1.5px solid #FEF3C7', boxShadow: '0 2px 8px rgba(245,158,11,0.12)' }}>
+            <p className="text-sm font-semibold" style={{ color: '#92400E' }}>
+              新增品項對應{isStorePage ? `（${stores.find(s => s.id === activeStoreId)?.name ?? '此店'} 專屬）` : '（全域）'}
+            </p>
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#52525b' }}>品項名稱</label>
-                <input
-                  style={{ width: '100%', height: '36px', padding: '0 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
-                  value={newName} onChange={e => setNewName(e.target.value)} placeholder="例：高麗菜" />
+                <input style={INPUT_STYLE} value={newName} onChange={e => setNewName(e.target.value)} placeholder="例：高麗菜" />
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#52525b' }}>Excel 欄位</label>
-                <select
-                  style={{ width: '100%', height: '36px', padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
-                  value={newCol} onChange={e => setNewCol(e.target.value)}>
+                <select style={SELECT_ADD_STYLE} value={newCol} onChange={e => setNewCol(e.target.value)}>
                   <option value="">請選擇</option>
                   {Object.entries(EXCEL_COLUMNS).map(([cat, cols]) => (
                     <optgroup key={cat} label={cat}>
@@ -114,9 +206,7 @@ export default function ItemMappingsClient({ mappings: initial }: { mappings: Ma
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#52525b' }}>類別</label>
-                <select
-                  style={{ width: '100%', height: '36px', padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
-                  value={newCat} onChange={e => setNewCat(e.target.value)}>
+                <select style={SELECT_ADD_STYLE} value={newCat} onChange={e => setNewCat(e.target.value)}>
                   <option>食材</option><option>耗材</option><option>雜項</option>
                 </select>
               </div>
@@ -124,7 +214,7 @@ export default function ItemMappingsClient({ mappings: initial }: { mappings: Ma
             <div className="flex gap-2">
               <button onClick={handleAdd} disabled={!newName.trim() || !newCol || isPending}
                 className="px-4 py-2 rounded-xl text-sm font-semibold text-white"
-                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', opacity: !newName.trim() || !newCol || isPending ? 0.5 : 1 }}>
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', opacity: !newName.trim() || !newCol || isPending ? 0.5 : 1 }}>
                 儲存
               </button>
               <button onClick={() => setShowAdd(false)}
@@ -136,6 +226,22 @@ export default function ItemMappingsClient({ mappings: initial }: { mappings: Ma
           </div>
         )}
 
+        {/* Empty state for store tab */}
+        {isStorePage && displayMappings.length === 0 && !showAdd ? (
+          <div className="text-center py-16">
+            <p className="text-sm font-medium" style={{ color: '#a1a1aa' }}>此店尚無自訂品項對應</p>
+            <p className="text-xs mt-1" style={{ color: '#d4d4d8' }}>自訂對應優先於全域預設</p>
+            {globalCount > 0 && (
+              <button onClick={handleCopyGlobal} disabled={isPending}
+                className="mt-4 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
+                <Copy className="h-4 w-4" /> 從全域預設複製 ({globalCount} 筆)
+              </button>
+            )}
+          </div>
+        ) : null}
+
+        {/* Mapping list */}
         {Object.entries(grouped).map(([cat, items]) => {
           const catSt = CAT_STYLE[cat] ?? CAT_STYLE['雜項']
           return (
@@ -165,6 +271,8 @@ export default function ItemMappingsClient({ mappings: initial }: { mappings: Ma
                         <select style={SELECT_STYLE} value={editCat} onChange={e => setEditCat(e.target.value)}>
                           <option>食材</option><option>耗材</option><option>雜項</option>
                         </select>
+                        <input placeholder="廠商群組（如菜商）" value={editVendorGroup} onChange={e => setEditVendorGroup(e.target.value)}
+                          style={{ height: '32px', padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit', width: '90px' }} />
                         <button onClick={() => handleUpdate(m.id)} style={{ color: '#047857' }}>
                           <Check className="h-4 w-4" />
                         </button>
@@ -174,9 +282,12 @@ export default function ItemMappingsClient({ mappings: initial }: { mappings: Ma
                       </>
                     ) : (
                       <>
+                        {m.vendor_group && (
+                          <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0" style={{ background: '#FEF3C7', color: '#92400E' }}>{m.vendor_group}</span>
+                        )}
                         <span className="text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
                         <button onClick={() => startEdit(m)} style={{ color: '#d4d4d8' }}
-                          onMouseEnter={e => (e.currentTarget.style.color = '#6366f1')}
+                          onMouseEnter={e => (e.currentTarget.style.color = '#F59E0B')}
                           onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
                           <Edit2 className="h-4 w-4" />
                         </button>

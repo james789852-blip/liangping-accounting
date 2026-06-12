@@ -14,12 +14,14 @@ interface Receipt {
   id: string; vendor_name: string; receipt_type: string
   total_amount: number; photo_url: string; receipt_items: ReceiptItem[]
 }
+interface ReserveItem { reason: string; amount: number }
 interface Closing {
   id: string; business_date: string; status: string
   total_revenue: number; variance: number; note: string; dispute_note: string
   submitted_at: string; should_include_delivery: number; actual_remit: number
   total_cost: number; total_expenses: number; stores: { name: string }
   revenue_items: RevenueItem[]; expense_items: ExpenseItem[]; order_items: OrderItem[]
+  remittance_adjustments?: any[]; reserve_items?: ReserveItem[]
 }
 interface Props { closing: Closing; receipts: Receipt[]; canReview: boolean; canDispute: boolean }
 
@@ -29,7 +31,7 @@ const CHANNEL_LABEL: Record<string, string> = {
   twpay: '台灣Pay', online: '線上點餐', handwrite: '手寫訂單',
 }
 const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
-  submitted: { bg: '#eef2ff', color: '#4338ca', label: '待審核' },
+  submitted: { bg: '#FFFBEB', color: '#92400E', label: '待審核' },
   disputed:  { bg: '#fff7ed', color: '#c2410c', label: '已退回' },
   verified:  { bg: '#d1fae5', color: '#047857', label: '已核准' },
 }
@@ -161,6 +163,27 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute }:
                   <span>誤差</span>
                   <span className="tabular-nums">{closing.variance >= 0 ? '+' : ''}{fmt(closing.variance)}</span>
                 </div>
+                {(() => {
+                  const reserves = closing.reserve_items ?? []
+                  if (reserves.length === 0) return null
+                  const adjTotal = (closing.remittance_adjustments ?? []).reduce((s: number, a: any) => s + (a.amount ?? 0), 0)
+                  const totalReserved = reserves.reduce((s, r) => s + r.amount, 0)
+                  const remitToHQ = closing.actual_remit + adjTotal - totalReserved
+                  return (
+                    <>
+                      {reserves.map((r, i) => (
+                        <div key={i} className="flex justify-between text-xs pt-1" style={{ color: '#ea580c' }}>
+                          <span>🐷 預留 {r.reason}</span>
+                          <span className="tabular-nums">−{fmt(r.amount)}</span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between text-xs font-bold pt-1" style={{ borderTop: '1px solid #fed7aa', color: remitToHQ < 0 ? '#dc2626' : '#18181b' }}>
+                        <span>今日實際匯入</span>
+                        <span className="tabular-nums">${fmt(remitToHQ)}</span>
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
             </div>
 
@@ -226,8 +249,8 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute }:
                               onClick={() => setPhotoId(photoId === r.id ? null : r.id)}
                               className="p-1.5 rounded-lg"
                               style={{
-                                background: photoId === r.id ? '#eef2ff' : '#f4f4f5',
-                                color: photoId === r.id ? '#4338ca' : '#a1a1aa',
+                                background: photoId === r.id ? '#FFFBEB' : '#f4f4f5',
+                                color: photoId === r.id ? '#92400E' : '#a1a1aa',
                               }}>
                               <Image className="h-3.5 w-3.5" />
                             </button>
@@ -235,7 +258,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute }:
                         </div>
                       </div>
                       {photoId === r.id && r.photo_url && (
-                        <img src={r.photo_url} alt="receipt"
+                        <img src={r.photo_url} alt="receipt" loading="lazy"
                           className="w-full max-h-72 object-contain"
                           style={{ background: 'white', borderTop: '1px solid #f4f4f5' }} />
                       )}
