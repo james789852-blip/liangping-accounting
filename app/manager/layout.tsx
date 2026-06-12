@@ -68,7 +68,7 @@ export default async function ManagerLayout({ children }: { children: React.Reac
           allStores={allStores}
           currentStoreId={storeId ?? ''}
         />
-        <main className="flex-1 overflow-auto pt-12 pb-20 lg:pt-0 lg:pb-0">
+        <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
           {children}
         </main>
       </div>
@@ -84,7 +84,7 @@ export default async function ManagerLayout({ children }: { children: React.Reac
         role={profile?.role ?? ''}
         storeType={storeType}
       />
-      <main className="flex-1 overflow-auto pt-12 pb-20 lg:pt-0 lg:pb-0">
+      <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
         {children}
       </main>
     </div>

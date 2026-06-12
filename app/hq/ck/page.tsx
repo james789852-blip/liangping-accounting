@@ -145,19 +145,19 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
-      <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-        <div className="max-w-3xl mx-auto flex items-start justify-between gap-4">
+      <div className="bg-white px-4 sm:px-6 py-4 sm:py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div className="max-w-3xl mx-auto space-y-3 sm:space-y-0 sm:flex sm:items-start sm:justify-between sm:gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase mb-1" style={{ color: '#a1a1aa' }}>央廚帳目</p>
-            <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>央廚帳目總覽</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>{ckStores.length} 間央廚</p>
+            <p className="text-xs font-semibold uppercase mb-0.5" style={{ color: '#a1a1aa' }}>央廚帳目</p>
+            <h1 className="text-lg sm:text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>央廚帳目總覽</h1>
+            <p className="text-sm" style={{ color: '#a1a1aa' }}>{ckStores.length} 間央廚</p>
           </div>
           {/* 日期導覽 */}
-          <div className="flex items-center gap-2 shrink-0 mt-1">
+          <div className="flex items-center gap-2">
             <a href={`/hq/ck?date=${prevDay(date)}`}
               className="flex items-center justify-center h-8 w-8 rounded-xl text-sm font-semibold transition-colors hover:bg-slate-50"
               style={{ border: '1px solid #e4e4e7', color: '#52525b' }}>‹</a>
-            <span className="text-sm font-semibold tabular-nums px-1" style={{ color: '#18181b', minWidth: '90px', textAlign: 'center' }}>{date}</span>
+            <span className="text-sm font-semibold tabular-nums px-1" style={{ color: '#18181b', minWidth: '86px', textAlign: 'center' }}>{date}</span>
             <a href={`/hq/ck?date=${nextDay(date)}`}
               className={`flex items-center justify-center h-8 w-8 rounded-xl text-sm font-semibold transition-colors ${isToday ? 'opacity-30 pointer-events-none' : 'hover:bg-slate-50'}`}
               style={{ border: '1px solid #e4e4e7', color: '#52525b' }}>›</a>

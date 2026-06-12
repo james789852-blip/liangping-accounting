@@ -123,8 +123,26 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* 防止橫向滾動 */
+    overflow-x: hidden;
   }
   html {
     @apply font-sans;
+    touch-action: manipulation;
+    /* 防止 iOS Safari 字體自動放大 */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  button, a, input, select, textarea, [role="button"] {
+    touch-action: manipulation;
+  }
+  * {
+    -webkit-tap-highlight-color: transparent;
+    /* 防止內容超出螢幕 */
+    max-width: 100%;
+  }
+  img, video {
+    max-width: 100%;
+    height: auto;
   }
 }

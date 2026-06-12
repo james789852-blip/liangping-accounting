@@ -19,22 +19,22 @@ export default async function HQLayout({ children }: { children: React.ReactNode
     redirect('/manager')
   }
 
-  let allStores: { id: string; name: string }[] = []
+  let allStores: { id: string; name: string; type?: string }[] = []
   let currentStoreId = ''
 
   const isOwner = profile.role === '老闆'
   const cookieStore = await cookies()
   const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
 
-  if (isOwner) {
-    // 老闆取得全部店
+  // 老闆或 is_hq 使用者均可看全部店家
+  if (isOwner || profile.is_hq) {
     const { data: stores } = await supabase
-      .from('stores').select('id, name').eq('active', true).order('name')
+      .from('stores').select('id, name, type').eq('active', true).order('name')
     allStores = stores ?? []
   } else if (profile.store_ids?.length) {
     const storeIds: string[] = profile.store_ids
     const { data: stores } = await supabase
-      .from('stores').select('id, name').eq('active', true).in('id', storeIds).order('name')
+      .from('stores').select('id, name, type').eq('active', true).in('id', storeIds).order('name')
     allStores = stores ?? []
   }
 
@@ -52,7 +52,7 @@ export default async function HQLayout({ children }: { children: React.ReactNode
         allStores={allStores}
         currentStoreId={currentStoreId}
       />
-      <main className="flex-1 overflow-auto pt-12 pb-20 lg:pt-0 lg:pb-0">
+      <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
         {children}
       </main>
     </div>

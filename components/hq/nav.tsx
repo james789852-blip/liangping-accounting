@@ -193,43 +193,44 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
       </aside>
 
       {/* ── 手機頂部 */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white flex items-center justify-between px-4"
+      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white flex items-center px-4 gap-2"
         style={{ height: '56px', borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-        <div className="flex items-center gap-2.5 min-w-0">
-          <img src="/icon-192.png" alt="logo" className="h-8 w-8 rounded-[8px] object-cover shrink-0" />
+        <img src="/icon-192.png" alt="logo" className="h-8 w-8 rounded-[8px] object-cover shrink-0" />
+        {/* 中間標題區，flex-1 + min-w-0 確保可截斷 */}
+        <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
           {isManagerPath && hasStores ? (
             <>
-              <Link href="/hq/dashboard" className="text-xs font-medium transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>總公司</Link>
-              <span style={{ color: '#e4e4e7' }}>/</span>
+              <Link href="/hq/dashboard" className="text-xs font-medium shrink-0 transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>總公司</Link>
+              <span className="shrink-0" style={{ color: '#e4e4e7' }}>/</span>
               {allStores.length > 1 ? (
                 <StoreSwitcher stores={allStores} currentStoreId={currentStoreId}
-                  className="text-sm font-bold text-slate-900 rounded-lg px-2 py-0.5 focus:outline-none max-w-[140px]"
+                  className="text-sm font-bold text-slate-900 rounded-lg px-1.5 py-0.5 focus:outline-none min-w-0 max-w-[120px]"
                   style={{ border: '1px solid #e4e4e7', backgroundColor: 'white' }} />
               ) : (
                 <span className="font-bold text-sm text-slate-900 truncate">{allStores[0]?.name}</span>
               )}
             </>
           ) : (
-            <span className="font-bold text-sm text-slate-900">鑫系統-作帳 · 總公司</span>
+            <span className="font-bold text-sm text-slate-900 truncate">總公司後台</span>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          {time && <span className="text-sm font-bold tabular-nums" style={{ color: '#18181b' }}>{time}</span>}
+        {/* 右側操作區，shrink-0 不壓縮 */}
+        <div className="flex items-center gap-2 shrink-0">
           {!isManagerPath && hasStores && (
             <Link href="/manager/dashboard"
-              className="text-xs font-bold text-white rounded-lg px-2.5 py-1.5"
+              className="text-xs font-bold text-white rounded-lg px-2 py-1.5 whitespace-nowrap"
               style={{ background: 'linear-gradient(135deg,#f97316,#f59e0b)' }}>
               店長端
             </Link>
           )}
           {isManagerPath && hasStores && (
             <Link href="/hq/dashboard"
-              className="text-xs font-bold text-white rounded-lg px-2.5 py-1.5"
+              className="text-xs font-bold text-white rounded-lg px-2 py-1.5 whitespace-nowrap"
               style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)' }}>
               總公司
             </Link>
           )}
-          <button onClick={handleLogout} className="transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>
+          <button onClick={handleLogout} className="h-8 w-8 flex items-center justify-center rounded-lg transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>
             <LogOut className="h-4 w-4" />
           </button>
         </div>

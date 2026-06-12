@@ -36,6 +36,9 @@ export default async function ClosingPage() {
     .eq('id', storeId)
     .single()
 
+  // 央廚店家使用專屬流程，不走一般結帳
+  if ((store as any)?.type === '央廚') redirect('/manager/ck')
+
   const { data: ckPrices } = await supabase
     .from('central_kitchen_prices')
     .select('id, item_name, unit_price, unit, excel_column')
@@ -81,7 +84,31 @@ export default async function ClosingPage() {
     .eq('business_date', today)
     .order('created_at')
 
-  const receiptCategories = await getReceiptSettings(storeId)
+  const admin2 = createAdminClient()
+  const [receiptCategories, { data: mappingRows }, { data: prevClosing }] = await Promise.all([
+    getReceiptSettings(storeId),
+    admin2.from('item_column_mappings').select('item_name, item_category, vendor_group').eq('store_id', storeId),
+    supabase
+      .from('daily_closings')
+      .select('reserve_items, business_date')
+      .eq('store_id', storeId)
+      .lt('business_date', today)
+      .in('status', ['submitted', 'verified'])
+      .order('business_date', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+
+  const prevReserveItems = (prevClosing?.reserve_items as any[]) ?? []
+  const prevDayReserves = prevReserveItems.length > 0
+    ? { business_date: prevClosing!.business_date as string, items: prevReserveItems }
+    : null
+
+  const mappingColumns = (mappingRows ?? []).map((r: { item_name: string; item_category: string; vendor_group: string | null }) => ({
+    name: r.item_name,
+    category: r.item_category,
+    vendor_group: r.vendor_group ?? undefined,
+  }))
 
   return (
     <ClosingForm
@@ -92,6 +119,8 @@ export default async function ClosingPage() {
       today={today}
       todayReceipts={todayReceipts ?? []}
       receiptCategories={receiptCategories}
+      mappingColumns={mappingColumns}
+      prevDayReserves={prevDayReserves}
     />
   )
 }

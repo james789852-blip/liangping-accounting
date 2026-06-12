@@ -328,7 +328,7 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                     <Camera className="h-3.5 w-3.5" style={{ color: '#a1a1aa' }} />
                     <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>收據照片（{d.receiptPhotoUrls!.length} 張）</p>
                   </div>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                     {d.receiptPhotoUrls!.map((url, i) => (
                       <button key={url} type="button" onClick={() => setLightboxUrl(url)}
                         className="relative group" style={{ aspectRatio: '1' }}>

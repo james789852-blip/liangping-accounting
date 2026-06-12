@@ -49,7 +49,7 @@ export default async function ManagerDashboard() {
 
   if (storeId) {
     const [storeRes, closingRes, recentRes] = await Promise.all([
-      supabase.from('stores').select('name').eq('id', storeId).single(),
+      supabase.from('stores').select('name, type').eq('id', storeId).single(),
       supabase.from('daily_closings')
         .select('id, status, total_revenue, should_include_delivery, actual_remit, total_cost, variance')
         .eq('store_id', storeId).eq('business_date', today).maybeSingle(),
@@ -58,6 +58,7 @@ export default async function ManagerDashboard() {
         .eq('store_id', storeId).order('business_date', { ascending: false }).limit(8),
     ])
     storeName = storeRes.data?.name ?? ''
+    if ((storeRes.data as any)?.type === '央廚') redirect('/manager/ck')
     todayClosing = closingRes.data
     recentClosings = (recentRes.data ?? []).filter((c: any) => c.business_date !== today).slice(0, 7)
   }
@@ -71,7 +72,7 @@ export default async function ManagerDashboard() {
   const isDisputed = todayClosing?.status === 'disputed'
   const ctaGradient = isDisputed
     ? 'linear-gradient(135deg,#be123c 0%,#9f1239 50%,#881337 100%)'
-    : 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%)'
+    : 'linear-gradient(135deg,#FBBF24 0%,#F59E0B 50%,#F97316 100%)'
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -93,7 +94,7 @@ export default async function ManagerDashboard() {
               background: ctaGradient,
               boxShadow: isDisputed
                 ? '0 20px 50px -10px rgba(190,18,60,0.3)'
-                : '0 20px 50px -10px rgba(99,102,241,0.3)',
+                : '0 20px 50px -10px rgba(245,158,11,0.3)',
             }}>
             {/* 裝飾光暈 */}
             <div className="absolute pointer-events-none"
@@ -126,7 +127,7 @@ export default async function ManagerDashboard() {
               {/* 按鈕 */}
               <button className="inline-flex items-center gap-2 rounded-xl font-bold transition-all hover:-translate-y-0.5"
                 style={{
-                  background: 'white', color: isDisputed ? '#9f1239' : '#4338ca',
+                  background: 'white', color: isDisputed ? '#9f1239' : '#92400E',
                   padding: '14px 28px', fontSize: '15px', border: 'none', cursor: 'pointer',
                   boxShadow: '0 4px 14px rgba(0,0,0,0.1)', fontFamily: 'inherit',
                 }}>
@@ -141,7 +142,7 @@ export default async function ManagerDashboard() {
         <div className="grid grid-cols-2 gap-3 mb-5 sm:grid-cols-4">
           {[
             { label: '今日營業額', val: todayClosing ? `$${fmt(todayClosing.total_revenue)}` : '—', color: '#18181b' },
-            { label: '應匯入', val: todayClosing?.should_include_delivery != null ? `$${fmt(todayClosing.should_include_delivery)}` : '—', color: '#4338ca' },
+            { label: '應匯入', val: todayClosing?.should_include_delivery != null ? `$${fmt(todayClosing.should_include_delivery)}` : '—', color: '#92400E' },
             {
               label: '實匯入',
               val: todayClosing?.actual_remit != null ? `$${fmt(todayClosing.actual_remit)}` : null,
@@ -165,12 +166,12 @@ export default async function ManagerDashboard() {
             <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #f4f4f5' }}>
               <h3 className="font-semibold flex items-center gap-2.5" style={{ fontSize: '15px' }}>
                 <span className="flex items-center justify-center rounded-xl text-base"
-                  style={{ width: '32px', height: '32px', background: '#eef2ff', fontSize: '16px' }}>📋</span>
+                  style={{ width: '32px', height: '32px', background: '#FFFBEB', fontSize: '16px' }}>📋</span>
                 最近 7 天結帳
               </h3>
               <Link href="/manager/history"
                 className="text-xs font-semibold rounded-full px-3 py-1"
-                style={{ background: '#eef2ff', color: '#4338ca' }}>
+                style={{ background: '#FFFBEB', color: '#92400E' }}>
                 點任一筆查看詳細
               </Link>
             </div>
