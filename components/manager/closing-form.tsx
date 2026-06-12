@@ -733,6 +733,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   async function handleSaveReceiptEdit() {
     if (!editingReceiptId) return
     if (!editVendor.trim() || editAmount <= 0) { toast.error('請填寫廠商名稱與金額'); return }
+    if (!editItems.some(i => i.item_name.trim())) { toast.error('請至少選擇一個品項'); return }
     const oldReceipt = localReceipts.find(r => r.id === editingReceiptId)
     if (!oldReceipt) return
     setEditUploading(true)
@@ -804,7 +805,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       tax_amount: 0,
       notes: '',
       uploading: false,
-      items: [],
+      items: [{ id: crypto.randomUUID(), item_name: '', unit: '', quantity: 1, unit_price: 0, amount: 0 }],
     }))
     setReceiptForms(prev => [...prev, ...newForms])
     // 立即背景上傳照片，URL 存入 uploadedPhotoUrl 以便 localStorage 保存
@@ -830,7 +831,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       tax_amount: 0,
       notes: '',
       uploading: false,
-      items: [],
+      items: [{ id: crypto.randomUUID(), item_name: '', unit: '', quantity: 1, unit_price: 0, amount: 0 }],
     }])
   }
 
@@ -851,6 +852,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   async function saveReceiptForm(form: ReceiptForm) {
     if (!form.vendor_name.trim() || form.total_amount <= 0) {
       toast.error('請填寫廠商名稱與金額')
+      return
+    }
+    const hasValidItem = (form.items ?? []).some(i => i.item_name.trim())
+    if (!hasValidItem) {
+      toast.error('請至少選擇一個品項')
       return
     }
     setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: true } : f))
@@ -1552,7 +1558,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           return (
                             <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>品項（可空）</label>
+                                <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>品項 *</label>
                                 <button type="button" onClick={addItem}
                                   style={{ fontSize: '11px', color: '#F59E0B', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px', padding: 0 }}>
                                   <Plus style={{ width: '12px', height: '12px' }} />新增
@@ -1792,7 +1798,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               return (
                                 <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                    <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>品項（可空）</label>
+                                    <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>品項 *</label>
                                     <button type="button" onClick={() => addEditItemFn()}
                                       style={{ fontSize: '11px', color: '#F59E0B', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px', padding: 0 }}>
                                       <Plus style={{ width: '12px', height: '12px' }} />新增
