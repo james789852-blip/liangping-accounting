@@ -118,7 +118,7 @@ export default async function UsersPage() {
                     )}
                     {isOwner || (stores && stores.length > 0 && (u.store_ids ?? []).length >= stores.length)
                       ? '全部店面'
-                      : [...new Set(u.store_ids ?? [])].map((id: string) => storeMap[id]).filter(Boolean).join('、') || '未指派店家'
+                      : [...new Set((u.store_ids ?? []) as string[])].map(id => storeMap[id]).filter(Boolean).join('、') || '未指派店家'
                     }
                   </p>
                 </div>
