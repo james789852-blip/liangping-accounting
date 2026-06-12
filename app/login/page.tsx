@@ -1,26 +1,42 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Eye, EyeOff } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
-  const [email, setEmail] = useState('')
+  const [account, setAccount] = useState('')
   const [password, setPassword] = useState('')
+  const [remember, setRemember] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [showPw, setShowPw] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem('lp_saved_account')
+    if (saved) { setAccount(saved); setRemember(true) }
+  }, [])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
+    if (!account.trim()) { toast.error('請輸入帳號（身分證字號）'); return }
     setLoading(true)
+
+    const email = `${account.trim().toUpperCase()}@liang-ping.com`
+
+    if (remember) {
+      localStorage.setItem('lp_saved_account', account.trim().toUpperCase())
+    } else {
+      localStorage.removeItem('lp_saved_account')
+    }
 
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
-      toast.error('登入失敗：' + (error.message === 'Invalid login credentials' ? '帳號或密碼錯誤' : error.message))
+      toast.error('帳號或密碼錯誤，請確認後重試')
       setLoading(false)
       return
     }
@@ -41,8 +57,8 @@ export default function LoginPage() {
   }
 
   function focusInput(e: React.FocusEvent<HTMLInputElement>) {
-    e.currentTarget.style.borderColor = '#6366f1'
-    e.currentTarget.style.boxShadow = '0 0 0 4px rgba(99,102,241,0.1)'
+    e.currentTarget.style.borderColor = '#F59E0B'
+    e.currentTarget.style.boxShadow = '0 0 0 4px rgba(245,158,11,0.12)'
   }
   function blurInput(e: React.FocusEvent<HTMLInputElement>) {
     e.currentTarget.style.borderColor = '#e4e4e7'
@@ -53,17 +69,15 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden"
       style={{ background: '#fafafa' }}>
 
-      {/* Mesh gradient 背景 */}
       <div className="absolute inset-0 pointer-events-none" style={{
         background: `
-          radial-gradient(at 0% 0%, #c7d2fe 0%, transparent 50%),
-          radial-gradient(at 100% 0%, #fbcfe8 0%, transparent 50%),
+          radial-gradient(at 0% 0%, #FDE68A 0%, transparent 50%),
+          radial-gradient(at 100% 0%, #fde68a 0%, transparent 50%),
           radial-gradient(at 50% 100%, #fed7aa 0%, transparent 50%)
         `,
         opacity: 0.6,
       }} />
 
-      {/* 卡片 */}
       <div className="relative z-10 w-full" style={{ maxWidth: '440px' }}>
         <div className="relative" style={{
           background: 'rgba(255,255,255,0.72)',
@@ -72,25 +86,24 @@ export default function LoginPage() {
           border: '1px solid rgba(255,255,255,0.5)',
           borderRadius: '24px',
           padding: '48px',
-          boxShadow: '0 20px 50px -10px rgba(99,102,241,0.25)',
+          boxShadow: '0 20px 50px -10px rgba(245,158,11,0.2)',
         }}>
 
-          {/* Logo */}
           <img src="/icon-192.png" alt="logo" className="mb-7"
             style={{ width: '64px', height: '64px', borderRadius: '20px', objectFit: 'cover' }} />
 
           <h1 className="font-bold mb-1.5" style={{ fontSize: '28px', letterSpacing: '-0.02em', color: '#18181b' }}>
             歡迎回來
           </h1>
-          <p className="text-sm mb-8" style={{ color: '#52525b' }}>登入梁平-作帳系統繼續</p>
+          <p className="text-sm mb-8" style={{ color: '#52525b' }}>登入鑫系統-作帳繼續</p>
 
           <form onSubmit={handleLogin} className="space-y-[18px]">
             <div>
               <label className="block text-[13px] font-medium mb-1.5" style={{ color: '#52525b' }}>
-                電子郵件
+                帳號（身分證字號）
               </label>
               <input
-                type="email"
+                type="text"
                 className="w-full outline-none transition-all"
                 style={{
                   padding: '12px 16px',
@@ -100,29 +113,30 @@ export default function LoginPage() {
                   background: 'white',
                   color: '#18181b',
                   fontFamily: 'inherit',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
                 }}
-                placeholder="yourname@liang-ping.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
+                placeholder="A123456789"
+                value={account}
+                onChange={e => setAccount(e.target.value.toUpperCase())}
                 required
-                autoComplete="email"
+                autoComplete="username"
+                autoCapitalize="characters"
                 onFocus={focusInput}
                 onBlur={blurInput}
               />
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[13px] font-medium" style={{ color: '#52525b' }}>密碼</label>
-                <a href="/reset-password" className="text-[13px] font-medium" style={{ color: '#4f46e5' }}>
-                  忘記密碼？
-                </a>
-              </div>
+              <label className="block text-[13px] font-medium mb-1.5" style={{ color: '#52525b' }}>
+                密碼（出生年月日 YYMMDD）
+              </label>
+              <div className="relative">
               <input
-                type="password"
+                type={showPw ? 'text' : 'password'}
                 className="w-full outline-none transition-all"
                 style={{
-                  padding: '12px 16px',
+                  padding: '12px 44px 12px 16px',
                   border: '1.5px solid #e4e4e7',
                   borderRadius: '12px',
                   fontSize: '15px',
@@ -130,7 +144,7 @@ export default function LoginPage() {
                   color: '#18181b',
                   fontFamily: 'inherit',
                 }}
-                placeholder="••••••••"
+                placeholder="如 830719"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
@@ -138,7 +152,26 @@ export default function LoginPage() {
                 onFocus={focusInput}
                 onBlur={blurInput}
               />
+              <button
+                type="button"
+                onClick={() => setShowPw(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2"
+                style={{ color: '#a1a1aa', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                {showPw ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
+              </button>
+              </div>
             </div>
+
+            {/* 記住帳號 */}
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={e => setRemember(e.target.checked)}
+                style={{ width: '16px', height: '16px', accentColor: '#F59E0B', cursor: 'pointer' }}
+              />
+              <span className="text-[13px]" style={{ color: '#52525b' }}>記住帳號</span>
+            </label>
 
             <button
               type="submit"
@@ -147,11 +180,11 @@ export default function LoginPage() {
               style={{
                 marginTop: '8px',
                 padding: '13px',
-                background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%)',
+                background: 'linear-gradient(135deg,#FBBF24 0%,#F59E0B 50%,#F97316 100%)',
                 borderRadius: '12px',
                 fontSize: '15px',
                 border: 'none',
-                boxShadow: '0 4px 14px rgba(99,102,241,0.3)',
+                boxShadow: '0 4px 14px rgba(245,158,11,0.3)',
                 cursor: loading ? 'not-allowed' : 'pointer',
                 opacity: loading ? 0.7 : 1,
                 fontFamily: 'inherit',
