@@ -19,21 +19,23 @@ export default async function ManagerLayout({ children }: { children: React.Reac
 
   let storeId: string | null = null
   let storeName = ''
+  let storeType = '店面'
   let allStores: { id: string; name: string }[] = []
 
   if (isHQ) {
     const cookieStore = await cookies()
     const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
 
-    if (profile.role === '老闆') {
+    // 老闆或 is_hq 使用者均可切換到任何店家
+    if (profile.role === '老闆' || profile.is_hq) {
       const { data: stores } = await supabase
-        .from('stores').select('id, name').eq('active', true).order('name')
+        .from('stores').select('id, name, type').eq('active', true).order('name')
       allStores = stores ?? []
     } else {
       const allStoreIds: string[] = profile.store_ids ?? []
       if (allStoreIds.length) {
         const { data: stores } = await supabase
-          .from('stores').select('id, name').eq('active', true).in('id', allStoreIds).order('name')
+          .from('stores').select('id, name, type').eq('active', true).in('id', allStoreIds).order('name')
         allStores = stores ?? []
       }
     }
@@ -42,14 +44,17 @@ export default async function ManagerLayout({ children }: { children: React.Reac
       storeId = (cookieStoreId && allStores.some(s => s.id === cookieStoreId))
         ? cookieStoreId
         : allStores[0].id
-      storeName = allStores.find(s => s.id === storeId)?.name ?? ''
+      const currentStore = (allStores as { id: string; name: string; type?: string }[]).find(s => s.id === storeId)
+      storeName = currentStore?.name ?? ''
+      storeType = currentStore?.type ?? '店面'
     }
   } else {
     storeId = profile?.store_ids?.[0] ?? null
     if (storeId) {
       const { data: store } = await supabase
-        .from('stores').select('name').eq('id', storeId).single()
-      storeName = store?.name ?? ''
+        .from('stores').select('name, type').eq('id', storeId).single()
+      storeName = (store as any)?.name ?? ''
+      storeType = (store as any)?.type ?? '店面'
     }
   }
 
@@ -77,6 +82,7 @@ export default async function ManagerLayout({ children }: { children: React.Reac
         userName={profile?.name ?? user.email ?? ''}
         storeName={storeName}
         role={profile?.role ?? ''}
+        storeType={storeType}
       />
       <main className="flex-1 overflow-auto pt-12 pb-20 lg:pt-0 lg:pb-0">
         {children}

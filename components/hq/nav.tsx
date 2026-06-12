@@ -8,7 +8,7 @@ import {
   LayoutDashboard, CheckSquare,
   Store, Users, LogOut,
   ClipboardList, History, LineChart,
-  ArrowRightLeft, Package, BookOpen, Settings, FileBarChart2,
+  ArrowRightLeft, Package, BookOpen, Settings, FileBarChart2, ChefHat,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
@@ -34,6 +34,7 @@ const hqSections = [
     label: '帳目',
     items: [
       { href: '/hq/closings',            label: '帳目瀏覽・審核', icon: BookOpen },
+      { href: '/hq/ck',                  label: '央廚帳目',       icon: ChefHat },
       { href: '/hq/food-cost-preview',   label: '食耗成本預覽',   icon: FileBarChart2 },
       { href: '/hq/dashboard',           label: '即時儀表板',     icon: LayoutDashboard },
       { href: '/hq/stores',              label: '店家管理',       icon: Store },
@@ -66,10 +67,10 @@ const managerSections = [
 ]
 
 const mobileHQTabs = [
-  { href: '/hq/closings',  label: '帳目審核', icon: BookOpen },
-  { href: '/hq/dashboard', label: '儀表板',   icon: LayoutDashboard },
-  { href: '/hq/stores',    label: '店家',     icon: Store },
-  { href: '/hq/ck-prices', label: '央廚',     icon: Package },
+  { href: '/hq/closings',          label: '帳目審核', icon: BookOpen },
+  { href: '/hq/food-cost-preview', label: '食耗成本', icon: FileBarChart2 },
+  { href: '/hq/dashboard',         label: '儀表板',   icon: LayoutDashboard },
+  { href: '/hq/stores',            label: '店家',     icon: Store },
 ]
 const mobileManagerTabs = [
   { href: '/manager/dashboard',  label: '今日結帳', icon: ClipboardList },
@@ -81,7 +82,7 @@ const mobileManagerTabs = [
 interface Props {
   userName: string
   role: string
-  allStores?: { id: string; name: string }[]
+  allStores?: { id: string; name: string; type?: string }[]
   currentStoreId?: string
 }
 
@@ -103,9 +104,9 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const mobileTabs = isManagerPath ? mobileManagerTabs : mobileHQTabs
 
   const activeSections = isManagerPath ? managerSections : hqSections
-  const activeColor = isManagerPath ? '#b45309' : '#4338ca'
-  const activeBg = isManagerPath ? '#fef3c7' : '#eef2ff'
-  const mobileActiveColor = isManagerPath ? '#d97706' : '#4f46e5'
+  const activeColor = isManagerPath ? '#b45309' : '#92400E'
+  const activeBg = isManagerPath ? '#fef3c7' : '#FFFBEB'
+  const mobileActiveColor = isManagerPath ? '#d97706' : '#D97706'
 
   return (
     <>
@@ -116,7 +117,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         <div className="flex items-center gap-3 px-5 pt-6 pb-4">
           <img src="/icon-192.png" alt="logo" className="h-9 w-9 rounded-[10px] object-cover shrink-0" />
           <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>梁平-作帳</p>
+            <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>鑫系統-作帳</p>
             <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>{isManagerPath ? '店長端' : '總公司端'}</p>
           </div>
         </div>
@@ -135,7 +136,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               href={isManagerPath ? '/hq/dashboard' : '/manager/dashboard'}
               className="flex items-center justify-center gap-2 w-full py-2 rounded-[10px] text-xs font-semibold transition-all hover:opacity-80"
               style={isManagerPath
-                ? { backgroundColor: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe' }
+                ? { backgroundColor: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }
                 : { backgroundColor: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }
               }>
               <ArrowRightLeft className="h-3.5 w-3.5" />
@@ -209,7 +210,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               )}
             </>
           ) : (
-            <span className="font-bold text-sm text-slate-900">梁平-作帳 · 總公司</span>
+            <span className="font-bold text-sm text-slate-900">鑫系統-作帳 · 總公司</span>
           )}
         </div>
         <div className="flex items-center gap-3">
@@ -224,7 +225,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           {isManagerPath && hasStores && (
             <Link href="/hq/dashboard"
               className="text-xs font-bold text-white rounded-lg px-2.5 py-1.5"
-              style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+              style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)' }}>
               總公司
             </Link>
           )}

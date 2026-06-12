@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { Zap, History, LineChart, LogOut, Settings } from 'lucide-react'
+import { Zap, History, LineChart, LogOut, Settings, Download, ChefHat } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 function useClock() {
@@ -23,16 +23,25 @@ function useClock() {
   return time
 }
 
-const NAV_ITEMS = [
+const STORE_NAV_ITEMS = [
   { href: '/manager/dashboard',  label: '今日結帳', icon: Zap },
   { href: '/manager/history',    label: '歷史紀錄', icon: History },
   { href: '/manager/analytics',  label: '營運洞察', icon: LineChart },
+  { href: '/manager/export',     label: '匯出報表', icon: Download },
   { href: '/manager/settings',   label: '收據設定', icon: Settings },
 ]
 
-interface Props { userName: string; storeName: string; role: string }
+const CK_NAV_ITEMS = [
+  { href: '/manager/ck',         label: '今日帳目', icon: ChefHat },
+  { href: '/manager/history',    label: '歷史紀錄', icon: History },
+  { href: '/manager/export',     label: '匯出報表', icon: Download },
+]
 
-export default function ManagerNav({ userName, storeName, role }: Props) {
+interface Props { userName: string; storeName: string; role: string; storeType?: string }
+
+export default function ManagerNav({ userName, storeName, role, storeType }: Props) {
+  const isCK = storeType === '央廚'
+  const NAV_ITEMS = isCK ? CK_NAV_ITEMS : STORE_NAV_ITEMS
   const pathname = usePathname()
   const router = useRouter()
   const time = useClock()
@@ -53,7 +62,7 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
         <div className="flex items-center gap-3 px-5 pt-6 pb-5">
           <img src="/icon-192.png" alt="logo" className="h-9 w-9 rounded-[10px] object-cover shrink-0" />
           <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>梁平-作帳</p>
+            <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>鑫系統-作帳</p>
             <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>{storeName || '未指派'} · {role}</p>
           </div>
         </div>
@@ -76,7 +85,7 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
                   'flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-all duration-150',
                   active ? 'font-semibold' : 'hover:bg-slate-50'
                 )}
-                style={active ? { backgroundColor: '#eef2ff', color: '#4338ca' } : { color: '#52525b' }}>
+                style={active ? { backgroundColor: '#FFFBEB', color: '#92400E' } : { color: '#52525b' }}>
                 <Icon className="h-[18px] w-[18px] shrink-0" />
                 {label}
               </Link>
@@ -100,7 +109,7 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
           <img src="/icon-192.png" alt="logo" className="h-8 w-8 rounded-[8px] object-cover shrink-0" />
           <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-900 truncate leading-tight">{storeName || '梁平-作帳'}</p>
+            <p className="text-sm font-bold text-slate-900 truncate leading-tight">{storeName || '鑫系統-作帳'}</p>
             <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{role}</p>
           </div>
         </div>
@@ -118,8 +127,8 @@ export default function ManagerNav({ userName, storeName, role }: Props) {
             const active = pathname.startsWith(href)
             return (
               <Link key={href} href={href} className="flex flex-col items-center gap-1 flex-1 py-1">
-                <Icon className="h-[22px] w-[22px]" style={{ color: active ? '#4f46e5' : '#a1a1aa' }} />
-                <span className="text-[11px] font-medium" style={{ color: active ? '#4f46e5' : '#a1a1aa' }}>
+                <Icon className="h-[22px] w-[22px]" style={{ color: active ? '#D97706' : '#a1a1aa' }} />
+                <span className="text-[11px] font-medium" style={{ color: active ? '#D97706' : '#a1a1aa' }}>
                   {label}
                 </span>
               </Link>
