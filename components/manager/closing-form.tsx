@@ -1438,6 +1438,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             onChange={v => {
                               const catObj = categories.find(c => c.name === v)
                               const autoVendor = catObj && catObj.vendors.length === 0 ? v : ''
+                              // 如果選的類別在 mappingColumns 沒有子品項，自動帶入一行
+                              if (v && mappingColumns.length > 0) {
+                                const hasSubItems = mappingColumns.some(c => c.vendor_group === v)
+                                const isDirectItem = mappingColumns.some(c => c.name === v)
+                                if (!hasSubItems && !isDirectItem) {
+                                  setReceiptForms(prev => prev.map(f => f.id === form.id
+                                    ? { ...f, category: v, vendor_name: autoVendor, items: f.items?.length ? f.items : [{ id: crypto.randomUUID(), item_name: v, unit: '', quantity: 1, unit_price: 0, amount: 0 }] }
+                                    : f))
+                                  return
+                                }
+                              }
                               updateReceiptForm(form.id, 'category', v)
                               updateReceiptForm(form.id, 'vendor_name', autoVendor)
                             }}
@@ -1559,8 +1570,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                         style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
                                         <option value="">— 選擇品項 —</option>
                                         {(() => {
+                                          // 依類別過濾：vendor_group 匹配優先，再試 name 完全匹配，否則顯示全部
+                                          const base = form.category
+                                            ? (() => {
+                                                const byGroup = mappingColumns.filter(c => c.vendor_group === form.category)
+                                                if (byGroup.length > 0) return byGroup
+                                                const byName = mappingColumns.filter(c => c.name === form.category)
+                                                return byName.length > 0 ? byName : mappingColumns
+                                              })()
+                                            : mappingColumns
                                           const groups: { group: string; items: typeof mappingColumns }[] = []
-                                          for (const col of mappingColumns) {
+                                          for (const col of base) {
                                             const g = col.vendor_group || col.category
                                             const existing = groups.find(x => x.group === g)
                                             if (existing) existing.items.push(col)
@@ -1666,8 +1686,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 value={editCategory}
                                 onChange={v => {
                                   const catObj = categories.find(c => c.name === v)
+                                  const autoVendor = catObj && catObj.vendors.length === 0 ? v : ''
                                   setEditCategory(v)
-                                  setEditVendor(catObj && catObj.vendors.length === 0 ? v : '')
+                                  setEditVendor(autoVendor)
+                                  // 如果選的類別在 mappingColumns 沒有子品項，自動帶入一行
+                                  if (v && mappingColumns.length > 0) {
+                                    const hasSubItems = mappingColumns.some(c => c.vendor_group === v)
+                                    const isDirectItem = mappingColumns.some(c => c.name === v)
+                                    if (!hasSubItems && !isDirectItem && editItems.length === 0) {
+                                      setEditItems([{ item_name: v, unit: '', quantity: 1, unit_price: 0, amount: 0 }])
+                                    }
+                                  }
                                 }}
                               />
                             </div>
@@ -1778,8 +1807,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
                                             <option value="">— 選擇品項 —</option>
                                             {(() => {
+                                              const base = editCategory
+                                                ? (() => {
+                                                    const byGroup = mappingColumns.filter(c => c.vendor_group === editCategory)
+                                                    if (byGroup.length > 0) return byGroup
+                                                    const byName = mappingColumns.filter(c => c.name === editCategory)
+                                                    return byName.length > 0 ? byName : mappingColumns
+                                                  })()
+                                                : mappingColumns
                                               const groups: { group: string; items: typeof mappingColumns }[] = []
-                                              for (const col of mappingColumns) {
+                                              for (const col of base) {
                                                 const g = col.vendor_group || col.category
                                                 const existing = groups.find(x => x.group === g)
                                                 if (existing) existing.items.push(col)
