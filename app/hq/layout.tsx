@@ -2,19 +2,15 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import HQNav from '@/components/hq/nav'
+import { getCachedUserProfile, getCachedAllStores } from '@/lib/cached-queries'
 
 export default async function HQLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('name, role, store_ids, is_hq')
-    .eq('user_id', user.id)
-    .single()
+  const profile = await getCachedUserProfile(user.id)
 
-  // 只有 is_hq 或老闆才能進總公司後台
   if (!profile || (!profile.is_hq && profile.role !== '老闆')) {
     redirect('/manager')
   }
@@ -22,20 +18,15 @@ export default async function HQLayout({ children }: { children: React.ReactNode
   let allStores: { id: string; name: string; type?: string }[] = []
   let currentStoreId = ''
 
-  const isOwner = profile.role === '老闆'
   const cookieStore = await cookies()
   const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
 
-  // 老闆或 is_hq 使用者均可看全部店家
-  if (isOwner || profile.is_hq) {
-    const { data: stores } = await supabase
-      .from('stores').select('id, name, type').eq('active', true).order('name')
-    allStores = stores ?? []
+  if (profile.is_hq || profile.role === '老闆') {
+    allStores = await getCachedAllStores()
   } else if (profile.store_ids?.length) {
+    const all = await getCachedAllStores()
     const storeIds: string[] = profile.store_ids
-    const { data: stores } = await supabase
-      .from('stores').select('id, name, type').eq('active', true).in('id', storeIds).order('name')
-    allStores = stores ?? []
+    allStores = all.filter((s: any) => storeIds.includes(s.id))
   }
 
   if (allStores.length) {
