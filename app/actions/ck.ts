@@ -160,6 +160,15 @@ export async function deleteCKExternalStore(id: string) {
   return { success: true }
 }
 
+// 更新體系外店家名稱
+export async function updateCKExternalStore(id: string, name: string) {
+  const admin = createAdminClient()
+  const { error } = await admin.from('ck_external_stores').update({ name }).eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/manager/ck')
+  return { success: true }
+}
+
 // 總公司標記補款狀態
 export async function markCKHQPaid(ckStoreId: string, date: string, paid: boolean) {
   const supabase = await createClient()

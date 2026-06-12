@@ -138,8 +138,6 @@
   }
   * {
     -webkit-tap-highlight-color: transparent;
-    /* 防止內容超出螢幕 */
-    max-width: 100%;
   }
   img, video {
     max-width: 100%;

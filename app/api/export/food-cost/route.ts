@@ -46,6 +46,151 @@ function getDaysInMonth(year: number, month: number) {
   )
 }
 
+interface RowVals {
+  pos: number; twpay: number; uber: Record<string, number>
+  after_deduct: number; onsite: number; actual: number; ck: number
+  result: number; revenue: number
+  items: Record<string, number>
+  notes: Record<string, string>
+  foodTotal: number; packTotal: number; miscTotal: number; grandTotal: number
+}
+
+const norm = (s: string) => s.replace(/[\s　（）()手動]/g, '').toLowerCase()
+
+async function fillTemplate(
+  templateBlob: Blob,
+  monthNum: number,
+  year: number,
+  days: string[],
+  dataRows: Array<{ date: string; row: RowVals }>,
+  storeName: string,
+  uberAccounts: string[],
+): Promise<NextResponse | null> {
+  const wb = new ExcelJS.Workbook()
+  try {
+    await wb.xlsx.load(Buffer.from(await templateBlob.arrayBuffer()) as any)
+  } catch (e) { console.warn('[fillTemplate] 載入模板失敗:', e); return null }
+
+  const targetName = `${monthNum}月食耗成本`
+  const ws = wb.getWorksheet(targetName)
+    ?? wb.getWorksheet(`${monthNum}月`)
+    ?? wb.worksheets.find(s => s.name.includes('食耗'))
+    ?? wb.worksheets[0]
+  if (!ws) { console.warn(`[fillTemplate] 找不到任何工作表`); return null }
+  if (ws.name !== targetName) {
+    console.warn(`[fillTemplate] 未找到「${targetName}」，改用工作表「${ws.name}」。模板所有工作表：`, wb.worksheets.map(s => s.name))
+  }
+
+  let headerRowNum = -1
+  for (let r = 1; r <= 10; r++) {
+    if (ws.getRow(r).getCell(1).text?.replace(/[\s　]/g, '') === '日期') { headerRowNum = r; break }
+  }
+  if (headerRowNum < 0) {
+    console.warn(`[fillTemplate] 找不到標題列（前10列欄A均無「日期」），工作表：${ws.name}，前5列欄A：`, Array.from({ length: 5 }, (_, i) => ws.getRow(i + 1).getCell(1).text))
+    return null
+  }
+
+  const colMap: Record<string, number> = {}
+  ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
+    const t = cell.text?.trim()
+    if (!t) return
+    colMap[t] = colNum
+    colMap[norm(t)] = colNum
+  })
+
+  const dataStartRow = headerRowNum + 2
+  const normUber = uberAccounts.map(acc => ({ raw: acc, n: norm(acc) }))
+
+  // Detect formula cells: master cells have { formula, ... }, slave cells of shared formulas have { sharedFormula, result }
+  const hasFormula = (cell: ExcelJS.Cell) => {
+    const v = cell.value
+    if (v == null || typeof v !== 'object') return false
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return 'formula' in (v as any) || 'sharedFormula' in (v as any)
+  }
+
+  // Clear stale plain-number values from data rows; leave formula cells and dates untouched
+  const uniqueCols = new Set(Object.values(colMap))
+  days.forEach((_, idx) => {
+    const excelRow = ws!.getRow(dataStartRow + idx)
+    for (const colIdx of uniqueCols) {
+      const cell = excelRow.getCell(colIdx as number)
+      if (typeof cell.value === 'number') cell.value = null
+    }
+  })
+
+  days.forEach((date, idx) => {
+    const rowNum = dataStartRow + idx
+    const d = dataRows.find(dr => dr.date === date)?.row
+    if (!d) return
+    const excelRow = ws!.getRow(rowNum)
+
+    // Item columns: write actual data (overrides any default formula like 75*340)
+    for (const [colName, amount] of Object.entries(d.items)) {
+      if (!amount) continue
+      const colIdx = colMap[colName] ?? colMap[norm(colName)]
+      if (!colIdx) continue
+      const cell = excelRow.getCell(colIdx)
+      cell.value = amount
+      const note = d.notes?.[colName]
+      if (note) cell.note = note
+    }
+
+    // Revenue/summary columns: skip if the template cell already has a formula
+    // (e.g. 扣除後的$, 現場, 配送月底結, 結果, 營業額 are all derived in the template)
+    const revPairs: [string, number][] = [
+      ['pos', d.pos], ['twpay', d.twpay], ['實際$', d.actual],
+      ['配送月底結', d.ck], ['結果', d.result],
+      ['現場', d.onsite], ['扣除後的$', d.after_deduct], ['營業額', d.revenue],
+    ]
+    for (const [key, val] of revPairs) {
+      const colIdx = colMap[key] ?? colMap[norm(key)]
+      if (!colIdx || !val) continue
+      const cell = excelRow.getCell(colIdx)
+      if (hasFormula(cell)) continue  // preserve formula; Excel will recalculate
+      cell.value = val
+    }
+
+    for (const { raw, n } of normUber) {
+      const colIdx = colMap[n] ?? colMap[raw]
+      if (!colIdx) continue
+      const val = d.uber[raw] ?? 0
+      if (!val) continue
+      const cell = excelRow.getCell(colIdx)
+      if (!hasFormula(cell)) cell.value = val
+    }
+  })
+
+  // ExcelJS bug workaround: if we overwrote a shared-formula master cell with data,
+  // its slave cells still point to it as 'sharedFormula'. ExcelJS throws
+  // "Shared Formula master must exist above and or left of clone" when writing.
+  // Fix: detach any slave whose master no longer has a formula → set to cached result.
+  ws.eachRow({ includeEmpty: false }, row => {
+    row.eachCell({ includeEmpty: false }, cell => {
+      const v = cell.value
+      if (!v || typeof v !== 'object') return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sv = v as any
+      if (!('sharedFormula' in sv)) return
+      const masterCell = ws.getCell(sv.sharedFormula as string)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const masterV = masterCell?.value as any
+      if (!masterV || typeof masterV !== 'object' || !('formula' in masterV)) {
+        cell.value = sv.result ?? null  // detach: replace slave reference with cached value
+      }
+    })
+  })
+
+  const filename = encodeURIComponent(`${storeName}_${year}${String(monthNum).padStart(2, '0')}_食耗成本.xlsx`)
+  const buf = await wb.xlsx.writeBuffer()
+  return new NextResponse(buf, {
+    headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename*=UTF-8''${filename}`,
+    },
+  })
+}
+
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -63,9 +208,9 @@ export async function GET(req: NextRequest) {
   const lastDay  = new Date(year, monthNum, 0).toISOString().slice(0, 10)
 
   const admin = createAdminClient()
-  const [{ data: receipts }, { data: closings }, { data: storeRow }, { data: mappingsRaw }] = await Promise.all([
+  const [{ data: receipts }, { data: closings }, { data: storeRow }, { data: mappingsRaw }, { data: ckPricesData }] = await Promise.all([
     admin.from('receipts')
-      .select('business_date, total_amount, tax_amount, receipt_type, receipt_items(item_name, excel_column, amount)')
+      .select('business_date, total_amount, tax_amount, receipt_type, notes, receipt_items(item_name, excel_column, amount)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('daily_closings')
@@ -73,10 +218,28 @@ export async function GET(req: NextRequest) {
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('stores').select('name, uber_accounts, ichef_uber_linked').eq('id', storeId).single(),
-    admin.from('item_column_mappings').select('item_name, excel_column'),
+    admin.from('item_column_mappings')
+      .select('item_name, excel_column, item_category, store_id')
+      .or(`store_id.is.null,store_id.eq.${storeId}`),
+    admin.from('central_kitchen_prices').select('item_name, excel_column').eq('active', true),
   ])
   const mappingLookup: Record<string, string> = {}
-  for (const m of mappingsRaw ?? []) mappingLookup[m.item_name] = m.excel_column
+  const categoryLookup: Record<string, string> = {}
+  // Global first, then store-specific overrides
+  for (const m of (mappingsRaw ?? []).filter((m: any) => !m.store_id)) {
+    mappingLookup[m.item_name] = m.excel_column
+    categoryLookup[m.item_name] = m.item_category
+  }
+  for (const m of (mappingsRaw ?? []).filter((m: any) => m.store_id === storeId)) {
+    mappingLookup[m.item_name] = m.excel_column
+    categoryLookup[m.item_name] = m.item_category
+  }
+
+  // CK item name → excel column (fallback to item_name itself)
+  const ckColLookup: Record<string, string> = {}
+  for (const p of (ckPricesData ?? []) as any[]) {
+    ckColLookup[p.item_name] = p.excel_column || p.item_name
+  }
 
   const uberAccounts: string[] = storeRow?.uber_accounts ?? []
   const ichefLinked: boolean = storeRow?.ichef_uber_linked ?? false
@@ -120,6 +283,7 @@ export async function GET(req: NextRequest) {
   // Build per-date lookup
   interface DayData {
     items: Record<string, number>
+    notes: Record<string, string>
     pos: number; twpay: number
     uber: Record<string, number>
     onsite: number; actual: number; ck: number
@@ -127,7 +291,7 @@ export async function GET(req: NextRequest) {
   }
   const byDate: Record<string, DayData> = {}
   function ensureDay(d: string): DayData {
-    if (!byDate[d]) byDate[d] = { items: {}, pos: 0, twpay: 0, uber: {}, onsite: 0, actual: 0, ck: 0, revenue: 0, variance: 0 }
+    if (!byDate[d]) byDate[d] = { items: {}, notes: {}, pos: 0, twpay: 0, uber: {}, onsite: 0, actual: 0, ck: 0, revenue: 0, variance: 0 }
     return byDate[d]
   }
 
@@ -138,17 +302,39 @@ export async function GET(req: NextRequest) {
       ...it,
       resolved_col: mappingLookup[it.item_name] ?? it.excel_column ?? '',
     }))
-    const validItems = resolvedItems.filter((it: any) => it.resolved_col && (it.amount || 0) > 0)
-    const itemsSum = validItems.reduce((s: number, it: any) => s + (it.amount as number), 0)
-    // Add item amounts
+    // Include all non-zero items (negatives = discounts must be written too)
+    const validItems = resolvedItems.filter((it: any) => it.resolved_col && it.amount)
+    // Positive-only subset for tax routing & proportional distribution
+    const positiveItems = validItems.filter((it: any) => (it.amount as number) > 0)
+    const itemsSum = positiveItems.reduce((s: number, it: any) => s + (it.amount as number), 0)
+    // Write ALL valid items including negative discounts
     for (const it of validItems) {
       dd.items[it.resolved_col] = (dd.items[it.resolved_col] || 0) + (it.amount as number)
     }
-    // Distribute unallocated amount (total - items) to columns proportionally
-    // This handles tax that is stored in total_amount but not split into receipt_items
-    const unallocated = (r.total_amount ?? 0) - itemsSum
-    if (unallocated > 0 && itemsSum > 0) {
+    // Attach receipt notes to affected columns
+    if ((r as any).notes?.trim() && validItems.length > 0) {
+      const noteText = (r as any).notes.trim()
       for (const it of validItems) {
+        const col = it.resolved_col
+        dd.notes[col] = dd.notes[col] ? `${dd.notes[col]}\n${noteText}` : noteText
+      }
+    }
+    // Route tax_amount to 免洗稅金: triggered when receipt has 耗材 items
+    const taxAmt = (r.tax_amount ?? 0) as number
+    let routedTax = 0
+    if (taxAmt > 0 && positiveItems.length > 0) {
+      const hasPackItem = positiveItems.some((it: any) =>
+        categoryLookup[it.item_name] === '耗材' || packCols.includes(it.resolved_col)
+      )
+      if (hasPackItem) {
+        dd.items['免洗稅金'] = (dd.items['免洗稅金'] || 0) + taxAmt
+        routedTax = taxAmt
+      }
+    }
+    // Distribute remaining unallocated amount proportionally to positive items
+    const unallocated = (r.total_amount ?? 0) - itemsSum - routedTax
+    if (unallocated > 0 && itemsSum > 0) {
+      for (const it of positiveItems) {
         const share = Math.round(unallocated * (it.amount as number) / itemsSum)
         dd.items[it.resolved_col] = (dd.items[it.resolved_col] || 0) + share
       }
@@ -178,21 +364,28 @@ export async function GET(req: NextRequest) {
     // ichef_uber_linked = false：POS 已是純現場金額
     dd.onsite = ichefLinked ? (dd.pos - uberSum - dd.twpay - panda - online) : dd.pos
 
+    let ckItemsSum = 0
     for (const oi of (c.order_items as any[]) ?? []) {
-      if (oi.item_name === '央廚配送') dd.ck = oi.total_amount ?? 0
+      if (oi.item_name === '央廚配送') {
+        dd.ck = oi.total_amount ?? 0
+      } else {
+        // Individual CK items → map to their excel column
+        const excelCol = mappingLookup[oi.item_name] ?? ckColLookup[oi.item_name] ?? oi.item_name
+        if (excelCol && (oi.total_amount || 0) > 0) {
+          dd.items[excelCol] = (dd.items[excelCol] || 0) + (oi.total_amount as number)
+        }
+        // Accumulate CK subtotal (for fallback when no '央廚配送' summary exists)
+        if ((oi.item_name in ckColLookup) && (oi.total_amount || 0) > 0) {
+          ckItemsSum += oi.total_amount as number
+        }
+      }
     }
+    // If no explicit '央廚配送' total was saved, derive it from individual items
+    if (dd.ck === 0 && ckItemsSum > 0) dd.ck = ckItemsSum
   }
 
   // ─── Compute data rows & monthly totals (needed before writing headers) ──────
   const days = getDaysInMonth(year, monthNum)
-
-  interface RowVals {
-    pos: number; twpay: number; uber: Record<string, number>
-    after_deduct: number; onsite: number; actual: number; ck: number
-    result: number; revenue: number
-    items: Record<string, number>
-    foodTotal: number; packTotal: number; miscTotal: number; grandTotal: number
-  }
 
   const dataRows: Array<{ date: string; row: RowVals }> = days.map(date => {
     const d = byDate[date]
@@ -208,6 +401,7 @@ export async function GET(req: NextRequest) {
     // 營業額 = 現場 + 結果
     const computedRevenue = onsite + variance
     const items = d?.items ?? {}
+    const notes = d?.notes ?? {}
     const foodTotal = foodCols.reduce((s, col) => s + (items[col] || 0), 0)
     const packTotal = packCols.reduce((s, col) => s + (items[col] || 0), 0)
     const miscTotal = miscCols.reduce((s, col) => s + (items[col] || 0), 0)
@@ -215,7 +409,7 @@ export async function GET(req: NextRequest) {
     return {
       date, row: {
         pos, twpay, uber, after_deduct, onsite, actual, ck, result: variance,
-        revenue: computedRevenue, items, foodTotal, packTotal, miscTotal, grandTotal,
+        revenue: computedRevenue, items, notes, foodTotal, packTotal, miscTotal, grandTotal,
       },
     }
   })
@@ -234,6 +428,7 @@ export async function GET(req: NextRequest) {
     items:        Object.fromEntries([...foodCols, ...packCols, ...miscCols].map(col => [
       col, dataRows.reduce((s, { row }) => s + (row.items[col] || 0), 0),
     ])),
+    notes:        {},
     foodTotal:    sumOf(r => r.foodTotal),
     packTotal:    sumOf(r => r.packTotal),
     miscTotal:    sumOf(r => r.miscTotal),
@@ -241,6 +436,28 @@ export async function GET(req: NextRequest) {
   }
   // 梁平退稅 = 當月免洗稅金合計
   const lianpingTaxRefund = totals.items['免洗稅金'] ?? 0
+
+  // ─── Template mode: fill original Excel if uploaded ───────────────────────
+  let templateDebug = 'no_template'
+  try {
+    const { data: tmpl, error: dlErr } = await admin.storage.from('excel-templates').download(`${storeId}.xlsx`)
+    if (dlErr) {
+      templateDebug = `dl_err:${dlErr.message}`
+      console.warn(`[food-cost export] template download error:`, dlErr)
+    } else if (tmpl) {
+      templateDebug = 'fill_attempt'
+      const result = await fillTemplate(tmpl, monthNum, year, days, dataRows, storeRow?.name ?? 'export', uberAccounts)
+      if (result) {
+        result.headers.set('X-Export-Mode', 'template')
+        return result
+      }
+      templateDebug = 'fill_null'
+      console.warn(`[food-cost export] fillTemplate returned null for store ${storeId}, month ${month}`)
+    }
+  } catch (e) {
+    templateDebug = `exception:${(e as Error)?.message ?? e}`
+    console.warn(`[food-cost export] template download/fill failed:`, e)
+  }
 
   // ─── Excel workbook ───────────────────────────────────────────────────────
   const wb = new ExcelJS.Workbook()
@@ -404,18 +621,22 @@ export async function GET(req: NextRequest) {
     // Food items: white
     for (let i = 0; i < foodCols.length; i++) {
       styleData(excelRow, COL_FOOD_START + i, numOrBlank(row.items[foodCols[i]] || 0), C.WHITE)
+      if (row.notes[foodCols[i]]) gc(excelRow, COL_FOOD_START + i).note = row.notes[foodCols[i]]
     }
     // Pack items: light blue
     for (let i = 0; i < packCols.length; i++) {
       styleData(excelRow, COL_PACK_START + i, numOrBlank(row.items[packCols[i]] || 0), C.C6D9F0)
+      if (row.notes[packCols[i]]) gc(excelRow, COL_PACK_START + i).note = row.notes[packCols[i]]
     }
     // Misc variable [0:13]: light blue
     for (let i = 0; i < 13; i++) {
       styleData(excelRow, COL_MISC_START + i, numOrBlank(row.items[miscCols[i]] || 0), C.C6D9F0)
+      if (row.notes[miscCols[i]]) gc(excelRow, COL_MISC_START + i).note = row.notes[miscCols[i]]
     }
     // Misc fixed [13:]: peach
     for (let i = 13; i < miscCols.length; i++) {
       styleData(excelRow, COL_MISC_START + i, numOrBlank(row.items[miscCols[i]] || 0), C.FBD4B4)
+      if (row.notes[miscCols[i]]) gc(excelRow, COL_MISC_START + i).note = row.notes[miscCols[i]]
     }
   }
 
@@ -443,6 +664,7 @@ export async function GET(req: NextRequest) {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename*=UTF-8''${filename}`,
+      'X-Template-Debug': templateDebug,
     },
   })
 }

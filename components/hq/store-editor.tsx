@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react'
 import { updateStoreSettings } from '@/app/actions/stores'
-import { updateCKAssignedStores, addCKExternalStore, deleteCKExternalStore } from '@/app/actions/ck'
+import { updateCKAssignedStores, addCKExternalStore, deleteCKExternalStore, updateCKExternalStore } from '@/app/actions/ck'
 import { toast } from 'sonner'
 import { ChevronDown, ChevronUp, Plus, X, Loader2, Check, Pencil, Trash2 } from 'lucide-react'
 
@@ -64,6 +64,9 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
   const [newExtName, setNewExtName] = useState('')
   const [addingExt, setAddingExt] = useState(false)
   const [extLoading, setExtLoading] = useState<string | null>(null)
+  const [editingExtId, setEditingExtId] = useState<string | null>(null)
+  const [editingExtName, setEditingExtName] = useState('')
+  const extComposingRef = useRef(false)
 
   function addAccount() {
     const name = newAccount.trim()
@@ -86,6 +89,20 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
       setNewExtName('')
       setAddingExt(false)
       toast.success(`已新增「${name}」`)
+    }
+    setExtLoading(null)
+  }
+
+  async function handleUpdateExtStore() {
+    const name = editingExtName.trim()
+    if (!name || !editingExtId) return
+    setExtLoading(editingExtId)
+    const r = await updateCKExternalStore(editingExtId, name)
+    if (r.error) { toast.error(r.error) }
+    else {
+      setExtStores(prev => prev.map(s => s.id === editingExtId ? { ...s, name } : s))
+      setEditingExtId(null)
+      toast.success('已更新店家名稱')
     }
     setExtLoading(null)
   }
@@ -248,19 +265,53 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
                   <p className="text-sm px-3 py-3" style={{ color: '#a1a1aa' }}>尚未新增體系外店家</p>
                 )}
                 {extStores.map((s, i) => (
-                  <div key={s.id} className="flex items-center gap-3 px-3 py-2.5"
-                    style={{ borderTop: i > 0 ? '1px solid #f4f4f5' : 'none', background: 'white' }}>
-                    <span className="flex-1 text-sm font-medium" style={{ color: '#18181b' }}>{s.name}</span>
-                    {canEdit && (
-                      <button type="button"
-                        onClick={() => handleDeleteExtStore(s.id, s.name)}
-                        disabled={extLoading === s.id}
-                        className="p-1 rounded-lg transition-colors hover:bg-red-50"
-                        style={{ color: '#a1a1aa', border: 'none', background: 'none', cursor: 'pointer' }}>
-                        {extLoading === s.id
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : <Trash2 className="h-3.5 w-3.5" />}
-                      </button>
+                  <div key={s.id} style={{ borderTop: i > 0 ? '1px solid #f4f4f5' : 'none', background: 'white' }}>
+                    {editingExtId === s.id ? (
+                      <div className="flex gap-2 px-3 py-2">
+                        <input
+                          autoFocus
+                          value={editingExtName}
+                          onChange={e => setEditingExtName(e.target.value)}
+                          onCompositionStart={() => { extComposingRef.current = true }}
+                          onCompositionEnd={() => { setTimeout(() => { extComposingRef.current = false }, 0) }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && !extComposingRef.current) { e.preventDefault(); e.stopPropagation(); handleUpdateExtStore() }
+                            if (e.key === 'Escape') { setEditingExtId(null) }
+                          }}
+                          style={{ flex: 1, height: '32px', padding: '0 10px', border: '1.5px solid #F59E0B', borderRadius: '8px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
+                        />
+                        <button type="button" onClick={handleUpdateExtStore} disabled={extLoading === s.id}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold text-white shrink-0"
+                          style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
+                          {extLoading === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : '儲存'}
+                        </button>
+                        <button type="button" onClick={() => setEditingExtId(null)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0"
+                          style={{ background: '#f4f4f5', color: '#52525b' }}>取消</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 px-3 py-2.5">
+                        <span className="flex-1 text-sm font-medium" style={{ color: '#18181b' }}>{s.name}</span>
+                        {canEdit && (
+                          <>
+                            <button type="button"
+                              onClick={() => { setEditingExtId(s.id); setEditingExtName(s.name) }}
+                              className="p-1 rounded-lg transition-colors hover:bg-amber-50"
+                              style={{ color: '#a1a1aa', border: 'none', background: 'none', cursor: 'pointer' }}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button type="button"
+                              onClick={() => handleDeleteExtStore(s.id, s.name)}
+                              disabled={extLoading === s.id}
+                              className="p-1 rounded-lg transition-colors hover:bg-red-50"
+                              style={{ color: '#a1a1aa', border: 'none', background: 'none', cursor: 'pointer' }}>
+                              {extLoading === s.id
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <Trash2 className="h-3.5 w-3.5" />}
+                            </button>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}
@@ -270,7 +321,11 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
                       autoFocus
                       value={newExtName}
                       onChange={e => setNewExtName(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleAddExtStore() } }}
+                      onCompositionStart={() => { extComposingRef.current = true }}
+                      onCompositionEnd={() => { setTimeout(() => { extComposingRef.current = false }, 0) }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !extComposingRef.current) { e.preventDefault(); e.stopPropagation(); handleAddExtStore() }
+                      }}
                       placeholder="體系外店家名稱"
                       style={{ flex: 1, height: '34px', padding: '0 10px', border: '1.5px solid #F59E0B', borderRadius: '8px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
                     />
