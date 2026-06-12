@@ -120,24 +120,40 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    -webkit-tap-highlight-color: transparent;
   }
   body {
     @apply bg-background text-foreground;
-    /* 防止橫向滾動 */
     overflow-x: hidden;
+    /* 讓 iOS 整頁也套用 manipulation，消除 300ms 延遲 */
+    touch-action: manipulation;
   }
   html {
     @apply font-sans;
     touch-action: manipulation;
-    /* 防止 iOS Safari 字體自動放大 */
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
-  button, a, input, select, textarea, [role="button"] {
+  /* iOS 快速點擊：cursor:pointer 是讓 iOS Safari 立即觸發 click 的關鍵 */
+  button, a, [role="button"], [role="tab"],
+  input[type="checkbox"], input[type="radio"],
+  label[for], select {
     touch-action: manipulation;
+    cursor: pointer;
   }
-  * {
-    -webkit-tap-highlight-color: transparent;
+  /* 立即視覺回饋：按下去馬上變暗，讓使用者感覺系統有反應 */
+  button:active, a:active, [role="button"]:active {
+    opacity: 0.75;
+  }
+  /* 縮短所有 transition 在手機上的感知延遲 */
+  @media (pointer: coarse) {
+    *, *::before, *::after {
+      transition-duration: 0ms !important;
+    }
+    /* 只保留按下瞬間的 opacity 動畫（視覺回饋用） */
+    button:active, a:active, [role="button"]:active {
+      transition-duration: 0ms !important;
+    }
   }
   img, video {
     max-width: 100%;
