@@ -1531,7 +1531,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             onChange={e => updateReceiptForm(form.id, 'notes', e.target.value)} />
                         </div>
 
-                        {/* 細項明細 */}
+                        {/* 品項 */}
                         {(() => {
                           function syncItems(newItems: ReceiptFormItem[]) {
                             const total = newItems.filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
@@ -1552,7 +1552,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           return (
                             <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>細項明細（可空）</label>
+                                <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>品項（可空）</label>
                                 <button type="button" onClick={addItem}
                                   style={{ fontSize: '11px', color: '#F59E0B', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px', padding: 0 }}>
                                   <Plus style={{ width: '12px', height: '12px' }} />新增
@@ -1772,7 +1772,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 value={editNotes} onChange={e => setEditNotes(e.target.value)} />
                             </div>
 
-                            {/* 細項明細 */}
+                            {/* 品項 */}
                             {(() => {
                               function syncEditItems(newItems: typeof editItems) {
                                 setEditItems(newItems)
@@ -1792,7 +1792,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               return (
                                 <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                    <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>細項明細（可空）</label>
+                                    <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>品項（可空）</label>
                                     <button type="button" onClick={() => addEditItemFn()}
                                       style={{ fontSize: '11px', color: '#F59E0B', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px', padding: 0 }}>
                                       <Plus style={{ width: '12px', height: '12px' }} />新增
@@ -2765,10 +2765,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       </div>
                     </div>
 
-                    {/* 細項明細 */}
+                    {/* 品項 */}
                     {(reviewItem.items ?? []).filter(i => i.item_name.trim()).length > 0 && (
                       <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '10px 12px', marginBottom: '16px' }}>
-                        <p style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, marginBottom: '6px' }}>細項明細</p>
+                        <p style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, marginBottom: '6px' }}>品項</p>
                         {(reviewItem.items ?? []).filter(i => i.item_name.trim()).map((item, idx) => (
                           <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '3px 0', borderBottom: idx < (reviewItem.items ?? []).filter(i => i.item_name.trim()).length - 1 ? '1px solid #f0f0f0' : 'none' }}>
                             <span style={{ color: '#52525b' }}>
