@@ -443,47 +443,71 @@ async function applyTemplateFormatting(
   // Reset everything to white/default first
   reqs.push({ repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: maxRow, startColumnIndex: 0, endColumnIndex: maxCol }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 1, blue: 1 }, textFormat: { bold: false, fontSize: 10, foregroundColor: { red: 0, green: 0, blue: 0 } }, horizontalAlignment: 'LEFT' } }, fields: 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.horizontalAlignment' } })
 
+  // Border style mapping from Excel to Sheets API
+  const BORDER_STYLE: Record<string, string> = {
+    thin: 'SOLID', medium: 'SOLID_MEDIUM', thick: 'SOLID_THICK',
+    double: 'DOUBLE', dotted: 'DOTTED', dashed: 'DASHED', hair: 'SOLID',
+    mediumDashed: 'SOLID_MEDIUM', dashDot: 'DASHED', mediumDashDot: 'SOLID_MEDIUM',
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function cvtBorder(b: any) {
+    if (!b?.style) return undefined
+    return { style: BORDER_STYLE[b.style] ?? 'SOLID', colorStyle: { rgbColor: b.color?.argb ? argbToRgb(b.color.argb as string) : { red: 0, green: 0, blue: 0 } } }
+  }
+
+  // Extract background with row-style fallback (Excel allows row-level default fills)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function getBg(cell: ExcelJS.Cell, rowObj: ExcelJS.Row): RGB {
+    const c = cell.fill as any
+    if (c?.type === 'pattern' && c.pattern !== 'none' && c.fgColor?.argb) return argbToRgb(c.fgColor.argb as string)
+    const r = rowObj.fill as any
+    if (r?.type === 'pattern' && r.pattern !== 'none' && r.fgColor?.argb) return argbToRgb(r.fgColor.argb as string)
+    return { red: 1, green: 1, blue: 1 }
+  }
+
   // Apply per-cell formatting extracted directly from the worksheet
-  // We batch consecutive cells with identical formatting in the same row
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type CellFmt = { bg: RGB; bold: boolean; fontSize: number; fgColor: RGB; hAlign: string; borders: any }
   for (let r = 1; r <= maxRow; r++) {
-    const row = ws.getRow(r)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    type CellFmt = { bg: RGB; bold: boolean; fontSize: number; fgColor: RGB; hAlign: string }
+    const rowObj = ws.getRow(r)
     const cells: CellFmt[] = []
     for (let c = 1; c <= maxCol; c++) {
-      const cell = row.getCell(c)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fillObj = cell.fill as any
-      let bg: RGB = { red: 1, green: 1, blue: 1 }
-      if (fillObj?.type === 'pattern' && fillObj.pattern !== 'none' && fillObj.fgColor?.argb) {
-        bg = argbToRgb(fillObj.fgColor.argb as string)
-      }
+      const cell = rowObj.getCell(c)
+      const bg = getBg(cell, rowObj)
       const fontObj = cell.font
       const bold = fontObj?.bold ?? false
       const fontSize = fontObj?.size ?? 10
       let fgColor: RGB = { red: 0, green: 0, blue: 0 }
       if (fontObj?.color?.argb) fgColor = argbToRgb(fontObj.color.argb)
       const hAlign = (cell.alignment?.horizontal ?? 'center').toUpperCase()
-      cells.push({ bg, bold, fontSize, fgColor, hAlign })
+      const borderObj = cell.border as any
+      const borders: any = {}
+      if (borderObj?.top)    borders.top    = cvtBorder(borderObj.top)
+      if (borderObj?.bottom) borders.bottom = cvtBorder(borderObj.bottom)
+      if (borderObj?.left)   borders.left   = cvtBorder(borderObj.left)
+      if (borderObj?.right)  borders.right  = cvtBorder(borderObj.right)
+      cells.push({ bg, bold, fontSize, fgColor, hAlign, borders })
     }
 
-    // Batch consecutive cells with same formatting
+    // Batch consecutive cells with identical formatting
     let ci = 0
     while (ci < cells.length) {
       const fmt = cells[ci]
+      const key = JSON.stringify(fmt)
       let end = ci + 1
-      while (end < cells.length &&
-        JSON.stringify(cells[end]) === JSON.stringify(fmt)) end++
+      while (end < cells.length && JSON.stringify(cells[end]) === key) end++
 
-      reqs.push({ repeatCell: {
-        range: { sheetId, startRowIndex: r - 1, endRowIndex: r, startColumnIndex: ci, endColumnIndex: end },
-        cell: { userEnteredFormat: {
-          backgroundColor: fmt.bg,
-          textFormat: { bold: fmt.bold, fontSize: fmt.fontSize, foregroundColor: fmt.fgColor },
-          horizontalAlignment: fmt.hAlign,
-        }},
-        fields: 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.horizontalAlignment',
-      }})
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const uf: any = {
+        backgroundColor: fmt.bg,
+        textFormat: { bold: fmt.bold, fontSize: fmt.fontSize, foregroundColor: fmt.fgColor },
+        horizontalAlignment: fmt.hAlign,
+      }
+      const fields = 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.horizontalAlignment'
+      let flds = fields
+      if (Object.keys(fmt.borders).length) { uf.borders = fmt.borders; flds += ',userEnteredFormat.borders' }
+
+      reqs.push({ repeatCell: { range: { sheetId, startRowIndex: r - 1, endRowIndex: r, startColumnIndex: ci, endColumnIndex: end }, cell: { userEnteredFormat: uf }, fields: flds } })
       ci = end
     }
   }
