@@ -5,11 +5,19 @@ import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
 function getAuth() {
-  const client_email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
-  const private_key = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n')
-  if (!client_email || !private_key) throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY')
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_CREDENTIALS
+  if (!raw) throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_CREDENTIALS env var')
+  let credentials: { client_email: string; private_key: string }
+  try {
+    credentials = JSON.parse(raw)
+  } catch {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_CREDENTIALS is not valid JSON')
+  }
+  if (!credentials.client_email || !credentials.private_key) {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_CREDENTIALS missing client_email or private_key')
+  }
   return new google.auth.GoogleAuth({
-    credentials: { client_email, private_key },
+    credentials,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   })
 }
