@@ -32,7 +32,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         {children}
         <Toaster richColors position="top-right" />
-        <Script id="sw-register" strategy="afterInteractive">{`if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js')`}</Script>
+        <Script id="sw-register" strategy="afterInteractive">{`if('serviceWorker'in navigator&&location.hostname!=='localhost')navigator.serviceWorker.register('/sw.js')`}</Script>
       </body>
     </html>
   );
