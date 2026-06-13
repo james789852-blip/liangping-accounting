@@ -5,10 +5,13 @@ import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
 function getAuth() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
-  const key = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n')
-  if (!email || !key) throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY')
-  return new google.auth.JWT({ email, key, scopes: ['https://www.googleapis.com/auth/spreadsheets'] })
+  const client_email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
+  const private_key = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n')
+  if (!client_email || !private_key) throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY')
+  return new google.auth.GoogleAuth({
+    credentials: { client_email, private_key },
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  })
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
