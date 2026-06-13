@@ -189,9 +189,9 @@ export default async function FoodCostPreviewPage({
       <div className="bg-white px-4 py-5" style={{ borderBottom: '1px solid #f4f4f5' }}>
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
-            <FileBarChart2 className="h-3.5 w-3.5" />食耗成本
+            <FileBarChart2 className="h-3.5 w-3.5" />店面Excel模板設定
           </div>
-          <h1 className="text-xl font-bold" style={{ color: '#18181b' }}>食耗成本月報</h1>
+          <h1 className="text-xl font-bold" style={{ color: '#18181b' }}>店面Excel模板設定</h1>
           <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>
             店長填入收據細項後，系統自動對應到 Excel 欄位，不需手動輸入
           </p>

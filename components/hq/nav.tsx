@@ -35,7 +35,7 @@ const hqSections = [
     items: [
       { href: '/hq/closings',            label: '帳目瀏覽・審核', icon: BookOpen },
       { href: '/hq/ck',                  label: '央廚帳目',       icon: ChefHat },
-      { href: '/hq/food-cost-preview',   label: '食耗成本',       icon: FileBarChart2 },
+      { href: '/hq/food-cost-preview',   label: 'Excel模板設定',  icon: FileBarChart2 },
       { href: '/hq/dashboard',           label: '即時儀表板',     icon: LayoutDashboard },
       { href: '/hq/stores',              label: '店家管理',       icon: Store },
     ],
@@ -68,7 +68,7 @@ const managerSections = [
 
 const mobileHQTabs = [
   { href: '/hq/closings',          label: '帳目審核', icon: BookOpen },
-  { href: '/hq/food-cost-preview', label: '食耗成本', icon: FileBarChart2 },
+  { href: '/hq/food-cost-preview', label: 'Excel模板', icon: FileBarChart2 },
   { href: '/hq/dashboard',         label: '儀表板',   icon: LayoutDashboard },
   { href: '/hq/stores',            label: '店家',     icon: Store },
 ]
