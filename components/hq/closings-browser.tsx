@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Camera, Package, Video, FileText, Search, CheckCircle, RotateCcw, Trash2, Loader2, BarChart2 as BarChart, Banknote, Wallet, ArrowLeftRight } from 'lucide-react'
+import { X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Camera, Package, Video, FileText, Search, CheckCircle, RotateCcw, Trash2, Loader2, BarChart2 as BarChart, Banknote, Wallet, ArrowLeftRight, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { verifyClosing, disputeClosing, deleteClosing } from '@/app/actions/closings'
 
@@ -554,6 +554,7 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [statusFilter, setStatusFilter] = useState('all')
+  const [exporting, setExporting] = useState(false)
 
   // 判斷目前模式：date（單日）或 month（整月）
   const isDateMode = !!currentDate && !currentMonth
@@ -566,6 +567,25 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
   // 解析目前選擇（用於 dropdown）
   const refDate = currentDate || (currentMonth ? currentMonth + '-01' : todayStr)
   const [selYear, selMon, selDay] = refDate.split('-').map(Number)
+
+  async function handleExportExcel() {
+    if (!storeId) return
+    const month = `${selYear}-${String(selMon).padStart(2, '0')}`
+    setExporting(true)
+    try {
+      const res = await fetch(`/api/export/food-cost?storeId=${storeId}&month=${month}`)
+      if (!res.ok) { toast.error('匯出失敗'); return }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const cd = res.headers.get('content-disposition') ?? ''
+      const match = cd.match(/filename\*=UTF-8''(.+)$/)
+      a.download = match ? decodeURIComponent(match[1]) : `食耗成本_${month}.xlsx`
+      a.href = url; a.click()
+      URL.revokeObjectURL(url)
+    } catch { toast.error('匯出失敗') }
+    finally { setExporting(false) }
+  }
   // 全月模式下 selDay 為 0（顯示「全月」）
   const dayMode = isDateMode ? selDay : 0
 
@@ -707,6 +727,20 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
             </button>
           )
         })}
+
+        {/* 匯出 Excel：選定特定店家時顯示 */}
+        {storeId && (
+          <button onClick={handleExportExcel} disabled={exporting}
+            className="ml-auto flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-semibold"
+            style={{
+              background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white',
+              border: 'none', cursor: exporting ? 'wait' : 'pointer',
+              opacity: exporting ? 0.7 : 1, boxShadow: '0 2px 8px rgba(245,158,11,0.25)',
+            }}>
+            <Download className="h-3.5 w-3.5" />
+            {exporting ? '匯出中...' : '匯出 Excel'}
+          </button>
+        )}
       </div>
 
       {filtered.length === 0 ? (

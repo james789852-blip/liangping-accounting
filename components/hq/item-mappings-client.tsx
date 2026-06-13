@@ -6,7 +6,7 @@ import {
   deleteItemMapping, updateItemMapping, saveItemMapping, copyGlobalMappingsToStore,
 } from '@/app/actions/item-mappings'
 import { useRouter } from 'next/navigation'
-import { Trash2, Edit2, Check, X, Plus, Tag, Copy } from 'lucide-react'
+import { Trash2, Edit2, Check, X, Plus, Tag, Copy, ChevronLeft } from 'lucide-react'
 
 interface Mapping {
   id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null
@@ -124,6 +124,11 @@ export default function ItemMappingsClient({
       {/* Header */}
       <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         <div className="max-w-2xl mx-auto">
+          <button onClick={() => router.back()}
+            className="flex items-center gap-1 text-sm font-medium mb-3"
+            style={{ color: '#a1a1aa', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+            <ChevronLeft className="h-4 w-4" />上一頁
+          </button>
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
