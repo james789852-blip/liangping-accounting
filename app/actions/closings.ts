@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { syncClosingToSheets } from '@/lib/google-sheets'
 
 interface CashCountsPayload {
   bills_1000: number; bills_500: number; bills_100: number
@@ -48,6 +49,10 @@ export async function verifyClosing(closingId: string) {
     .eq('id', closingId)
 
   if (error) return { error: error.message }
+
+  // Fire-and-forget sync to Google Sheets (non-blocking; won't fail verification if Sheets errors)
+  try { await syncClosingToSheets(closingId) } catch (e) { console.error('[verifyClosing] Sheets sync failed:', e) }
+
   revalidatePath('/hq/reviews')
   return { success: true }
 }

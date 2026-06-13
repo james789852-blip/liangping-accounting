@@ -27,7 +27,7 @@ export default async function StoresPage() {
   // 老闆 / is_hq 看全部店家，其他只看自己負責的
   let query = admin
     .from('stores')
-    .select('id, name, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, petty_cash, type, assigned_store_ids')
+    .select('id, name, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, petty_cash, type, assigned_store_ids, google_sheets_id')
     .eq('active', true)
     .order('name')
 
@@ -82,7 +82,7 @@ export default async function StoresPage() {
                 {group.map(store => (
                   <StoreEditor
                     key={store.id}
-                    store={{ ...store, uber_accounts: store.uber_accounts ?? [], type: (store as any).type ?? '店面', assigned_store_ids: (store as any).assigned_store_ids ?? [] }}
+                    store={{ ...store, uber_accounts: store.uber_accounts ?? [], type: (store as any).type ?? '店面', assigned_store_ids: (store as any).assigned_store_ids ?? [], google_sheets_id: (store as any).google_sheets_id ?? '' }}
                     canEdit={canEdit}
                     memberStoreOptions={type === '央廚' ? (memberStoreOptions ?? []) : []}
                     externalStores={type === '央廚' ? (allExternalStores ?? []).filter((e: any) => e.ck_store_id === store.id).map((e: any) => ({ id: e.id, name: e.name })) : []}

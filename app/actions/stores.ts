@@ -15,6 +15,7 @@ interface StoreSettings {
   petty_cash: number
   name?: string
   type?: string
+  google_sheets_id?: string | null
 }
 
 async function requireManager() {
@@ -47,6 +48,7 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
       twpay_enabled: settings.twpay_enabled,
       online_enabled: settings.online_enabled,
       petty_cash: settings.petty_cash,
+      ...('google_sheets_id' in settings ? { google_sheets_id: settings.google_sheets_id ?? null } : {}),
     })
     .eq('id', storeId)
 
