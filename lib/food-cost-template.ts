@@ -100,7 +100,6 @@ export async function fillWorksheet(
       const colIdx = colMap[key] ?? colMap[norm(key)]
       if (!colIdx || !val) continue
       const cell = excelRow.getCell(colIdx)
-      if (hasFormula(cell)) continue
       cell.value = val
     }
 
@@ -110,7 +109,7 @@ export async function fillWorksheet(
       const val = d.uber[raw] ?? 0
       if (!val) continue
       const cell = excelRow.getCell(colIdx)
-      if (!hasFormula(cell)) cell.value = val
+      cell.value = val
     }
   })
 
