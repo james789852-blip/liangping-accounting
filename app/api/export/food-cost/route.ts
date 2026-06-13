@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
+import { type RowVals, norm, fillWorksheet } from '@/lib/food-cost-template'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -46,17 +47,6 @@ function getDaysInMonth(year: number, month: number) {
   )
 }
 
-interface RowVals {
-  pos: number; twpay: number; uber: Record<string, number>
-  after_deduct: number; onsite: number; actual: number; ck: number
-  result: number; revenue: number
-  items: Record<string, number>
-  notes: Record<string, string>
-  foodTotal: number; packTotal: number; miscTotal: number; grandTotal: number
-}
-
-const norm = (s: string) => s.replace(/[\s　（）()手動]/g, '').toLowerCase()
-
 async function fillTemplate(
   templateBlob: Blob,
   monthNum: number,
@@ -81,121 +71,8 @@ async function fillTemplate(
     console.warn(`[fillTemplate] 未找到「${targetName}」，改用工作表「${ws.name}」。模板所有工作表：`, wb.worksheets.map(s => s.name))
   }
 
-  let headerRowNum = -1
-  for (let r = 1; r <= 10; r++) {
-    if (ws.getRow(r).getCell(1).text?.replace(/[\s　]/g, '') === '日期') { headerRowNum = r; break }
-  }
-  if (headerRowNum < 0) {
-    console.warn(`[fillTemplate] 找不到標題列（前10列欄A均無「日期」），工作表：${ws.name}，前5列欄A：`, Array.from({ length: 5 }, (_, i) => ws.getRow(i + 1).getCell(1).text))
-    return null
-  }
-
-  // Scan row 1 to identify which columns belong to the 央廚配送 group
-  const groupOfCol: Record<number, string> = {}
-  {
-    let lastGroup = ''
-    const endCol = (ws.columnCount || 0) + 10
-    for (let c = 1; c <= endCol; c++) {
-      const t = ws.getRow(1).getCell(c).text?.trim()
-      if (t) lastGroup = t
-      if (lastGroup) groupOfCol[c] = lastGroup
-    }
-  }
-  // Build separate maps: CK group columns vs all other columns.
-  // When a column name is duplicated (e.g. "魚丸" appears under both 央廚配送 and 菜商),
-  // ckColMap wins in the final merge so CK data writes to the correct 央廚配送 column.
-  const ckColMap: Record<string, number> = {}
-  const stdColMap: Record<string, number> = {}
-  ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
-    const t = cell.text?.trim()
-    if (!t) return
-    const m = groupOfCol[colNum] === '央廚配送' ? ckColMap : stdColMap
-    if (!(t in m)) { m[t] = colNum; m[norm(t)] = colNum }
-  })
-  const colMap: Record<string, number> = { ...stdColMap, ...ckColMap }
-
-  const dataStartRow = headerRowNum + 2
-  const normUber = uberAccounts.map(acc => ({ raw: acc, n: norm(acc) }))
-
-  // Detect formula cells: master cells have { formula, ... }, slave cells of shared formulas have { sharedFormula, result }
-  const hasFormula = (cell: ExcelJS.Cell) => {
-    const v = cell.value
-    if (v == null || typeof v !== 'object') return false
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return 'formula' in (v as any) || 'sharedFormula' in (v as any)
-  }
-
-  // Clear stale plain-number values from data rows; leave formula cells and dates untouched
-  const uniqueCols = new Set(Object.values(colMap))
-  days.forEach((_, idx) => {
-    const excelRow = ws!.getRow(dataStartRow + idx)
-    for (const colIdx of uniqueCols) {
-      const cell = excelRow.getCell(colIdx as number)
-      if (typeof cell.value === 'number') cell.value = null
-    }
-  })
-
-  days.forEach((date, idx) => {
-    const rowNum = dataStartRow + idx
-    const d = dataRows.find(dr => dr.date === date)?.row
-    if (!d) return
-    const excelRow = ws!.getRow(rowNum)
-
-    // Item columns: write actual data (overrides any default formula like 75*340)
-    for (const [colName, amount] of Object.entries(d.items)) {
-      if (!amount) continue
-      const colIdx = colMap[colName] ?? colMap[norm(colName)]
-      if (!colIdx) continue
-      const cell = excelRow.getCell(colIdx)
-      cell.value = amount
-      const note = d.notes?.[colName]
-      if (note) cell.note = note
-    }
-
-    // Revenue/summary columns: skip if the template cell already has a formula
-    // (e.g. 扣除後的$, 現場, 配送月底結, 結果, 營業額 are all derived in the template)
-    const revPairs: [string, number][] = [
-      ['pos', d.pos], ['twpay', d.twpay], ['實際$', d.actual],
-      ['配送月底結', d.ck], ['結果', d.result],
-      ['現場', d.onsite], ['扣除後的$', d.after_deduct], ['營業額', d.revenue],
-    ]
-    for (const [key, val] of revPairs) {
-      const colIdx = colMap[key] ?? colMap[norm(key)]
-      if (!colIdx || !val) continue
-      const cell = excelRow.getCell(colIdx)
-      if (hasFormula(cell)) continue  // preserve formula; Excel will recalculate
-      cell.value = val
-    }
-
-    for (const { raw, n } of normUber) {
-      const colIdx = colMap[n] ?? colMap[raw]
-      if (!colIdx) continue
-      const val = d.uber[raw] ?? 0
-      if (!val) continue
-      const cell = excelRow.getCell(colIdx)
-      if (!hasFormula(cell)) cell.value = val
-    }
-  })
-
-  // ExcelJS bug workaround: if we overwrote a shared-formula master cell with data,
-  // its slave cells still point to it as 'sharedFormula'. ExcelJS throws
-  // "Shared Formula master must exist above and or left of clone" when writing.
-  // Fix: detach any slave whose master no longer has a formula → set to cached result.
-  ws.eachRow({ includeEmpty: false }, row => {
-    row.eachCell({ includeEmpty: false }, cell => {
-      const v = cell.value
-      if (!v || typeof v !== 'object') return
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sv = v as any
-      if (!('sharedFormula' in sv)) return
-      const masterCell = ws.getCell(sv.sharedFormula as string)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const masterV = masterCell?.value as any
-      if (!masterV || typeof masterV !== 'object' || !('formula' in masterV)) {
-        cell.value = sv.result ?? null  // detach: replace slave reference with cached value
-      }
-    })
-  })
+  const filled = await fillWorksheet(ws, days, dataRows, uberAccounts)
+  if (!filled) { console.warn('[fillTemplate] fillWorksheet returned null'); return null }
 
   const filename = encodeURIComponent(`${storeName}_${year}${String(monthNum).padStart(2, '0')}_食耗成本.xlsx`)
   const buf = await wb.xlsx.writeBuffer()

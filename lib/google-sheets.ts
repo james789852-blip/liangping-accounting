@@ -1,6 +1,8 @@
 import { google } from 'googleapis'
+import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
+import { type RowVals, fillWorksheet, extractValues, extractColors, extractBold, extractColWidths, extractMerges } from '@/lib/food-cost-template'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -34,13 +36,6 @@ interface DayData {
   revenue: number; variance: number
 }
 
-interface RowVals {
-  pos: number; twpay: number; uber: Record<string, number>
-  after_deduct: number; onsite: number; actual: number; ck: number
-  result: number; revenue: number
-  items: Record<string, number>
-  foodTotal: number; packTotal: number; miscTotal: number; grandTotal: number
-}
 
 export async function syncClosingToSheets(closingId: string): Promise<void> {
   const admin = createAdminClient()
@@ -223,7 +218,8 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     const foodTotal = foodCols.reduce((s, col) => s + (items[col] || 0), 0)
     const packTotal = packCols.reduce((s, col) => s + (items[col] || 0), 0)
     const miscTotal = miscCols.reduce((s, col) => s + (items[col] || 0), 0)
-    return { date, row: { pos, twpay, uber, after_deduct, onsite, actual, ck, result: variance, revenue: computedRevenue, items, foodTotal, packTotal, miscTotal, grandTotal: foodTotal + packTotal + miscTotal } }
+    const notes = d?.notes ?? {}
+    return { date, row: { pos, twpay, uber, after_deduct, onsite, actual, ck, result: variance, revenue: computedRevenue, items, notes, foodTotal, packTotal, miscTotal, grandTotal: foodTotal + packTotal + miscTotal } }
   })
 
   const sumOf = (fn: (r: RowVals) => number) => dataRows.reduce((s, { row }) => s + fn(row), 0)
@@ -238,6 +234,7 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     result:       sumOf(r => r.result),
     revenue:      sumOf(r => r.revenue),
     items:        Object.fromEntries([...foodCols, ...packCols, ...miscCols].map(col => [col, dataRows.reduce((s, { row }) => s + (row.items[col] || 0), 0)])),
+    notes:        {},
     foodTotal:    sumOf(r => r.foodTotal),
     packTotal:    sumOf(r => r.packTotal),
     miscTotal:    sumOf(r => r.miscTotal),
@@ -359,18 +356,57 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     sheetId = addRes.data.replies?.[0]?.addSheet?.properties?.sheetId ?? 0
   }
 
-  // Write values
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: sheetsId,
-    range: `'${tabName}'!A1`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: allValues },
-  })
+  // ── Template path: fill uploaded Excel template → extract values+colors → write to Sheets ──
+  let usedTemplate = false
+  try {
+    const { data: tmpl } = await admin.storage.from('excel-templates').download(`${storeId}.xlsx`)
+    if (tmpl) {
+      const wb = new ExcelJS.Workbook()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await wb.xlsx.load(Buffer.from(await tmpl.arrayBuffer()) as any)
+      const targetName = `${monthNum}月食耗成本`
+      const ws = wb.getWorksheet(targetName)
+        ?? wb.getWorksheet(`${monthNum}月`)
+        ?? wb.worksheets.find(s => s.name.includes('食耗'))
+        ?? wb.worksheets[0]
+      if (ws) {
+        const filled = await fillWorksheet(ws, days, dataRows, uberAccounts)
+        if (filled) {
+          const wsValues  = extractValues(ws)
+          const wsColors  = extractColors(ws)
+          const wsBold    = extractBold(ws)
+          const wsWidths  = extractColWidths(ws)
+          const wsMerges  = extractMerges(ws)
 
-  // Apply formatting to match Excel layout
-  await applySheetFormatting(sheets, sheetsId, sheetId, days.length, N, foodCols.length, packCols.length, miscCols.length, BASE)
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: sheetsId,
+            range: `'${tabName}'!A1`,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: wsValues.map(row => row.map(v => v ?? '')) },
+          })
 
-  console.log(`[syncClosingToSheets] ${storeName} ${year}-${String(monthNum).padStart(2, '0')} → sheet "${tabName}" done`)
+          await applyTemplateFormatting(sheets, sheetsId, sheetId, wsColors, wsBold, wsWidths, wsMerges, ws)
+
+          usedTemplate = true
+          console.log(`[syncClosingToSheets] ${storeName} ${year}-${String(monthNum).padStart(2, '0')} → sheet "${tabName}" done (template)`)
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[syncClosingToSheets] template path failed, falling back to generated layout:', e)
+  }
+
+  if (!usedTemplate) {
+    // Fallback: write generated values and apply hardcoded formatting
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetsId,
+      range: `'${tabName}'!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: allValues },
+    })
+    await applySheetFormatting(sheets, sheetsId, sheetId, days.length, N, foodCols.length, packCols.length, miscCols.length, BASE)
+    console.log(`[syncClosingToSheets] ${storeName} ${year}-${String(monthNum).padStart(2, '0')} → sheet "${tabName}" done (generated)`)
+  }
 }
 
 type SheetsAPI = ReturnType<typeof google.sheets>
@@ -378,6 +414,73 @@ type RGB = { red: number; green: number; blue: number }
 
 function hex(h: string): RGB {
   return { red: parseInt(h.slice(0,2),16)/255, green: parseInt(h.slice(2,4),16)/255, blue: parseInt(h.slice(4,6),16)/255 }
+}
+
+function argbToRgb(argb: string): RGB {
+  let h = argb.replace('#', '')
+  if (h.length === 8) h = h.slice(2) // strip alpha channel
+  return { red: parseInt(h.slice(0,2),16)/255, green: parseInt(h.slice(2,4),16)/255, blue: parseInt(h.slice(4,6),16)/255 }
+}
+
+async function applyTemplateFormatting(
+  sheets: SheetsAPI,
+  spreadsheetId: string,
+  sheetId: number,
+  colors: (string | null)[][],
+  bold: boolean[][],
+  colWidths: Array<{ col: number; px: number }>,
+  merges: Array<{ r0: number; r1: number; c0: number; c1: number }>,
+  ws: ExcelJS.Worksheet,
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const reqs: any[] = []
+
+  // Unmerge all first (safe even if nothing is merged)
+  reqs.push({ unmergeCells: { range: { sheetId, startRowIndex: 0, endRowIndex: 500, startColumnIndex: 0, endColumnIndex: 300 } } })
+
+  // Apply background colors and bold, batching consecutive same-style cells per row
+  for (let r = 0; r < colors.length; r++) {
+    const rowColors = colors[r]
+    const rowBold   = bold[r] ?? []
+    let c = 0
+    while (c < rowColors.length) {
+      const argb   = rowColors[c]
+      const isBold = rowBold[c] ?? false
+      let end = c + 1
+      while (end < rowColors.length && rowColors[end] === argb && (rowBold[end] ?? false) === isBold) end++
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fmt: any = { horizontalAlignment: 'CENTER', textFormat: { bold: isBold, fontSize: 10 } }
+      const fields = ['userEnteredFormat.horizontalAlignment', 'userEnteredFormat.textFormat.bold', 'userEnteredFormat.textFormat.fontSize']
+      if (argb) { fmt.backgroundColor = argbToRgb(argb); fields.push('userEnteredFormat.backgroundColor') }
+
+      reqs.push({ repeatCell: { range: { sheetId, startRowIndex: r, endRowIndex: r + 1, startColumnIndex: c, endColumnIndex: end }, cell: { userEnteredFormat: fmt }, fields: fields.join(',') } })
+      c = end
+    }
+  }
+
+  // Merges from template
+  for (const m of merges) {
+    if (m.r1 - m.r0 < 1 || m.c1 - m.c0 < 1) continue
+    reqs.push({ mergeCells: { range: { sheetId, startRowIndex: m.r0, endRowIndex: m.r1, startColumnIndex: m.c0, endColumnIndex: m.c1 }, mergeType: 'MERGE_ALL' } })
+  }
+
+  // Freeze panes from template worksheet view
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const views: any[] = (ws as any).views ?? []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const frozenView = views.find((v: any) => v.state === 'frozen')
+  reqs.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: frozenView?.ySplit ?? 3, frozenColumnCount: frozenView?.xSplit ?? 2 } }, fields: 'gridProperties.frozenRowCount,gridProperties.frozenColumnCount' } })
+
+  // Column widths from template
+  for (const { col, px } of colWidths) {
+    reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: col, endIndex: col + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })
+  }
+
+  // Batch in chunks of 1000 to stay within API limits
+  for (let i = 0; i < reqs.length; i += 1000) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: reqs.slice(i, i + 1000) } })
+  }
 }
 
 async function applySheetFormatting(
