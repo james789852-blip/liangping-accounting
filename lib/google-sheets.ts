@@ -373,11 +373,9 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
       if (ws) {
         const filled = await fillWorksheet(ws, days, dataRows, uberAccounts)
         if (filled) {
-          const wsValues  = extractValues(ws)
-          const wsColors  = extractColors(ws)
-          const wsBold    = extractBold(ws)
-          const wsWidths  = extractColWidths(ws)
-          const wsMerges  = extractMerges(ws)
+          const wsValues = extractValues(ws)
+          const wsWidths = extractColWidths(ws)
+          const wsMerges = extractMerges(ws)
 
           await sheets.spreadsheets.values.update({
             spreadsheetId: sheetsId,
@@ -386,7 +384,7 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
             requestBody: { values: wsValues.map(row => row.map(v => v ?? '')) },
           })
 
-          await applyTemplateFormatting(sheets, sheetsId, sheetId, wsColors, wsBold, wsWidths, wsMerges, ws)
+          await applyTemplateFormatting(sheets, sheetsId, sheetId, [], [], wsWidths, wsMerges, ws)
 
           usedTemplate = true
           console.log(`[syncClosingToSheets] ${storeName} ${year}-${String(monthNum).padStart(2, '0')} → sheet "${tabName}" done (template)`)
@@ -427,8 +425,8 @@ async function applyTemplateFormatting(
   sheets: SheetsAPI,
   spreadsheetId: string,
   sheetId: number,
-  colors: (string | null)[][],
-  bold: boolean[][],
+  _colors: (string | null)[][],   // kept for signature compat, unused — ws read directly
+  _bold: boolean[][],
   colWidths: Array<{ col: number; px: number }>,
   merges: Array<{ r0: number; r1: number; c0: number; c1: number }>,
   ws: ExcelJS.Worksheet,
@@ -436,27 +434,57 @@ async function applyTemplateFormatting(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const reqs: any[] = []
 
-  // Unmerge all first (safe even if nothing is merged)
+  // Unmerge all first
   reqs.push({ unmergeCells: { range: { sheetId, startRowIndex: 0, endRowIndex: 500, startColumnIndex: 0, endColumnIndex: 300 } } })
 
-  // Apply background colors and bold, batching consecutive same-style cells per row
-  for (let r = 0; r < colors.length; r++) {
-    const rowColors = colors[r]
-    const rowBold   = bold[r] ?? []
-    let c = 0
-    while (c < rowColors.length) {
-      const argb   = rowColors[c]
-      const isBold = rowBold[c] ?? false
-      let end = c + 1
-      while (end < rowColors.length && rowColors[end] === argb && (rowBold[end] ?? false) === isBold) end++
+  const maxRow = ws.rowCount
+  const maxCol = ws.columnCount
 
+  // Reset everything to white/default first
+  reqs.push({ repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: maxRow, startColumnIndex: 0, endColumnIndex: maxCol }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 1, blue: 1 }, textFormat: { bold: false, fontSize: 10, foregroundColor: { red: 0, green: 0, blue: 0 } }, horizontalAlignment: 'LEFT' } }, fields: 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.horizontalAlignment' } })
+
+  // Apply per-cell formatting extracted directly from the worksheet
+  // We batch consecutive cells with identical formatting in the same row
+  for (let r = 1; r <= maxRow; r++) {
+    const row = ws.getRow(r)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    type CellFmt = { bg: RGB; bold: boolean; fontSize: number; fgColor: RGB; hAlign: string }
+    const cells: CellFmt[] = []
+    for (let c = 1; c <= maxCol; c++) {
+      const cell = row.getCell(c)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fmt: any = { horizontalAlignment: 'CENTER', textFormat: { bold: isBold, fontSize: 10 } }
-      const fields = ['userEnteredFormat.horizontalAlignment', 'userEnteredFormat.textFormat.bold', 'userEnteredFormat.textFormat.fontSize']
-      if (argb) { fmt.backgroundColor = argbToRgb(argb); fields.push('userEnteredFormat.backgroundColor') }
+      const fillObj = cell.fill as any
+      let bg: RGB = { red: 1, green: 1, blue: 1 }
+      if (fillObj?.type === 'pattern' && fillObj.pattern !== 'none' && fillObj.fgColor?.argb) {
+        bg = argbToRgb(fillObj.fgColor.argb as string)
+      }
+      const fontObj = cell.font
+      const bold = fontObj?.bold ?? false
+      const fontSize = fontObj?.size ?? 10
+      let fgColor: RGB = { red: 0, green: 0, blue: 0 }
+      if (fontObj?.color?.argb) fgColor = argbToRgb(fontObj.color.argb)
+      const hAlign = (cell.alignment?.horizontal ?? 'center').toUpperCase()
+      cells.push({ bg, bold, fontSize, fgColor, hAlign })
+    }
 
-      reqs.push({ repeatCell: { range: { sheetId, startRowIndex: r, endRowIndex: r + 1, startColumnIndex: c, endColumnIndex: end }, cell: { userEnteredFormat: fmt }, fields: fields.join(',') } })
-      c = end
+    // Batch consecutive cells with same formatting
+    let ci = 0
+    while (ci < cells.length) {
+      const fmt = cells[ci]
+      let end = ci + 1
+      while (end < cells.length &&
+        JSON.stringify(cells[end]) === JSON.stringify(fmt)) end++
+
+      reqs.push({ repeatCell: {
+        range: { sheetId, startRowIndex: r - 1, endRowIndex: r, startColumnIndex: ci, endColumnIndex: end },
+        cell: { userEnteredFormat: {
+          backgroundColor: fmt.bg,
+          textFormat: { bold: fmt.bold, fontSize: fmt.fontSize, foregroundColor: fmt.fgColor },
+          horizontalAlignment: fmt.hAlign,
+        }},
+        fields: 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.horizontalAlignment',
+      }})
+      ci = end
     }
   }
 
@@ -473,7 +501,16 @@ async function applyTemplateFormatting(
   const frozenView = views.find((v: any) => v.state === 'frozen')
   reqs.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: frozenView?.ySplit ?? 3, frozenColumnCount: frozenView?.xSplit ?? 2 } }, fields: 'gridProperties.frozenRowCount,gridProperties.frozenColumnCount' } })
 
-  // Column widths from template
+  // Row heights from template (Excel row height is in points; 1pt ≈ 1.333px)
+  for (let ri = 1; ri <= ws.rowCount; ri++) {
+    const rowObj = ws.getRow(ri)
+    if (rowObj.height) {
+      const px = Math.max(15, Math.round(rowObj.height * 1.333))
+      reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: ri - 1, endIndex: ri }, properties: { pixelSize: px }, fields: 'pixelSize' } })
+    }
+  }
+
+  // Column widths from template (ExcelJS width ≈ characters; 1 char ≈ 7.5px + padding)
   for (const { col, px } of colWidths) {
     reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: col, endIndex: col + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })
   }

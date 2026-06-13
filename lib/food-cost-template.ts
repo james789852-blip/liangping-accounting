@@ -232,7 +232,7 @@ export function extractBold(ws: ExcelJS.Worksheet): boolean[][] {
 export function extractColWidths(ws: ExcelJS.Worksheet): Array<{ col: number; px: number }> {
   const widths: Array<{ col: number; px: number }> = []
   ws.columns.forEach((col, idx) => {
-    if (col?.width) widths.push({ col: idx, px: Math.round(col.width * 7) })
+    if (col?.width) widths.push({ col: idx, px: Math.max(20, Math.round(col.width * 7.5 + 5)) })
   })
   return widths
 }
