@@ -157,7 +157,23 @@ export function extractValues(ws: ExcelJS.Worksheet): (string | number | null)[]
       } else {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const anyCV = cv as any
-        if (anyCV.result !== null && anyCV.result !== undefined) {
+        if (anyCV.formula) {
+          // Master formula cell: write formula string so Sheets evaluates it with fresh data
+          const f = String(anyCV.formula)
+          rowVals.push(f.startsWith('=') ? f : `=${f}`)
+        } else if (anyCV.sharedFormula) {
+          // Slave of a shared formula: reconstruct by adjusting the master's formula
+          const masterAddr = anyCV.sharedFormula as string
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const masterFormula = (ws.getCell(masterAddr)?.value as any)?.formula as string | undefined
+          if (masterFormula) {
+            const mp = a1ToRC(masterAddr)
+            const adjusted = adjustFormula(masterFormula, r - mp.r, c - mp.c)
+            rowVals.push(`=${adjusted}`)
+          } else {
+            rowVals.push(typeof anyCV.result === 'number' ? anyCV.result : null)
+          }
+        } else if (anyCV.result !== null && anyCV.result !== undefined) {
           rowVals.push(typeof anyCV.result === 'number' ? anyCV.result : String(anyCV.result))
         } else if (cell.text) {
           rowVals.push(cell.text)
@@ -238,9 +254,35 @@ export function extractMerges(ws: ExcelJS.Worksheet): Array<{ r0: number; r1: nu
 }
 
 function rowColFromA1(a1: string): { r: number; c: number } {
-  const m = a1.match(/^([A-Z]+)(\d+)$/)
+  return a1ToRC(a1)
+}
+
+/** Parse A1 address to 1-based { r, c }. */
+function a1ToRC(a1: string): { r: number; c: number } {
+  const m = a1.match(/^\$?([A-Z]+)\$?(\d+)$/)
   if (!m) return { r: 1, c: 1 }
   let c = 0
   for (const ch of m[1]) c = c * 26 + (ch.charCodeAt(0) - 64)
   return { r: parseInt(m[2]), c }
+}
+
+/** Convert 1-based column number to letter(s), e.g. 1→"A", 27→"AA". */
+function colToLetter(n: number): string {
+  let s = ''
+  while (n > 0) { s = String.fromCharCode(((n - 1) % 26) + 65) + s; n = Math.floor((n - 1) / 26) }
+  return s
+}
+
+/**
+ * Adjust A1 cell references in a formula by rowOffset/colOffset.
+ * Respects absolute references ($A$1 stays fixed).
+ */
+function adjustFormula(formula: string, rowOffset: number, colOffset: number): string {
+  return formula.replace(/(\$?)([A-Z]+)(\$?)(\d+)/g, (_, ac, col, ar, row) => {
+    let c = 0
+    for (const ch of col) c = c * 26 + (ch.charCodeAt(0) - 64)
+    const newC = ac ? c : c + colOffset
+    const newR = ar ? parseInt(row) : parseInt(row) + rowOffset
+    return (ac ? '$' : '') + colToLetter(newC) + (ar ? '$' : '') + newR
+  })
 }

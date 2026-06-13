@@ -359,7 +359,8 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
   // ── Template path: fill uploaded Excel template → extract values+colors → write to Sheets ──
   let usedTemplate = false
   try {
-    const { data: tmpl } = await admin.storage.from('excel-templates').download(`${storeId}.xlsx`)
+    const { data: tmpl, error: tmplErr } = await admin.storage.from('excel-templates').download(`${storeId}.xlsx`)
+    if (tmplErr) console.log(`[syncClosingToSheets] no template for store ${storeId}: ${tmplErr.message}`)
     if (tmpl) {
       const wb = new ExcelJS.Workbook()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
