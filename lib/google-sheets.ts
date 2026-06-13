@@ -357,3 +357,23 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
 
   console.log(`[syncClosingToSheets] ${storeName} ${year}-${String(monthNum).padStart(2, '0')} → sheet "${tabName}" done`)
 }
+
+// Sync an entire month directly by storeId + month (for manual re-sync of historical data)
+export async function syncMonthToSheets(storeId: string, month: string): Promise<void> {
+  const admin = createAdminClient()
+  const [yearStr, monthStr] = month.split('-')
+  const firstDay = `${month}-01`
+  const lastDay = new Date(parseInt(yearStr), parseInt(monthStr), 0).toISOString().slice(0, 10)
+
+  const { data: closing } = await admin
+    .from('daily_closings')
+    .select('id')
+    .eq('store_id', storeId)
+    .gte('business_date', firstDay)
+    .lte('business_date', lastDay)
+    .limit(1)
+    .single()
+
+  if (!closing) throw new Error('此月份無帳目資料')
+  await syncClosingToSheets(closing.id)
+}

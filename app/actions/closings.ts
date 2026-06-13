@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { syncClosingToSheets } from '@/lib/google-sheets'
+import { syncClosingToSheets, syncMonthToSheets } from '@/lib/google-sheets'
 
 interface CashCountsPayload {
   bills_1000: number; bills_500: number; bills_100: number
@@ -141,4 +141,21 @@ export async function disputeClosing(closingId: string, note: string) {
   if (error) return { error: error.message }
   revalidatePath('/hq/reviews')
   return { success: true }
+}
+
+export async function reSyncMonthToSheets(storeId: string, month: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+
+  const { data: profile } = await supabase
+    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
+  if (!profile || (!profile.is_hq && profile.role !== '老闆')) return { error: '權限不足' }
+
+  try {
+    await syncMonthToSheets(storeId, month)
+    return { success: true }
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
 }
