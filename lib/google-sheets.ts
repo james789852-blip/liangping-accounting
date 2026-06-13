@@ -343,22 +343,23 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
   const auth = getAuth()
   const sheets = google.sheets({ version: 'v4', auth })
 
-  // Get existing sheets to check if tab already exists
+  // Get or create tab
   const { data: spreadsheet } = await sheets.spreadsheets.get({ spreadsheetId: sheetsId })
   const existingSheet = spreadsheet.sheets?.find(s => s.properties?.title === tabName)
+  let sheetId: number
 
   if (existingSheet) {
-    // Clear existing content first
+    sheetId = existingSheet.properties?.sheetId ?? 0
     await sheets.spreadsheets.values.clear({ spreadsheetId: sheetsId, range: `'${tabName}'` })
   } else {
-    // Create new tab
-    await sheets.spreadsheets.batchUpdate({
+    const addRes = await sheets.spreadsheets.batchUpdate({
       spreadsheetId: sheetsId,
       requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
     })
+    sheetId = addRes.data.replies?.[0]?.addSheet?.properties?.sheetId ?? 0
   }
 
-  // Write all values
+  // Write values
   await sheets.spreadsheets.values.update({
     spreadsheetId: sheetsId,
     range: `'${tabName}'!A1`,
@@ -366,7 +367,156 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     requestBody: { values: allValues },
   })
 
+  // Apply formatting to match Excel layout
+  await applySheetFormatting(sheets, sheetsId, sheetId, days.length, N, foodCols.length, packCols.length, miscCols.length, BASE)
+
   console.log(`[syncClosingToSheets] ${storeName} ${year}-${String(monthNum).padStart(2, '0')} → sheet "${tabName}" done`)
+}
+
+type SheetsAPI = ReturnType<typeof google.sheets>
+type RGB = { red: number; green: number; blue: number }
+
+function hex(h: string): RGB {
+  return { red: parseInt(h.slice(0,2),16)/255, green: parseInt(h.slice(2,4),16)/255, blue: parseInt(h.slice(4,6),16)/255 }
+}
+
+async function applySheetFormatting(
+  sheets: SheetsAPI,
+  spreadsheetId: string,
+  sheetId: number,
+  daysCount: number,
+  N: number,
+  foodLen: number,
+  packLen: number,
+  miscLen: number,
+  BASE: number,
+): Promise<void> {
+  const COL_AFTER_DEDUCT = BASE
+  const COL_CK           = BASE + 3
+  const COL_REVENUE      = BASE + 5
+  const COL_SPACER       = BASE + 6
+  const COL_TOTAL        = BASE + 7
+  const COL_FOOD_SUB     = BASE + 8
+  const COL_PACK_SUB     = BASE + 9
+  const COL_MISC_SUB     = BASE + 10
+  const COL_FOOD_START   = BASE + 11
+  const COL_PACK_START   = COL_FOOD_START + foodLen
+  const COL_MISC_START   = COL_PACK_START + packLen
+  const TOTAL_COLS       = COL_MISC_START + miscLen
+  const dataEnd          = 4 + daysCount  // row index after last day
+
+  const C = {
+    FFFFCC: hex('FFFFCC'), FFFF00: hex('FFFF00'), BFBFBF: hex('BFBFBF'),
+    FFC000: hex('FFC000'), DA9694: hex('DA9694'), GREEN:  hex('00B050'),
+    C6D9F0: hex('C6D9F0'), FBD4B4: hex('FBD4B4'), FDE9D9: hex('FDE9D9'),
+    F79544: hex('F79544'), WHITE:  hex('FFFFFF'), E8E8E8: hex('E8E8E8'),
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const reqs: any[] = []
+
+  function rc(r0: number, r1: number, c0: number, c1: number, bg?: RGB, bold?: boolean) {
+    if (c0 >= c1) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fmt: any = {}
+    const fields: string[] = ['userEnteredFormat.horizontalAlignment']
+    fmt.horizontalAlignment = 'CENTER'
+    if (bg)            { fmt.backgroundColor = bg;           fields.push('userEnteredFormat.backgroundColor') }
+    if (bold !== undefined) { fmt.textFormat = { bold, fontSize: 10 }; fields.push('userEnteredFormat.textFormat.bold', 'userEnteredFormat.textFormat.fontSize') }
+    reqs.push({ repeatCell: { range: { sheetId, startRowIndex: r0, endRowIndex: r1, startColumnIndex: c0, endColumnIndex: c1 }, cell: { userEnteredFormat: fmt }, fields: fields.join(',') } })
+  }
+
+  function mg(r0: number, r1: number, c0: number, c1: number) {
+    if (c1 - c0 < 2) return
+    reqs.push({ mergeCells: { range: { sheetId, startRowIndex: r0, endRowIndex: r1, startColumnIndex: c0, endColumnIndex: c1 }, mergeType: 'MERGE_ALL' } })
+  }
+
+  // ── Row 1: vendor group header row ──
+  rc(0, 1, 0, COL_REVENUE + 1, C.FFFFCC, true)
+  rc(0, 1, COL_SPACER, COL_SPACER + 1, C.E8E8E8)
+  rc(0, 1, COL_TOTAL,    COL_TOTAL + 1,    C.BFBFBF, true)
+  rc(0, 1, COL_FOOD_SUB, COL_FOOD_SUB + 1, C.FFFF00, true)
+  rc(0, 1, COL_PACK_SUB, COL_MISC_SUB + 1, C.BFBFBF, true)
+  // Vendor colors (food cols)
+  rc(0, 1, COL_FOOD_START,     Math.min(COL_FOOD_START + 6,  COL_FOOD_START + foodLen), C.WHITE,   true)
+  rc(0, 1, COL_FOOD_START + 6, Math.min(COL_FOOD_START + 7,  COL_FOOD_START + foodLen), C.DA9694,  true)
+  rc(0, 1, COL_FOOD_START + 7, Math.min(COL_FOOD_START + 8,  COL_FOOD_START + foodLen), C.C6D9F0,  true)
+  rc(0, 1, COL_FOOD_START + 8, Math.min(COL_FOOD_START + 17, COL_FOOD_START + foodLen), C.FDE9D9,  true)
+  rc(0, 1, Math.min(COL_FOOD_START + 17, COL_PACK_START), COL_PACK_START, C.FBD4B4, true)
+  rc(0, 1, COL_PACK_START, COL_MISC_START, C.C6D9F0, true)
+  rc(0, 1, COL_MISC_START, Math.min(COL_MISC_START + 13, TOTAL_COLS), C.C6D9F0, true)
+  rc(0, 1, Math.min(COL_MISC_START + 13, TOTAL_COLS), TOTAL_COLS, C.FBD4B4, true)
+  // Merges row 1
+  mg(0, 1, COL_FOOD_START, Math.min(COL_FOOD_START + 6, COL_PACK_START))
+  mg(0, 1, COL_FOOD_START + 8, Math.min(COL_FOOD_START + 17, COL_PACK_START))
+  mg(0, 1, Math.min(COL_FOOD_START + 17, COL_PACK_START), COL_PACK_START)
+  mg(0, 1, COL_PACK_START, COL_MISC_START)
+  mg(0, 1, COL_MISC_START, Math.min(COL_MISC_START + 13, TOTAL_COLS))
+  mg(0, 1, Math.min(COL_MISC_START + 13, TOTAL_COLS), TOTAL_COLS)
+
+  // ── Row 2: 總發票/總收據 ──
+  rc(1, 2, 0, COL_REVENUE + 1, C.FFFFCC, true)
+  rc(1, 2, COL_SPACER, COL_SPACER + 1, C.E8E8E8)
+  rc(1, 2, COL_TOTAL,    COL_TOTAL + 1,    C.BFBFBF, true)
+  rc(1, 2, COL_FOOD_SUB, COL_FOOD_SUB + 1, C.FFFF00, true)
+  rc(1, 2, COL_PACK_SUB, COL_PACK_SUB + 1, C.BFBFBF, true)
+  rc(1, 2, COL_MISC_SUB, COL_MISC_SUB + 1, C.FFFF00, true)
+  rc(1, 2, COL_FOOD_START, TOTAL_COLS, C.BFBFBF, false)
+
+  // ── Row 3: column headers ──
+  rc(2, 3, 0, 2, C.BFBFBF, true)
+  rc(2, 3, 2, 3, C.FFC000, true)
+  rc(2, 3, 3, 4, C.DA9694, true)
+  for (let i = 0; i < N; i++) rc(2, 3, 4 + i, 5 + i, C.GREEN, true)
+  for (let c = COL_AFTER_DEDUCT; c <= COL_REVENUE; c++) {
+    rc(2, 3, c, c + 1, c === COL_CK ? C.FFFF00 : C.FFC000, true)
+  }
+  rc(2, 3, COL_SPACER,   COL_SPACER + 1,   C.E8E8E8, false)
+  rc(2, 3, COL_TOTAL,    COL_TOTAL + 1,    C.BFBFBF, true)
+  rc(2, 3, COL_FOOD_SUB, COL_FOOD_SUB + 1, C.BFBFBF, true)
+  rc(2, 3, COL_PACK_SUB, COL_PACK_SUB + 1, C.BFBFBF, true)
+  rc(2, 3, COL_MISC_SUB, COL_MISC_SUB + 1, C.BFBFBF, true)
+  rc(2, 3, COL_FOOD_START, TOTAL_COLS, C.BFBFBF, true)
+
+  // ── Row 4: monthly totals (yellow) ──
+  rc(3, 4, 0, TOTAL_COLS, C.FFFF00, true)
+
+  // ── Rows 5+: daily data ──
+  rc(4, dataEnd, 0, COL_REVENUE + 1, C.FFFFCC, false)
+  rc(4, dataEnd, COL_SPACER, COL_SPACER + 1, C.E8E8E8, false)
+  rc(4, dataEnd, COL_TOTAL,    COL_TOTAL + 1,    C.WHITE,   false)
+  rc(4, dataEnd, COL_FOOD_SUB, COL_FOOD_SUB + 1, C.F79544,  false)
+  rc(4, dataEnd, COL_PACK_SUB, COL_PACK_SUB + 1, C.C6D9F0,  false)
+  rc(4, dataEnd, COL_MISC_SUB, COL_MISC_SUB + 1, C.F79544,  false)
+  rc(4, dataEnd, COL_FOOD_START, COL_PACK_START, C.WHITE,   false)
+  rc(4, dataEnd, COL_PACK_START, COL_MISC_START, C.C6D9F0,  false)
+  rc(4, dataEnd, COL_MISC_START, Math.min(COL_MISC_START + 13, TOTAL_COLS), C.C6D9F0, false)
+  rc(4, dataEnd, Math.min(COL_MISC_START + 13, TOTAL_COLS), TOTAL_COLS, C.FBD4B4, false)
+
+  // ── Freeze rows 1-3, cols A-B ──
+  reqs.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: 3, frozenColumnCount: 2 } }, fields: 'gridProperties.frozenRowCount,gridProperties.frozenColumnCount' } })
+
+  // ── Row heights ──
+  for (const [idx, px] of [[0,24],[1,21],[2,26],[3,24]] as [number,number][]) {
+    reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: idx, endIndex: idx + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })
+  }
+
+  // ── Column widths ──
+  const colWidths: [number, number, number][] = [ // [start, end, px]
+    [0, 1, 90], [1, 2, 50],
+    [2, 3, 60], [3, 4, 60],
+    ...(Array.from({ length: N }, (_, i) => [4 + i, 5 + i, 60] as [number,number,number])),
+    [COL_AFTER_DEDUCT, COL_AFTER_DEDUCT+1, 70],
+    [BASE+1, BASE+2, 60], [BASE+2, BASE+3, 60], [BASE+3, BASE+4, 80], [BASE+4, BASE+5, 60], [BASE+5, BASE+6, 70],
+    [COL_SPACER, COL_SPACER+1, 15],
+  ]
+  // Default all item columns to 55px first
+  reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: COL_TOTAL, endIndex: TOTAL_COLS }, properties: { pixelSize: 55 }, fields: 'pixelSize' } })
+  for (const [s, e, px] of colWidths) {
+    reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: s, endIndex: e }, properties: { pixelSize: px }, fields: 'pixelSize' } })
+  }
+
+  await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: reqs } })
 }
 
 // Sync an entire month directly by storeId + month (for manual re-sync of historical data)
