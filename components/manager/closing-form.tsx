@@ -192,7 +192,7 @@ function initExpenses(existing: any, ckPrices: CKPrice[], todayReceipts?: TodayR
       .filter(r => !isCKReceipt(r, ckPrices))
       .map(r => ({
         id: crypto.randomUUID(),
-        description: r.vendor_name || '（未填廠商）',
+        description: r.vendor_name || (r.receipt_items ?? []).filter(i => i.item_name.trim()).map(i => i.item_name).join('、') || '（未填廠商）',
         amount: r.total_amount,
       }))
   }
@@ -204,7 +204,7 @@ function receiptsToExpenses(receipts: TodayReceipt[], ckPrices: CKPrice[]): Expe
     .filter(r => !isCKReceipt(r, ckPrices))
     .map(r => ({
       id: crypto.randomUUID(),
-      description: r.vendor_name || '（未填廠商）',
+      description: r.vendor_name || (r.receipt_items ?? []).filter(i => i.item_name.trim()).map(i => i.item_name).join('、') || '（未填廠商）',
       amount: r.total_amount,
     }))
 }
@@ -1181,7 +1181,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       await supabase.from('daily_closings')
         .update({ status: 'submitted', submitted_at: new Date().toISOString(), submitted_by: userId })
         .eq('id', cid)
+      // 先把 UI 狀態一次性批次更新，避免中間 render 出現 isLocked 閃跳
       setStatus('submitted')
+      setSubmitDone(true)
+      try { sessionStorage.setItem(submitDoneSsKey, '1') } catch {}
       localStorage.removeItem(ckPhotoLsKey)
       localStorage.removeItem(channelPhotoLsKey)
       localStorage.removeItem(adjLsKey)
@@ -1190,17 +1193,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       localStorage.removeItem(cashLsKey)
       sessionStorage.removeItem(stepLsKey)
       toast.success('今日結帳已送出！')
+      goToStep(currentStep + 1) // advance to 摘要
+      // 誤差警報：fire-and-forget（不 await，避免阻擋 UI 更新）
       if (Math.abs(s.variance) > 200) {
-        await supabase.from('audit_logs').insert({
+        void supabase.from('audit_logs').insert({
           event_type: 'variance_alert', severity: 'error',
           store_id: store.id, user_id: userId, closing_id: cid,
           description: `${store.name} ${today} 誤差 ${Math.round(s.variance)} 元`,
           metadata: { variance: s.variance, business_date: today },
         })
       }
-      setSubmitDone(true)
-      try { sessionStorage.setItem(submitDoneSsKey, '1') } catch {}
-      goToStep(currentStep + 1) // advance to 摘要
     } catch (err: any) {
       toast.error('送出失敗：' + err.message)
     } finally {
@@ -1943,7 +1945,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           )}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold truncate" style={{ color: '#18181b' }}>
-                              {r.vendor_name || '（未填廠商）'}
+                              {r.vendor_name || (r.receipt_items ?? []).filter(i => i.item_name.trim()).map(i => i.item_name).join('、') || '（未填廠商）'}
                             </p>
                             <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
                               {isCK ? '央廚配送' : '現金支出'}
