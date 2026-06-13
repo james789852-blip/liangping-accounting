@@ -605,6 +605,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     } catch {}
   }, [receiptForms])
   const stepLsKey = `closing_step_${store.id}_${today}`
+  const submitDoneSsKey = `submit_done_${store.id}_${today}`
+  const saveBkKey = `save_bk_${store.id}_${today}`
   const [currentStep, setCurrentStep] = useState(0)
   useEffect(() => {
     if (existingClosing?.status === 'disputed') {
@@ -614,7 +616,43 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const saved = parseInt(sessionStorage.getItem(stepLsKey) ?? '0') || 0
     if (saved > 0) setCurrentStep(saved)
   }, [])
-  const [submitDone, setSubmitDone] = useState(false)
+  const [submitDone, setSubmitDone] = useState(() => {
+    try { return sessionStorage.getItem(`submit_done_${store.id}_${today}`) === '1' } catch { return false }
+  })
+  // On mount: if a previous save was interrupted, offer to restore backed-up form data
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(saveBkKey)
+      if (!raw) return
+      const bk = JSON.parse(raw)
+      if (!bk?.ts || Date.now() - bk.ts > 86400000) { localStorage.removeItem(saveBkKey); return }
+      // Only prompt if this is an existing closing with potential data loss (not brand new)
+      if (!existingClosing?.id) return
+      const hasNoChildData =
+        (existingClosing?.revenue_items?.length ?? 0) === 0 &&
+        (existingClosing?.expense_items?.length ?? 0) === 0
+      if (!hasNoChildData) return
+      toast('上次儲存未完成，偵測到備份資料', {
+        duration: 15000,
+        action: {
+          label: '恢復資料',
+          onClick: () => {
+            try {
+              if (bk.data) setData(bk.data)
+              if (Array.isArray(bk.expenses)) setExpenses(bk.expenses)
+              if (Array.isArray(bk.handwriteOrders)) setHandwriteOrders(bk.handwriteOrders)
+              if (Array.isArray(bk.adjustments)) setAdjustments(bk.adjustments)
+              if (Array.isArray(bk.reserves)) setReserves(bk.reserves)
+              if (bk.ckQuantities && typeof bk.ckQuantities === 'object') setCkQuantities(bk.ckQuantities)
+              toast.success('資料已從備份恢復，請確認後重新儲存')
+              localStorage.removeItem(saveBkKey)
+            } catch { toast.error('恢復失敗') }
+          },
+        },
+      })
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const pettyLsKey = `petty_counts_${store.id}_${today}`
   const [pettyCounts, setPettyCounts] = useState<Record<string, number>>({})
   const [pettyLumps, setPettyLumps] = useState<Record<string, number>>({})
@@ -1065,6 +1103,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         const { error } = await supabase.from('daily_closings').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', cid)
         if (error) throw error
       }
+      // Backup full form state before destructive delete-then-insert operations
+      try {
+        localStorage.setItem(saveBkKey, JSON.stringify({
+          data: d, expenses, handwriteOrders, adjustments, reserves,
+          ckQuantities: ckQuantitiesRef.current, ts: Date.now(),
+        }))
+      } catch {}
       await supabase.from('revenue_items').delete().eq('closing_id', cid)
       const revItems = [
         ...(store.mode !== 'handwrite' ? [{ closing_id: cid, channel: 'pos', gross_amount: d.pos_cash, is_cash: true }] : []),
@@ -1116,10 +1161,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (ckTotal > 0) {
         syncStoreCKOrder(store.id, today, ckTotal).catch(() => {})
       }
+      try { localStorage.removeItem(saveBkKey) } catch {}
       if (!silent) toast.success('草稿已儲存')
       return cid
     } catch (err: any) {
-      toast.error('儲存失敗：' + err.message)
+      toast.error('儲存失敗：' + err.message + '（請勿重新整理頁面，可重試儲存）')
       return null
     } finally {
       setSaving(false)
@@ -1153,6 +1199,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         })
       }
       setSubmitDone(true)
+      try { sessionStorage.setItem(submitDoneSsKey, '1') } catch {}
       goToStep(currentStep + 1) // advance to 摘要
     } catch (err: any) {
       toast.error('送出失敗：' + err.message)
