@@ -264,8 +264,28 @@ function ClosingCard({
 }) {
   const [expanded, setExpanded] = useState(closing.status === 'submitted' || closing.status === 'disputed')
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [exporting, setExporting] = useState(false)
   const st = STATUS[closing.status] ?? STATUS.draft
   const [, mo, d] = closing.business_date.split('-')
+
+  async function handleExport(e: React.MouseEvent) {
+    e.stopPropagation()
+    const month = closing.business_date.slice(0, 7)
+    setExporting(true)
+    try {
+      const res = await fetch(`/api/export/food-cost?storeId=${closing.stores.id}&month=${month}`)
+      if (!res.ok) { toast.error('匯出失敗'); return }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const cd = res.headers.get('content-disposition') ?? ''
+      const match = cd.match(/filename\*=UTF-8''(.+)$/)
+      a.download = match ? decodeURIComponent(match[1]) : `${closing.stores.name}_${month}_食耗成本.xlsx`
+      a.href = url; a.click()
+      URL.revokeObjectURL(url)
+    } catch { toast.error('匯出失敗') }
+    finally { setExporting(false) }
+  }
 
   const channelPhotos = closing.channel_photo_urls ?? {}
   const ckPhoto = closing.ck_delivery_photo_url
@@ -302,22 +322,30 @@ function ClosingCard({
     )}
     <div className="bg-white rounded-2xl overflow-hidden" style={{ border: `2px solid ${closing.status === 'submitted' ? '#FDE68A' : closing.status === 'disputed' ? '#fecdd3' : '#f4f4f5'}`, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
       {/* 標頭 */}
-      <button className="w-full flex items-center gap-3 px-4 py-4 text-left" onClick={() => setExpanded(!expanded)}>
-        <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white font-bold shrink-0"
-          style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', fontSize: (closing.stores?.name?.length ?? 0) > 2 ? '10px' : '13px' }}>
-          {closing.stores?.name ?? '?'}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold" style={{ color: '#18181b' }}>{closing.stores?.name}</p>
-          <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
-            {parseInt(mo)}/{parseInt(d)}
-            {closing.total_revenue > 0 && <span className="ml-2 tabular-nums font-semibold" style={{ color: '#18181b' }}>${fmt(closing.total_revenue)}</span>}
-            {submitterName && <span className="ml-2 font-medium" style={{ color: '#F59E0B' }}>由 {submitterName} 提交</span>}
-          </p>
-        </div>
-        <span className="text-xs font-semibold px-2 py-0.5 rounded-lg shrink-0" style={{ background: st.bg, color: st.color }}>{st.label}</span>
-        {expanded ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} /> : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />}
-      </button>
+      <div className="flex items-center gap-2 px-4 py-4">
+        <button className="flex-1 flex items-center gap-3 text-left min-w-0" onClick={() => setExpanded(!expanded)}>
+          <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white font-bold shrink-0"
+            style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', fontSize: (closing.stores?.name?.length ?? 0) > 2 ? '10px' : '13px' }}>
+            {closing.stores?.name ?? '?'}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold" style={{ color: '#18181b' }}>{closing.stores?.name}</p>
+            <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
+              {parseInt(mo)}/{parseInt(d)}
+              {closing.total_revenue > 0 && <span className="ml-2 tabular-nums font-semibold" style={{ color: '#18181b' }}>${fmt(closing.total_revenue)}</span>}
+              {submitterName && <span className="ml-2 font-medium" style={{ color: '#F59E0B' }}>由 {submitterName} 提交</span>}
+            </p>
+          </div>
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-lg shrink-0" style={{ background: st.bg, color: st.color }}>{st.label}</span>
+          {expanded ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} /> : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />}
+        </button>
+        <button onClick={handleExport} disabled={exporting}
+          className="shrink-0 flex items-center justify-center h-8 w-8 rounded-xl transition-opacity"
+          style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: exporting ? '#a1a1aa' : '#92400E', cursor: exporting ? 'wait' : 'pointer', opacity: exporting ? 0.6 : 1 }}
+          title={`匯出 ${closing.stores?.name} Excel`}>
+          {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+        </button>
+      </div>
 
       {expanded && (
         <div className="px-4 pb-5 space-y-4" style={{ borderTop: '1px solid #f4f4f5' }}>
