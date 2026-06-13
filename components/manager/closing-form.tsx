@@ -888,8 +888,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }
 
   async function saveReceiptForm(form: ReceiptForm) {
-    if (!form.vendor_name.trim() || form.total_amount <= 0) {
-      toast.error('請填寫廠商名稱與金額')
+    if (form.total_amount <= 0) {
+      toast.error('請填寫金額')
       return
     }
     const hasValidItem = (form.items ?? []).some(i => i.item_name.trim())
@@ -1677,10 +1677,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           <button onClick={() => saveReceiptForm(form)} disabled={form.uploading}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
                             style={{
-                              background: (form.vendor_name.trim() && form.total_amount > 0) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
-                              cursor: (form.vendor_name.trim() && form.total_amount > 0) ? 'pointer' : 'not-allowed',
+                              background: form.total_amount > 0 ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
+                              cursor: form.total_amount > 0 ? 'pointer' : 'not-allowed',
                               opacity: form.uploading ? 0.7 : 1, border: 'none', fontFamily: 'inherit',
-                              boxShadow: (form.vendor_name.trim() && form.total_amount > 0) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
+                              boxShadow: form.total_amount > 0 ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
                             }}>
                             {form.uploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />儲存中…</> : '儲存'}
                           </button>
