@@ -90,13 +90,29 @@ async function fillTemplate(
     return null
   }
 
-  const colMap: Record<string, number> = {}
+  // Scan row 1 to identify which columns belong to the 央廚配送 group
+  const groupOfCol: Record<number, string> = {}
+  {
+    let lastGroup = ''
+    const endCol = (ws.columnCount || 0) + 10
+    for (let c = 1; c <= endCol; c++) {
+      const t = ws.getRow(1).getCell(c).text?.trim()
+      if (t) lastGroup = t
+      if (lastGroup) groupOfCol[c] = lastGroup
+    }
+  }
+  // Build separate maps: CK group columns vs all other columns.
+  // When a column name is duplicated (e.g. "魚丸" appears under both 央廚配送 and 菜商),
+  // ckColMap wins in the final merge so CK data writes to the correct 央廚配送 column.
+  const ckColMap: Record<string, number> = {}
+  const stdColMap: Record<string, number> = {}
   ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
     const t = cell.text?.trim()
     if (!t) return
-    colMap[t] = colNum
-    colMap[norm(t)] = colNum
+    const m = groupOfCol[colNum] === '央廚配送' ? ckColMap : stdColMap
+    if (!(t in m)) { m[t] = colNum; m[norm(t)] = colNum }
   })
+  const colMap: Record<string, number> = { ...stdColMap, ...ckColMap }
 
   const dataStartRow = headerRowNum + 2
   const normUber = uberAccounts.map(acc => ({ raw: acc, n: norm(acc) }))
