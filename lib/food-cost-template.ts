@@ -229,11 +229,15 @@ export function extractBold(ws: ExcelJS.Worksheet): boolean[][] {
   return result
 }
 
-/** Extract column widths in approximate pixels (ExcelJS width unit × 7). */
-export function extractColWidths(ws: ExcelJS.Worksheet): Array<{ col: number; px: number }> {
-  const widths: Array<{ col: number; px: number }> = []
+/** Extract column widths in approximate pixels (ExcelJS width unit × 7). Hidden columns included with hidden:true. */
+export function extractColWidths(ws: ExcelJS.Worksheet): Array<{ col: number; px: number; hidden?: boolean }> {
+  const widths: Array<{ col: number; px: number; hidden?: boolean }> = []
   ws.columns.forEach((col, idx) => {
-    if (col?.width) widths.push({ col: idx, px: Math.max(20, Math.round(col.width * 7.5 + 5)) })
+    if (col?.hidden) {
+      widths.push({ col: idx, px: 0, hidden: true })
+    } else if (col?.width) {
+      widths.push({ col: idx, px: Math.max(20, Math.round(col.width * 7.5 + 5)) })
+    }
   })
   return widths
 }

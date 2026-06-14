@@ -432,7 +432,7 @@ async function applyTemplateFormatting(
   sheetId: number,
   _colors: (string | null)[][],   // kept for signature compat, unused — ws read directly
   _bold: boolean[][],
-  colWidths: Array<{ col: number; px: number }>,
+  colWidths: Array<{ col: number; px: number; hidden?: boolean }>,
   merges: Array<{ r0: number; r1: number; c0: number; c1: number }>,
   ws: ExcelJS.Worksheet,
 ): Promise<void> {
@@ -542,8 +542,12 @@ async function applyTemplateFormatting(
   }
 
   // Column widths from template (ExcelJS width ≈ characters; 1 char ≈ 7.5px + padding)
-  for (const { col, px } of colWidths) {
-    reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: col, endIndex: col + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })
+  for (const { col, px, hidden } of colWidths) {
+    if (hidden) {
+      reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: col, endIndex: col + 1 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } })
+    } else {
+      reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: col, endIndex: col + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })
+    }
   }
 
   // Batch in chunks of 1000 to stay within API limits
