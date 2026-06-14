@@ -383,11 +383,16 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
             valueInputOption: 'USER_ENTERED',
             requestBody: { values: wsValues.map(row => row.map(v => v ?? '')) },
           })
-
-          await applyTemplateFormatting(sheets, sheetsId, sheetId, [], [], wsWidths, wsMerges, ws)
-
+          // Mark template used BEFORE formatting so a formatting error never discards the data
           usedTemplate = true
-          console.log(`[syncClosingToSheets] ${storeName} ${year}-${String(monthNum).padStart(2, '0')} → sheet "${tabName}" done (template)`)
+          console.log(`[syncClosingToSheets] ${storeName} ${year}-${String(monthNum).padStart(2, '0')} → sheet "${tabName}" data written (template)`)
+
+          try {
+            await applyTemplateFormatting(sheets, sheetsId, sheetId, [], [], wsWidths, wsMerges, ws)
+            console.log(`[syncClosingToSheets] ${storeName} ${year}-${String(monthNum).padStart(2, '0')} → formatting applied`)
+          } catch (fmtErr) {
+            console.warn('[syncClosingToSheets] template formatting failed (data already written):', fmtErr)
+          }
         }
       }
     }
@@ -452,7 +457,7 @@ async function applyTemplateFormatting(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function cvtBorder(b: any) {
     if (!b?.style) return undefined
-    return { style: BORDER_STYLE[b.style] ?? 'SOLID', colorStyle: { rgbColor: b.color?.argb ? argbToRgb(b.color.argb as string) : { red: 0, green: 0, blue: 0 } } }
+    return { style: BORDER_STYLE[b.style] ?? 'SOLID', color: b.color?.argb ? argbToRgb(b.color.argb as string) : { red: 0, green: 0, blue: 0 } }
   }
 
   // Extract background with row-style fallback (Excel allows row-level default fills)
@@ -467,7 +472,7 @@ async function applyTemplateFormatting(
 
   // Apply per-cell formatting extracted directly from the worksheet
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  type CellFmt = { bg: RGB; bold: boolean; fontSize: number; fgColor: RGB; hAlign: string; borders: any }
+  type CellFmt = { bg: RGB; bold: boolean; fontSize: number; fgColor: RGB; hAlign: string; borders: any; numFmt: string }
   for (let r = 1; r <= maxRow; r++) {
     const rowObj = ws.getRow(r)
     const cells: CellFmt[] = []
@@ -486,7 +491,8 @@ async function applyTemplateFormatting(
       if (borderObj?.bottom) borders.bottom = cvtBorder(borderObj.bottom)
       if (borderObj?.left)   borders.left   = cvtBorder(borderObj.left)
       if (borderObj?.right)  borders.right  = cvtBorder(borderObj.right)
-      cells.push({ bg, bold, fontSize, fgColor, hAlign, borders })
+      const numFmt = cell.numFmt ?? ''
+      cells.push({ bg, bold, fontSize, fgColor, hAlign, borders, numFmt })
     }
 
     // Batch consecutive cells with identical formatting
@@ -506,6 +512,7 @@ async function applyTemplateFormatting(
       const fields = 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.horizontalAlignment'
       let flds = fields
       if (Object.keys(fmt.borders).length) { uf.borders = fmt.borders; flds += ',userEnteredFormat.borders' }
+      if (fmt.numFmt) { uf.numberFormat = { pattern: fmt.numFmt }; flds += ',userEnteredFormat.numberFormat' }
 
       reqs.push({ repeatCell: { range: { sheetId, startRowIndex: r - 1, endRowIndex: r, startColumnIndex: ci, endColumnIndex: end }, cell: { userEnteredFormat: uf }, fields: flds } })
       ci = end

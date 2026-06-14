@@ -152,7 +152,9 @@ export function extractValues(ws: ExcelJS.Worksheet): (string | number | null)[]
       } else if (typeof cv === 'string') {
         rowVals.push(cv)
       } else if (cv instanceof Date) {
-        rowVals.push(cv.toISOString().slice(0, 10))
+        // Return Excel serial number so Sheets can apply the cell's numFmt (e.g. m"月"d"日")
+        const excelEpoch = Date.UTC(1899, 11, 30)
+        rowVals.push(Math.round((cv.getTime() - excelEpoch) / 86400000))
       } else {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const anyCV = cv as any
