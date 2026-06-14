@@ -529,18 +529,18 @@ async function applyTemplateFormatting(
     }
   }
 
-  // Merges from template
-  for (const m of merges) {
-    if (m.r1 - m.r0 < 1 || m.c1 - m.c0 < 1) continue
-    reqs.push({ mergeCells: { range: { sheetId, startRowIndex: m.r0, endRowIndex: m.r1, startColumnIndex: m.c0, endColumnIndex: m.c1 }, mergeType: 'MERGE_ALL' } })
-  }
-
-  // Freeze panes from template worksheet view
+  // Freeze panes MUST be set before mergeCells to avoid "can't merge frozen and non-frozen rows"
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const views: any[] = (ws as any).views ?? []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const frozenView = views.find((v: any) => v.state === 'frozen')
   reqs.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: frozenView?.ySplit ?? 3, frozenColumnCount: frozenView?.xSplit ?? 2 } }, fields: 'gridProperties.frozenRowCount,gridProperties.frozenColumnCount' } })
+
+  // Merges from template
+  for (const m of merges) {
+    if (m.r1 - m.r0 < 1 || m.c1 - m.c0 < 1) continue
+    reqs.push({ mergeCells: { range: { sheetId, startRowIndex: m.r0, endRowIndex: m.r1, startColumnIndex: m.c0, endColumnIndex: m.c1 }, mergeType: 'MERGE_ALL' } })
+  }
 
   // Row heights from template (Excel row height is in points; 1pt ≈ 1.333px)
   for (let ri = 1; ri <= ws.rowCount; ri++) {
