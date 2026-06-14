@@ -376,6 +376,8 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
           const wsValues = extractValues(ws)
           const wsWidths = extractColWidths(ws)
           const wsMerges = extractMerges(ws)
+          const hiddenCols = wsWidths.filter(w => w.hidden)
+          console.log(`[syncClosingToSheets] v2 wsWidths=${wsWidths.length} hiddenCols=${hiddenCols.length} (${hiddenCols.map(h=>h.col).join(',')})`)
 
           await sheets.spreadsheets.values.update({
             spreadsheetId: sheetsId,
