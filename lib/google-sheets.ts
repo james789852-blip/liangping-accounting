@@ -422,6 +422,14 @@ function hex(h: string): RGB {
   return { red: parseInt(h.slice(0,2),16)/255, green: parseInt(h.slice(2,4),16)/255, blue: parseInt(h.slice(4,6),16)/255 }
 }
 
+function inferNumFmtType(pattern: string): string {
+  const stripped = pattern.replace(/"[^"]*"/g, '').toLowerCase()
+  if (/[dy]/.test(stripped) || pattern.includes('月') || pattern.includes('日')) return 'DATE'
+  if (/h/.test(stripped)) return 'TIME'
+  if (stripped.includes('%')) return 'PERCENT'
+  return 'NUMBER'
+}
+
 function argbToRgb(argb: string): RGB {
   let h = argb.replace('#', '')
   if (h.length === 8) h = h.slice(2) // strip alpha channel
@@ -514,7 +522,7 @@ async function applyTemplateFormatting(
       const fields = 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.horizontalAlignment'
       let flds = fields
       if (Object.keys(fmt.borders).length) { uf.borders = fmt.borders; flds += ',userEnteredFormat.borders' }
-      if (fmt.numFmt) { uf.numberFormat = { pattern: fmt.numFmt }; flds += ',userEnteredFormat.numberFormat' }
+      if (fmt.numFmt) { uf.numberFormat = { type: inferNumFmtType(fmt.numFmt), pattern: fmt.numFmt }; flds += ',userEnteredFormat.numberFormat' }
 
       reqs.push({ repeatCell: { range: { sheetId, startRowIndex: r - 1, endRowIndex: r, startColumnIndex: ci, endColumnIndex: end }, cell: { userEnteredFormat: uf }, fields: flds } })
       ci = end
