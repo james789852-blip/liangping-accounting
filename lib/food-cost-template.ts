@@ -73,8 +73,11 @@ export async function fillWorksheet(
     return 'formula' in (v as any) || 'sharedFormula' in (v as any)
   }
 
-  // Clear stale plain-number values from data rows; leave formula cells untouched
-  const uniqueCols = new Set(Object.values(colMap))
+  // Clear stale plain-number values from data rows; include all vendor-section columns
+  const uniqueCols = new Set<number>([
+    ...Object.values(colMap) as number[],
+    ...Object.values(vendorMaps).flatMap(m => Object.values(m) as number[]),
+  ])
   days.forEach((_, idx) => {
     const row = ws.getRow(dataStartRow + idx)
     for (const colIdx of uniqueCols) {
@@ -91,9 +94,15 @@ export async function fillWorksheet(
 
     for (const [colName, amount] of Object.entries(d.items)) {
       if (!amount) continue
-      const vg = vendorGroupLookup?.[colName]
+      // Namespaced tax key: '_tax_小雲' → find '稅金' in 小雲 vendor section
+      let lookupName = colName
+      let vg = vendorGroupLookup?.[colName]
+      if (colName.startsWith('_tax_')) {
+        vg = colName.slice(5)
+        lookupName = '稅金'
+      }
       const vgMap = vg ? vendorMaps[vg] : undefined
-      const colIdx = (vgMap && (vgMap[colName] ?? vgMap[norm(colName)])) ?? colMap[colName] ?? colMap[norm(colName)]
+      const colIdx = (vgMap && (vgMap[lookupName] ?? vgMap[norm(lookupName)])) ?? colMap[lookupName] ?? colMap[norm(lookupName)]
       if (!colIdx) continue
       const cell = excelRow.getCell(colIdx)
       cell.value = amount

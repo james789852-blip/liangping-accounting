@@ -55,6 +55,7 @@ async function fillTemplate(
   dataRows: Array<{ date: string; row: RowVals }>,
   storeName: string,
   uberAccounts: string[],
+  vendorGroupLookup?: Record<string, string>,
 ): Promise<NextResponse | null> {
   const wb = new ExcelJS.Workbook()
   try {
@@ -71,7 +72,7 @@ async function fillTemplate(
     console.warn(`[fillTemplate] 未找到「${targetName}」，改用工作表「${ws.name}」。模板所有工作表：`, wb.worksheets.map(s => s.name))
   }
 
-  const filled = await fillWorksheet(ws, days, dataRows, uberAccounts)
+  const filled = await fillWorksheet(ws, days, dataRows, uberAccounts, vendorGroupLookup)
   if (!filled) { console.warn('[fillTemplate] fillWorksheet returned null'); return null }
 
   const filename = encodeURIComponent(`${storeName}_${year}${String(monthNum).padStart(2, '0')}_食耗成本.xlsx`)
@@ -112,20 +113,23 @@ export async function GET(req: NextRequest) {
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('stores').select('name, uber_accounts, ichef_uber_linked').eq('id', storeId).single(),
     admin.from('item_column_mappings')
-      .select('item_name, excel_column, item_category, store_id')
+      .select('item_name, excel_column, item_category, vendor_group, store_id')
       .or(`store_id.is.null,store_id.eq.${storeId}`),
     admin.from('central_kitchen_prices').select('item_name, excel_column').eq('active', true),
   ])
   const mappingLookup: Record<string, string> = {}
   const categoryLookup: Record<string, string> = {}
+  const vendorGroupLookup: Record<string, string> = {}
   // Global first, then store-specific overrides
   for (const m of (mappingsRaw ?? []).filter((m: any) => !m.store_id)) {
     mappingLookup[m.item_name] = m.excel_column
     categoryLookup[m.item_name] = m.item_category
+    if (m.vendor_group) { vendorGroupLookup[m.item_name] = m.vendor_group; vendorGroupLookup[m.excel_column] = m.vendor_group }
   }
   for (const m of (mappingsRaw ?? []).filter((m: any) => m.store_id === storeId)) {
     mappingLookup[m.item_name] = m.excel_column
     categoryLookup[m.item_name] = m.item_category
+    if (m.vendor_group) { vendorGroupLookup[m.item_name] = m.vendor_group; vendorGroupLookup[m.excel_column] = m.vendor_group }
   }
 
   // CK item name → excel column (fallback to item_name itself)
@@ -212,16 +216,22 @@ export async function GET(req: NextRequest) {
         dd.notes[col] = dd.notes[col] ? `${dd.notes[col]}\n${noteText}` : noteText
       }
     }
-    // Route tax_amount to 免洗稅金: triggered when receipt has 耗材 items
+    // Route tax_amount: 耗材 → '免洗稅金'; food/misc → vendor-specific '稅金' column
     const taxAmt = (r.tax_amount ?? 0) as number
-    let routedTax = 0
     if (taxAmt > 0 && positiveItems.length > 0) {
       const hasPackItem = positiveItems.some((it: any) =>
         categoryLookup[it.item_name] === '耗材' || packCols.includes(it.resolved_col)
       )
       if (hasPackItem) {
         dd.items['免洗稅金'] = (dd.items['免洗稅金'] || 0) + taxAmt
-        routedTax = taxAmt
+      } else {
+        // Determine vendor group from the receipt items; write tax with a namespaced key
+        // so fillWorksheet can look up the correct '稅金' column per vendor section
+        const vg = positiveItems
+          .map((it: any) => vendorGroupLookup[it.item_name] ?? vendorGroupLookup[it.resolved_col])
+          .find(Boolean)
+        const taxKey = vg ? `_tax_${vg}` : '稅金'
+        dd.items[taxKey] = (dd.items[taxKey] || 0) + taxAmt
       }
     }
     // Items stay at exactly what the user entered; no proportional distribution.
@@ -334,7 +344,7 @@ export async function GET(req: NextRequest) {
       console.warn(`[food-cost export] template download error:`, dlErr)
     } else if (tmpl) {
       templateDebug = 'fill_attempt'
-      const result = await fillTemplate(tmpl, monthNum, year, days, dataRows, storeRow?.name ?? 'export', uberAccounts)
+      const result = await fillTemplate(tmpl, monthNum, year, days, dataRows, storeRow?.name ?? 'export', uberAccounts, vendorGroupLookup)
       if (result) {
         result.headers.set('X-Export-Mode', 'template')
         return result
