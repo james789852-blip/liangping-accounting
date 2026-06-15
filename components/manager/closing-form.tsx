@@ -607,14 +607,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const stepLsKey = `closing_step_${store.id}_${today}`
   const submitDoneSsKey = `submit_done_${store.id}_${today}`
   const saveBkKey = `save_bk_${store.id}_${today}`
-  const [currentStep, setCurrentStep] = useState(0)
+  const [currentStep, setCurrentStep] = useState(() => {
+    if (existingClosing?.status === 'disputed') return 0
+    try {
+      const saved = parseInt(localStorage.getItem(stepLsKey) ?? '0') || 0
+      return saved > 0 ? saved : 0
+    } catch { return 0 }
+  })
   useEffect(() => {
-    if (existingClosing?.status === 'disputed') {
-      localStorage.removeItem(stepLsKey)
-      return
-    }
-    const saved = parseInt(localStorage.getItem(stepLsKey) ?? '0') || 0
-    if (saved > 0) setCurrentStep(saved)
+    if (existingClosing?.status === 'disputed') localStorage.removeItem(stepLsKey)
   }, [])
   const [submitDone, setSubmitDone] = useState(() => {
     try { return localStorage.getItem(`submit_done_${store.id}_${today}`) === '1' } catch { return false }
