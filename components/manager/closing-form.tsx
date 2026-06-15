@@ -499,6 +499,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [receiptForms, setReceiptForms] = useState<ReceiptForm[]>([])
   const [verifyItems, setVerifyItems] = useState<VerifyItem[]>([])
   const [reviewIndex, setReviewIndex] = useState<number | null>(null)
+  const [stepMounted, setStepMounted] = useState(false)
   const categories = receiptCategories
   const [ckQuantities, setCkQuantities] = useState<Record<string, number>>(() => {
     const result: Record<string, number> = {}
@@ -607,15 +608,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const stepLsKey = `closing_step_${store.id}_${today}`
   const submitDoneSsKey = `submit_done_${store.id}_${today}`
   const saveBkKey = `save_bk_${store.id}_${today}`
-  const [currentStep, setCurrentStep] = useState(() => {
-    if (existingClosing?.status === 'disputed') return 0
-    try {
-      const saved = parseInt(localStorage.getItem(stepLsKey) ?? '0') || 0
-      return saved > 0 ? saved : 0
-    } catch { return 0 }
-  })
+  const [currentStep, setCurrentStep] = useState(0)
   useEffect(() => {
-    if (existingClosing?.status === 'disputed') localStorage.removeItem(stepLsKey)
+    if (existingClosing?.status === 'disputed') {
+      localStorage.removeItem(stepLsKey)
+    } else {
+      const saved = parseInt(localStorage.getItem(stepLsKey) ?? '0') || 0
+      if (saved > 0) setCurrentStep(saved)
+    }
+    setStepMounted(true)
   }, [])
   const [submitDone, setSubmitDone] = useState(() => {
     try { return localStorage.getItem(`submit_done_${store.id}_${today}`) === '1' } catch { return false }
@@ -1377,7 +1378,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         )}
       </div>
 
-      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-32">
+      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-32" style={{ visibility: stepMounted ? 'visible' : 'hidden' }}>
 
         {/* 退回提示 */}
         {isDisputed && (
@@ -3133,7 +3134,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       {/* ── Fixed bottom bar ──────────────────────────────────────────────── */}
       {(!isLocked || submitDone) && (
         <div className="fixed bottom-14 lg:bottom-0 left-0 lg:left-60 right-0 bg-white px-4 py-3"
-          style={{ borderTop: '1px solid #f4f4f5', boxShadow: '0 -4px 16px rgba(0,0,0,0.06)' }}>
+          style={{ borderTop: '1px solid #f4f4f5', boxShadow: '0 -4px 16px rgba(0,0,0,0.06)', visibility: stepMounted ? 'visible' : 'hidden' }}>
           <div className="max-w-xl mx-auto flex gap-3">
 
             {/* Step 8: 零用金核對 → 完成結束 */}
