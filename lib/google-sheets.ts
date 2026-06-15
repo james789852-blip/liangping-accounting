@@ -94,12 +94,12 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
   for (const m of (mappingsRaw ?? []).filter((m: AnyRecord) => !m.store_id)) {
     mappingLookup[m.item_name] = m.excel_column
     categoryLookup[m.item_name] = m.item_category
-    if (m.vendor_group) vendorGroupLookup[m.item_name] = m.vendor_group
+    if (m.vendor_group) { vendorGroupLookup[m.item_name] = m.vendor_group; vendorGroupLookup[m.excel_column] = m.vendor_group }
   }
   for (const m of (mappingsRaw ?? []).filter((m: AnyRecord) => m.store_id === storeId)) {
     mappingLookup[m.item_name] = m.excel_column
     categoryLookup[m.item_name] = m.item_category
-    if (m.vendor_group) vendorGroupLookup[m.item_name] = m.vendor_group
+    if (m.vendor_group) { vendorGroupLookup[m.item_name] = m.vendor_group; vendorGroupLookup[m.excel_column] = m.vendor_group }
   }
   const ckColLookup: Record<string, string> = {}
   for (const p of (ckPricesData ?? []) as AnyRecord[]) {
@@ -136,7 +136,6 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     }))
     const validItems = resolvedItems.filter((it: AnyRecord) => it.resolved_col && it.amount)
     const positiveItems = validItems.filter((it: AnyRecord) => (it.amount as number) > 0)
-    const itemsSum = positiveItems.reduce((s: number, it: AnyRecord) => s + (it.amount as number), 0)
     for (const it of validItems) {
       dd.items[it.resolved_col] = (dd.items[it.resolved_col] || 0) + (it.amount as number)
     }
@@ -148,21 +147,18 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
       }
     }
     const taxAmt = (r.tax_amount ?? 0) as number
-    let routedTax = 0
     if (taxAmt > 0 && positiveItems.length > 0) {
       const hasPackItem = positiveItems.some((it: AnyRecord) =>
         categoryLookup[it.item_name] === '耗材' || packCols.includes(it.resolved_col)
       )
       if (hasPackItem) {
         dd.items['免洗稅金'] = (dd.items['免洗稅金'] || 0) + taxAmt
-        routedTax = taxAmt
-      }
-    }
-    const unallocated = (r.total_amount ?? 0) - itemsSum - routedTax
-    if (unallocated > 0 && itemsSum > 0) {
-      for (const it of positiveItems) {
-        const share = Math.round(unallocated * (it.amount as number) / itemsSum)
-        dd.items[it.resolved_col] = (dd.items[it.resolved_col] || 0) + share
+      } else {
+        const vg = positiveItems
+          .map((it: AnyRecord) => vendorGroupLookup[it.item_name] ?? vendorGroupLookup[it.resolved_col])
+          .find(Boolean)
+        const taxKey = vg ? `_tax_${vg}` : '稅金'
+        dd.items[taxKey] = (dd.items[taxKey] || 0) + taxAmt
       }
     }
     if (r.receipt_type === 'invoice') invoiceTotal += (r.total_amount ?? 0) as number
