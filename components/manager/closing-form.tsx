@@ -718,11 +718,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     return () => clearInterval(t)
   }, [data, expenses, handwriteOrders, isLocked, isDisputed, submitDone])
 
-  const ckQtyMounted = useRef(false)
   useEffect(() => {
-    if (!ckQtyMounted.current) { ckQtyMounted.current = true; return }
-    const total = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * p.unit_price, 0)
-    set('ck_total', total)
+    const fromQty = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * p.unit_price, 0)
+    // Only override when quantities produce a positive total (handles both current and legacy order_items format)
+    if (fromQty > 0) set('ck_total', fromQty)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ckQuantities])
 
