@@ -2089,7 +2089,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             if (nextPrice) ckQtyRefsMap.current.get(nextPrice.id)?.focus()
                           }
                         }}
-                        style={{ width: '60px', height: '36px', padding: '0 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '15px', textAlign: 'center', outline: 'none', background: 'white', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit' }}
+                        style={{ width: '80px', height: '36px', padding: '0 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '15px', textAlign: 'center', outline: 'none', background: 'white', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit' }}
                         onFocus={e => (e.target as HTMLInputElement).style.borderColor = '#f97316'}
                         onBlur={e => (e.target as HTMLInputElement).style.borderColor = '#e4e4e7'}
                       />
