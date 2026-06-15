@@ -406,7 +406,7 @@ function SummaryBlock({ label, value, warm }: { label: string; value: string; wa
 }
 
 
-const PINNED_CATEGORIES = ['菜商', '豆腐', '滷蛋', '免洗', '雜貨', '瓦斯']
+const PINNED_CATEGORIES = ['央廚配送', '小雲', '退稅', '菜商', '豆腐', '滷蛋', '雜貨', '免洗', '惠敘', 'Uber', 'Duskin', '翁師傅', '雜項', '瓦斯']
 
 function CategoryPicker({ categories, value, onChange }: {
   categories: CategoryWithVendors[]
@@ -1645,6 +1645,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             ? (() => {
                                                 const byGroup = mappingColumns.filter(c => c.vendor_group === form.category)
                                                 if (byGroup.length > 0) return byGroup
+                                                const byCat = mappingColumns.filter(c => c.category === form.category)
+                                                if (byCat.length > 0) return byCat
                                                 const byName = mappingColumns.filter(c => c.name === form.category)
                                                 return byName.length > 0 ? byName : mappingColumns
                                               })()
@@ -1884,6 +1886,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                                 ? (() => {
                                                     const byGroup = mappingColumns.filter(c => c.vendor_group === editCategory)
                                                     if (byGroup.length > 0) return byGroup
+                                                    const byCat = mappingColumns.filter(c => c.category === editCategory)
+                                                    if (byCat.length > 0) return byCat
                                                     const byName = mappingColumns.filter(c => c.name === editCategory)
                                                     return byName.length > 0 ? byName : mappingColumns
                                                   })()
