@@ -282,6 +282,14 @@ export async function GET(req: NextRequest) {
     if (dd.ck === 0 && ckItemsSum > 0) dd.ck = ckItemsSum
   }
 
+  // Debug: log what values are written per date (check Vercel function logs)
+  for (const [date, d] of Object.entries(byDate)) {
+    const keys = Object.keys(d.items)
+    if (keys.length > 0) {
+      console.log(`[food-cost] ${storeId} ${date}:`, JSON.stringify(d.items))
+    }
+  }
+
   // ─── Compute data rows & monthly totals (needed before writing headers) ──────
   const days = getDaysInMonth(year, monthNum)
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
@@ -612,7 +612,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const submitDoneSsKey = `submit_done_${store.id}_${today}`
   const saveBkKey = `save_bk_${store.id}_${today}`
   const [currentStep, setCurrentStep] = useState(0)
-  useEffect(() => {
+  // useLayoutEffect runs synchronously before browser paint → user never sees step-0 flash
+  // On SSR it's silently skipped (no window), so no hydration mismatch
+  useLayoutEffect(() => {
     if (existingClosing?.status === 'disputed') {
       localStorage.removeItem(stepLsKey)
     } else {
@@ -2025,11 +2027,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {!isLocked && (
               <div>
                 {(ckPhotoPreview || ckPhotoUrl) ? (
-                  <div className="relative rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
+                  <div className="relative rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', background: '#f8fafc' }}>
                     <button type="button" onClick={() => setPhotoLightbox((ckPhotoPreview || ckPhotoUrl)!)}
-                      style={{ width: '100%', border: 'none', padding: 0, cursor: 'zoom-in', background: 'none', display: 'block' }}>
+                      style={{ width: '100%', border: 'none', padding: '8px 0', cursor: 'zoom-in', background: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '120px' }}>
                       <img src={ckPhotoPreview || ckPhotoUrl} alt="配送單"
-                        className="w-full object-contain" style={{ maxHeight: '220px', background: '#f8fafc', display: 'block' }} />
+                        style={{ maxWidth: '100%', maxHeight: '300px', width: 'auto', height: 'auto', display: 'block' }} />
                     </button>
                     <button onClick={() => ckPhotoInputRef.current?.click()}
                       className="absolute bottom-2 right-2 flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-white"
@@ -2052,9 +2054,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {isLocked && ckPhotoUrl && (
               <button type="button" onClick={() => setPhotoLightbox(ckPhotoUrl!)}
                 className="w-full rounded-2xl overflow-hidden"
-                style={{ border: '1px solid #f4f4f5', cursor: 'zoom-in', padding: 0, background: 'none', display: 'block' }}>
-                <img src={ckPhotoUrl} alt="配送單" className="w-full rounded-2xl object-contain"
-                  style={{ maxHeight: '220px', background: '#f8fafc', display: 'block' }} />
+                style={{ border: '1px solid #f4f4f5', cursor: 'zoom-in', padding: '8px 0', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '120px' }}>
+                <img src={ckPhotoUrl} alt="配送單"
+                  style={{ maxWidth: '100%', maxHeight: '300px', width: 'auto', height: 'auto', display: 'block' }} />
               </button>
             )}
 
