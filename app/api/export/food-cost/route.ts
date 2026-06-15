@@ -206,14 +206,21 @@ export async function GET(req: NextRequest) {
     const itemsSum = positiveItems.reduce((s: number, it: any) => s + (it.amount as number), 0)
     // Write ALL valid items including negative discounts
     for (const it of validItems) {
-      dd.items[it.resolved_col] = (dd.items[it.resolved_col] || 0) + (it.amount as number)
+      const vg = vendorGroupLookup[it.item_name]
+      const key = (vg && it.item_name !== it.resolved_col)
+        ? `_col_${vg}_${it.resolved_col}`
+        : it.resolved_col
+      dd.items[key] = (dd.items[key] || 0) + (it.amount as number)
     }
     // Attach receipt notes to affected columns
     if ((r as any).notes?.trim() && validItems.length > 0) {
       const noteText = (r as any).notes.trim()
       for (const it of validItems) {
-        const col = it.resolved_col
-        dd.notes[col] = dd.notes[col] ? `${dd.notes[col]}\n${noteText}` : noteText
+        const vg = vendorGroupLookup[it.item_name]
+        const key = (vg && it.item_name !== it.resolved_col)
+          ? `_col_${vg}_${it.resolved_col}`
+          : it.resolved_col
+        dd.notes[key] = dd.notes[key] ? `${dd.notes[key]}\n${noteText}` : noteText
       }
     }
     // Route tax_amount: 耗材 → '免洗稅金'; food/misc → vendor-specific '稅金' column

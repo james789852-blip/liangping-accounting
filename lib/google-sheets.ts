@@ -137,13 +137,20 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     const validItems = resolvedItems.filter((it: AnyRecord) => it.resolved_col && it.amount)
     const positiveItems = validItems.filter((it: AnyRecord) => (it.amount as number) > 0)
     for (const it of validItems) {
-      dd.items[it.resolved_col] = (dd.items[it.resolved_col] || 0) + (it.amount as number)
+      const vg = vendorGroupLookup[it.item_name]
+      const key = (vg && it.item_name !== it.resolved_col)
+        ? `_col_${vg}_${it.resolved_col}`
+        : it.resolved_col
+      dd.items[key] = (dd.items[key] || 0) + (it.amount as number)
     }
     if ((r.notes as string)?.trim() && validItems.length > 0) {
       const noteText = (r.notes as string).trim()
       for (const it of validItems) {
-        const col = it.resolved_col as string
-        dd.notes[col] = dd.notes[col] ? `${dd.notes[col]}\n${noteText}` : noteText
+        const vg = vendorGroupLookup[it.item_name]
+        const key = (vg && it.item_name !== it.resolved_col)
+          ? `_col_${vg}_${it.resolved_col}`
+          : it.resolved_col
+        dd.notes[key] = dd.notes[key] ? `${dd.notes[key]}\n${noteText}` : noteText
       }
     }
     const taxAmt = (r.tax_amount ?? 0) as number

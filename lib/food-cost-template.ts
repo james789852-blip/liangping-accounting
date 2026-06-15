@@ -111,6 +111,16 @@ export async function fillWorksheet(
         const maxVGCol = vgCols.length > 0 ? Math.max(...vgCols) : 0
         const allTaxCols = allColsByNormName[norm('稅金')] ?? []
         colIdx = allTaxCols.find(c => c > maxVGCol)
+      } else if (colName.startsWith('_col_')) {
+        // Vendor-disambiguated item: '_col_翁師傅_其他' → vendorMaps['翁師傅']['其他']
+        // Used when the same excel column name appears in multiple vendor sections.
+        const withoutPrefix = colName.slice(5)
+        const sepIdx = withoutPrefix.indexOf('_')
+        if (sepIdx >= 0) {
+          const vgName = withoutPrefix.slice(0, sepIdx)
+          const realColName = withoutPrefix.slice(sepIdx + 1)
+          colIdx = vendorMaps[vgName]?.[realColName] ?? vendorMaps[vgName]?.[norm(realColName)]
+        }
       } else {
         const vg = vendorGroupLookup?.[colName]
         const vgMap = vg ? vendorMaps[vg] : undefined
