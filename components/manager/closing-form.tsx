@@ -161,10 +161,13 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayRec
   const ckFromReceipts = todayReceipts
     ? todayReceipts.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
     : null
-  const ckSingle = orders.find((x: any) => x.item_name === '央廚配送')
-  const ckFromSaved = ckSingle
-    ? (ckSingle.total_amount ?? 0)
-    : orders.filter((x: any) => x.vendor === '央廚').reduce((s: number, o: any) => s + (o.total_amount ?? 0), 0)
+  // Compute ck_total from quantity × unit_price (DB total_amount may be stale/0)
+  const ckFromSaved = orders
+    .filter((x: any) => x.vendor === '央廚' && x.item_name !== '央廚配送')
+    .reduce((s: number, o: any) => {
+      const price = ckPrices.find(p => p.item_name === o.item_name)
+      return s + (price?.unit_price ?? 0) * (o.quantity ?? 0)
+    }, 0)
   const ck_total = (ckFromReceipts !== null && ckFromReceipts > 0) ? ckFromReceipts : ckFromSaved
 
   return {
@@ -1347,7 +1350,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           </span>
         </div>
         {!isLocked && (
-          <div className="px-4 py-3 overflow-x-auto">
+          <div className="px-4 py-3 overflow-x-auto" style={{ visibility: stepMounted ? 'visible' : 'hidden' }}>
             <div className="flex items-center" style={{ minWidth: 'max-content' }}>
               {STEPS.map((s, i) => (
                 <div key={s.id} className="flex items-center">

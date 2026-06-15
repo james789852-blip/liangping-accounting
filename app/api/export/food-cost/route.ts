@@ -224,15 +224,9 @@ export async function GET(req: NextRequest) {
         routedTax = taxAmt
       }
     }
-    // Distribute remaining unallocated amount proportionally to positive items
-    // Use full taxAmt (not just routedTax) so food/misc receipts don't inflate item amounts with tax
-    const unallocated = (r.total_amount ?? 0) - itemsSum - taxAmt
-    if (unallocated > 0 && itemsSum > 0) {
-      for (const it of positiveItems) {
-        const share = Math.round(unallocated * (it.amount as number) / itemsSum)
-        dd.items[it.resolved_col] = (dd.items[it.resolved_col] || 0) + share
-      }
-    }
+    // Items stay at exactly what the user entered; no proportional distribution.
+    // (Food receipts: total includes tax but tax field may be blank; distributing would inflate items.
+    //  Pack receipts: tax is already routed to 免洗稅金 above, leaving no remainder.)
     if (r.receipt_type === 'invoice') invoiceTotal += r.total_amount ?? 0
     else if (r.receipt_type === 'receipt') receiptTotal += r.total_amount ?? 0
   }
