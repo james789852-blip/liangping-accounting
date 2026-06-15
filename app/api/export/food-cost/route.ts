@@ -225,7 +225,8 @@ export async function GET(req: NextRequest) {
       }
     }
     // Distribute remaining unallocated amount proportionally to positive items
-    const unallocated = (r.total_amount ?? 0) - itemsSum - routedTax
+    // Use full taxAmt (not just routedTax) so food/misc receipts don't inflate item amounts with tax
+    const unallocated = (r.total_amount ?? 0) - itemsSum - taxAmt
     if (unallocated > 0 && itemsSum > 0) {
       for (const it of positiveItems) {
         const share = Math.round(unallocated * (it.amount as number) / itemsSum)
