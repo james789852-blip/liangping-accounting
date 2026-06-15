@@ -83,20 +83,23 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('item_column_mappings')
-      .select('item_name, excel_column, item_category, store_id')
+      .select('item_name, excel_column, item_category, store_id, vendor_group')
       .or(`store_id.is.null,store_id.eq.${storeId}`),
     admin.from('central_kitchen_prices').select('item_name, excel_column').eq('active', true),
   ])
 
   const mappingLookup: Record<string, string> = {}
   const categoryLookup: Record<string, string> = {}
+  const vendorGroupLookup: Record<string, string> = {}
   for (const m of (mappingsRaw ?? []).filter((m: AnyRecord) => !m.store_id)) {
     mappingLookup[m.item_name] = m.excel_column
     categoryLookup[m.item_name] = m.item_category
+    if (m.vendor_group) vendorGroupLookup[m.item_name] = m.vendor_group
   }
   for (const m of (mappingsRaw ?? []).filter((m: AnyRecord) => m.store_id === storeId)) {
     mappingLookup[m.item_name] = m.excel_column
     categoryLookup[m.item_name] = m.item_category
+    if (m.vendor_group) vendorGroupLookup[m.item_name] = m.vendor_group
   }
   const ckColLookup: Record<string, string> = {}
   for (const p of (ckPricesData ?? []) as AnyRecord[]) {
@@ -371,7 +374,7 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
         ?? wb.worksheets.find(s => s.name.includes('食耗'))
         ?? wb.worksheets[0]
       if (ws) {
-        const filled = await fillWorksheet(ws, days, dataRows, uberAccounts)
+        const filled = await fillWorksheet(ws, days, dataRows, uberAccounts, vendorGroupLookup)
         if (filled) {
           const wsValues = extractValues(ws)
           const wsWidths = extractColWidths(ws)

@@ -21,6 +21,7 @@ export async function fillWorksheet(
   days: string[],
   dataRows: Array<{ date: string; row: RowVals }>,
   uberAccounts: string[],
+  vendorGroupLookup?: Record<string, string>,
 ): Promise<{ headerRowNum: number; dataStartRow: number } | null> {
   let headerRowNum = -1
   for (let r = 1; r <= 10; r++) {
@@ -46,11 +47,18 @@ export async function fillWorksheet(
   // Build separate maps: CK group wins for duplicate column names
   const ckColMap: Record<string, number> = {}
   const stdColMap: Record<string, number> = {}
+  // Per-vendor-group maps: used to disambiguate duplicate column names across vendor sections
+  const vendorMaps: Record<string, Record<string, number>> = {}
   ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
     const t = cell.text?.trim()
     if (!t) return
-    const m = groupOfCol[colNum] === '央廚配送' ? ckColMap : stdColMap
+    const group = groupOfCol[colNum]
+    const m = group === '央廚配送' ? ckColMap : stdColMap
     if (!(t in m)) { m[t] = colNum; m[norm(t)] = colNum }
+    if (group && group !== '央廚配送') {
+      if (!vendorMaps[group]) vendorMaps[group] = {}
+      if (!(t in vendorMaps[group])) { vendorMaps[group][t] = colNum; vendorMaps[group][norm(t)] = colNum }
+    }
   })
   const colMap: Record<string, number> = { ...stdColMap, ...ckColMap }
 
@@ -83,7 +91,9 @@ export async function fillWorksheet(
 
     for (const [colName, amount] of Object.entries(d.items)) {
       if (!amount) continue
-      const colIdx = colMap[colName] ?? colMap[norm(colName)]
+      const vg = vendorGroupLookup?.[colName]
+      const vgMap = vg ? vendorMaps[vg] : undefined
+      const colIdx = (vgMap && (vgMap[colName] ?? vgMap[norm(colName)])) ?? colMap[colName] ?? colMap[norm(colName)]
       if (!colIdx) continue
       const cell = excelRow.getCell(colIdx)
       cell.value = amount

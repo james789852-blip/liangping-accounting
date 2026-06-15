@@ -718,7 +718,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     return () => clearInterval(t)
   }, [data, expenses, handwriteOrders, isLocked, isDisputed, submitDone])
 
+  const ckQtyMounted = useRef(false)
   useEffect(() => {
+    if (!ckQtyMounted.current) { ckQtyMounted.current = true; return }
     const total = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * p.unit_price, 0)
     set('ck_total', total)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1191,7 +1193,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       localStorage.removeItem(reserveLsKey)
       localStorage.removeItem(receiptFormsDraftKey)
       localStorage.removeItem(cashLsKey)
-      sessionStorage.removeItem(stepLsKey)
+      localStorage.removeItem(stepLsKey)
       toast.success('今日結帳已送出！')
       goToStep(currentStep + 1) // advance to 摘要
       // 誤差警報：fire-and-forget（不 await，避免阻擋 UI 更新）
