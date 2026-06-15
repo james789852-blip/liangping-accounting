@@ -49,6 +49,8 @@ export async function fillWorksheet(
   const stdColMap: Record<string, number> = {}
   // Per-vendor-group maps: used to disambiguate duplicate column names across vendor sections
   const vendorMaps: Record<string, Record<string, number>> = {}
+  // Comprehensive map: normalized name → ALL column indices (sorted); handles duplicate names like 稅金
+  const allColsByNormName: Record<string, number[]> = {}
   ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
     const t = cell.text?.trim()
     if (!t) return
@@ -59,7 +61,11 @@ export async function fillWorksheet(
       if (!vendorMaps[group]) vendorMaps[group] = {}
       if (!(t in vendorMaps[group])) { vendorMaps[group][t] = colNum; vendorMaps[group][norm(t)] = colNum }
     }
+    const n = norm(t)
+    if (!allColsByNormName[n]) allColsByNormName[n] = []
+    if (!allColsByNormName[n].includes(colNum)) allColsByNormName[n].push(colNum)
   })
+  for (const n of Object.keys(allColsByNormName)) allColsByNormName[n].sort((a, b) => a - b)
   const colMap: Record<string, number> = { ...stdColMap, ...ckColMap }
 
   const dataStartRow = headerRowNum + 2
@@ -73,10 +79,10 @@ export async function fillWorksheet(
     return 'formula' in (v as any) || 'sharedFormula' in (v as any)
   }
 
-  // Clear stale plain-number values from data rows; include all vendor-section columns
+  // Clear stale plain-number values from data rows; include every column that appears in the header
   const uniqueCols = new Set<number>([
     ...Object.values(colMap) as number[],
-    ...Object.values(vendorMaps).flatMap(m => Object.values(m) as number[]),
+    ...Object.values(allColsByNormName).flat(),
   ])
   days.forEach((_, idx) => {
     const row = ws.getRow(dataStartRow + idx)
@@ -94,15 +100,23 @@ export async function fillWorksheet(
 
     for (const [colName, amount] of Object.entries(d.items)) {
       if (!amount) continue
-      // Namespaced tax key: '_tax_小雲' → find '稅金' in 小雲 vendor section
-      let lookupName = colName
-      let vg = vendorGroupLookup?.[colName]
+      let colIdx: number | undefined
+
       if (colName.startsWith('_tax_')) {
-        vg = colName.slice(5)
-        lookupName = '稅金'
+        // Namespaced vendor tax: '_tax_小雲' → find nearest '稅金' column after 小雲's items.
+        // Needed when the template has separate '退稅' sections for each vendor
+        // (e.g., 小雲→Z稅金, 菜商→AH稅金) that share the same column name.
+        const vgName = colName.slice(5)
+        const vgCols = Object.values(vendorMaps[vgName] || {}).filter((v): v is number => typeof v === 'number')
+        const maxVGCol = vgCols.length > 0 ? Math.max(...vgCols) : 0
+        const allTaxCols = allColsByNormName[norm('稅金')] ?? []
+        colIdx = allTaxCols.find(c => c > maxVGCol)
+      } else {
+        const vg = vendorGroupLookup?.[colName]
+        const vgMap = vg ? vendorMaps[vg] : undefined
+        colIdx = (vgMap && (vgMap[colName] ?? vgMap[norm(colName)])) ?? colMap[colName] ?? colMap[norm(colName)]
       }
-      const vgMap = vg ? vendorMaps[vg] : undefined
-      const colIdx = (vgMap && (vgMap[lookupName] ?? vgMap[norm(lookupName)])) ?? colMap[lookupName] ?? colMap[norm(lookupName)]
+
       if (!colIdx) continue
       const cell = excelRow.getCell(colIdx)
       cell.value = amount
