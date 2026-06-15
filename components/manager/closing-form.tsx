@@ -610,10 +610,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [currentStep, setCurrentStep] = useState(0)
   useEffect(() => {
     if (existingClosing?.status === 'disputed') {
-      sessionStorage.removeItem(stepLsKey)
+      localStorage.removeItem(stepLsKey)
       return
     }
-    const saved = parseInt(sessionStorage.getItem(stepLsKey) ?? '0') || 0
+    const saved = parseInt(localStorage.getItem(stepLsKey) ?? '0') || 0
     if (saved > 0) setCurrentStep(saved)
   }, [])
   const [submitDone, setSubmitDone] = useState(() => {
@@ -1279,7 +1279,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }
   function goToStep(n: number) {
     setCurrentStep(n)
-    sessionStorage.setItem(stepLsKey, String(n))
+    localStorage.setItem(stepLsKey, String(n))
   }
   function goPrev() { if (step > 0) goToStep(step - 1) }
 
