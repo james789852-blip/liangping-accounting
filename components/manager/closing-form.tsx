@@ -70,7 +70,7 @@ interface ReceiptForm {
 
 interface VerifyItem {
   key: string
-  type: 'receipt' | 'channel'
+  type: 'receipt' | 'channel' | 'ck'
   label: string
   photoUrl: string
   inputAmount: number
@@ -977,6 +977,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const items: VerifyItem[] = []
     for (const r of localReceipts.filter(r => r.photo_url)) {
       items.push({ key: r.id, type: 'receipt', label: r.vendor_name || '收據', photoUrl: r.photo_url!, inputAmount: r.total_amount, confirmed: false, items: r.receipt_items })
+    }
+    const ckPhotoFinal = ckPhotoUrl || ckPhotoPreview
+    if (ckPhotoFinal) {
+      const ckItems = ckPrices
+        .filter(p => (ckQuantities[p.id] ?? 0) > 0)
+        .map(p => ({ item_name: p.item_name, unit: '份', quantity: ckQuantities[p.id], unit_price: p.unit_price, amount: ckQuantities[p.id] * p.unit_price }))
+      items.push({ key: 'ck_delivery', type: 'ck', label: '央廚配送', photoUrl: ckPhotoFinal, inputAmount: dataRef.current.ck_total, confirmed: false, items: ckItems })
     }
     const channelLabelMap: Record<string, { label: string; amount: number }> = {}
     if (store.mode !== 'handwrite') channelLabelMap['pos'] = { label: store.ichef_uber_linked ? 'iChef 結帳總金額' : 'iChef 現場 POS', amount: dataRef.current.pos_cash }
@@ -2787,7 +2794,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       {reviewIndex + 1} / {verifyItems.length}
                     </span>
                     <span style={{ color: 'white', fontSize: '14px', fontWeight: 600, flex: 1, textAlign: 'center', padding: '0 12px' }}>
-                      {reviewItem.type === 'receipt' ? '單據' : '平台'} · {reviewItem.label}
+                      {reviewItem.type === 'receipt' ? '單據' : reviewItem.type === 'ck' ? '央廚' : '平台'} · {reviewItem.label}
                     </span>
                     <button
                       onClick={() => setReviewIndex(null)}
@@ -2810,7 +2817,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                       <div>
                         <div style={{ fontSize: '12px', color: '#71717a', marginBottom: '4px' }}>
-                          {reviewItem.type === 'receipt' ? '單據名稱' : '平台名稱'}
+                          {reviewItem.type === 'receipt' ? '單據名稱' : reviewItem.type === 'ck' ? '配送單' : '平台名稱'}
                         </div>
                         <div style={{ fontSize: '16px', fontWeight: 700, color: '#18181b' }}>{reviewItem.label}</div>
                       </div>
@@ -2928,7 +2935,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         {/* 文字 */}
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: '13px', fontWeight: 600, color: '#18181b', marginBottom: '2px' }}>
-                            {item.type === 'receipt' ? '單據' : '平台'} · {item.label}
+                            {item.type === 'receipt' ? '單據' : item.type === 'ck' ? '央廚' : '平台'} · {item.label}
                           </div>
                           <div style={{ fontSize: '12px', color: '#71717a' }}>
                             輸入金額：<span style={{ fontWeight: 600, color: '#92400E' }}>${fmt(item.inputAmount)}</span>
