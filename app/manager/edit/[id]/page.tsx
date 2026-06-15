@@ -63,13 +63,14 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .eq('business_date', closing.business_date)
       .order('created_at'),
     getReceiptSettings(storeId),
-    admin2.from('item_column_mappings').select('item_name, item_category, vendor_group').eq('store_id', storeId),
+    admin2.from('item_column_mappings').select('item_name, item_category, vendor_group, excel_column').eq('store_id', storeId),
   ])
 
   const mappingColumns = (mappingRows ?? []).map((r: any) => ({
     name: r.item_name,
     category: r.item_category,
     vendor_group: r.vendor_group ?? undefined,
+    excel_column: r.excel_column,
   }))
 
   return (

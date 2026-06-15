@@ -99,7 +99,7 @@ interface Props {
   today: string
   todayReceipts?: TodayReceipt[]
   receiptCategories?: CategoryWithVendors[]
-  mappingColumns?: { name: string; category: string; vendor_group?: string }[]
+  mappingColumns?: { name: string; category: string; vendor_group?: string; excel_column?: string }[]
   prevDayReserves?: PrevDayReserve | null
 }
 
@@ -1651,7 +1651,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             : mappingColumns
                                           const groups: { group: string; items: typeof mappingColumns }[] = []
                                           for (const col of base) {
-                                            const g = col.vendor_group || col.category
+                                            // Disambiguation items (item_name ≠ excel_column) use vendor_group only for
+                                            // Excel routing, not for dropdown section display — show under category instead
+                                            const isDirect = !col.excel_column || col.name === col.excel_column
+                                            const g = (isDirect && col.vendor_group) ? col.vendor_group : col.category
                                             const existing = groups.find(x => x.group === g)
                                             if (existing) existing.items.push(col)
                                             else groups.push({ group: g, items: [col] })
@@ -1887,7 +1890,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                                 : mappingColumns
                                               const groups: { group: string; items: typeof mappingColumns }[] = []
                                               for (const col of base) {
-                                                const g = col.vendor_group || col.category
+                                                const isDirect = !col.excel_column || col.name === col.excel_column
+                                                const g = (isDirect && col.vendor_group) ? col.vendor_group : col.category
                                                 const existing = groups.find(x => x.group === g)
                                                 if (existing) existing.items.push(col)
                                                 else groups.push({ group: g, items: [col] })

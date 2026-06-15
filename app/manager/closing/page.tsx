@@ -87,7 +87,7 @@ export default async function ClosingPage() {
   const admin2 = createAdminClient()
   const [receiptCategories, { data: mappingRows }, { data: prevClosing }] = await Promise.all([
     getReceiptSettings(storeId),
-    admin2.from('item_column_mappings').select('item_name, item_category, vendor_group').eq('store_id', storeId),
+    admin2.from('item_column_mappings').select('item_name, item_category, vendor_group, excel_column').eq('store_id', storeId),
     supabase
       .from('daily_closings')
       .select('reserve_items, business_date')
@@ -104,10 +104,11 @@ export default async function ClosingPage() {
     ? { business_date: prevClosing!.business_date as string, items: prevReserveItems }
     : null
 
-  const mappingColumns = (mappingRows ?? []).map((r: { item_name: string; item_category: string; vendor_group: string | null }) => ({
+  const mappingColumns = (mappingRows ?? []).map((r: { item_name: string; item_category: string; vendor_group: string | null; excel_column: string }) => ({
     name: r.item_name,
     category: r.item_category,
     vendor_group: r.vendor_group ?? undefined,
+    excel_column: r.excel_column,
   }))
 
   return (
