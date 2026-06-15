@@ -60,7 +60,7 @@ export default async function ClosingPage() {
     ;(existingClosing as any).cash_counts = cashCounts ?? []
   }
 
-  if (existingClosing && ['submitted', 'verified'].includes(existingClosing.status)) {
+  if (existingClosing?.status === 'verified') {
     return (
       <ClosingDoneCard
         storeName={store?.name ?? ''}

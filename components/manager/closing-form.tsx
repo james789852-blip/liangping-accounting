@@ -165,7 +165,7 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayRec
   const ckFromSaved = ckSingle
     ? (ckSingle.total_amount ?? 0)
     : orders.filter((x: any) => x.vendor === '央廚').reduce((s: number, o: any) => s + (o.total_amount ?? 0), 0)
-  const ck_total = ckFromReceipts !== null ? ckFromReceipts : ckFromSaved
+  const ck_total = (ckFromReceipts !== null && ckFromReceipts > 0) ? ckFromReceipts : ckFromSaved
 
   return {
     pos_cash: rev.find((x: any) => x.channel === 'pos')?.gross_amount ?? 0,
@@ -617,7 +617,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (saved > 0) setCurrentStep(saved)
   }, [])
   const [submitDone, setSubmitDone] = useState(() => {
-    try { return sessionStorage.getItem(`submit_done_${store.id}_${today}`) === '1' } catch { return false }
+    try { return localStorage.getItem(`submit_done_${store.id}_${today}`) === '1' } catch { return false }
   })
   // On mount: if a previous save was interrupted, offer to restore backed-up form data
   useEffect(() => {
@@ -770,7 +770,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   async function handleSaveReceiptEdit() {
     if (!editingReceiptId) return
-    if (!editVendor.trim() || editAmount <= 0) { toast.error('請填寫廠商名稱與金額'); return }
+    if (editAmount <= 0) { toast.error('請填寫金額'); return }
     if (!editItems.some(i => i.item_name.trim())) { toast.error('請至少選擇一個品項'); return }
     const oldReceipt = localReceipts.find(r => r.id === editingReceiptId)
     if (!oldReceipt) return
@@ -1184,7 +1184,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       // 先把 UI 狀態一次性批次更新，避免中間 render 出現 isLocked 閃跳
       setStatus('submitted')
       setSubmitDone(true)
-      try { sessionStorage.setItem(submitDoneSsKey, '1') } catch {}
+      try { localStorage.setItem(submitDoneSsKey, '1') } catch {}
       localStorage.removeItem(ckPhotoLsKey)
       localStorage.removeItem(channelPhotoLsKey)
       localStorage.removeItem(adjLsKey)
@@ -1912,13 +1912,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: '4px 8px', fontFamily: 'inherit' }}>
                                 <X className="h-3 w-3" />取消
                               </button>
-                              <button onClick={handleSaveReceiptEdit} disabled={!editVendor.trim() || editAmount <= 0 || editUploading}
+                              <button onClick={handleSaveReceiptEdit} disabled={editAmount <= 0 || editUploading}
                                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
                                 style={{
-                                  background: (editVendor.trim() && editAmount > 0) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
-                                  cursor: (editVendor.trim() && editAmount > 0) ? 'pointer' : 'not-allowed',
+                                  background: editAmount > 0 ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
+                                  cursor: editAmount > 0 ? 'pointer' : 'not-allowed',
                                   opacity: editUploading ? 0.7 : 1, border: 'none', fontFamily: 'inherit',
-                                  boxShadow: (editVendor.trim() && editAmount > 0) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
+                                  boxShadow: editAmount > 0 ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
                                 }}>
                                 {editUploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />儲存中…</> : '儲存'}
                               </button>
