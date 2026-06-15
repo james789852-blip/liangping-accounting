@@ -293,6 +293,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
     // Track (name, vg) occurrences to handle duplicates within the same vendor group
     const seenCombo: Record<string, number> = {}
     const newMappings: any[] = []
+    const orderedItemNames: string[] = [] // Excel column order for dropdown sorting
 
     for (const c of allCols) {
       const vg = vendorGroupByCol[c.col] ?? null
@@ -300,10 +301,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
       const occurrence = (seenCombo[comboKey] || 0) + 1
       seenCombo[comboKey] = occurrence
 
-      // First occurrence of (name, vg): skip if a global mapping already covers it
-      if (occurrence === 1 && globalKeys.has(comboKey)) continue
-
-      // Determine item_name for dropdown display:
+      // Determine item_name for dropdown display (needed before skip checks for order tracking):
       // - duplicate names with different vendor groups → prefix with vendor group (e.g. "翁師傅其他")
       // - same (name, vg) appears again → numbered suffix (e.g. "其他2", "退稅其他2")
       let itemName: string
@@ -312,6 +310,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
       } else {
         itemName = vg ? `${vg}${c.name}${occurrence}` : `${c.name}${occurrence}`
       }
+
+      // Always track position (including items already covered by global mappings)
+      orderedItemNames.push(itemName)
+
+      // First occurrence of (name, vg): skip if a global mapping already covers it
+      if (occurrence === 1 && globalKeys.has(comboKey)) continue
 
       if (storeItemNames.has(itemName)) continue
       storeItemNames.add(itemName)
@@ -330,6 +334,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
       const { error: insertErr } = await admin.from('item_column_mappings').insert(newMappings)
       if (insertErr) console.warn('[excel-template] mapping insert error:', insertErr.message, JSON.stringify(newMappings.map(m => m.item_name)))
     }
+
+    // Save item order file so closing form dropdown matches Excel column order
+    await admin.storage.from(BUCKET).upload(
+      `${storeId}-item-order.json`,
+      new TextEncoder().encode(JSON.stringify(orderedItemNames)),
+      { upsert: true, contentType: 'application/json' }
+    )
   }
 
   return NextResponse.json({
@@ -346,6 +357,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (!user) return NextResponse.json({ error: '未登入' }, { status: 401 })
 
   const admin = createAdminClient()
-  await admin.storage.from(BUCKET).remove([`${storeId}.xlsx`, `${storeId}-columns.json`])
+  await admin.storage.from(BUCKET).remove([`${storeId}.xlsx`, `${storeId}-columns.json`, `${storeId}-item-order.json`])
   return NextResponse.json({ success: true })
 }

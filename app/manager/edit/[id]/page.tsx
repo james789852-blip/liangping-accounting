@@ -55,7 +55,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     .order('sort_order').order('item_name')
 
   const admin2 = createAdminClient()
-  const [{ data: todayReceipts }, receiptCategories, { data: mappingRows }] = await Promise.all([
+  const [{ data: todayReceipts }, receiptCategories, { data: mappingRows }, itemOrderText] = await Promise.all([
     supabase
       .from('receipts')
       .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, unit, quantity, unit_price, amount)')
@@ -64,14 +64,21 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .order('created_at'),
     getReceiptSettings(storeId),
     admin2.from('item_column_mappings').select('item_name, item_category, vendor_group, excel_column').eq('store_id', storeId),
+    admin2.storage.from('excel-templates').download(`${storeId}-item-order.json`)
+      .then(async ({ data }) => (data ? data.text() : null))
+      .catch((): null => null),
   ])
+
+  let itemOrder: string[] = []
+  try { if (itemOrderText) itemOrder = JSON.parse(itemOrderText) } catch {}
+  const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
 
   const mappingColumns = (mappingRows ?? []).map((r: any) => ({
     name: r.item_name,
     category: r.item_category,
     vendor_group: r.vendor_group ?? undefined,
     excel_column: r.excel_column,
-  }))
+  })).sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
 
   return (
     <>

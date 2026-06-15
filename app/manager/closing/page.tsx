@@ -85,7 +85,7 @@ export default async function ClosingPage() {
     .order('created_at')
 
   const admin2 = createAdminClient()
-  const [receiptCategories, { data: mappingRows }, { data: prevClosing }] = await Promise.all([
+  const [receiptCategories, { data: mappingRows }, { data: prevClosing }, itemOrderText] = await Promise.all([
     getReceiptSettings(storeId),
     admin2.from('item_column_mappings').select('item_name, item_category, vendor_group, excel_column').eq('store_id', storeId),
     supabase
@@ -97,6 +97,9 @@ export default async function ClosingPage() {
       .order('business_date', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    admin2.storage.from('excel-templates').download(`${storeId}-item-order.json`)
+      .then(async ({ data }) => (data ? data.text() : null))
+      .catch((): null => null),
   ])
 
   const prevReserveItems = (prevClosing?.reserve_items as any[]) ?? []
@@ -104,12 +107,16 @@ export default async function ClosingPage() {
     ? { business_date: prevClosing!.business_date as string, items: prevReserveItems }
     : null
 
+  let itemOrder: string[] = []
+  try { if (itemOrderText) itemOrder = JSON.parse(itemOrderText) } catch {}
+  const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
+
   const mappingColumns = (mappingRows ?? []).map((r: { item_name: string; item_category: string; vendor_group: string | null; excel_column: string }) => ({
     name: r.item_name,
     category: r.item_category,
     vendor_group: r.vendor_group ?? undefined,
     excel_column: r.excel_column,
-  }))
+  })).sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
 
   return (
     <ClosingForm
