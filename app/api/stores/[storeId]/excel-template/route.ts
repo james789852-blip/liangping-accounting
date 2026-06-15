@@ -113,11 +113,19 @@ function getVendorGroupByCol(ws: ExcelJS.Worksheet, headerRowNum: number): Recor
   })
   if (groupStarts.length === 0) return {}
 
+  // Sort item cols and carry-forward group labels, but reset carry-forward across gaps > 2
+  // (gaps indicate section boundaries like 耗材→雜項, where group label should not bleed over)
+  const sortedItemCols = [...itemCols].sort((a, b) => a - b)
   const result: Record<number, string> = {}
-  for (const colNum of itemCols) {
-    let group = ''
-    for (const gs of groupStarts) { if (gs.col <= colNum) group = gs.name }
-    if (group) result[colNum] = group
+  let lastGroup = ''
+  let lastItemCol = -1
+  for (const colNum of sortedItemCols) {
+    if (lastItemCol >= 0 && colNum - lastItemCol > 2) lastGroup = ''
+    for (const gs of groupStarts) {
+      if (gs.col > (lastItemCol < 0 ? 0 : lastItemCol) && gs.col <= colNum) lastGroup = gs.name
+    }
+    if (lastGroup) result[colNum] = lastGroup
+    lastItemCol = colNum
   }
   return result
 }
