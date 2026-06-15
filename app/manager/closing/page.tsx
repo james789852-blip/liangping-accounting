@@ -116,7 +116,9 @@ export default async function ClosingPage() {
     category: r.item_category,
     vendor_group: r.vendor_group ?? undefined,
     excel_column: r.excel_column,
-  })).sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
+  }))
+    .filter(col => itemOrder.length === 0 || orderMap.has(col.name))
+    .sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
 
   return (
     <ClosingForm
