@@ -103,16 +103,19 @@ export async function fillWorksheet(
       let colIdx: number | undefined
 
       if (colName.startsWith('_tax_')) {
-        // Namespaced vendor tax: '_tax_小雲' → find nearest '稅金' column after 小雲's items.
-        // Needed when the template has separate '退稅' sections for each vendor
-        // (e.g., 小雲→Z稅金, 菜商→AH稅金) that share the same column name.
+        // Namespaced vendor tax: '_tax_小雲' → find nearest '稅金'/'退稅' column after 小雲's items.
+        // Needed when the template has separate tax columns per vendor section.
+        // Key subtlety: if the tax column is the last column of the vendor section,
+        // maxVGCol must exclude tax columns themselves so we don't skip them.
         const vgName = colName.slice(5)
-        const vgCols = Object.values(vendorMaps[vgName] || {}).filter((v): v is number => typeof v === 'number')
-        const maxVGCol = vgCols.length > 0 ? Math.max(...vgCols) : 0
         const allTaxCols = [
           ...(allColsByNormName[norm('稅金')] ?? []),
           ...(allColsByNormName[norm('退稅')] ?? []),
         ].sort((a, b) => a - b)
+        const taxColSet = new Set(allTaxCols)
+        const vgCols = Object.values(vendorMaps[vgName] || {})
+          .filter((v): v is number => typeof v === 'number' && !taxColSet.has(v))
+        const maxVGCol = vgCols.length > 0 ? Math.max(...vgCols) : 0
         colIdx = allTaxCols.find(c => c > maxVGCol)
       } else if (colName.startsWith('_col_')) {
         // Vendor-disambiguated item: '_col_翁師傅_其他' → vendorMaps['翁師傅']['其他']
