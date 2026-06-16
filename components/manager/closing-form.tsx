@@ -188,20 +188,22 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayRec
 }
 
 function initExpenses(existing: any, ckPrices: CKPrice[], todayReceipts?: TodayReceipt[]): Expense[] {
-  const fromDB = (existing?.expense_items ?? []).map((e: any) => ({
-    id: e.id, description: e.description, amount: e.amount,
-  }))
-  if (fromDB.length > 0) return fromDB
-  if (todayReceipts && todayReceipts.length > 0) {
-    return todayReceipts
-      .filter(r => !isCKReceipt(r, ckPrices))
-      .map(r => ({
+  // Receipts are the source of truth — re-derive when any non-CK receipts exist,
+  // so stale expense_items saved from a previous draft don't override updated receipt amounts.
+  if (todayReceipts) {
+    const nonCK = todayReceipts.filter(r => !isCKReceipt(r, ckPrices))
+    if (nonCK.length > 0) {
+      return nonCK.map(r => ({
         id: crypto.randomUUID(),
         description: r.vendor_name || (r.receipt_items ?? []).filter(i => i.item_name.trim()).map(i => i.item_name).join('、') || '（未填廠商）',
         amount: r.total_amount,
       }))
+    }
   }
-  return []
+  // No receipts → fall back to saved expense_items (manual entry without receipts)
+  return (existing?.expense_items ?? []).map((e: any) => ({
+    id: e.id, description: e.description, amount: e.amount,
+  }))
 }
 
 function receiptsToExpenses(receipts: TodayReceipt[], ckPrices: CKPrice[]): Expense[] {
@@ -911,10 +913,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       } : r
     )
     setLocalReceipts(updatedReceipts)
-    const oldKey = oldReceipt.vendor_name || '（未填廠商）'
-    setExpenses(prev => prev.map(e =>
-      e.description === oldKey ? { ...e, description: editVendor || '（未填廠商）', amount: finalTotal } : e
-    ))
+    setExpenses(receiptsToExpenses(updatedReceipts, ckPrices))
     const ckTotal = updatedReceipts.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
     set('ck_total', ckTotal)
 
