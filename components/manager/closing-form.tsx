@@ -2600,9 +2600,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       </button>
                       <span className="flex-1 text-xs font-medium" style={{ color: '#52525b' }}>信封袋照片已上傳</span>
                       {!isLocked && (
-                        <button type="button" onClick={() => envelopePhotoInputRef.current?.click()}
-                          className="text-xs px-3 py-1.5 rounded-lg font-medium shrink-0"
-                          style={{ background: '#f4f4f5', color: '#71717a', border: 'none', cursor: 'pointer' }}>重拍</button>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button type="button" onClick={() => envelopePhotoInputRef.current?.click()}
+                            className="text-xs px-3 py-1.5 rounded-lg font-medium"
+                            style={{ background: '#f4f4f5', color: '#71717a', border: 'none', cursor: 'pointer' }}>重拍</button>
+                          <button type="button" onClick={() => { setEnvelopePhotoUrl(undefined); setEnvelopePhotoPreview(undefined); localStorage.removeItem(envelopePhotoLsKey) }}
+                            className="rounded-full flex items-center justify-center"
+                            style={{ background: '#fee2e2', width: '28px', height: '28px', border: 'none', cursor: 'pointer' }}>
+                            <X className="h-3.5 w-3.5" style={{ color: '#dc2626' }} />
+                          </button>
+                        </div>
                       )}
                     </div>
                   ) : (
@@ -2967,9 +2974,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   </button>
                   <span className="flex-1 text-xs font-medium" style={{ color: '#52525b' }}>備註照片已上傳</span>
                   {!isLocked && (
-                    <button type="button" onClick={() => notePhotoInputRef.current?.click()}
-                      className="text-xs px-3 py-1.5 rounded-lg font-medium shrink-0"
-                      style={{ background: '#f4f4f5', color: '#71717a', border: 'none', cursor: 'pointer' }}>重拍</button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button type="button" onClick={() => notePhotoInputRef.current?.click()}
+                        className="text-xs px-3 py-1.5 rounded-lg font-medium"
+                        style={{ background: '#f4f4f5', color: '#71717a', border: 'none', cursor: 'pointer' }}>重拍</button>
+                      <button type="button" onClick={() => { setNotePhotoUrl(undefined); setNotePhotoPreview(undefined); localStorage.removeItem(notePhotoLsKey) }}
+                        className="rounded-full flex items-center justify-center"
+                        style={{ background: '#fee2e2', width: '28px', height: '28px', border: 'none', cursor: 'pointer' }}>
+                        <X className="h-3.5 w-3.5" style={{ color: '#dc2626' }} />
+                      </button>
+                    </div>
                   )}
                 </div>
               ) : !isLocked && (
