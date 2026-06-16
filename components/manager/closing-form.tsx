@@ -1566,7 +1566,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         )}
 
         {/* ── STEP 1: 上傳單據 ──────────────────────────────────────────── */}
-        {(stepId === 'receipts' || isLocked) && (
+        {(stepId === 'receipts' || (isLocked && !submitDone)) && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="上傳單據"
               desc="上傳今日所有發票與收據，手動填寫金額。" />}
@@ -2158,7 +2158,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         )}
 
         {/* ── STEP 2: 央廚配送 ─────────────────────────────────────────── */}
-        {(stepId === 'ck_delivery' || isLocked) && (
+        {(stepId === 'ck_delivery' || (isLocked && !submitDone)) && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="央廚配送"
               desc="填寫今日各品項配送數量，上傳配送單照片供總公司核對。" />}
@@ -2262,7 +2262,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         )}
 
         {/* ── STEP 3: 手寫菜單 ─────────────────────────────────────────── */}
-        {(stepId === 'handwrite' || isLocked) && store.mode !== 'ichef' && (
+        {(stepId === 'handwrite' || (isLocked && !submitDone)) && store.mode !== 'ichef' && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="手寫菜單訂單"
               desc="每筆訂單輸入單號與金額，作廢訂單請標記原因。iChef 店可跳過此步。" />}
@@ -2377,7 +2377,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         )}
 
         {/* ── STEP 3: 營業額 ───────────────────────────────────────────── */}
-        {(stepId === 'revenue' || isLocked) && (
+        {(stepId === 'revenue' || (isLocked && !submitDone)) && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="各平台營業額"
               desc="輸入今日各通路的原始金額，並上傳平台統計畫面照片 — AI 自動比對防止輸入錯誤。" />}
@@ -2514,7 +2514,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         )}
 
         {/* ── STEP 4: 現金清點 ─────────────────────────────────────────── */}
-        {(stepId === 'cash' || isLocked) && (
+        {(stepId === 'cash' || (isLocked && !submitDone)) && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="現金清點"
               desc="輸入各幣值張數，系統自動加總計算現金總額。" />}
@@ -2560,7 +2560,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         )}
 
         {/* ── STEP 5: 確認結帳 ─────────────────────────────────────────── */}
-        {(stepId === 'summary' || isLocked) && (
+        {(stepId === 'summary' || (isLocked && !submitDone)) && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="結帳確認"
               desc="確認所有金額無誤後，送出今日結帳。" />}
