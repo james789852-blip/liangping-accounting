@@ -787,7 +787,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (isLocked || submitDone) return
     const t = setInterval(() => handleSave(true), 60000)
     return () => clearInterval(t)
-  }, [data, expenses, handwriteOrders, isLocked, isDisputed, submitDone])
+    // 任何會寫進 handleSave payload 的 state 都要列依賴，否則 60 秒定時器拿到的是 stale closure
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, expenses, handwriteOrders, adjustments, reserves, channelPhotos, ckPhotoUrl, envelopePhotoUrl, voidInvoicePhotos, notePhotoUrl, ckQuantities, isLocked, isDisputed, submitDone])
 
   useEffect(() => {
     const fromQty = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * p.unit_price, 0)
