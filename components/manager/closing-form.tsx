@@ -1713,8 +1713,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         {/* 備註 */}
                         <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>備註（可空）</label>
-                          <input placeholder=""
-                            style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
+                          <textarea placeholder=""
+                            style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', resize: 'none', minHeight: '64px' }}
                             value={form.notes}
                             onChange={e => updateReceiptForm(form.id, 'notes', e.target.value)} />
                         </div>
@@ -1957,8 +1957,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             {/* 備註 */}
                             <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>備註（可空）</label>
-                              <input placeholder=""
-                                style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
+                              <textarea placeholder=""
+                                style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', resize: 'none', minHeight: '64px' }}
                                 value={editNotes} onChange={e => setEditNotes(e.target.value)} />
                             </div>
 
@@ -2587,16 +2587,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 {/* Envelope bag photo */}
                 <div className="mt-3">
                   {(envelopePhotoPreview || envelopePhotoUrl) ? (
-                    <div className="relative rounded-xl overflow-hidden" style={{ height: '96px' }}>
+                    <div className="flex items-center gap-3">
                       <button type="button" onClick={() => setPhotoLightbox((envelopePhotoPreview || envelopePhotoUrl)!)}
-                        style={{ display: 'block', width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer' }}>
+                        className="relative shrink-0 rounded-xl overflow-hidden"
+                        style={{ width: '56px', height: '56px', padding: 0, border: 'none', cursor: 'pointer' }}>
                         <img src={envelopePhotoPreview || envelopePhotoUrl} alt="信封袋"
                           style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <div className="absolute inset-0 flex items-center justify-center"
+                          style={{ background: 'rgba(0,0,0,0.25)' }}>
+                          <ZoomIn className="h-4 w-4" style={{ color: '#fff' }} />
+                        </div>
                       </button>
+                      <span className="flex-1 text-xs font-medium" style={{ color: '#52525b' }}>信封袋照片已上傳</span>
                       {!isLocked && (
                         <button type="button" onClick={() => envelopePhotoInputRef.current?.click()}
-                          className="absolute top-2 right-2 text-xs px-2 py-1 rounded-lg font-medium"
-                          style={{ background: 'rgba(0,0,0,0.55)', color: '#fff' }}>重拍</button>
+                          className="text-xs px-3 py-1.5 rounded-lg font-medium shrink-0"
+                          style={{ background: '#f4f4f5', color: '#71717a', border: 'none', cursor: 'pointer' }}>重拍</button>
                       )}
                     </div>
                   ) : (
@@ -2915,18 +2921,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               {voidInvoicePhotos.length === 0 ? (
                 <p className="px-4 py-3 text-xs" style={{ color: '#a1a1aa' }}>無作廢發票</p>
               ) : (
-                <div className="px-4 py-3 grid grid-cols-3 gap-2">
+                <div className="px-4 py-3 grid grid-cols-4 gap-2">
                   {voidInvoicePhotos.map((url, i) => (
-                    <div key={i} className="relative rounded-lg overflow-hidden" style={{ height: '72px' }}>
+                    <div key={i} className="relative rounded-lg overflow-hidden" style={{ height: '60px' }}>
                       <button type="button" onClick={() => setPhotoLightbox(url)}
                         style={{ display: 'block', width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer' }}>
                         <img src={url} alt={`作廢發票 ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <div className="absolute inset-0 flex items-center justify-center"
+                          style={{ background: 'rgba(0,0,0,0.18)' }}>
+                          <ZoomIn className="h-3.5 w-3.5" style={{ color: '#fff' }} />
+                        </div>
                       </button>
                       {!isLocked && (
                         <button type="button" onClick={() => setVoidInvoicePhotos(prev => prev.filter((_, j) => j !== i))}
-                          className="absolute top-1 right-1 rounded-full flex items-center justify-center"
-                          style={{ background: 'rgba(0,0,0,0.55)', width: '20px', height: '20px' }}>
-                          <X className="h-3 w-3" style={{ color: '#fff' }} />
+                          className="absolute top-0.5 right-0.5 rounded-full flex items-center justify-center"
+                          style={{ background: 'rgba(0,0,0,0.55)', width: '18px', height: '18px' }}>
+                          <X className="h-2.5 w-2.5" style={{ color: '#fff' }} />
                         </button>
                       )}
                     </div>
@@ -2939,21 +2949,27 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             <div>
               <label className="block text-xs font-semibold mb-2" style={{ color: '#a1a1aa' }}>備註</label>
               <textarea disabled={isLocked}
-                style={{ width: '100%', minHeight: '72px', padding: '12px', fontSize: '14px', border: '1.5px solid #e4e4e7', borderRadius: '12px', resize: 'none', outline: 'none', fontFamily: 'inherit', background: isLocked ? '#fafafa' : 'white', color: '#18181b' }}
+                style={{ width: '100%', minHeight: '120px', padding: '12px', fontSize: '14px', border: '1.5px solid #e4e4e7', borderRadius: '12px', resize: 'none', outline: 'none', fontFamily: 'inherit', background: isLocked ? '#fafafa' : 'white', color: '#18181b' }}
                 placeholder="如有異常情況請說明..."
                 value={data.note} onChange={e => set('note', e.target.value)} />
               {/* Note photo */}
               {(notePhotoPreview || notePhotoUrl) ? (
-                <div className="relative mt-2 rounded-xl overflow-hidden" style={{ height: '80px' }}>
+                <div className="flex items-center gap-3 mt-2">
                   <button type="button" onClick={() => setPhotoLightbox((notePhotoPreview || notePhotoUrl)!)}
-                    style={{ display: 'block', width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer' }}>
+                    className="relative shrink-0 rounded-xl overflow-hidden"
+                    style={{ width: '56px', height: '56px', padding: 0, border: 'none', cursor: 'pointer' }}>
                     <img src={notePhotoPreview || notePhotoUrl} alt="備註照片"
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <div className="absolute inset-0 flex items-center justify-center"
+                      style={{ background: 'rgba(0,0,0,0.25)' }}>
+                      <ZoomIn className="h-4 w-4" style={{ color: '#fff' }} />
+                    </div>
                   </button>
+                  <span className="flex-1 text-xs font-medium" style={{ color: '#52525b' }}>備註照片已上傳</span>
                   {!isLocked && (
                     <button type="button" onClick={() => notePhotoInputRef.current?.click()}
-                      className="absolute top-2 right-2 text-xs px-2 py-1 rounded-lg font-medium"
-                      style={{ background: 'rgba(0,0,0,0.55)', color: '#fff' }}>重拍</button>
+                      className="text-xs px-3 py-1.5 rounded-lg font-medium shrink-0"
+                      style={{ background: '#f4f4f5', color: '#71717a', border: 'none', cursor: 'pointer' }}>重拍</button>
                   )}
                 </div>
               ) : !isLocked && (
