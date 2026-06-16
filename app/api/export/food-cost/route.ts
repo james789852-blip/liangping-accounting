@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import { type RowVals, norm, fillWorksheet } from '@/lib/food-cost-template'
+import { getMonthLastDay } from '@/lib/business-date'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -99,7 +100,7 @@ export async function GET(req: NextRequest) {
   const year     = parseInt(yearStr)
   const monthNum = parseInt(monthStr)
   const firstDay = `${month}-01`
-  const lastDay  = new Date(year, monthNum, 0).toISOString().slice(0, 10)
+  const lastDay  = getMonthLastDay(year, monthNum)
 
   const admin = createAdminClient()
   const [{ data: receipts }, { data: closings }, { data: storeRow }, { data: mappingsRaw }, { data: ckPricesData }] = await Promise.all([

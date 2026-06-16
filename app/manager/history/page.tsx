@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronRight, History, Search } from 'lucide-react'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
+import { getMonthLastDay } from '@/lib/business-date'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,7 +47,7 @@ export default async function HistoryPage({
     const [y, m] = searchMonth.split('-')
     query = query
       .gte('business_date', `${y}-${m}-01`)
-      .lte('business_date', new Date(parseInt(y), parseInt(m), 0).toISOString().slice(0, 10))
+      .lte('business_date', getMonthLastDay(parseInt(y), parseInt(m)))
   } else {
     query = query.limit(90)
   }

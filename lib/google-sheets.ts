@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import { type RowVals, fillWorksheet, extractValues, extractColors, extractBold, extractColWidths, extractMerges } from '@/lib/food-cost-template'
 import { type CKDayData, fillCKWorksheet, buildCKGeneratedWorkbook, getDaysInMonth } from '@/lib/ck-template'
+import { getMonthLastDay } from '@/lib/business-date'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -56,7 +57,7 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
   const monthNum = parseInt(monthStr)
   const month = `${yearStr}-${monthStr}`
   const firstDay = `${month}-01`
-  const lastDay = new Date(year, monthNum, 0).toISOString().slice(0, 10)
+  const lastDay = getMonthLastDay(year, monthNum)
 
   // Fetch store info including Google Sheet ID
   const { data: storeRow } = await admin
@@ -770,7 +771,7 @@ export async function syncMonthToSheets(storeId: string, month: string): Promise
   const admin = createAdminClient()
   const [yearStr, monthStr] = month.split('-')
   const firstDay = `${month}-01`
-  const lastDay = new Date(parseInt(yearStr), parseInt(monthStr), 0).toISOString().slice(0, 10)
+  const lastDay = getMonthLastDay(parseInt(yearStr), parseInt(monthStr))
 
   const { data: closing } = await admin
     .from('daily_closings')
@@ -795,7 +796,7 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
   const year = parseInt(yearStr)
   const monthNum = parseInt(monthStr)
   const firstDay = `${month}-01`
-  const lastDay = new Date(year, monthNum, 0).toISOString().slice(0, 10)
+  const lastDay = getMonthLastDay(year, monthNum)
 
   // CK store info
   const { data: ckStore } = await admin

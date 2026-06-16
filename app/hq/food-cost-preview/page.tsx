@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { FileBarChart2 } from 'lucide-react'
 import FoodCostPreviewClient from '@/components/hq/food-cost-preview-client'
 import CKTemplateClient from '@/components/hq/ck-template-client'
+import { getMonthLastDay } from '@/lib/business-date'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,7 +47,7 @@ export default async function FoodCostPreviewPage({
   const year = parseInt(yearStr)
   const monthNum = parseInt(monthStr)
   const firstDay = `${month}-01`
-  const lastDay = new Date(year, monthNum, 0).toISOString().slice(0, 10)
+  const lastDay = getMonthLastDay(year, monthNum)
 
   // ─── 央廚模式：撈 ck_daily_records 系列資料 ───────────────────────────
   if (isCK) {

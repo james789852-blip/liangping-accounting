@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
+import { getMonthLastDay } from '@/lib/business-date'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 const BUCKET = 'excel-templates'
@@ -153,7 +154,7 @@ export async function GET(req: NextRequest) {
   const year = parseInt(yearStr)
   const monthNum = parseInt(monthStr)
   const firstDay = `${month}-01`
-  const lastDay = new Date(year, monthNum, 0).toISOString().slice(0, 10)
+  const lastDay = getMonthLastDay(year, monthNum)
 
   const admin = createAdminClient()
 

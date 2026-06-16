@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ClosingsBrowser from '@/components/hq/closings-browser'
+import { getMonthLastDay } from '@/lib/business-date'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,7 +43,7 @@ export default async function ClosingsPage({
   } else if (currentMonth) {
     const [y, m] = currentMonth.split('-')
     startDate = `${y}-${m}-01`
-    endDate = new Date(parseInt(y), parseInt(m), 0).toISOString().slice(0, 10)
+    endDate = getMonthLastDay(parseInt(y), parseInt(m))
   } else {
     // 預設：今天
     startDate = todayStr
