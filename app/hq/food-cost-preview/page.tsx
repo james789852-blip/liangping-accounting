@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { FileBarChart2 } from 'lucide-react'
 import FoodCostPreviewClient from '@/components/hq/food-cost-preview-client'
+import CKTemplateClient from '@/components/hq/ck-template-client'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,21 +21,23 @@ export default async function FoodCostPreviewPage({
   if (!profile?.is_hq && profile?.role !== '老闆') redirect('/manager/dashboard')
 
   const admin = createAdminClient()
-  const { data: stores } = await admin
-    .from('stores').select('id, name, type').eq('active', true).order('name')
-
   const params = await searchParams
   const isCK = params.type === 'ck'
-  // 預設 storeId：依模板類型挑第一個對應的店家
-  const matchingStores = (stores ?? []).filter(s => (isCK ? s.type === '央廚' : s.type !== '央廚'))
-  const storeId = params.storeId ?? matchingStores[0]?.id ?? stores?.[0]?.id ?? ''
+
+  // 央廚模式：只撈央廚店家；店面模式：排除央廚
+  const { data: stores } = await admin
+    .from('stores').select('id, name, type').eq('active', true)
+    .filter('type', isCK ? 'eq' : 'neq', '央廚')
+    .order('name')
+
+  const storeId = params.storeId ?? stores?.[0]?.id ?? ''
   const now = new Date()
   const month = params.month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
   if (!storeId) {
     return (
       <div className="min-h-full flex items-center justify-center" style={{ background: '#fafafa' }}>
-        <p className="text-sm" style={{ color: '#a1a1aa' }}>尚無店家資料</p>
+        <p className="text-sm" style={{ color: '#a1a1aa' }}>{isCK ? '尚無央廚店家' : '尚無店家資料'}</p>
       </div>
     )
   }
@@ -44,6 +47,94 @@ export default async function FoodCostPreviewPage({
   const monthNum = parseInt(monthStr)
   const firstDay = `${month}-01`
   const lastDay = new Date(year, monthNum, 0).toISOString().slice(0, 10)
+
+  // ─── 央廚模式：撈 ck_daily_records 系列資料 ───────────────────────────
+  if (isCK) {
+    const [{ data: records }, tmplCheck, tmplMetaRes] = await Promise.all([
+      admin.from('ck_daily_records').select('id, business_date').eq('ck_store_id', storeId).gte('business_date', firstDay).lte('business_date', lastDay),
+      admin.storage.from('excel-templates').list('', { search: `ck-${storeId}` }),
+      admin.storage.from('excel-templates').download(`ck-${storeId}-meta.json`).then(r => r.data).catch(() => null),
+    ])
+    const recordIds = (records ?? []).map(r => r.id)
+    const [{ data: storeOrders }, { data: expenseItems }] = await Promise.all([
+      recordIds.length > 0
+        ? admin.from('ck_store_orders').select('ck_daily_record_id, amount').in('ck_daily_record_id', recordIds)
+        : Promise.resolve({ data: [] }),
+      recordIds.length > 0
+        ? admin.from('ck_expense_items').select('ck_daily_record_id, category, amount').in('ck_daily_record_id', recordIds)
+        : Promise.resolve({ data: [] }),
+    ])
+
+    const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
+    const daysInMonth = new Date(year, monthNum, 0).getDate()
+    const days = Array.from({ length: daysInMonth }, (_, i) =>
+      `${month}-${String(i + 1).padStart(2, '0')}`
+    )
+    const byDate: Record<string, { revenueTotal: number; expenseTotal: number; foodTotal: number; packTotal: number; miscTotal: number }> = {}
+    for (const date of days) byDate[date] = { revenueTotal: 0, expenseTotal: 0, foodTotal: 0, packTotal: 0, miscTotal: 0 }
+
+    for (const record of records ?? []) {
+      const date = record.business_date as string
+      const row = byDate[date]
+      if (!row) continue
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const o of (storeOrders ?? []).filter((x: any) => x.ck_daily_record_id === record.id)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        row.revenueTotal += ((o as any).amount as number) ?? 0
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const e of (expenseItems ?? []).filter((x: any) => x.ck_daily_record_id === record.id)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const amt = ((e as any).amount as number) ?? 0
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cat = (e as any).category as string
+        row.expenseTotal += amt
+        if (cat === '食材') row.foodTotal += amt
+        else if (cat === '耗材') row.packTotal += amt
+        else row.miscTotal += amt
+      }
+    }
+
+    const ckRows = days.map(d => {
+      const dt = new Date(d + 'T12:00:00+08:00')
+      return { date: d, weekday: `星期${WEEKDAYS[dt.getDay()]}`, ...byDate[d] }
+    })
+    const monthTotals = ckRows.reduce(
+      (s, r) => ({ revenue: s.revenue + r.revenueTotal, expense: s.expense + r.expenseTotal, food: s.food + r.foodTotal, pack: s.pack + r.packTotal, misc: s.misc + r.miscTotal }),
+      { revenue: 0, expense: 0, food: 0, pack: 0, misc: 0 },
+    )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hasTemplate = (tmplCheck.data ?? []).some((f: any) => f.name === `ck-${storeId}.xlsx`)
+    let templateMeta: { filename: string; uploadedAt: string } | null = null
+    if (tmplMetaRes) {
+      try { templateMeta = JSON.parse(await tmplMetaRes.text()) } catch {}
+    }
+
+    return (
+      <div className="min-h-full" style={{ background: '#fafafa' }}>
+        <div className="bg-white px-4 py-5" style={{ borderBottom: '1px solid #f4f4f5' }}>
+          <div className="max-w-5xl mx-auto">
+            <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
+              <FileBarChart2 className="h-3.5 w-3.5" />模板設定 · 央廚
+            </div>
+            <h1 className="text-xl font-bold" style={{ color: '#18181b' }}>央廚 Excel 模板設定</h1>
+            <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>
+              上傳央廚 Excel 模板；匯出與「同步試算表」都會自動套用
+            </p>
+          </div>
+        </div>
+        <CKTemplateClient
+          stores={stores ?? []}
+          storeId={storeId}
+          month={month}
+          rows={ckRows}
+          hasTemplate={hasTemplate}
+          templateMeta={templateMeta}
+          monthTotals={monthTotals}
+        />
+      </div>
+    )
+  }
 
   const [
     { data: receipts },
@@ -192,13 +283,11 @@ export default async function FoodCostPreviewPage({
       <div className="bg-white px-4 py-5" style={{ borderBottom: '1px solid #f4f4f5' }}>
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
-            <FileBarChart2 className="h-3.5 w-3.5" />{isCK ? '央廚' : '店面'}Excel模板設定
+            <FileBarChart2 className="h-3.5 w-3.5" />模板設定 · 店面
           </div>
-          <h1 className="text-xl font-bold" style={{ color: '#18181b' }}>{isCK ? '央廚' : '店面'}Excel模板設定</h1>
+          <h1 className="text-xl font-bold" style={{ color: '#18181b' }}>店面 Excel 模板設定</h1>
           <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>
-            {isCK
-              ? '上傳央廚 Excel 模板，匯出時自動套用'
-              : '店長填入收據細項後，系統自動對應到 Excel 欄位，不需手動輸入'}
+            店長填入收據細項後，系統依品項對應自動寫入 Excel 欄位
           </p>
         </div>
       </div>
@@ -216,7 +305,6 @@ export default async function FoodCostPreviewPage({
         templateColumns={templateColumns}
         templateMeta={templateMeta}
         storeMappings={storeMappings}
-        isCK={isCK}
       />
     </div>
   )

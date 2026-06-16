@@ -36,7 +36,6 @@ interface Props {
   templateColumns: Record<string, string[]> | null
   templateMeta: { filename: string; uploadedAt: string } | null
   storeMappings: StoreMapping[]
-  isCK?: boolean
 }
 
 const CAT_COLOR: Record<string, { bg: string; text: string; border: string }> = {
@@ -47,7 +46,7 @@ const CAT_COLOR: Record<string, { bg: string; text: string; border: string }> = 
 
 export default function FoodCostPreviewClient({
   stores, storeId, month, rows, totalMapped, totalUnmapped, mappingCount, colBreakdown,
-  hasTemplate, templateColumns, templateMeta, storeMappings, isCK = false,
+  hasTemplate, templateColumns, templateMeta, storeMappings,
 }: Props) {
   const router = useRouter()
   const [expandedDate, setExpandedDate] = useState<string | null>(null)
@@ -56,8 +55,6 @@ export default function FoodCostPreviewClient({
   const [templateOk, setTemplateOk] = useState(hasTemplate)
   const [toast, setToast] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const [storeTypeFilter, setStoreTypeFilter] = useState<'全部' | '店面' | '央廚'>(isCK ? '央廚' : '店面')
   const [assigningItem, setAssigningItem] = useState<string | null>(null)
   const [assigningSearch, setAssigningSearch] = useState('')
   const [assigningSaving, setAssigningSaving] = useState(false)
@@ -145,47 +142,15 @@ export default function FoodCostPreviewClient({
     : Math.round(totalMapped / (totalMapped + totalUnmapped) * 100)
 
   const hasAnyData = rows.some(r => r.receiptCount > 0)
-  const filteredStores = storeTypeFilter === '全部' ? stores : stores.filter(s => (s.type ?? '店面') === storeTypeFilter)
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-4">
-
-      {/* 類型篩選 tabs */}
-      <div className="flex gap-2">
-        {(['全部', '店面', '央廚'] as const).map(t => (
-          <button key={t} onClick={() => {
-            setStoreTypeFilter(t)
-            const first = (t === '全部' ? stores : stores.filter(s => (s.type ?? '店面') === t))[0]
-            if (first && first.id !== storeId) changeStore(first.id)
-          }}
-            className="px-4 py-2 rounded-xl text-sm font-semibold"
-            style={{
-              background: storeTypeFilter === t ? 'linear-gradient(135deg,#F59E0B,#F97316)' : 'white',
-              color: storeTypeFilter === t ? 'white' : '#52525b',
-              border: storeTypeFilter === t ? 'none' : '1px solid #e4e4e7',
-              boxShadow: storeTypeFilter === t ? '0 2px 8px rgba(245,158,11,0.2)' : 'none',
-            }}>
-            {t}
-          </button>
-        ))}
-      </div>
 
       {/* 選擇器 */}
       <div className="bg-white rounded-2xl px-4 py-3 flex gap-3 flex-wrap items-center" style={{ border: '1px solid #f4f4f5' }}>
         <select value={storeId} onChange={e => changeStore(e.target.value)}
           style={{ padding: '7px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
-          {storeTypeFilter !== '全部'
-            ? filteredStores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)
-            : (['店面', '央廚'] as const).map(type => {
-                const group = stores.filter(s => (s.type ?? '店面') === type)
-                if (group.length === 0) return null
-                return (
-                  <optgroup key={type} label={`── ${type} ──`}>
-                    {group.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </optgroup>
-                )
-              })
-          }
+          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         <input type="month" value={month} onChange={e => changeMonth(e.target.value)}
           style={{ padding: '7px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }} />
