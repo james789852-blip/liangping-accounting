@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import ClosingForm from '@/components/manager/closing-form'
-import ClosingDoneCard from '@/components/manager/closing-done-card'
 import { Store, CKPrice } from '@/lib/types'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
@@ -58,18 +57,6 @@ export default async function ClosingPage() {
     const admin = createAdminClient()
     const { data: cashCounts } = await admin.from('cash_counts').select('*').eq('closing_id', existingClosing.id)
     ;(existingClosing as any).cash_counts = cashCounts ?? []
-  }
-
-  if (existingClosing?.status === 'verified') {
-    return (
-      <ClosingDoneCard
-        storeName={store?.name ?? ''}
-        businessDate={today}
-        status={existingClosing.status}
-        totalRevenue={existingClosing.total_revenue}
-        variance={existingClosing.variance}
-      />
-    )
   }
 
   if (existingClosing?.status === 'disputed') {

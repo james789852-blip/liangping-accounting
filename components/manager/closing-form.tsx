@@ -1314,6 +1314,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }
 
   async function handleSubmit() {
+    // Guard: never re-submit a closing that's already submitted/verified —
+    // would downgrade verified → submitted and overwrite submitted_at/by.
+    if (status === 'submitted' || status === 'verified') {
+      toast.error('此帳目已送出，請勿重複送出')
+      return
+    }
     const cid = await handleSave(true)
     if (!cid) return
     setSubmitting(true)
