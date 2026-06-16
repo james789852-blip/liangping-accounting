@@ -160,3 +160,15 @@
     height: auto;
   }
 }
+
+/* 店長結帳表單的固定底部動作列：手機要避開底部 tab + 安全區，桌機固定底部 */
+.closing-form-bottom-bar {
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.06);
+  border-top: 1px solid #f4f4f5;
+}
+@media (min-width: 1024px) {
+  .closing-form-bottom-bar {
+    bottom: 0;
+  }
+}

@@ -146,43 +146,44 @@ export default function FoodCostPreviewClient({
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-4">
 
-      {/* 工具列：店家/月份 + 模板/匯出 */}
-      <div className="bg-white rounded-2xl px-4 py-3 flex gap-4 flex-wrap items-center justify-between" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-        {/* 左：店家 + 月份 */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[11px] font-semibold uppercase mr-1" style={{ color: '#a1a1aa', letterSpacing: '0.05em' }}>店家</span>
+      {/* 工具列：手機分行、桌機橫排 */}
+      <div className="bg-white rounded-2xl p-3 sm:p-4 space-y-3" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+        {/* 第 1 行：店家 + 月份 */}
+        <div className="flex items-center gap-2">
           <select value={storeId} onChange={e => changeStore(e.target.value)}
-            style={{ padding: '7px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
+            className="flex-1 min-w-0"
+            style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
             {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-          <span className="text-[11px] font-semibold uppercase ml-2 mr-1" style={{ color: '#a1a1aa', letterSpacing: '0.05em' }}>月份</span>
           <input type="month" value={month} onChange={e => changeMonth(e.target.value)}
-            style={{ padding: '7px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }} />
+            className="shrink-0"
+            style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', maxWidth: '160px' }} />
         </div>
-        {/* 右：模板狀態 + 動作 */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
-            <FileBarChart2 className="h-4 w-4 shrink-0" style={{ color: templateOk ? '#10b981' : '#a1a1aa' }} />
-            {templateMeta ? (
-              <div className="leading-tight">
-                <p style={{ fontSize: '12px', fontWeight: 600, color: '#52525b', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{templateMeta.filename}</p>
-                <p suppressHydrationWarning style={{ fontSize: '10px', color: '#a1a1aa' }}>
-                  {new Date(templateMeta.uploadedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}
-                </p>
-              </div>
-            ) : (
-              <span className="text-xs font-medium" style={{ color: '#a1a1aa' }}>尚未上傳模板</span>
-            )}
-          </div>
+        {/* 第 2 行：模板狀態 */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
+          <FileBarChart2 className="h-4 w-4 shrink-0" style={{ color: templateOk ? '#10b981' : '#a1a1aa' }} />
+          {templateMeta ? (
+            <div className="leading-tight min-w-0 flex-1">
+              <p className="truncate" style={{ fontSize: '12px', fontWeight: 600, color: '#52525b' }}>{templateMeta.filename}</p>
+              <p suppressHydrationWarning style={{ fontSize: '10px', color: '#a1a1aa' }}>
+                {new Date(templateMeta.uploadedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}
+              </p>
+            </div>
+          ) : (
+            <span className="text-xs font-medium" style={{ color: '#a1a1aa' }}>尚未上傳模板</span>
+          )}
+        </div>
+        {/* 第 3 行：動作按鈕（手機 2 等分，桌機並排） */}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2 sm:justify-end">
           <input ref={fileInputRef} type="file" accept=".xlsx" hidden onChange={handleUpload} />
           <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
             style={{ background: 'white', border: '1.5px solid #e4e4e7', cursor: 'pointer', fontFamily: 'inherit', color: '#52525b' }}>
             <Upload className="h-3.5 w-3.5" />
             {uploading ? '上傳中…' : templateOk ? '更換模板' : '上傳模板'}
           </button>
           <button onClick={handleExport} disabled={exporting}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
+            className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
             style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 12px rgba(245,158,11,0.25)' }}>
             <Download className="h-3.5 w-3.5" />
             {exporting ? '匯出中…' : '匯出 Excel'}

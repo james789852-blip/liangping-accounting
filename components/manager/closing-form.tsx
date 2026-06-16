@@ -3452,8 +3452,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
       {/* ── Fixed bottom bar ──────────────────────────────────────────────── */}
       {(!isLocked || submitDone) && (
-        <div className="fixed bottom-14 lg:bottom-0 left-0 lg:left-60 right-0 bg-white px-4 py-3"
-          style={{ borderTop: '1px solid #f4f4f5', boxShadow: '0 -4px 16px rgba(0,0,0,0.06)', visibility: stepMounted ? 'visible' : 'hidden' }}>
+        <div className="fixed left-0 lg:left-60 right-0 bg-white px-4 py-3 closing-form-bottom-bar"
+          style={{ visibility: stepMounted ? 'visible' : 'hidden' }}>
           <div className="max-w-xl mx-auto flex gap-3">
 
             {/* Step 8: 零用金核對 → 完成結束 */}
