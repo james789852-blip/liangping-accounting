@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { syncClosingToSheets, syncMonthToSheets } from '@/lib/google-sheets'
+import { logAudit } from '@/lib/audit'
 
 interface CashCountsPayload {
   bills_1000: number; bills_500: number; bills_100: number
@@ -40,8 +41,15 @@ export async function verifyClosing(closingId: string) {
   if (!user) return { error: '未登入' }
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
+    .from('user_profiles').select('role, is_hq, name').eq('user_id', user.id).single()
   if (!profile || (!profile.is_hq && profile.role !== '老闆')) return { error: '權限不足' }
+
+  // 撈帳目資訊用於 audit 描述
+  const { data: closing } = await supabase
+    .from('daily_closings').select('store_id, business_date, status')
+    .eq('id', closingId).single()
+  if (!closing) return { error: '找不到此帳目' }
+  if (closing.status !== 'submitted') return { error: `只能審核已送出的帳目（目前狀態：${closing.status}）` }
 
   const { error } = await supabase
     .from('daily_closings')
@@ -50,10 +58,28 @@ export async function verifyClosing(closingId: string) {
 
   if (error) return { error: error.message }
 
+  await logAudit({
+    eventType: 'closing_verify',
+    storeId: closing.store_id,
+    userId: user.id,
+    closingId,
+    description: `${profile.name ?? user.email ?? '未知'} 審核 ${closing.business_date} 帳目`,
+  })
+
   // Fire-and-forget sync to Google Sheets (non-blocking; won't fail verification if Sheets errors)
-  try { await syncClosingToSheets(closingId) } catch (e) { console.error('[verifyClosing] Sheets sync failed:', e) }
+  try { await syncClosingToSheets(closingId) } catch (e) {
+    console.error('[verifyClosing] Sheets sync failed:', e)
+    await logAudit({
+      eventType: 'sheets_sync_failed', severity: 'warn',
+      storeId: closing.store_id, userId: user.id, closingId,
+      description: `${closing.business_date} 試算表同步失敗`,
+      metadata: { error: (e as Error).message },
+    })
+  }
 
   revalidatePath('/hq/reviews')
+  revalidatePath('/hq/closings')
+  revalidatePath('/hq/audit')
   return { success: true }
 }
 
@@ -124,8 +150,16 @@ export async function disputeClosing(closingId: string, note: string) {
   if (!user) return { error: '未登入' }
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
+    .from('user_profiles').select('role, is_hq, name').eq('user_id', user.id).single()
   if (!profile || (!profile.is_hq && profile.role !== '老闆')) return { error: '權限不足' }
+
+  const { data: closing } = await supabase
+    .from('daily_closings').select('store_id, business_date, status')
+    .eq('id', closingId).single()
+  if (!closing) return { error: '找不到此帳目' }
+  if (!['submitted', 'verified'].includes(closing.status)) {
+    return { error: `只能退回已送出/已審核的帳目（目前狀態：${closing.status}）` }
+  }
 
   const { error } = await supabase
     .from('daily_closings')
@@ -139,7 +173,62 @@ export async function disputeClosing(closingId: string, note: string) {
     .eq('id', closingId)
 
   if (error) return { error: error.message }
+
+  await logAudit({
+    eventType: 'closing_dispute', severity: 'warn',
+    storeId: closing.store_id, userId: user.id, closingId,
+    description: `${profile.name ?? user.email ?? '未知'} 退回 ${closing.business_date} 帳目`,
+    metadata: { note: note.trim(), previous_status: closing.status },
+  })
+
   revalidatePath('/hq/reviews')
+  revalidatePath('/hq/closings')
+  revalidatePath('/hq/audit')
+  return { success: true }
+}
+
+export async function logClosingSubmit(closingId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+
+  const { data: profile } = await supabase
+    .from('user_profiles').select('name').eq('user_id', user.id).single()
+  const { data: closing } = await supabase
+    .from('daily_closings').select('store_id, business_date, variance, total_revenue')
+    .eq('id', closingId).single()
+  if (!closing) return { error: '找不到此帳目' }
+
+  await logAudit({
+    eventType: 'closing_submit',
+    storeId: closing.store_id,
+    userId: user.id,
+    closingId,
+    description: `${profile?.name ?? user.email ?? '未知'} 送出 ${closing.business_date} 帳目（營業額 $${Math.round(closing.total_revenue ?? 0).toLocaleString()}，誤差 $${Math.round(closing.variance ?? 0).toLocaleString()}）`,
+    metadata: { variance: closing.variance, total_revenue: closing.total_revenue },
+  })
+  return { success: true }
+}
+
+export async function logClosingEdit(closingId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+
+  const { data: profile } = await supabase
+    .from('user_profiles').select('name').eq('user_id', user.id).single()
+  const { data: closing } = await supabase
+    .from('daily_closings').select('store_id, business_date, status')
+    .eq('id', closingId).single()
+  if (!closing) return { error: '找不到此帳目' }
+
+  await logAudit({
+    eventType: 'closing_edit',
+    storeId: closing.store_id,
+    userId: user.id,
+    closingId,
+    description: `${profile?.name ?? user.email ?? '未知'} 編輯 ${closing.business_date} 帳目（${closing.status}）`,
+  })
   return { success: true }
 }
 

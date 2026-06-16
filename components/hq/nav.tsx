@@ -49,6 +49,7 @@ const hqSections = [
     items: [
       { href: '/hq/dashboard', label: '即時儀表板', icon: LayoutDashboard },
       { href: '/hq/stores',    label: '店家管理',   icon: Store },
+      { href: '/hq/audit',     label: '操作軌跡',   icon: History },
     ],
   },
   {

@@ -6,7 +6,7 @@ import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn, PiggyBank } from 'lucide-react'
-import { saveCashCounts } from '@/app/actions/closings'
+import { saveCashCounts, logClosingSubmit } from '@/app/actions/closings'
 import { syncStoreCKOrder } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
@@ -1344,6 +1344,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       localStorage.removeItem(stepLsKey)
       toast.success('今日結帳已送出！')
       goToStep(currentStep + 1) // advance to 摘要
+      // Audit log: 帳目送出（fire-and-forget）
+      void logClosingSubmit(cid)
       // 誤差警報：fire-and-forget（不 await，避免阻擋 UI 更新）
       if (Math.abs(s.variance) > 200) {
         void supabase.from('audit_logs').insert({
