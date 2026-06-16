@@ -401,6 +401,32 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
           } catch (fmtErr) {
             console.warn('[syncClosingToSheets] template formatting failed (data already written):', fmtErr)
           }
+          // Write cell notes (annotations) from the filled worksheet
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const noteReqs: any[] = []
+            const dataStart0 = filled.dataStartRow - 1  // convert to 0-based row index
+            // Clear stale notes in the data range first
+            noteReqs.push({ repeatCell: { range: { sheetId, startRowIndex: dataStart0, endRowIndex: dataStart0 + days.length, startColumnIndex: 0, endColumnIndex: ws.columnCount || 100 }, cell: { note: '' }, fields: 'note' } })
+            for (let dayIdx = 0; dayIdx < days.length; dayIdx++) {
+              const excelRowNum = filled.dataStartRow + dayIdx  // 1-based ExcelJS row
+              ws.getRow(excelRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
+                if (!cell.note) return
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const rawNote = cell.note as any
+                const noteText = typeof rawNote === 'string' ? rawNote : (rawNote.texts?.map((t: any) => t.text ?? '').join('') ?? '')
+                if (!noteText.trim()) return
+                noteReqs.push({ updateCells: { range: { sheetId, startRowIndex: excelRowNum - 1, endRowIndex: excelRowNum, startColumnIndex: colNum - 1, endColumnIndex: colNum }, rows: [{ values: [{ note: noteText }] }], fields: 'note' } })
+              })
+            }
+            if (noteReqs.length > 1) {
+              for (let ni = 0; ni < noteReqs.length; ni += 1000) {
+                await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetsId, requestBody: { requests: noteReqs.slice(ni, ni + 1000) } })
+              }
+            }
+          } catch (noteErr) {
+            console.warn('[syncClosingToSheets] failed to write cell notes:', noteErr)
+          }
         }
       }
     }
@@ -418,6 +444,33 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     })
     await applySheetFormatting(sheets, sheetsId, sheetId, days.length, N, foodCols.length, packCols.length, miscCols.length, BASE)
     console.log(`[syncClosingToSheets] ${storeName} ${year}-${String(monthNum).padStart(2, '0')} → sheet "${tabName}" done (generated)`)
+    // Write cell notes (annotations) for fallback layout
+    try {
+      const colKeyToIdx: Record<string, number> = {}
+      foodCols.forEach((col, i) => { colKeyToIdx[col] = COL_FOOD_START + i })
+      packCols.forEach((col, i) => { colKeyToIdx[col] = COL_PACK_START + i })
+      miscCols.forEach((col, i) => { colKeyToIdx[col] = COL_MISC_START + i })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const noteReqs: any[] = []
+      // Clear stale notes in the data range first
+      noteReqs.push({ repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 4 + days.length, startColumnIndex: 0, endColumnIndex: TOTAL_COLS }, cell: { note: '' }, fields: 'note' } })
+      dataRows.forEach(({ row }, dayIdx) => {
+        const rowIdx = 4 + dayIdx
+        for (const [key, noteText] of Object.entries(row.notes)) {
+          if (!noteText?.trim()) continue
+          const colIdx = colKeyToIdx[key]
+          if (colIdx === undefined) continue
+          noteReqs.push({ updateCells: { range: { sheetId, startRowIndex: rowIdx, endRowIndex: rowIdx + 1, startColumnIndex: colIdx, endColumnIndex: colIdx + 1 }, rows: [{ values: [{ note: noteText }] }], fields: 'note' } })
+        }
+      })
+      if (noteReqs.length > 1) {
+        for (let ni = 0; ni < noteReqs.length; ni += 1000) {
+          await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetsId, requestBody: { requests: noteReqs.slice(ni, ni + 1000) } })
+        }
+      }
+    } catch (noteErr) {
+      console.warn('[syncClosingToSheets] failed to write cell notes (fallback):', noteErr)
+    }
   }
 }
 
