@@ -70,7 +70,7 @@ interface ReceiptForm {
 
 interface VerifyItem {
   key: string
-  type: 'receipt' | 'channel' | 'ck'
+  type: 'receipt' | 'channel' | 'ck' | 'envelope' | 'void_invoice' | 'note'
   label: string
   photoUrl: string
   inputAmount: number
@@ -1099,6 +1099,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         const info = channelLabelMap[key]
         items.push({ key, type: 'channel', label: info.label, photoUrl: photo.publicUrl, inputAmount: info.amount, confirmed: false })
       }
+    }
+    const envelopeFinal = envelopePhotoUrl || envelopePhotoPreview
+    if (envelopeFinal) {
+      items.push({ key: 'envelope', type: 'envelope', label: '信封袋', photoUrl: envelopeFinal, inputAmount: 0, confirmed: false })
+    }
+    voidInvoicePhotos.forEach((url, i) => {
+      items.push({ key: `void_invoice_${i}`, type: 'void_invoice', label: `作廢發票 ${i + 1}`, photoUrl: url, inputAmount: 0, confirmed: false })
+    })
+    const noteFinal = notePhotoUrl || notePhotoPreview
+    if (noteFinal) {
+      items.push({ key: 'note', type: 'note', label: '備註照片', photoUrl: noteFinal, inputAmount: 0, confirmed: false })
     }
     setVerifyItems(items)
     setReviewIndex(null)
@@ -3191,10 +3202,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         {/* 文字 */}
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: '13px', fontWeight: 600, color: '#18181b', marginBottom: '2px' }}>
-                            {item.type === 'receipt' ? '單據' : item.type === 'ck' ? '央廚' : '平台'} · {item.label}
+                            {item.type === 'receipt' ? '單據' : item.type === 'ck' ? '央廚' : item.type === 'envelope' ? '信封袋' : item.type === 'void_invoice' ? '作廢發票' : item.type === 'note' ? '備註' : '平台'} · {item.label}
                           </div>
                           <div style={{ fontSize: '12px', color: '#71717a' }}>
-                            輸入金額：<span style={{ fontWeight: 600, color: '#92400E' }}>${fmt(item.inputAmount)}</span>
+                            {['envelope', 'void_invoice', 'note'].includes(item.type)
+                              ? '確認照片清晰無誤'
+                              : <>輸入金額：<span style={{ fontWeight: 600, color: '#92400E' }}>${fmt(item.inputAmount)}</span></>
+                            }
                           </div>
                         </div>
                         {/* 狀態 */}
