@@ -179,7 +179,7 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     dd.variance = (c.variance       ?? 0) as number
     let panda = 0, online = 0
     for (const rv of (c.revenue_items as AnyRecord[]) ?? []) {
-      if (rv.channel === 'pos')    dd.pos   += (rv.gross_amount ?? 0) as number
+      if (rv.channel === 'pos' || rv.channel === 'handwrite') dd.pos += (rv.gross_amount ?? 0) as number
       if (rv.channel === 'twpay') dd.twpay  += (rv.gross_amount ?? 0) as number
       if (rv.channel === 'panda') panda     += (rv.gross_amount ?? 0) as number
       if (rv.channel === 'online') online   += (rv.gross_amount ?? 0) as number
