@@ -6,7 +6,7 @@ import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn, PiggyBank } from 'lucide-react'
-import { saveCashCounts, submitClosing } from '@/app/actions/closings'
+import { saveCashCounts, submitClosing, savePettyCounts } from '@/app/actions/closings'
 import { syncStoreCKOrder } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
@@ -725,9 +725,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const pettyLsKey = `petty_counts_${store.id}_${today}`
-  const [pettyCounts, setPettyCounts] = useState<Record<string, number>>({})
-  const [pettyLumps, setPettyLumps] = useState<Record<string, number>>({})
+  // 優先用 DB 的 petty_counts（換裝置仍能看到），fallback 到 localStorage
+  const dbPettyCounts = (existingClosing as { petty_counts?: { counts?: Record<string, number>; lumps?: Record<string, number> } } | null)?.petty_counts
+  const [pettyCounts, setPettyCounts] = useState<Record<string, number>>(() => dbPettyCounts?.counts ?? {})
+  const [pettyLumps, setPettyLumps] = useState<Record<string, number>>(() => dbPettyCounts?.lumps ?? {})
   useEffect(() => {
+    if (dbPettyCounts?.counts || dbPettyCounts?.lumps) return  // 已從 DB 初始化
     try {
       const stored = JSON.parse(localStorage.getItem(pettyLsKey) ?? 'null')
       if (stored?.counts && Object.keys(stored.counts).length > 0) setPettyCounts(stored.counts)
@@ -735,6 +738,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // localStorage 雙寫（離線/暫存用）
   useEffect(() => {
     const total = Object.values(pettyCounts).reduce((s, v) => s + v, 0) + Object.values(pettyLumps).reduce((s, v) => s + v, 0)
     if (total > 0) try { localStorage.setItem(pettyLsKey, JSON.stringify({ counts: pettyCounts, lumps: pettyLumps })) } catch {}
@@ -745,6 +749,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [closingId, setClosingId] = useState<string | null>(existingClosing?.id ?? null)
+  // DB 寫入零用金清點：debounced 1.5 秒（放在 closingId 宣告後）
+  useEffect(() => {
+    const cid = existingClosing?.id ?? closingId
+    if (!cid) return
+    const total = Object.values(pettyCounts).reduce((s, v) => s + v, 0) + Object.values(pettyLumps).reduce((s, v) => s + v, 0)
+    if (total === 0) return
+    const t = setTimeout(() => { void savePettyCounts(cid, pettyCounts, pettyLumps) }, 1500)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(pettyCounts), JSON.stringify(pettyLumps), closingId])
   const [status, setStatus] = useState(existingClosing?.status ?? 'draft')
   const [rangeStart, setRangeStart] = useState(0)
   const [rangeEnd, setRangeEnd] = useState(0)

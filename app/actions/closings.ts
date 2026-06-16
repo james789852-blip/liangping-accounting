@@ -282,6 +282,32 @@ export async function logClosingEdit(closingId: string) {
   return { success: true }
 }
 
+/**
+ * 儲存零用金核對結果（鈔票/硬幣張數）。
+ * 不需要 status='draft'：送出後仍可清點。
+ */
+export async function savePettyCounts(
+  closingId: string,
+  counts: Record<string, number>,
+  lumps: Record<string, number>,
+) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+
+  const meta = await getClosingMeta(closingId)
+  if (!meta) return { error: '找不到此帳目' }
+  if (!canAccessStore(ctx, meta.storeId)) return { error: '無權限存取此帳目' }
+
+  const admin = createAdminClient()
+  const payload = {
+    petty_counts: { counts, lumps, verified_at: new Date().toISOString() },
+    updated_at: new Date().toISOString(),
+  }
+  const { error } = await admin.from('daily_closings').update(payload).eq('id', closingId)
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
 export async function reSyncMonthToSheets(storeId: string, month: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
