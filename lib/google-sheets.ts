@@ -179,9 +179,11 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     dd.revenue  = (c.total_revenue  ?? 0) as number
     dd.actual   = (c.actual_remit   ?? 0) as number
     dd.variance = (c.variance       ?? 0) as number
-    let panda = 0, online = 0
+    let panda = 0, online = 0, handwriteSum = 0
     for (const rv of (c.revenue_items as AnyRecord[]) ?? []) {
-      if (rv.channel === 'pos' || rv.channel === 'handwrite') dd.pos += (rv.gross_amount ?? 0) as number
+      // POS 欄只記實際的 POS channel；handwrite 走 onsite
+      if (rv.channel === 'pos') dd.pos += (rv.gross_amount ?? 0) as number
+      if (rv.channel === 'handwrite') handwriteSum += (rv.gross_amount ?? 0) as number
       if (rv.channel === 'twpay') dd.twpay  += (rv.gross_amount ?? 0) as number
       if (rv.channel === 'panda') panda     += (rv.gross_amount ?? 0) as number
       if (rv.channel === 'online') online   += (rv.gross_amount ?? 0) as number
@@ -190,11 +192,12 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
       }
     }
     const uberSum = Object.values(dd.uber).reduce((s, v) => s + v, 0)
-    dd.onsite = ichefLinked ? (dd.pos - uberSum - dd.twpay - panda - online) : dd.pos
+    dd.onsite = (ichefLinked ? (dd.pos - uberSum - dd.twpay - panda - online) : dd.pos) + handwriteSum
     let ckItemsSum = 0
+    let ckSummarySum = 0
     for (const oi of (c.order_items as AnyRecord[]) ?? []) {
       if (oi.item_name === '央廚配送') {
-        dd.ck = (oi.total_amount ?? 0) as number
+        ckSummarySum += (oi.total_amount ?? 0) as number
       } else {
         const excelCol = mappingLookup[oi.item_name] ?? ckColLookup[oi.item_name] ?? oi.item_name
         if (excelCol && (oi.total_amount || 0) > 0) {
@@ -203,7 +206,7 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
         if ((oi.item_name in ckColLookup) && (oi.total_amount || 0) > 0) ckItemsSum += oi.total_amount as number
       }
     }
-    if (dd.ck === 0 && ckItemsSum > 0) dd.ck = ckItemsSum
+    dd.ck = ckSummarySum > 0 ? ckSummarySum : ckItemsSum
   }
 
   const daysInMonth = new Date(year, monthNum, 0).getDate()

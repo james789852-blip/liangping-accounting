@@ -255,9 +255,11 @@ export async function GET(req: NextRequest) {
     dd.actual   = c.actual_remit   ?? 0
     dd.variance = c.variance       ?? 0
 
-    let panda = 0, online = 0
+    let panda = 0, online = 0, handwriteSum = 0
     for (const rv of (c.revenue_items as any[]) ?? []) {
-      if (rv.channel === 'pos' || rv.channel === 'handwrite') dd.pos += rv.gross_amount ?? 0
+      // POS 欄只記實際的 POS channel；handwrite 走 onsite，避免被當成 POS 寫入 Excel POS 欄
+      if (rv.channel === 'pos') dd.pos += rv.gross_amount ?? 0
+      if (rv.channel === 'handwrite') handwriteSum += rv.gross_amount ?? 0
       if (rv.channel === 'twpay') dd.twpay  += rv.gross_amount ?? 0
       if (rv.channel === 'panda') panda     += rv.gross_amount ?? 0
       if (rv.channel === 'online') online   += rv.gross_amount ?? 0
@@ -268,12 +270,15 @@ export async function GET(req: NextRequest) {
     const uberSum = Object.values(dd.uber).reduce((s, v) => s + v, 0)
     // ichef_uber_linked = true：iChef POS 含各平台，需扣除得到現場
     // ichef_uber_linked = false：POS 已是純現場金額
-    dd.onsite = ichefLinked ? (dd.pos - uberSum - dd.twpay - panda - online) : dd.pos
+    // handwriteSum 永遠加進現場（手寫菜單是純現場交易）
+    dd.onsite = (ichefLinked ? (dd.pos - uberSum - dd.twpay - panda - online) : dd.pos) + handwriteSum
 
     let ckItemsSum = 0
+    let ckSummarySum = 0
     for (const oi of (c.order_items as any[]) ?? []) {
       if (oi.item_name === '央廚配送') {
-        dd.ck = oi.total_amount ?? 0
+        // 累加，不直接覆寫；資料異常時不會吃掉前面的紀錄
+        ckSummarySum += oi.total_amount ?? 0
       } else {
         // Individual CK items → map to their excel column
         const excelCol = mappingLookup[oi.item_name] ?? ckColLookup[oi.item_name] ?? oi.item_name
@@ -286,8 +291,8 @@ export async function GET(req: NextRequest) {
         }
       }
     }
-    // If no explicit '央廚配送' total was saved, derive it from individual items
-    if (dd.ck === 0 && ckItemsSum > 0) dd.ck = ckItemsSum
+    // summary 優先，沒有再 fallback 到分項累加
+    dd.ck = ckSummarySum > 0 ? ckSummarySum : ckItemsSum
   }
 
   // Debug: log what values are written per date (check Vercel function logs)
