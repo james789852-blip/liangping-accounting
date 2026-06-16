@@ -146,41 +146,47 @@ export default function FoodCostPreviewClient({
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-4">
 
-      {/* 選擇器 */}
-      <div className="bg-white rounded-2xl px-4 py-3 flex gap-3 flex-wrap items-center" style={{ border: '1px solid #f4f4f5' }}>
-        <select value={storeId} onChange={e => changeStore(e.target.value)}
-          style={{ padding: '7px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
-          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-        <input type="month" value={month} onChange={e => changeMonth(e.target.value)}
-          style={{ padding: '7px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }} />
-        <div className="flex items-center gap-2 ml-auto flex-wrap justify-end">
-          {templateMeta && (
-            <div style={{ textAlign: 'right' }}>
-              <p style={{ fontSize: '11px', fontWeight: 600, color: '#52525b', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{templateMeta.filename}</p>
-              <p suppressHydrationWarning style={{ fontSize: '10px', color: '#a1a1aa' }}>
-                {new Date(templateMeta.uploadedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}
-              </p>
-            </div>
-          )}
+      {/* 工具列：店家/月份 + 模板/匯出 */}
+      <div className="bg-white rounded-2xl px-4 py-3 flex gap-4 flex-wrap items-center justify-between" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+        {/* 左：店家 + 月份 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] font-semibold uppercase mr-1" style={{ color: '#a1a1aa', letterSpacing: '0.05em' }}>店家</span>
+          <select value={storeId} onChange={e => changeStore(e.target.value)}
+            style={{ padding: '7px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
+            {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <span className="text-[11px] font-semibold uppercase ml-2 mr-1" style={{ color: '#a1a1aa', letterSpacing: '0.05em' }}>月份</span>
+          <input type="month" value={month} onChange={e => changeMonth(e.target.value)}
+            style={{ padding: '7px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }} />
+        </div>
+        {/* 右：模板狀態 + 動作 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
+            <FileBarChart2 className="h-4 w-4 shrink-0" style={{ color: templateOk ? '#10b981' : '#a1a1aa' }} />
+            {templateMeta ? (
+              <div className="leading-tight">
+                <p style={{ fontSize: '12px', fontWeight: 600, color: '#52525b', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{templateMeta.filename}</p>
+                <p suppressHydrationWarning style={{ fontSize: '10px', color: '#a1a1aa' }}>
+                  {new Date(templateMeta.uploadedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}
+                </p>
+              </div>
+            ) : (
+              <span className="text-xs font-medium" style={{ color: '#a1a1aa' }}>尚未上傳模板</span>
+            )}
+          </div>
           <input ref={fileInputRef} type="file" accept=".xlsx" hidden onChange={handleUpload} />
           <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
-            style={{ background: '#f4f4f5', border: '1.5px solid #e4e4e7', cursor: 'pointer', fontFamily: 'inherit', color: '#52525b' }}>
+            style={{ background: 'white', border: '1.5px solid #e4e4e7', cursor: 'pointer', fontFamily: 'inherit', color: '#52525b' }}>
             <Upload className="h-3.5 w-3.5" />
             {uploading ? '上傳中…' : templateOk ? '更換模板' : '上傳模板'}
           </button>
-          <div style={{ position: 'relative' }}>
-            <button onClick={handleExport} disabled={exporting}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
-              style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-              <Download className="h-3.5 w-3.5" />
-              {exporting ? '匯出中…' : '匯出 Excel'}
-            </button>
-            {templateOk && (
-              <span style={{ position: 'absolute', top: '-4px', right: '-4px', width: '10px', height: '10px', borderRadius: '50%', background: '#16a34a', border: '2px solid white' }} title="已有模板，匯出將保留原版格式" />
-            )}
-          </div>
+          <button onClick={handleExport} disabled={exporting}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
+            style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 12px rgba(245,158,11,0.25)' }}>
+            <Download className="h-3.5 w-3.5" />
+            {exporting ? '匯出中…' : '匯出 Excel'}
+          </button>
         </div>
       </div>
       {toast && (
