@@ -256,7 +256,7 @@ export async function GET(req: NextRequest) {
 
     let panda = 0, online = 0
     for (const rv of (c.revenue_items as any[]) ?? []) {
-      if (rv.channel === 'pos')   dd.pos    += rv.gross_amount ?? 0
+      if (rv.channel === 'pos' || rv.channel === 'handwrite') dd.pos += rv.gross_amount ?? 0
       if (rv.channel === 'twpay') dd.twpay  += rv.gross_amount ?? 0
       if (rv.channel === 'panda') panda     += rv.gross_amount ?? 0
       if (rv.channel === 'online') online   += rv.gross_amount ?? 0
