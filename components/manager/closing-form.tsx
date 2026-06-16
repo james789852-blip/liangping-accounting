@@ -530,6 +530,57 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
   }, [])
   const ckPhotoInputRef = useRef<HTMLInputElement>(null)
+
+  // Envelope bag photo
+  const [envelopePhotoPreview, setEnvelopePhotoPreview] = useState<string | undefined>(undefined)
+  const envelopePhotoLsKey = `envelope_photo_${store.id}_${today}`
+  const [envelopePhotoUrl, setEnvelopePhotoUrl] = useState<string | undefined>(
+    (existingClosing as any)?.envelope_photo_url ?? undefined
+  )
+  useEffect(() => {
+    if (!(existingClosing as any)?.envelope_photo_url) {
+      const stored = localStorage.getItem(envelopePhotoLsKey)
+      if (stored) setEnvelopePhotoUrl(stored)
+    }
+  }, [])
+  const envelopePhotoInputRef = useRef<HTMLInputElement>(null)
+
+  // Void invoice photos (multiple)
+  const [voidInvoicePhotos, setVoidInvoicePhotos] = useState<string[]>(() => {
+    const saved = (existingClosing as any)?.void_invoice_photo_urls
+    if (Array.isArray(saved) && saved.length > 0) return saved
+    return []
+  })
+  const voidInvoiceLsKey = `void_invoice_photos_${store.id}_${today}`
+  useEffect(() => {
+    const saved = (existingClosing as any)?.void_invoice_photo_urls
+    if (!Array.isArray(saved) || saved.length === 0) {
+      try {
+        const stored = JSON.parse(localStorage.getItem(voidInvoiceLsKey) ?? '[]')
+        if (Array.isArray(stored) && stored.length > 0) setVoidInvoicePhotos(stored)
+      } catch {}
+    }
+  }, [])
+  useEffect(() => {
+    try { localStorage.setItem(voidInvoiceLsKey, JSON.stringify(voidInvoicePhotos)) } catch {}
+  }, [voidInvoicePhotos])
+  const voidInvoiceInputRef = useRef<HTMLInputElement>(null)
+  const [voidInvoiceUploading, setVoidInvoiceUploading] = useState(false)
+
+  // Note photo
+  const [notePhotoPreview, setNotePhotoPreview] = useState<string | undefined>(undefined)
+  const notePhotoLsKey = `note_photo_${store.id}_${today}`
+  const [notePhotoUrl, setNotePhotoUrl] = useState<string | undefined>(
+    (existingClosing as any)?.note_photo_url ?? undefined
+  )
+  useEffect(() => {
+    if (!(existingClosing as any)?.note_photo_url) {
+      const stored = localStorage.getItem(notePhotoLsKey)
+      if (stored) setNotePhotoUrl(stored)
+    }
+  }, [])
+  const notePhotoInputRef = useRef<HTMLInputElement>(null)
+
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
   const [adjustments, setAdjustments] = useState<RemittanceAdjustment[]>(() => {
     const saved = existingClosing?.remittance_adjustments
@@ -748,6 +799,52 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setCkPhotoUrl(result.publicUrl)
     localStorage.setItem(ckPhotoLsKey, result.publicUrl)
     toast.success('配送單照片已上傳')
+  }
+
+  async function handleEnvelopePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setEnvelopePhotoPreview(URL.createObjectURL(file))
+    const ext = file.name.split('.').pop() || 'jpg'
+    const path = `receipts/${store.id}/${today}/envelope.${ext}`
+    const fd = new FormData(); fd.append('file', file)
+    const result = await uploadToStorage(fd, 'receipts', path)
+    if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
+    setEnvelopePhotoUrl(result.publicUrl)
+    localStorage.setItem(envelopePhotoLsKey, result.publicUrl)
+    toast.success('信封袋照片已上傳')
+  }
+
+  async function handleVoidInvoicePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setVoidInvoiceUploading(true)
+    const ext = file.name.split('.').pop() || 'jpg'
+    const idx = voidInvoicePhotos.length
+    const path = `receipts/${store.id}/${today}/void-invoice-${idx}.${ext}`
+    const fd = new FormData(); fd.append('file', file)
+    const result = await uploadToStorage(fd, 'receipts', path)
+    setVoidInvoiceUploading(false)
+    if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
+    setVoidInvoicePhotos(prev => [...prev, result.publicUrl])
+    toast.success('作廢發票照片已上傳')
+  }
+
+  async function handleNotePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setNotePhotoPreview(URL.createObjectURL(file))
+    const ext = file.name.split('.').pop() || 'jpg'
+    const path = `receipts/${store.id}/${today}/note.${ext}`
+    const fd = new FormData(); fd.append('file', file)
+    const result = await uploadToStorage(fd, 'receipts', path)
+    if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
+    setNotePhotoUrl(result.publicUrl)
+    localStorage.setItem(notePhotoLsKey, result.publicUrl)
+    toast.success('備註照片已上傳')
   }
 
   async function syncFromReceipts() {
@@ -1108,6 +1205,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             .filter(([, v]) => v.publicUrl)
             .map(([k, v]) => [k, v.publicUrl])
         ),
+        envelope_photo_url: envelopePhotoUrl ?? null,
+        void_invoice_photo_urls: voidInvoicePhotos,
+        note_photo_url: notePhotoUrl ?? null,
       }
       if (!cid) {
         const { data: nc, error } = await supabase.from('daily_closings').insert(payload).select('id').single()
@@ -1204,6 +1304,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       localStorage.removeItem(channelPhotoLsKey)
       localStorage.removeItem(adjLsKey)
       localStorage.removeItem(reserveLsKey)
+      localStorage.removeItem(envelopePhotoLsKey)
+      localStorage.removeItem(voidInvoiceLsKey)
+      localStorage.removeItem(notePhotoLsKey)
       localStorage.removeItem(receiptFormsDraftKey)
       localStorage.removeItem(cashLsKey)
       localStorage.removeItem(stepLsKey)
@@ -1282,6 +1385,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         return
       }
     }
+    if (stepId === 'summary' && !isLocked) {
+      if (s.actualRemit > 0 && !envelopePhotoUrl && !envelopePhotoPreview) {
+        toast.error('信封袋有金額，請先上傳信封袋照片')
+        return
+      }
+    }
     if (stepId === 'ai_verify' && !isLocked) {
       const unconfirmed = verifyItems.filter(v => !v.confirmed)
       if (unconfirmed.length > 0) {
@@ -1328,6 +1437,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       <input ref={ckPhotoInputRef} type="file" accept="image/*"
         style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px', opacity: 0 }}
         onChange={handleCkPhotoUpload} />
+      <input ref={envelopePhotoInputRef} type="file" accept="image/*"
+        style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px', opacity: 0 }}
+        onChange={handleEnvelopePhotoUpload} />
+      <input ref={voidInvoiceInputRef} type="file" accept="image/*"
+        style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px', opacity: 0 }}
+        onChange={handleVoidInvoicePhotoUpload} />
+      <input ref={notePhotoInputRef} type="file" accept="image/*"
+        style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px', opacity: 0 }}
+        onChange={handleNotePhotoUpload} />
       <input ref={channelFileRef} type="file" accept="image/*"
         style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px', opacity: 0 }}
         onChange={handleChannelFileChange} />
@@ -2466,6 +2584,36 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   <span className="text-sm font-bold" style={{ color: '#FDE68A' }}>實際包進信封（現金 − 零用金）</span>
                   <span className="text-2xl font-extrabold tabular-nums" style={{ color: '#fff', letterSpacing: '-0.02em' }}>${fmt(s.actualRemit)}</span>
                 </div>
+                {/* Envelope bag photo */}
+                <div className="mt-3">
+                  {(envelopePhotoPreview || envelopePhotoUrl) ? (
+                    <div className="relative rounded-xl overflow-hidden" style={{ height: '96px' }}>
+                      <button type="button" onClick={() => setPhotoLightbox((envelopePhotoPreview || envelopePhotoUrl)!)}
+                        style={{ display: 'block', width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer' }}>
+                        <img src={envelopePhotoPreview || envelopePhotoUrl} alt="信封袋"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </button>
+                      {!isLocked && (
+                        <button type="button" onClick={() => envelopePhotoInputRef.current?.click()}
+                          className="absolute top-2 right-2 text-xs px-2 py-1 rounded-lg font-medium"
+                          style={{ background: 'rgba(0,0,0,0.55)', color: '#fff' }}>重拍</button>
+                      )}
+                    </div>
+                  ) : (
+                    <button type="button" disabled={isLocked}
+                      onClick={() => envelopePhotoInputRef.current?.click()}
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium"
+                      style={{
+                        background: s.actualRemit > 0 ? '#FEF2F2' : '#fafafa',
+                        color: s.actualRemit > 0 ? '#dc2626' : '#a1a1aa',
+                        border: `1.5px dashed ${s.actualRemit > 0 ? '#fca5a5' : '#d4d4d8'}`,
+                        cursor: isLocked ? 'default' : 'pointer',
+                      }}>
+                      <Camera className="h-4 w-4" />
+                      {s.actualRemit > 0 ? '請上傳信封袋照片（必填）' : '上傳信封袋照片（選填）'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -2740,6 +2888,53 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               )
             })()}
 
+            {/* 作廢發票照片 */}
+            <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
+              <div className="px-4 pt-3.5 pb-3 flex items-center justify-between" style={{ borderBottom: '1px solid #f4f4f5' }}>
+                <div className="flex items-center gap-2">
+                  <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#FEF2F2' }}>
+                    <FileText className="h-4 w-4" style={{ color: '#dc2626' }} />
+                  </div>
+                  <p className="text-sm font-semibold" style={{ color: '#18181b' }}>作廢發票</p>
+                  {voidInvoicePhotos.length > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#FEF2F2', color: '#dc2626' }}>
+                      {voidInvoicePhotos.length} 張
+                    </span>
+                  )}
+                </div>
+                {!isLocked && (
+                  <button type="button" onClick={() => voidInvoiceInputRef.current?.click()}
+                    disabled={voidInvoiceUploading}
+                    className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg"
+                    style={{ background: '#FEF2F2', color: '#dc2626', border: '1px solid #fecaca', cursor: 'pointer' }}>
+                    {voidInvoiceUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+                    新增照片
+                  </button>
+                )}
+              </div>
+              {voidInvoicePhotos.length === 0 ? (
+                <p className="px-4 py-3 text-xs" style={{ color: '#a1a1aa' }}>無作廢發票</p>
+              ) : (
+                <div className="px-4 py-3 grid grid-cols-3 gap-2">
+                  {voidInvoicePhotos.map((url, i) => (
+                    <div key={i} className="relative rounded-lg overflow-hidden" style={{ height: '72px' }}>
+                      <button type="button" onClick={() => setPhotoLightbox(url)}
+                        style={{ display: 'block', width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer' }}>
+                        <img src={url} alt={`作廢發票 ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </button>
+                      {!isLocked && (
+                        <button type="button" onClick={() => setVoidInvoicePhotos(prev => prev.filter((_, j) => j !== i))}
+                          className="absolute top-1 right-1 rounded-full flex items-center justify-center"
+                          style={{ background: 'rgba(0,0,0,0.55)', width: '20px', height: '20px' }}>
+                          <X className="h-3 w-3" style={{ color: '#fff' }} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* 備註 */}
             <div>
               <label className="block text-xs font-semibold mb-2" style={{ color: '#a1a1aa' }}>備註</label>
@@ -2747,6 +2942,27 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 style={{ width: '100%', minHeight: '72px', padding: '12px', fontSize: '14px', border: '1.5px solid #e4e4e7', borderRadius: '12px', resize: 'none', outline: 'none', fontFamily: 'inherit', background: isLocked ? '#fafafa' : 'white', color: '#18181b' }}
                 placeholder="如有異常情況請說明..."
                 value={data.note} onChange={e => set('note', e.target.value)} />
+              {/* Note photo */}
+              {(notePhotoPreview || notePhotoUrl) ? (
+                <div className="relative mt-2 rounded-xl overflow-hidden" style={{ height: '80px' }}>
+                  <button type="button" onClick={() => setPhotoLightbox((notePhotoPreview || notePhotoUrl)!)}
+                    style={{ display: 'block', width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer' }}>
+                    <img src={notePhotoPreview || notePhotoUrl} alt="備註照片"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </button>
+                  {!isLocked && (
+                    <button type="button" onClick={() => notePhotoInputRef.current?.click()}
+                      className="absolute top-2 right-2 text-xs px-2 py-1 rounded-lg font-medium"
+                      style={{ background: 'rgba(0,0,0,0.55)', color: '#fff' }}>重拍</button>
+                  )}
+                </div>
+              ) : !isLocked && (
+                <button type="button" onClick={() => notePhotoInputRef.current?.click()}
+                  className="mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium"
+                  style={{ background: '#fafafa', color: '#a1a1aa', border: '1.5px dashed #d4d4d8', cursor: 'pointer' }}>
+                  <Camera className="h-3.5 w-3.5" />上傳備註照片（選填）
+                </button>
+              )}
             </div>
 
             {isLocked && !submitDone && (

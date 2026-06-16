@@ -18,6 +18,7 @@ interface Closing {
   actual_remit?: number; should_include_delivery?: number
   remittance_adjustments?: RemittanceAdjustment[]
   ck_delivery_photo_url?: string; channel_photo_urls?: Record<string, string>
+  envelope_photo_url?: string; void_invoice_photo_urls?: string[]; note_photo_url?: string
   stores: { id: string; name: string }
   revenue_items: { channel: string; account_name?: string; gross_amount: number }[]
   order_items: { item_name: string; quantity: number; unit_price: number; total_amount: number }[]
@@ -303,12 +304,18 @@ function ClosingCard({
   const channelPhotos = closing.channel_photo_urls ?? {}
   const ckPhoto = closing.ck_delivery_photo_url
   const receiptPhotos = receipts.filter(r => r.photo_url)
+  const envelopePhoto = closing.envelope_photo_url
+  const voidInvoicePhotos = closing.void_invoice_photo_urls ?? []
+  const notePhoto = closing.note_photo_url
 
   // allPhotos: receipt photos first, then CK + channel (for lightbox continuity)
   const allPhotos: { url: string; label: string }[] = [
     ...receiptPhotos.map(r => ({ url: r.photo_url!, label: r.vendor_name || '收據' })),
     ...(ckPhoto ? [{ url: ckPhoto, label: '央廚配送單' }] : []),
     ...Object.entries(channelPhotos).map(([k, url]) => ({ url: url as string, label: channelName(k) })),
+    ...(envelopePhoto ? [{ url: envelopePhoto, label: '信封袋' }] : []),
+    ...voidInvoicePhotos.map((url, i) => ({ url, label: `作廢發票 ${i + 1}` })),
+    ...(notePhoto ? [{ url: notePhoto, label: '備註照片' }] : []),
   ]
   // non-receipt photos (CK + channels), shown in 平台截圖 section
   const otherPhotos: { url: string; label: string }[] = [
