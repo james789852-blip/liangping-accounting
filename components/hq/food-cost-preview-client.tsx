@@ -36,6 +36,7 @@ interface Props {
   templateColumns: Record<string, string[]> | null
   templateMeta: { filename: string; uploadedAt: string } | null
   storeMappings: StoreMapping[]
+  isCK?: boolean
 }
 
 const CAT_COLOR: Record<string, { bg: string; text: string; border: string }> = {
@@ -46,7 +47,7 @@ const CAT_COLOR: Record<string, { bg: string; text: string; border: string }> = 
 
 export default function FoodCostPreviewClient({
   stores, storeId, month, rows, totalMapped, totalUnmapped, mappingCount, colBreakdown,
-  hasTemplate, templateColumns, templateMeta, storeMappings,
+  hasTemplate, templateColumns, templateMeta, storeMappings, isCK = false,
 }: Props) {
   const router = useRouter()
   const [expandedDate, setExpandedDate] = useState<string | null>(null)
@@ -56,7 +57,7 @@ export default function FoodCostPreviewClient({
   const [toast, setToast] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [storeTypeFilter, setStoreTypeFilter] = useState<'全部' | '店面' | '央廚'>('全部')
+  const [storeTypeFilter, setStoreTypeFilter] = useState<'全部' | '店面' | '央廚'>(isCK ? '央廚' : '店面')
   const [assigningItem, setAssigningItem] = useState<string | null>(null)
   const [assigningSearch, setAssigningSearch] = useState('')
   const [assigningSaving, setAssigningSaving] = useState(false)

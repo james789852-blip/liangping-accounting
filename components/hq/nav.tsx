@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import {
@@ -31,13 +31,24 @@ function useClock() {
 
 const hqSections = [
   {
-    label: '帳目',
+    label: '帳目審核',
     items: [
-      { href: '/hq/closings',            label: '店面帳目',       icon: BookOpen },
-      { href: '/hq/ck',                  label: '央廚帳目',       icon: ChefHat },
-      { href: '/hq/food-cost-preview',   label: 'Excel模板設定',  icon: FileBarChart2 },
-      { href: '/hq/dashboard',           label: '即時儀表板',     icon: LayoutDashboard },
-      { href: '/hq/stores',              label: '店家管理',       icon: Store },
+      { href: '/hq/closings', label: '店面', icon: BookOpen },
+      { href: '/hq/ck',       label: '央廚', icon: ChefHat },
+    ],
+  },
+  {
+    label: '模板設定',
+    items: [
+      { href: '/hq/food-cost-preview',           label: '店面', icon: FileBarChart2 },
+      { href: '/hq/food-cost-preview?type=ck',   label: '央廚', icon: FileBarChart2 },
+    ],
+  },
+  {
+    label: '其他',
+    items: [
+      { href: '/hq/dashboard', label: '即時儀表板', icon: LayoutDashboard },
+      { href: '/hq/stores',    label: '店家管理',   icon: Store },
     ],
   },
   {
@@ -88,9 +99,22 @@ interface Props {
 
 export default function HQNav({ userName, role, allStores = [], currentStoreId = '' }: Props) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const router = useRouter()
   const isManagerPath = pathname.startsWith('/manager')
   const time = useClock()
+
+  function isActive(href: string): boolean {
+    const [path, query] = href.split('?')
+    if (!pathname.startsWith(path)) return false
+    // 模板設定的店面/央廚靠 ?type 區分
+    if (path === '/hq/food-cost-preview') {
+      const isCKLink = query?.includes('type=ck')
+      const isOnCK = searchParams?.get('type') === 'ck'
+      return isCKLink ? isOnCK : !isOnCK
+    }
+    return true
+  }
 
   async function handleLogout() {
     const supabase = createClient()
@@ -155,7 +179,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                 {section.label}
               </p>
               {section.items.map(({ href, label, icon: Icon }) => {
-                const active = pathname.startsWith(href)
+                const active = isActive(href)
                 return (
                   <Link key={href} href={href}
                     className={cn('flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-all duration-150 mb-0.5', !active && 'hover:bg-slate-50')}

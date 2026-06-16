@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 export default async function FoodCostPreviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ storeId?: string; month?: string }>
+  searchParams: Promise<{ storeId?: string; month?: string; type?: string }>
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -24,7 +24,10 @@ export default async function FoodCostPreviewPage({
     .from('stores').select('id, name, type').eq('active', true).order('name')
 
   const params = await searchParams
-  const storeId = params.storeId ?? stores?.[0]?.id ?? ''
+  const isCK = params.type === 'ck'
+  // 預設 storeId：依模板類型挑第一個對應的店家
+  const matchingStores = (stores ?? []).filter(s => (isCK ? s.type === '央廚' : s.type !== '央廚'))
+  const storeId = params.storeId ?? matchingStores[0]?.id ?? stores?.[0]?.id ?? ''
   const now = new Date()
   const month = params.month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
@@ -189,11 +192,13 @@ export default async function FoodCostPreviewPage({
       <div className="bg-white px-4 py-5" style={{ borderBottom: '1px solid #f4f4f5' }}>
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
-            <FileBarChart2 className="h-3.5 w-3.5" />店面Excel模板設定
+            <FileBarChart2 className="h-3.5 w-3.5" />{isCK ? '央廚' : '店面'}Excel模板設定
           </div>
-          <h1 className="text-xl font-bold" style={{ color: '#18181b' }}>店面Excel模板設定</h1>
+          <h1 className="text-xl font-bold" style={{ color: '#18181b' }}>{isCK ? '央廚' : '店面'}Excel模板設定</h1>
           <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>
-            店長填入收據細項後，系統自動對應到 Excel 欄位，不需手動輸入
+            {isCK
+              ? '上傳央廚 Excel 模板，匯出時自動套用'
+              : '店長填入收據細項後，系統自動對應到 Excel 欄位，不需手動輸入'}
           </p>
         </div>
       </div>
@@ -211,6 +216,7 @@ export default async function FoodCostPreviewPage({
         templateColumns={templateColumns}
         templateMeta={templateMeta}
         storeMappings={storeMappings}
+        isCK={isCK}
       />
     </div>
   )

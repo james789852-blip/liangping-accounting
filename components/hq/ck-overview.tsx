@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useTransition, useRef } from 'react'
-import { ChevronDown, ChevronUp, CheckCircle2, Loader2, Banknote, Download, Upload, FileSpreadsheet, Camera, X } from 'lucide-react'
-import { markCKHQPaid } from '@/app/actions/ck'
+import { useState, useTransition } from 'react'
+import { ChevronDown, ChevronUp, CheckCircle2, Loader2, Banknote, Camera, X, FileSpreadsheet } from 'lucide-react'
+import { markCKHQPaid, syncCKMonthToSheets } from '@/app/actions/ck'
 import { toast } from 'sonner'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -101,86 +101,41 @@ function PayButton({ ckStoreId, date, paid, expenseTotal }: { ckStoreId: string;
   )
 }
 
-function ExportSection({ ckStoreId, ckStoreName }: { ckStoreId: string; ckStoreName: string }) {
+function SyncSection({ ckStoreId }: { ckStoreId: string }) {
   const now = new Date()
   const [month, setMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
-  const [exporting, setExporting] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [hasTemplate, setHasTemplate] = useState<boolean | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const [syncing, setSyncing] = useState(false)
 
-  useState(() => {
-    fetch(`/api/ck-stores/${ckStoreId}/template`)
-      .then(r => r.json())
-      .then(d => setHasTemplate(d.hasTemplate))
-      .catch(() => {})
-  })
-
-  async function handleExport() {
-    setExporting(true)
+  async function handleSync() {
+    setSyncing(true)
     try {
-      const res = await fetch(`/api/export/ck?ckStoreId=${ckStoreId}&month=${month}`)
-      if (!res.ok) { toast.error('匯出失敗'); return }
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${ckStoreName}_${month.replace('-', '')}_央廚食耗.xlsx`
-      a.click()
-      URL.revokeObjectURL(url)
-      toast.success('匯出完成')
-    } catch { toast.error('匯出失敗') }
-    finally { setExporting(false) }
-  }
-
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true)
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const res = await fetch(`/api/ck-stores/${ckStoreId}/template`, { method: 'POST', body: fd })
-      if (!res.ok) { toast.error('上傳失敗'); return }
-      setHasTemplate(true)
-      toast.success('模板已更新，下次匯出自動套用')
-    } catch { toast.error('上傳失敗') }
-    finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
+      const r = await syncCKMonthToSheets(ckStoreId, month)
+      if (r.error) toast.error('同步失敗：' + r.error)
+      else toast.success('已同步到 Google 試算表')
+    } catch (e: any) {
+      toast.error('同步失敗：' + (e?.message ?? '未知錯誤'))
+    } finally { setSyncing(false) }
   }
 
   return (
     <div>
-      <p className="text-xs font-semibold mb-2" style={{ color: '#a1a1aa' }}>匯出 Excel</p>
-      <div className="rounded-2xl p-4 space-y-3" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
-        {/* 模板狀態 + 上傳 */}
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <FileSpreadsheet className="h-4 w-4 shrink-0" style={{ color: hasTemplate ? '#10b981' : '#a1a1aa' }} />
-            <span className="text-xs font-medium" style={{ color: '#52525b' }}>
-              {hasTemplate === null ? '檢查中…' : hasTemplate ? '模板已設定' : '尚未上傳模板（將產生基本格式）'}
-            </span>
-          </div>
-          <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={handleUpload} />
-          <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
-            className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-xl shrink-0 transition-colors hover:opacity-80"
-            style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b' }}>
-            {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
-            {hasTemplate ? '更換模板' : '上傳模板'}
-          </button>
-        </div>
-        {/* 月份選擇 + 匯出 */}
+      <p className="text-xs font-semibold mb-2" style={{ color: '#a1a1aa' }}>同步試算表</p>
+      <div className="rounded-2xl p-4" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
         <div className="flex items-center gap-2">
           <input type="month" value={month} onChange={e => setMonth(e.target.value)}
             className="flex-1 text-sm px-3 py-2 rounded-xl outline-none border transition-colors"
             style={{ border: '1.5px solid #e4e4e7', background: 'white', color: '#18181b', fontFamily: 'inherit' }}
           />
-          <button type="button" onClick={handleExport} disabled={exporting}
+          <button type="button" onClick={handleSync} disabled={syncing}
             className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl text-white shrink-0 transition-colors hover:opacity-90"
             style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
-            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            匯出
+            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+            同步試算表
           </button>
         </div>
+        <p className="text-[11px] mt-2" style={{ color: '#a1a1aa' }}>
+          同步本月 Excel 內容到綁定的 Google 試算表（模板於「Excel模板設定」管理）
+        </p>
       </div>
     </div>
   )
@@ -355,12 +310,12 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
               )}
 
               {/* 匯出 Excel */}
-              <ExportSection ckStoreId={d.ckStore.id} ckStoreName={d.ckStore.name} />
+              <SyncSection ckStoreId={d.ckStore.id} />
             </>
           ) : (
             <>
               <p className="text-sm text-center py-4" style={{ color: '#a1a1aa' }}>今日尚未填寫帳目</p>
-              <ExportSection ckStoreId={d.ckStore.id} ckStoreName={d.ckStore.name} />
+              <SyncSection ckStoreId={d.ckStore.id} />
             </>
           )}
         </div>

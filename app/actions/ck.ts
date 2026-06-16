@@ -4,6 +4,12 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+// 同步央廚月份資料到 Google 試算表（內容 = Excel 匯出內容）
+// TODO: 完整實作 — 目前先擋住，等下一個 commit 接上 lib/google-sheets.ts
+export async function syncCKMonthToSheets(_ckStoreId: string, _month: string) {
+  return { error: '同步試算表功能尚未完成，下次 commit 會接上' }
+}
+
 // 同步店面央廚叫貨金額 → ck_store_orders
 export async function syncStoreCKOrder(storeId: string, date: string, amount: number) {
   const admin = createAdminClient()
