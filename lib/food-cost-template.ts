@@ -109,7 +109,10 @@ export async function fillWorksheet(
         const vgName = colName.slice(5)
         const vgCols = Object.values(vendorMaps[vgName] || {}).filter((v): v is number => typeof v === 'number')
         const maxVGCol = vgCols.length > 0 ? Math.max(...vgCols) : 0
-        const allTaxCols = allColsByNormName[norm('稅金')] ?? []
+        const allTaxCols = [
+          ...(allColsByNormName[norm('稅金')] ?? []),
+          ...(allColsByNormName[norm('退稅')] ?? []),
+        ].sort((a, b) => a - b)
         colIdx = allTaxCols.find(c => c > maxVGCol)
       } else if (colName.startsWith('_col_')) {
         // Vendor-disambiguated item: '_col_翁師傅_其他' → vendorMaps['翁師傅']['其他']
