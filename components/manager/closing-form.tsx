@@ -674,11 +674,20 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       localStorage.removeItem(stepLsKey)
     } else {
       const saved = parseInt(localStorage.getItem(stepLsKey) ?? '0') || 0
-      if (saved > 0) setCurrentStep(saved)
+      if (saved > 0) {
+        setCurrentStep(saved)
+      } else if (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified') {
+        // No saved step but closing already submitted → land directly on petty cash step
+        // 99 is clamped to totalSteps-1 (petty) by Math.min in the step computation
+        setCurrentStep(99)
+      }
     }
     setStepMounted(true)
   }, [])
   const [submitDone, setSubmitDone] = useState(() => {
+    // Treat already-submitted/verified closings as submitDone regardless of localStorage,
+    // so navigation (tabs, bottom bar, petty step) is always accessible across sessions/devices
+    if (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified') return true
     try { return localStorage.getItem(`submit_done_${store.id}_${today}`) === '1' } catch { return false }
   })
   // On mount: if a previous save was interrupted, offer to restore backed-up form data
