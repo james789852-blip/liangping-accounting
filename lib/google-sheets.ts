@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import { type RowVals, fillWorksheet, extractValues, extractColors, extractBold, extractColWidths, extractMerges } from '@/lib/food-cost-template'
+import { type CKDayData, fillCKWorksheet, buildCKGeneratedWorkbook, getDaysInMonth } from '@/lib/ck-template'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -782,4 +783,145 @@ export async function syncMonthToSheets(storeId: string, month: string): Promise
 
   if (!closing) throw new Error('此月份無帳目資料')
   await syncClosingToSheets(closing.id)
+}
+
+/**
+ * Sync CK store's monthly data to Google Sheets.
+ * Content mirrors `/api/export/ck` Excel output.
+ */
+export async function syncCKMonthToSheets(ckStoreId: string, month: string): Promise<void> {
+  const admin = createAdminClient()
+  const [yearStr, monthStr] = month.split('-')
+  const year = parseInt(yearStr)
+  const monthNum = parseInt(monthStr)
+  const firstDay = `${month}-01`
+  const lastDay = new Date(year, monthNum, 0).toISOString().slice(0, 10)
+
+  // CK store info
+  const { data: ckStore } = await admin
+    .from('stores').select('id, name, assigned_store_ids, google_sheets_id').eq('id', ckStoreId).single()
+  if (!ckStore) throw new Error('找不到央廚店家')
+  const sheetsId = (ckStore as AnyRecord).google_sheets_id as string | null
+  if (!sheetsId) throw new Error('此央廚尚未綁定 Google 試算表（請至「店家管理」設定 google_sheets_id）')
+
+  const assignedIds: string[] = (ckStore.assigned_store_ids as string[] | null) ?? []
+  const { data: memberStores } = assignedIds.length > 0
+    ? await admin.from('stores').select('id, name').in('id', assignedIds)
+    : { data: [] }
+  const storeNameMap = Object.fromEntries((memberStores ?? []).map((s: AnyRecord) => [s.id as string, s.name as string]))
+
+  // Fetch CK records
+  const { data: records } = await admin
+    .from('ck_daily_records')
+    .select('id, business_date')
+    .eq('ck_store_id', ckStoreId)
+    .gte('business_date', firstDay)
+    .lte('business_date', lastDay)
+  const recordIds = (records ?? []).map(r => r.id)
+  const [{ data: storeOrders }, { data: expenseItems }] = await Promise.all([
+    recordIds.length > 0
+      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount').in('ck_daily_record_id', recordIds)
+      : Promise.resolve({ data: [] }),
+    recordIds.length > 0
+      ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount').in('ck_daily_record_id', recordIds).order('sort_order')
+      : Promise.resolve({ data: [] }),
+  ])
+
+  // Build dataMap (mirrors /api/export/ck)
+  const days = getDaysInMonth(year, monthNum)
+  const dataMap: Record<string, CKDayData> = {}
+  for (const record of records ?? []) {
+    const date = record.business_date as string
+    const orders = (storeOrders ?? []).filter((o: AnyRecord) => o.ck_daily_record_id === record.id)
+    const exps = (expenseItems ?? []).filter((e: AnyRecord) => e.ck_daily_record_id === record.id)
+
+    const storeRevenues: Record<string, number> = {}
+    for (const o of orders) {
+      const name = (o as AnyRecord).store_id
+        ? storeNameMap[(o as AnyRecord).store_id] ?? (o as AnyRecord).store_id
+        : (o as AnyRecord).external_store_name
+      if (name) storeRevenues[name] = (storeRevenues[name] ?? 0) + ((o as AnyRecord).amount as number)
+    }
+
+    const expenses: Record<string, number> = {}
+    let foodTotal = 0, packTotal = 0, miscTotal = 0
+    for (const e of exps) {
+      const name = (e as AnyRecord).item_name as string
+      const amt = (e as AnyRecord).amount as number
+      expenses[name] = (expenses[name] ?? 0) + amt
+      if ((e as AnyRecord).category === '食材') foodTotal += amt
+      else if ((e as AnyRecord).category === '耗材') packTotal += amt
+      else miscTotal += amt
+    }
+    const totalRevenue = Object.values(storeRevenues).reduce((s, v) => s + v, 0)
+    const totalExpense = foodTotal + packTotal + miscTotal
+    dataMap[date] = { storeRevenues, expenses, foodTotal, packTotal, miscTotal, totalRevenue, totalExpense }
+  }
+
+  // Build workbook (template if available, otherwise generated)
+  let wb: ExcelJS.Workbook | null = null
+  let ws: ExcelJS.Worksheet | null = null
+  let usedTemplate = false
+  try {
+    const { data: tmpl } = await admin.storage.from('excel-templates').download(`ck-${ckStoreId}.xlsx`)
+    if (tmpl) {
+      wb = new ExcelJS.Workbook()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await wb.xlsx.load(Buffer.from(await tmpl.arrayBuffer()) as any)
+      const targetName = `${monthNum}月食耗成本`
+      ws = wb.getWorksheet(targetName)
+        ?? wb.worksheets.find(s => s.name.includes('食耗'))
+        ?? wb.worksheets[0]
+      if (ws) {
+        const filled = fillCKWorksheet(ws, days, dataMap)
+        if (filled) usedTemplate = true
+      }
+    }
+  } catch (e) { console.warn('[syncCKMonthToSheets] template load failed:', e) }
+
+  if (!usedTemplate) {
+    const assignedStoreNames = assignedIds.map(id => storeNameMap[id]).filter(Boolean)
+    wb = buildCKGeneratedWorkbook(monthNum, days, dataMap, assignedStoreNames)
+    ws = wb.worksheets[0]
+  }
+  if (!ws) throw new Error('無法建立工作表')
+
+  const wsValues = extractValues(ws)
+  const wsWidths = extractColWidths(ws)
+  const wsMerges = extractMerges(ws)
+
+  // Push to Google Sheets
+  const tabName = `${year}年${monthNum}月食耗成本`
+  const auth = getAuth()
+  const sheets = google.sheets({ version: 'v4', auth })
+
+  const { data: spreadsheet } = await sheets.spreadsheets.get({ spreadsheetId: sheetsId })
+  const existingSheet = spreadsheet.sheets?.find(s => s.properties?.title === tabName)
+  let sheetId: number
+  if (existingSheet) {
+    sheetId = existingSheet.properties?.sheetId ?? 0
+    await sheets.spreadsheets.values.clear({ spreadsheetId: sheetsId, range: `'${tabName}'` })
+  } else {
+    const addRes = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: sheetsId,
+      requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
+    })
+    sheetId = addRes.data.replies?.[0]?.addSheet?.properties?.sheetId ?? 0
+  }
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: sheetsId,
+    range: `'${tabName}'!A1`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: wsValues.map(row => row.map(v => v ?? '')) },
+  })
+
+  if (usedTemplate) {
+    try {
+      await applyTemplateFormatting(sheets, sheetsId, sheetId, [], [], wsWidths, wsMerges, ws)
+    } catch (fmtErr) {
+      console.warn('[syncCKMonthToSheets] template formatting failed (data already written):', fmtErr)
+    }
+  }
+  console.log(`[syncCKMonthToSheets] ${ckStore.name} ${month} → sheet "${tabName}" done (${usedTemplate ? 'template' : 'generated'})`)
 }
