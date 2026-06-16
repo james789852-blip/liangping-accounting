@@ -1109,7 +1109,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
     const envelopeFinal = envelopePhotoUrl || envelopePhotoPreview
     if (envelopeFinal) {
-      items.push({ key: 'envelope', type: 'envelope', label: '信封袋', photoUrl: envelopeFinal, inputAmount: 0, confirmed: false })
+      items.push({ key: 'envelope', type: 'envelope', label: '信封袋', photoUrl: envelopeFinal, inputAmount: s.actualRemit, confirmed: false })
     }
     voidInvoicePhotos.forEach((url, i) => {
       items.push({ key: `void_invoice_${i}`, type: 'void_invoice', label: `作廢發票 ${i + 1}`, photoUrl: url, inputAmount: 0, confirmed: false })
@@ -3096,9 +3096,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         <div style={{ fontSize: '16px', fontWeight: 700, color: '#18181b' }}>{reviewItem.label}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '12px', color: '#71717a', marginBottom: '4px' }}>輸入金額</div>
+                        <div style={{ fontSize: '12px', color: '#71717a', marginBottom: '4px' }}>
+                          {reviewItem.type === 'envelope' ? '實際包進信封' : '輸入金額'}
+                        </div>
                         <div style={{ fontSize: '24px', fontWeight: 800, color: '#92400E', fontVariantNumeric: 'tabular-nums' }}>
-                          ${fmt(reviewItem.inputAmount)}
+                          {['void_invoice', 'note'].includes(reviewItem.type) ? '—' : `$${fmt(reviewItem.inputAmount)}`}
                         </div>
                       </div>
                     </div>
