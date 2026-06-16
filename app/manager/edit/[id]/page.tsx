@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import ClosingForm from '@/components/manager/closing-form'
 import { Store, CKPrice } from '@/lib/types'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
+import { getBusinessDate } from '@/lib/business-date'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
@@ -36,7 +37,13 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
 
   if (!closing) return <div className="p-6 text-slate-500">找不到此帳目或無權限</div>
 
+  // 已送出/已審核的帳目：若是今日帳目 → 轉去 /manager/closing 走零用金核對流程
+  // （/manager/closing 已能處理 submitted/verified 並顯示零用金步驟）
   if (!['draft', 'disputed'].includes(closing.status)) {
+    const today = getBusinessDate()
+    if (closing.business_date === today) {
+      redirect('/manager/closing')
+    }
     return (
       <div className="p-6 max-w-md mx-auto text-center space-y-3">
         <p className="text-slate-600">此帳目狀態為「{closing.status}」，無法編輯</p>
