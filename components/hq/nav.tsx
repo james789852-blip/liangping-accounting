@@ -9,6 +9,7 @@ import {
   Store, Users, LogOut,
   ClipboardList, History, LineChart,
   ArrowRightLeft, Package, BookOpen, Settings, FileBarChart2, ChefHat, ExternalLink,
+  Menu, X,
 } from 'lucide-react'
 
 const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
@@ -81,10 +82,11 @@ const managerSections = [
 ]
 
 const mobileHQTabs = [
-  { href: '/hq/closings',          label: '店面帳目', icon: BookOpen },
-  { href: '/hq/food-cost-preview', label: 'Excel模板', icon: FileBarChart2 },
-  { href: '/hq/dashboard',         label: '儀表板',   icon: LayoutDashboard },
-  { href: '/hq/stores',            label: '店家',     icon: Store },
+  { href: '/hq/closings',  label: '店面',   icon: BookOpen },
+  { href: '/hq/ck',        label: '央廚',   icon: ChefHat },
+  { href: '/hq/dashboard', label: '儀表板', icon: LayoutDashboard },
+  { href: '/hq/stores',    label: '店家',   icon: Store },
+  // 「更多」由 nav 內部用 menu 處理
 ]
 const mobileManagerTabs = [
   { href: '/manager/dashboard',  label: '今日結帳', icon: ClipboardList },
@@ -129,11 +131,15 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const hasStores = allStores.length > 0
   const initial = userName ? userName.slice(0, 1) : '?'
   const mobileTabs = isManagerPath ? mobileManagerTabs : mobileHQTabs
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false)
 
   const activeSections = isManagerPath ? managerSections : hqSections
   const activeColor = isManagerPath ? '#b45309' : '#92400E'
   const activeBg = isManagerPath ? '#fef3c7' : '#FFFBEB'
   const mobileActiveColor = isManagerPath ? '#d97706' : '#D97706'
+
+  // 關閉抽屜當路由變化
+  useEffect(() => { setMobileSheetOpen(false) }, [pathname])
 
   return (
     <>
@@ -300,8 +306,66 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               </Link>
             )
           })}
+          {/* 更多 (展開所有頁面) */}
+          <button type="button" onClick={() => setMobileSheetOpen(true)}
+            className="flex flex-col items-center gap-1 flex-1 py-1">
+            <Menu className="h-[22px] w-[22px]" style={{ color: '#a1a1aa' }} />
+            <span className="text-[11px] font-medium" style={{ color: '#a1a1aa' }}>更多</span>
+          </button>
         </div>
       </nav>
+
+      {/* ── 手機更多選單（bottom sheet） */}
+      {mobileSheetOpen && (
+        <div className="lg:hidden fixed inset-0 z-50" onClick={() => setMobileSheetOpen(false)}>
+          <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.4)' }} />
+          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl pb-[env(safe-area-inset-bottom)]"
+            onClick={e => e.stopPropagation()}
+            style={{ boxShadow: '0 -8px 32px rgba(0,0,0,0.15)', maxHeight: '85vh', overflowY: 'auto' }}>
+            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #f4f4f5' }}>
+              <p className="text-base font-bold" style={{ color: '#18181b' }}>選單</p>
+              <button type="button" onClick={() => setMobileSheetOpen(false)}
+                className="h-8 w-8 flex items-center justify-center rounded-full"
+                style={{ background: '#f4f4f5' }}>
+                <X className="h-4 w-4" style={{ color: '#52525b' }} />
+              </button>
+            </div>
+            <div className="px-3 py-3 space-y-1">
+              {activeSections.map(section => (
+                <div key={section.label}>
+                  <p className="text-[11px] font-semibold uppercase px-3 pt-2 pb-1" style={{ color: '#a1a1aa', letterSpacing: '0.05em' }}>
+                    {section.label}
+                  </p>
+                  {section.items.map(({ href, label, icon: Icon }) => {
+                    const active = isActive(href)
+                    return (
+                      <Link key={href} href={href}
+                        className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium"
+                        style={active ? { backgroundColor: activeBg, color: activeColor, fontWeight: 600 } : { color: '#52525b' }}>
+                        <Icon className="h-5 w-5 shrink-0" />
+                        {label}
+                      </Link>
+                    )
+                  })}
+                </div>
+              ))}
+              <div style={{ borderTop: '1px solid #f4f4f5', margin: '8px 0 4px' }} />
+              <a href={HR_SYSTEM_URL} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium"
+                style={{ color: '#0369a1' }}>
+                <ExternalLink className="h-5 w-5 shrink-0" />
+                輔助管理系統
+              </a>
+              <button onClick={handleLogout}
+                className="flex w-full items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium"
+                style={{ color: '#52525b' }}>
+                <LogOut className="h-5 w-5 shrink-0" />
+                登出
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

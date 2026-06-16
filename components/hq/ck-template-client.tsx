@@ -103,47 +103,53 @@ export default function CKTemplateClient({
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-5 pb-28 space-y-4">
-      {/* 工具列：店家、月份、模板、匯出、同步 */}
+      {/* 工具列：手機分行、桌機橫排 */}
       <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-        <div className="flex flex-wrap items-center gap-2">
+        {/* 第 1 行：店家 + 月份 */}
+        <div className="flex gap-2">
           <select value={storeId} onChange={e => handleStoreChange(e.target.value)}
-            className="text-sm px-3 py-2 rounded-xl outline-none border transition-colors"
+            className="flex-1 text-sm px-3 py-2 rounded-xl outline-none border min-w-0"
             style={{ border: '1.5px solid #e4e4e7', background: 'white', color: '#18181b', fontFamily: 'inherit' }}>
             {ckStores.length === 0 && <option value="">尚無央廚店家</option>}
             {ckStores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           <input type="month" value={month} onChange={e => handleMonthChange(e.target.value)}
-            className="text-sm px-3 py-2 rounded-xl outline-none border transition-colors"
-            style={{ border: '1.5px solid #e4e4e7', background: 'white', color: '#18181b', fontFamily: 'inherit' }}
+            className="text-sm px-3 py-2 rounded-xl outline-none border shrink-0"
+            style={{ border: '1.5px solid #e4e4e7', background: 'white', color: '#18181b', fontFamily: 'inherit', maxWidth: '160px' }}
           />
-          <div className="flex items-center gap-2 ml-auto">
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
-              style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
-              <FileSpreadsheet className="h-4 w-4 shrink-0" style={{ color: templateOk ? '#10b981' : '#a1a1aa' }} />
-              <span className="text-xs font-medium" style={{ color: '#52525b' }}>
-                {templateOk ? (templateMeta?.filename ?? '模板已設定') : '尚未上傳模板'}
-              </span>
-            </div>
-            <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={handleUpload} />
-            <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl shrink-0 transition-colors hover:opacity-80"
-              style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b' }}>
-              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              {templateOk ? '更換模板' : '上傳模板'}
-            </button>
-            <button type="button" onClick={handleExport} disabled={exporting}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl text-white shrink-0 transition-colors hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
-              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              匯出 Excel
-            </button>
-            <button type="button" onClick={handleSync} disabled={syncing}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl shrink-0 transition-colors hover:opacity-80"
-              style={{ background: 'white', border: '1px solid #10b981', color: '#047857' }}>
-              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              同步試算表
-            </button>
-          </div>
+        </div>
+        {/* 第 2 行：模板狀態 */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+          style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
+          <FileSpreadsheet className="h-4 w-4 shrink-0" style={{ color: templateOk ? '#10b981' : '#a1a1aa' }} />
+          <span className="text-xs font-medium truncate" style={{ color: '#52525b' }}>
+            {templateOk ? (templateMeta?.filename ?? '模板已設定') : '尚未上傳模板'}
+          </span>
+        </div>
+        {/* 第 3 行：動作按鈕（手機 3 等分；桌機自然排列）*/}
+        <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-2">
+          <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={handleUpload} />
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
+            className="flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl"
+            style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b' }}>
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            <span className="hidden sm:inline">{templateOk ? '更換模板' : '上傳模板'}</span>
+            <span className="sm:hidden">{templateOk ? '更換' : '上傳'}</span>
+          </button>
+          <button type="button" onClick={handleExport} disabled={exporting}
+            className="flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl text-white"
+            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            <span className="hidden sm:inline">匯出 Excel</span>
+            <span className="sm:hidden">匯出</span>
+          </button>
+          <button type="button" onClick={handleSync} disabled={syncing}
+            className="flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl"
+            style={{ background: 'white', border: '1px solid #10b981', color: '#047857' }}>
+            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            <span className="hidden sm:inline">同步試算表</span>
+            <span className="sm:hidden">同步</span>
+          </button>
         </div>
       </div>
 
