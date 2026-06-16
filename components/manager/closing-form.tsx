@@ -33,6 +33,7 @@ interface TodayReceipt {
   tax_amount?: number
   receipt_type: string
   photo_url?: string
+  notes?: string
   receipt_items?: { item_name: string; unit: string; quantity: number; unit_price: number; amount: number }[]
 }
 
@@ -75,6 +76,7 @@ interface VerifyItem {
   photoUrl: string
   inputAmount: number
   confirmed: boolean
+  notes?: string
   items?: { item_name: string; unit: string; quantity: number; unit_price: number; amount: number }[]
 }
 
@@ -852,7 +854,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const supabase = createClient()
     const { data: receipts } = await supabase
       .from('receipts')
-      .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, receipt_items(item_name, unit, quantity, unit_price, amount)')
+      .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount)')
       .eq('store_id', store.id)
       .eq('business_date', today)
       .order('created_at')
@@ -903,7 +905,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         ...r, vendor_name: editVendor, total_amount: finalTotal,
         tax_amount: editHasTax ? editTaxAmount : 0,
         receipt_type: editCategory || r.receipt_type,
-        photo_url: newPhotoUrl, receipt_items: validItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: i.amount })),
+        photo_url: newPhotoUrl,
+        notes: editNotes.trim() || undefined,
+        receipt_items: validItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: i.amount })),
       } : r
     )
     setLocalReceipts(updatedReceipts)
@@ -920,6 +924,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       tax_amount: editHasTax ? editTaxAmount : 0,
       receipt_type: editCategory || undefined,
       photo_url: newPhotoUrl,
+      notes: editNotes.trim() || null,
     }).eq('id', editingReceiptId)
     await supabase.from('receipt_items').delete().eq('receipt_id', editingReceiptId)
     if (validItems.length > 0) {
@@ -1021,6 +1026,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       total_amount: finalTotal,
       tax_amount: form.has_tax ? form.tax_amount : 0,
       photo_url: photo_url || null,
+      notes: form.notes.trim() || null,
     }).select('id').single()
     if (error) {
       toast.error('儲存失敗：' + error.message)
@@ -1053,6 +1059,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       tax_amount: form.has_tax ? form.tax_amount : 0,
       receipt_type: 'receipt',
       photo_url,
+      notes: form.notes.trim() || undefined,
       receipt_items: validItems,
     }
     const updated = [...localReceipts, newR]
@@ -1079,7 +1086,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   function buildVerifyItems() {
     const items: VerifyItem[] = []
     for (const r of localReceipts.filter(r => r.photo_url)) {
-      items.push({ key: r.id, type: 'receipt', label: r.vendor_name || '收據', photoUrl: r.photo_url!, inputAmount: r.total_amount, confirmed: false, items: r.receipt_items })
+      items.push({ key: r.id, type: 'receipt', label: r.vendor_name || '收據', photoUrl: r.photo_url!, inputAmount: r.total_amount, confirmed: false, notes: r.notes, items: r.receipt_items })
     }
     const ckPhotoFinal = ckPhotoUrl || ckPhotoPreview
     if (ckPhotoFinal) {
@@ -2112,7 +2119,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 setEditCategory(r.receipt_type || '')
                                 setEditHasTax(!!(r.tax_amount && r.tax_amount > 0))
                                 setEditTaxAmount(r.tax_amount ?? 0)
-                                setEditNotes('')
+                                setEditNotes(r.notes || '')
                                 setEditPhotoFile(null)
                                 setEditPhotoPreview(r.photo_url || null)
                                 setEditItems((r.receipt_items ?? []).map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: i.amount })))
@@ -3061,7 +3068,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       {reviewIndex + 1} / {verifyItems.length}
                     </span>
                     <span style={{ color: 'white', fontSize: '14px', fontWeight: 600, flex: 1, textAlign: 'center', padding: '0 12px' }}>
-                      {reviewItem.type === 'receipt' ? '單據' : reviewItem.type === 'ck' ? '央廚' : '平台'} · {reviewItem.label}
+                      {reviewItem.type === 'receipt' ? '單據' : reviewItem.type === 'ck' ? '央廚' : reviewItem.type === 'envelope' ? '信封袋' : reviewItem.type === 'void_invoice' ? '作廢發票' : reviewItem.type === 'note' ? '備註' : '平台'} · {reviewItem.label}
                     </span>
                     <button
                       onClick={() => setReviewIndex(null)}
@@ -3084,7 +3091,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                       <div>
                         <div style={{ fontSize: '12px', color: '#71717a', marginBottom: '4px' }}>
-                          {reviewItem.type === 'receipt' ? '單據名稱' : reviewItem.type === 'ck' ? '配送單' : '平台名稱'}
+                          {reviewItem.type === 'receipt' ? '單據名稱' : reviewItem.type === 'ck' ? '配送單' : reviewItem.type === 'envelope' ? '信封袋' : reviewItem.type === 'void_invoice' ? '作廢發票' : reviewItem.type === 'note' ? '備註照片' : '平台名稱'}
                         </div>
                         <div style={{ fontSize: '16px', fontWeight: 700, color: '#18181b' }}>{reviewItem.label}</div>
                       </div>
@@ -3115,6 +3122,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             </span>
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {/* 備註 */}
+                    {reviewItem.notes && (
+                      <div style={{ background: '#fefce8', borderRadius: '10px', padding: '10px 12px', marginBottom: '16px', border: '1px solid #fef08a' }}>
+                        <p style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, marginBottom: '4px' }}>備註</p>
+                        <p style={{ fontSize: '13px', color: '#18181b', lineHeight: 1.5 }}>{reviewItem.notes}</p>
                       </div>
                     )}
 
