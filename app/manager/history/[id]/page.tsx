@@ -8,6 +8,7 @@ import { Banknote, Package, Calculator, BarChart3, AlertTriangle, ArrowLeft, Vid
 import Link from 'next/link'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import DeleteDraftButton from '@/components/manager/delete-draft-button'
+import HandwriteOrdersList from '@/components/manager/handwrite-orders-list'
 import ReceiptPhotoViewer from '@/components/manager/receipt-photo-viewer'
 import PhotoGrid from '@/components/manager/photo-grid'
 
@@ -299,40 +300,7 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
 
       {/* 手寫訂單 */}
       {handwriteOrders.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
-              <Banknote className="h-4 w-4 text-emerald-500" />
-              手寫訂單（共 {handwriteOrders.length} 筆，有效 {handwriteOrders.filter((o: any) => !o.voided && o.amount > 0).length} 筆）
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="divide-y divide-slate-100">
-              {handwriteOrders.map((o: any) => (
-                <div key={o.id} className={cn('py-1.5', o.voided ? 'opacity-50' : '')}>
-                  <div className="flex justify-between text-sm">
-                    <span className={cn('font-mono', o.voided ? 'line-through text-slate-400' : 'text-slate-700')}>
-                      {o.order_number}
-                    </span>
-                    <span className={cn('tabular-nums', o.voided ? 'text-orange-400 text-xs font-medium' : 'font-medium')}>
-                      {o.voided ? '作廢' : `$${fmt(o.amount)}`}
-                    </span>
-                  </div>
-                  {o.voided && o.void_reason && (
-                    <p className="text-[11px] text-slate-400 mt-0.5">{o.void_reason}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-            <Separator className="mt-2 mb-2" />
-            <div className="flex justify-between font-semibold text-sm">
-              <span>合計</span>
-              <span className="tabular-nums text-emerald-700">
-                ${fmt(handwriteOrders.filter((o: any) => !o.voided).reduce((s: number, o: any) => s + o.amount, 0))}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
+        <HandwriteOrdersList orders={handwriteOrders} />
       )}
 
       {/* 菜單影片 */}

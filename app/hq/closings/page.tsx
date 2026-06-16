@@ -53,7 +53,7 @@ export default async function ClosingsPage({
   const admin = createAdminClient()
 
   const { data: stores } = await admin
-    .from('stores').select('id, name, type').eq('active', true).order('name')
+    .from('stores').select('id, name, type').eq('active', true).neq('type', '央廚').order('name')
 
   let query = admin
     .from('daily_closings')
@@ -135,8 +135,8 @@ export default async function ClosingsPage({
       <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         <div className="max-w-4xl mx-auto">
           <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>總公司</p>
-          <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>帳目瀏覽 · 審核</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>查看帳目數字、所有照片與影片，並進行審核</p>
+          <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>店面帳目</h1>
+          <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>查看店面帳目數字、所有照片與影片，並進行審核</p>
         </div>
       </div>
       <div className="max-w-4xl mx-auto px-4 py-5 pb-28">

@@ -8,6 +8,7 @@ import {
   Calculator, BarChart3, Video, ChevronRight,
 } from 'lucide-react'
 import Link from 'next/link'
+import HandwriteOrdersList from '@/components/manager/handwrite-orders-list'
 
 export const dynamic = 'force-dynamic'
 
@@ -296,35 +297,7 @@ export default async function SummaryPage() {
 
         {/* 手寫訂單 */}
         {handwriteOrders.length > 0 && (
-          <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <span className="h-8 w-8 rounded-xl flex items-center justify-center text-base" style={{ background: '#d1fae5' }}>📝</span>
-                <h3 className="text-sm font-semibold" style={{ color: '#18181b' }}>手寫訂單</h3>
-              </div>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: '#d1fae5', color: '#047857' }}>
-                {handwriteOrders.filter((o: any) => !o.voided && o.amount > 0).length} 筆有效
-              </span>
-            </div>
-            <div className="space-y-1">
-              {handwriteOrders.map((o: any) => (
-                <div key={o.id} className="flex justify-between items-center py-1.5" style={{ opacity: o.voided ? 0.4 : 1 }}>
-                  <span className="text-sm font-mono" style={{ color: '#52525b', textDecoration: o.voided ? 'line-through' : 'none' }}>
-                    {o.order_number}
-                  </span>
-                  <span className="text-sm font-medium tabular-nums" style={{ color: o.voided ? '#a1a1aa' : '#18181b' }}>
-                    {o.voided ? '作廢' : `$${fmt(o.amount)}`}
-                  </span>
-                </div>
-              ))}
-              <div className="flex justify-between items-center pt-2" style={{ borderTop: '1px solid #f4f4f5' }}>
-                <span className="text-sm font-bold" style={{ color: '#18181b' }}>合計</span>
-                <span className="text-sm font-bold tabular-nums" style={{ color: '#10b981' }}>
-                  ${fmt(handwriteOrders.filter((o: any) => !o.voided).reduce((s: number, o: any) => s + o.amount, 0))}
-                </span>
-              </div>
-            </div>
-          </div>
+          <HandwriteOrdersList orders={handwriteOrders} />
         )}
 
         {/* 菜單影片 */}
