@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { syncClosingToSheets, syncMonthToSheets } from '@/lib/google-sheets'
 import { logAudit } from '@/lib/audit'
+import { getAuthContext, canAccessStore, getClosingMeta } from '@/lib/permissions'
 
 interface CashCountsPayload {
   bills_1000: number; bills_500: number; bills_100: number
@@ -184,6 +185,55 @@ export async function disputeClosing(closingId: string, note: string) {
   revalidatePath('/hq/reviews')
   revalidatePath('/hq/closings')
   revalidatePath('/hq/audit')
+  return { success: true }
+}
+
+/**
+ * 原子性把帳目狀態改為 submitted，並寫入 audit log。
+ * 用 WHERE status in ('draft','disputed') 防止：
+ *  - 雙擊送出
+ *  - verified 帳目被誤降級成 submitted
+ * 失敗會回傳 error，client 端應顯示。
+ */
+export async function submitClosing(closingId: string) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+
+  const meta = await getClosingMeta(closingId)
+  if (!meta) return { error: '找不到此帳目' }
+  if (!canAccessStore(ctx, meta.storeId)) return { error: '無權限存取此帳目' }
+  if (!['draft', 'disputed'].includes(meta.status)) {
+    return { error: `此帳目狀態為「${meta.status}」，無法送出` }
+  }
+
+  const admin = createAdminClient()
+  const { data: updated, error } = await admin
+    .from('daily_closings')
+    .update({
+      status: 'submitted',
+      submitted_at: new Date().toISOString(),
+      submitted_by: ctx.userId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', closingId)
+    .in('status', ['draft', 'disputed'])
+    .select('id, business_date, total_revenue, variance, store_id')
+
+  if (error) return { error: error.message }
+  if (!updated || updated.length === 0) {
+    return { error: '此帳目狀態已變更，請重新整理頁面' }
+  }
+
+  const c = updated[0]
+  await logAudit({
+    eventType: 'closing_submit',
+    storeId: c.store_id as string,
+    userId: ctx.userId,
+    closingId,
+    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 送出 ${c.business_date} 帳目（營業額 $${Math.round((c.total_revenue as number) ?? 0).toLocaleString()}，誤差 $${Math.round((c.variance as number) ?? 0).toLocaleString()}）`,
+    metadata: { variance: c.variance, total_revenue: c.total_revenue, previous_status: meta.status },
+  })
+
   return { success: true }
 }
 

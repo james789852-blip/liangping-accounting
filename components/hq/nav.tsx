@@ -8,8 +8,10 @@ import {
   LayoutDashboard, CheckSquare,
   Store, Users, LogOut,
   ClipboardList, History, LineChart,
-  ArrowRightLeft, Package, BookOpen, Settings, FileBarChart2, ChefHat,
+  ArrowRightLeft, Package, BookOpen, Settings, FileBarChart2, ChefHat, ExternalLink,
 } from 'lucide-react'
+
+const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
 
@@ -154,6 +156,19 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           </div>
         )}
 
+        {/* 輔助管理系統連結 */}
+        <div className="px-4 pb-2">
+          <a
+            href={HR_SYSTEM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full py-2 rounded-[10px] text-xs font-semibold transition-all hover:opacity-80"
+            style={{ backgroundColor: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}>
+            <ExternalLink className="h-3.5 w-3.5" />
+            輔助管理系統
+          </a>
+        </div>
+
         {/* 切換按鈕 */}
         {hasStores && (
           <div className="px-4 pb-3">
@@ -241,6 +256,14 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         </div>
         {/* 右側操作區，shrink-0 不壓縮 */}
         <div className="flex items-center gap-2 shrink-0">
+          <a
+            href={HR_SYSTEM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-semibold rounded-lg px-2 py-1.5 whitespace-nowrap flex items-center gap-1"
+            style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}>
+            <ExternalLink className="h-3 w-3" />HR
+          </a>
           {!isManagerPath && hasStores && (
             <Link href="/manager/dashboard"
               className="text-xs font-bold text-white rounded-lg px-2 py-1.5 whitespace-nowrap"

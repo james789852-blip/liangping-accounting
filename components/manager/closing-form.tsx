@@ -6,7 +6,7 @@ import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn, PiggyBank } from 'lucide-react'
-import { saveCashCounts, logClosingSubmit } from '@/app/actions/closings'
+import { saveCashCounts, submitClosing } from '@/app/actions/closings'
 import { syncStoreCKOrder } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
@@ -1314,20 +1314,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }
 
   async function handleSubmit() {
-    // Guard: never re-submit a closing that's already submitted/verified —
-    // would downgrade verified → submitted and overwrite submitted_at/by.
+    // 先擋住雙擊：submitting 標記必須在所有 async 之前
+    if (submitting) return
     if (status === 'submitted' || status === 'verified') {
       toast.error('此帳目已送出，請勿重複送出')
       return
     }
-    const cid = await handleSave(true)
-    if (!cid) return
     setSubmitting(true)
-    const supabase = createClient()
     try {
-      await supabase.from('daily_closings')
-        .update({ status: 'submitted', submitted_at: new Date().toISOString(), submitted_by: userId })
-        .eq('id', cid)
+      const cid = await handleSave(true)
+      if (!cid) return
+      // 用 server action 做原子性 status 更新（內含權限檢查與 WHERE status in (draft,disputed)）
+      const r = await submitClosing(cid)
+      if (r.error) {
+        toast.error('送出失敗：' + r.error)
+        return
+      }
       // 先把 UI 狀態一次性批次更新，避免中間 render 出現 isLocked 閃跳
       setStatus('submitted')
       setSubmitDone(true)
@@ -1344,10 +1346,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       localStorage.removeItem(stepLsKey)
       toast.success('今日結帳已送出！')
       goToStep(currentStep + 1) // advance to 摘要
-      // Audit log: 帳目送出（fire-and-forget）
-      void logClosingSubmit(cid)
-      // 誤差警報：fire-and-forget（不 await，避免阻擋 UI 更新）
+      // 誤差警報：fire-and-forget
       if (Math.abs(s.variance) > 200) {
+        const supabase = createClient()
         void supabase.from('audit_logs').insert({
           event_type: 'variance_alert', severity: 'error',
           store_id: store.id, user_id: userId, closing_id: cid,
@@ -1355,8 +1356,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           metadata: { variance: s.variance, business_date: today },
         })
       }
-    } catch (err: any) {
-      toast.error('送出失敗：' + err.message)
+    } catch (err) {
+      toast.error('送出失敗：' + ((err as Error)?.message ?? '未知錯誤'))
     } finally {
       setSubmitting(false)
     }
