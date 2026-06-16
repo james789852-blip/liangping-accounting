@@ -1,23 +1,39 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { syncCKMonthToSheets as syncCKMonthToSheetsImpl } from '@/lib/google-sheets'
+import { getAuthContext, canAccessStore } from '@/lib/permissions'
+import { logAudit } from '@/lib/audit'
 
 // 同步央廚月份資料到 Google 試算表（內容 = Excel 匯出內容）
 export async function syncCKMonthToSheets(ckStoreId: string, month: string) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  if (!ctx.isHQ) return { error: '權限不足（僅總公司可同步）' }
+
   try {
     await syncCKMonthToSheetsImpl(ckStoreId, month)
     return { success: true }
-  } catch (e: any) {
+  } catch (e) {
+    const msg = (e as Error)?.message ?? '未知錯誤'
     console.error('[syncCKMonthToSheets] failed:', e)
-    return { error: e?.message ?? '未知錯誤' }
+    await logAudit({
+      eventType: 'sheets_sync_failed', severity: 'warn',
+      storeId: ckStoreId, userId: ctx.userId,
+      description: `央廚 ${month} 試算表同步失敗`,
+      metadata: { error: msg, month },
+    })
+    return { error: msg }
   }
 }
 
 // 同步店面央廚叫貨金額 → ck_store_orders
 export async function syncStoreCKOrder(storeId: string, date: string, amount: number) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  if (!canAccessStore(ctx, storeId)) return { error: '無權限存取此店家' }
+
   const admin = createAdminClient()
 
   // 找這間店屬於哪間央廚
@@ -70,9 +86,9 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
   expenses?: { category: string; item_name: string; amount: number; payer_name?: string }[]
   receiptPhotoUrls?: string[]
 }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  if (!canAccessStore(ctx, ckStoreId)) return { error: '無權限存取此央廚' }
 
   const admin = createAdminClient()
 
@@ -130,6 +146,13 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
     }
   }
 
+  await logAudit({
+    eventType: 'ck_record_update',
+    storeId: ckStoreId, userId: ctx.userId,
+    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 更新央廚 ${date} 記錄（${data.status ?? 'draft'}）`,
+    metadata: { business_date: date, status: data.status, has_external: !!data.externalOrders, has_expenses: !!data.expenses },
+  })
+
   revalidatePath('/manager/ck')
   revalidatePath('/hq/ck')
   return { success: true, id: recordId }
@@ -137,9 +160,9 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
 
 // 設定央廚服務的體系內店家
 export async function updateCKAssignedStores(ckStoreId: string, assignedStoreIds: string[]) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  if (!ctx.isHQ) return { error: '權限不足（僅總公司可調整）' }
 
   const admin = createAdminClient()
   const { error } = await admin
@@ -148,12 +171,24 @@ export async function updateCKAssignedStores(ckStoreId: string, assignedStoreIds
     .eq('id', ckStoreId)
 
   if (error) return { error: error.message }
+
+  await logAudit({
+    eventType: 'store_update',
+    storeId: ckStoreId, userId: ctx.userId,
+    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 調整央廚體系內店家清單`,
+    metadata: { assigned_store_ids: assignedStoreIds },
+  })
+
   revalidatePath('/hq/stores')
   return { success: true }
 }
 
 // 新增體系外店家
 export async function addCKExternalStore(ckStoreId: string, name: string) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  if (!canAccessStore(ctx, ckStoreId)) return { error: '無權限存取此央廚' }
+
   const admin = createAdminClient()
   const { error } = await admin
     .from('ck_external_stores')
@@ -165,7 +200,14 @@ export async function addCKExternalStore(ckStoreId: string, name: string) {
 
 // 刪除體系外店家
 export async function deleteCKExternalStore(id: string) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+
   const admin = createAdminClient()
+  const { data: ext } = await admin.from('ck_external_stores').select('ck_store_id').eq('id', id).single()
+  if (!ext) return { error: '找不到此體系外店家' }
+  if (!canAccessStore(ctx, ext.ck_store_id as string)) return { error: '無權限存取' }
+
   const { error } = await admin.from('ck_external_stores').delete().eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/manager/ck')
@@ -174,7 +216,14 @@ export async function deleteCKExternalStore(id: string) {
 
 // 更新體系外店家名稱
 export async function updateCKExternalStore(id: string, name: string) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+
   const admin = createAdminClient()
+  const { data: ext } = await admin.from('ck_external_stores').select('ck_store_id').eq('id', id).single()
+  if (!ext) return { error: '找不到此體系外店家' }
+  if (!canAccessStore(ctx, ext.ck_store_id as string)) return { error: '無權限存取' }
+
   const { error } = await admin.from('ck_external_stores').update({ name }).eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/manager/ck')
@@ -183,9 +232,9 @@ export async function updateCKExternalStore(id: string, name: string) {
 
 // 總公司標記補款狀態
 export async function markCKHQPaid(ckStoreId: string, date: string, paid: boolean) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  if (!ctx.isHQ) return { error: '權限不足（僅總公司可標記）' }
 
   const admin = createAdminClient()
 
@@ -218,6 +267,14 @@ export async function markCKHQPaid(ckStoreId: string, date: string, paid: boolea
   }
 
   if (error) return { error: error.message }
+
+  await logAudit({
+    eventType: 'ck_hq_paid',
+    storeId: ckStoreId, userId: ctx.userId,
+    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} ${paid ? '標記' : '取消'}央廚 ${date} 補款`,
+    metadata: { paid, business_date: date },
+  })
+
   revalidatePath('/hq/ck')
   return { success: true }
 }

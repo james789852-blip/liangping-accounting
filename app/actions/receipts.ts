@@ -1,8 +1,9 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { getAuthContext, canAccessStore, getReceiptStoreId } from '@/lib/permissions'
+import { logAudit } from '@/lib/audit'
 
 interface ReceiptItemPayload {
   item_name: string
@@ -24,9 +25,9 @@ interface SaveReceiptPayload {
 }
 
 export async function saveReceipt(payload: SaveReceiptPayload) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  if (!canAccessStore(ctx, payload.storeId)) return { error: '無權限存取此店家' }
 
   const admin = createAdminClient()
 
@@ -42,7 +43,7 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
       photo_url: payload.photoUrl,
       notes: payload.notes,
       status: 'draft',
-      created_by: user.id,
+      created_by: ctx.userId,
       updated_at: new Date().toISOString(),
     })
     .select('id')
@@ -56,20 +57,43 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
     )
   }
 
+  await logAudit({
+    eventType: 'receipt_create',
+    storeId: payload.storeId,
+    userId: ctx.userId,
+    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 新增收據（${payload.vendorName} $${Math.round(payload.totalAmount).toLocaleString()}）`,
+    metadata: { receipt_id: receipt.id, business_date: payload.businessDate, vendor: payload.vendorName, amount: payload.totalAmount },
+  })
+
   revalidatePath('/manager/receipts')
   return { success: true, id: receipt.id }
 }
 
 export async function deleteReceipt(receiptId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  const storeId = await getReceiptStoreId(receiptId)
+  if (!storeId) return { error: '找不到此收據' }
+  if (!canAccessStore(ctx, storeId)) return { error: '無權限存取此收據' }
 
   const admin = createAdminClient()
+  // 先讀取資料用於 audit
+  const { data: existing } = await admin.from('receipts').select('vendor_name, total_amount, business_date').eq('id', receiptId).single()
+
   await admin.from('receipt_items').delete().eq('receipt_id', receiptId)
   const { error } = await admin.from('receipts').delete().eq('id', receiptId)
 
   if (error) return { error: error.message }
+
+  await logAudit({
+    eventType: 'receipt_delete',
+    severity: 'warn',
+    storeId,
+    userId: ctx.userId,
+    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 刪除收據（${existing?.vendor_name ?? '?'} $${Math.round((existing?.total_amount as number) ?? 0).toLocaleString()}）`,
+    metadata: { receipt_id: receiptId, business_date: existing?.business_date, vendor: existing?.vendor_name, amount: existing?.total_amount },
+  })
+
   revalidatePath('/manager/receipts')
   return { success: true }
 }
@@ -78,9 +102,11 @@ export async function updateReceipt(
   receiptId: string,
   payload: Omit<SaveReceiptPayload, 'storeId'>
 ) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  const storeId = await getReceiptStoreId(receiptId)
+  if (!storeId) return { error: '找不到此收據' }
+  if (!canAccessStore(ctx, storeId)) return { error: '無權限存取此收據' }
 
   const admin = createAdminClient()
   const { error: rErr } = await admin
@@ -105,15 +131,25 @@ export async function updateReceipt(
     )
   }
 
+  await logAudit({
+    eventType: 'receipt_update',
+    storeId,
+    userId: ctx.userId,
+    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 修改收據（${payload.vendorName} $${Math.round(payload.totalAmount).toLocaleString()}）`,
+    metadata: { receipt_id: receiptId, business_date: payload.businessDate, vendor: payload.vendorName, amount: payload.totalAmount },
+  })
+
   revalidatePath('/manager/receipts')
   revalidatePath('/manager/order')
   return { success: true }
 }
 
 export async function updateReceiptStatus(receiptId: string, status: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  const storeId = await getReceiptStoreId(receiptId)
+  if (!storeId) return { error: '找不到此收據' }
+  if (!canAccessStore(ctx, storeId)) return { error: '無權限存取此收據' }
 
   const admin = createAdminClient()
   const { error } = await admin
