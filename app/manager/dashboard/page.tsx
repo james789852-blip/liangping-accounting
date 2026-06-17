@@ -138,6 +138,26 @@ export default async function ManagerDashboard() {
           </div>
         </Link>
 
+        {/* ── 補做過往帳目入口（測試階段） ── */}
+        <div className="bg-white rounded-2xl p-4 mb-3" style={{ border: '1px solid #FDE68A', background: '#FFFBEB' }}>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold" style={{ color: '#92400E' }}>📅 補做過往帳目</p>
+              <p className="text-xs mt-0.5" style={{ color: '#b45309' }}>選擇日期填入該日帳目（測試階段使用）</p>
+            </div>
+            <form action="/manager/closing" method="GET" className="flex items-center gap-2 shrink-0">
+              <input type="date" name="date" defaultValue={today} max={today}
+                className="text-sm px-2 py-1.5 rounded-lg outline-none"
+                style={{ border: '1.5px solid #FDE68A', background: 'white', color: '#18181b' }} />
+              <button type="submit"
+                className="text-sm font-semibold px-3 py-1.5 rounded-lg text-white"
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', border: 'none', cursor: 'pointer' }}>
+                前往
+              </button>
+            </form>
+          </div>
+        </div>
+
         {/* ── 快速摘要 4 格 ── */}
         <div className="grid grid-cols-2 gap-3 mb-5 sm:grid-cols-4">
           {[

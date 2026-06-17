@@ -10,13 +10,18 @@ import { getCachedUserProfile, getCachedStoreFull, getCachedActiveCKPrices, getC
 
 export const dynamic = 'force-dynamic'
 
-export default async function ClosingPage() {
+export default async function ClosingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>
+}) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
   // 共用 layout 的 user_profile 快取，避免重複查
   const profile = await getCachedUserProfile(user.id)
+  const params = await searchParams
 
   const storeId = await getEffectiveStoreId(profile)
   if (!storeId) {
@@ -27,7 +32,13 @@ export default async function ClosingPage() {
     )
   }
 
-  const today = getBusinessDate()
+  const realToday = getBusinessDate()
+  // ?date 參數允許店長補做過往帳目；只接受 YYYY-MM-DD 且不晚於今日
+  const requested = params.date
+  const today = (requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested <= realToday)
+    ? requested
+    : realToday
+  const isBackfill = today !== realToday
   const admin = createAdminClient()
 
   // 一次平行撈完所有依賴 storeId/today 的資料
@@ -110,6 +121,8 @@ export default async function ClosingPage() {
       receiptCategories={receiptCategories}
       mappingColumns={mappingColumns}
       prevDayReserves={prevDayReserves}
+      isBackfill={isBackfill}
+      realToday={realToday}
     />
   )
 }

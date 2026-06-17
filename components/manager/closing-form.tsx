@@ -103,6 +103,8 @@ interface Props {
   receiptCategories?: CategoryWithVendors[]
   mappingColumns?: { name: string; category: string; vendor_group?: string; excel_column?: string }[]
   prevDayReserves?: PrevDayReserve | null
+  isBackfill?: boolean  // 是否為補做過往帳目（非今日業務日）
+  realToday?: string    // 真實今日業務日，用於日期切換器顯示「回到今日」
 }
 
 interface FormData {
@@ -460,7 +462,7 @@ function CategoryPicker({ categories, value, onChange }: {
   )
 }
 
-export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], prevDayReserves }: Props) {
+export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], prevDayReserves, isBackfill = false, realToday }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
   const [localReceipts, setLocalReceipts] = useState<TodayReceipt[]>(todayReceipts)
@@ -1511,12 +1513,31 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
       {/* Sticky header + stepper */}
       <div className="bg-white sticky top-0 z-50" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-        <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #f4f4f5' }}>
-          <div>
-            <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>每日結帳</p>
-            <p className="text-sm font-bold" style={{ color: '#18181b' }}>{store.name} · {today}</p>
+        {/* 補做帳目提示橫幅 */}
+        {isBackfill && (
+          <div className="px-5 py-2 text-xs font-medium flex items-center justify-between gap-2"
+            style={{ background: '#FEF3C7', color: '#92400E', borderBottom: '1px solid #FDE68A' }}>
+            <span>📅 你正在補做 <b>{today}</b> 的帳目（非今日）</span>
+            {realToday && (
+              <a href="/manager/closing" className="font-semibold underline shrink-0" style={{ color: '#78350F' }}>
+                回到 {realToday}
+              </a>
+            )}
           </div>
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: st.bg, color: st.color }}>
+        )}
+        <div className="px-5 py-3 flex items-center justify-between gap-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>每日結帳</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-bold truncate" style={{ color: '#18181b' }}>{store.name} · {today}</p>
+              <input type="date" value={today} max={realToday ?? today}
+                onChange={e => { const v = e.target.value; if (v) router.push(`/manager/closing?date=${v}`) }}
+                className="text-xs px-1.5 py-0.5 rounded outline-none border shrink-0"
+                style={{ border: '1px solid #e4e4e7', color: '#52525b', background: 'white' }}
+                title="切換日期（可補做過往帳目）" />
+            </div>
+          </div>
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full shrink-0" style={{ background: st.bg, color: st.color }}>
             {st.label}
           </span>
         </div>
