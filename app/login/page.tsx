@@ -52,8 +52,8 @@ export default function LoginPage() {
 
     const isHQ = profile && (profile.is_hq || profile.role === '老闆')
     toast.success('登入成功')
-    // 店長端 → 今日結帳；總公司端 → 即時儀表板
-    router.push(isHQ ? '/hq/dashboard' : '/manager/closing')
+    // 店長端 → 今日狀態；總公司端 → 即時儀表板
+    router.push(isHQ ? '/hq/dashboard' : '/manager/dashboard')
     router.refresh()
   }
 

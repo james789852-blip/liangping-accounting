@@ -180,7 +180,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         {hasStores && (
           <div className="px-4 pb-3">
             <Link
-              href={isManagerPath ? '/hq/dashboard' : '/manager/closing'}
+              href={isManagerPath ? '/hq/dashboard' : '/manager/dashboard'}
               className="flex items-center justify-center gap-2 w-full py-2 rounded-[10px] text-xs font-semibold transition-all hover:opacity-80"
               style={isManagerPath
                 ? { backgroundColor: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }
@@ -272,7 +272,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
             <ExternalLink className="h-3 w-3" />HR
           </a>
           {!isManagerPath && hasStores && (
-            <Link href="/manager/closing"
+            <Link href="/manager/dashboard"
               className="text-xs font-bold text-white rounded-lg px-2 py-1.5 whitespace-nowrap"
               style={{ background: 'linear-gradient(135deg,#f97316,#f59e0b)' }}>
               店長端
