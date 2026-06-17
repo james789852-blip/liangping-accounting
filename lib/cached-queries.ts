@@ -72,3 +72,34 @@ export const getCachedActiveCKPrices = unstable_cache(
   ['active-ck-prices'],
   { revalidate: 300, tags: ['ck-prices'] }
 )
+
+// 店家品項對應（更新時應該 revalidateTag('item-mappings')）
+export const getCachedStoreMappings = unstable_cache(
+  async (storeId: string) => {
+    const admin = createAdminClient()
+    const { data } = await admin
+      .from('item_column_mappings')
+      .select('item_name, item_category, vendor_group, excel_column')
+      .eq('store_id', storeId)
+    return data ?? []
+  },
+  ['store-mappings'],
+  { revalidate: 300, tags: ['item-mappings'] }
+)
+
+// 店家 Excel 模板的品項順序（上傳模板時應該 revalidateTag('item-order')）
+export const getCachedItemOrder = unstable_cache(
+  async (storeId: string): Promise<string[]> => {
+    const admin = createAdminClient()
+    try {
+      const { data } = await admin.storage.from('excel-templates').download(`${storeId}-item-order.json`)
+      if (!data) return []
+      const text = await data.text()
+      return JSON.parse(text) ?? []
+    } catch {
+      return []
+    }
+  },
+  ['item-order'],
+  { revalidate: 600, tags: ['item-order'] }
+)

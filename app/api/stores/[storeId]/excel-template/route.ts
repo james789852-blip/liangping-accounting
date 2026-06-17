@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
+import { revalidateTag } from 'next/cache'
 
 const BUCKET = 'excel-templates'
 
@@ -351,6 +352,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
     )
   }
 
+  // 失效 unstable_cache 的品項順序與店家對應
+  revalidateTag('item-order', 'default')
+  revalidateTag('item-mappings', 'default')
+
   return NextResponse.json({
     success: true,
     counts: columns ? { 食材: columns['食材'].length, 耗材: columns['耗材'].length, 雜項: columns['雜項'].length } : null,
@@ -366,5 +371,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
   const admin = createAdminClient()
   await admin.storage.from(BUCKET).remove([`${storeId}.xlsx`, `${storeId}-columns.json`, `${storeId}-item-order.json`])
+  revalidateTag('item-order', 'default')
   return NextResponse.json({ success: true })
 }

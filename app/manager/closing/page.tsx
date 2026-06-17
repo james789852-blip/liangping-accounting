@@ -6,7 +6,7 @@ import { Store, CKPrice } from '@/lib/types'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
-import { getCachedUserProfile, getCachedStoreFull, getCachedActiveCKPrices } from '@/lib/cached-queries'
+import { getCachedUserProfile, getCachedStoreFull, getCachedActiveCKPrices, getCachedStoreMappings, getCachedItemOrder } from '@/lib/cached-queries'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,9 +37,9 @@ export default async function ClosingPage() {
     { data: existingClosing },
     { data: todayReceipts },
     receiptCategories,
-    { data: mappingRows },
+    mappingRows,
     { data: prevClosing },
-    itemOrderText,
+    itemOrder,
   ] = await Promise.all([
     getCachedStoreFull(storeId),
     getCachedActiveCKPrices(),
@@ -56,7 +56,7 @@ export default async function ClosingPage() {
       .eq('business_date', today)
       .order('created_at'),
     getReceiptSettings(storeId),
-    admin.from('item_column_mappings').select('item_name, item_category, vendor_group, excel_column').eq('store_id', storeId),
+    getCachedStoreMappings(storeId),
     supabase
       .from('daily_closings')
       .select('reserve_items, business_date')
@@ -66,9 +66,7 @@ export default async function ClosingPage() {
       .order('business_date', { ascending: false })
       .limit(1)
       .maybeSingle(),
-    admin.storage.from('excel-templates').download(`${storeId}-item-order.json`)
-      .then(async ({ data }) => (data ? data.text() : null))
-      .catch((): null => null),
+    getCachedItemOrder(storeId),
   ])
 
   // 央廚店家使用專屬流程
@@ -89,8 +87,6 @@ export default async function ClosingPage() {
     ? { business_date: prevClosing!.business_date as string, items: prevReserveItems }
     : null
 
-  let itemOrder: string[] = []
-  try { if (itemOrderText) itemOrder = JSON.parse(itemOrderText) } catch {}
   const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
 
   // 不過濾任何 mapping 品項：item-order.json 僅用於排序，沒在裡面的品項排到最後。

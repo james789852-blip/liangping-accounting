@@ -2,12 +2,14 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 
 function revalidate() {
   revalidatePath('/manager/receipts')
   revalidatePath('/hq/item-mappings')
   revalidatePath('/hq/food-cost-preview')
+  // 失效 unstable_cache 的店家品項對應
+  revalidateTag('item-mappings', 'default')
 }
 
 export async function saveItemMapping(
