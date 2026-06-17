@@ -217,14 +217,14 @@ export async function GET(req: NextRequest) {
     items: Record<string, number>
     notes: Record<string, string>
     pos: number; twpay: number
-    panda: number; online: number
+    panda: number; online: number; online_cash: number
     uber: Record<string, number>
     onsite: number; actual: number; ck: number
     revenue: number; variance: number
   }
   const byDate: Record<string, DayData> = {}
   function ensureDay(d: string): DayData {
-    if (!byDate[d]) byDate[d] = { items: {}, notes: {}, pos: 0, twpay: 0, panda: 0, online: 0, uber: {}, onsite: 0, actual: 0, ck: 0, revenue: 0, variance: 0 }
+    if (!byDate[d]) byDate[d] = { items: {}, notes: {}, pos: 0, twpay: 0, panda: 0, online: 0, online_cash: 0, uber: {}, onsite: 0, actual: 0, ck: 0, revenue: 0, variance: 0 }
     return byDate[d]
   }
 
@@ -300,6 +300,7 @@ export async function GET(req: NextRequest) {
       if (rv.channel === 'twpay') dd.twpay  += rv.gross_amount ?? 0
       if (rv.channel === 'panda') dd.panda  += rv.gross_amount ?? 0
       if (rv.channel === 'online') dd.online += rv.gross_amount ?? 0
+      if (rv.channel === 'online_cash') dd.online_cash += rv.gross_amount ?? 0
       if (rv.channel === 'uber' && rv.account_name) {
         dd.uber[rv.account_name] = (dd.uber[rv.account_name] || 0) + (rv.gross_amount ?? 0)
       }
@@ -349,6 +350,7 @@ export async function GET(req: NextRequest) {
     const twpay   = d?.twpay ?? 0
     const panda   = d?.panda ?? 0
     const online  = d?.online ?? 0
+    const online_cash = d?.online_cash ?? 0
     const uber    = d?.uber ?? {}
     const onsite  = d?.onsite ?? 0
     const actual  = d?.actual ?? 0
@@ -368,7 +370,7 @@ export async function GET(req: NextRequest) {
     const grandTotal = foodTotal + packTotal + miscTotal
     return {
       date, row: {
-        pos, twpay, panda, online, uber, after_deduct, onsite, actual, ck, result: variance,
+        pos, twpay, panda, online, online_cash, uber, after_deduct, onsite, actual, ck, result: variance,
         revenue: computedRevenue, totalRevenue,
         items, notes, foodTotal, packTotal, miscTotal, grandTotal,
       },
@@ -381,6 +383,7 @@ export async function GET(req: NextRequest) {
     twpay:        sumOf(r => r.twpay),
     panda:        sumOf(r => r.panda),
     online:       sumOf(r => r.online),
+    online_cash:  sumOf(r => r.online_cash ?? 0),
     uber:         Object.fromEntries(uberAccounts.map(acc => [acc, dataRows.reduce((s, { row }) => s + (row.uber[acc] ?? 0), 0)])),
     after_deduct: sumOf(r => r.after_deduct),
     onsite:       sumOf(r => r.onsite),

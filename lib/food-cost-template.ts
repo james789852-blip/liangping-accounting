@@ -2,7 +2,7 @@ import ExcelJS from 'exceljs'
 
 export interface RowVals {
   pos: number; twpay: number; uber: Record<string, number>
-  panda: number; online: number
+  panda: number; online: number; online_cash?: number
   after_deduct: number; onsite: number; actual: number; ck: number
   result: number; revenue: number        // 營業額 = 現場 + 結果（給 "營業額" 欄）
   totalRevenue?: number                  // 真實總營業額（給 "(手動)POS" 欄）
@@ -199,10 +199,11 @@ export async function fillWorksheet(
         if (!hasFormula(cell)) cell.value = totalRev
       }
     }
-    // 熊貓 / 線上點餐 / 台灣Pay：欄位名稱版本多，逐一嘗試直到找到
+    // 熊貓 / 線上點餐 / 台灣Pay / 線上點餐(現金)：欄位名稱版本多，逐一嘗試直到找到
     const revAliases: { val: number; keys: string[] }[] = [
       { val: d.panda, keys: ['熊貓', 'panda', 'foodpanda', '熊貓 foodpanda', 'fp'] },
       { val: d.online, keys: ['線上', '線上點餐', 'online', '線上訂餐'] },
+      { val: d.online_cash ?? 0, keys: ['線上點餐(現金)', '線上點餐（現金）', '線上(現金)', '線上（現金）', 'online cash', 'online_cash', '線上現金'] },
       { val: d.twpay, keys: ['twpay', 'tw pay', 'taiwan pay', 'taiwanpay', '台灣pay', '台灣 pay', '台灣支付'] },
     ]
     for (const { val, keys } of revAliases) {

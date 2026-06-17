@@ -28,7 +28,7 @@ export default async function StoresPage() {
   // 老闆 / is_hq 看全部店家，其他只看自己負責的
   let query = admin
     .from('stores')
-    .select('id, name, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, petty_cash, type, assigned_store_ids, google_sheets_id')
+    .select('id, name, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled, petty_cash, type, assigned_store_ids, google_sheets_id')
     .eq('active', true)
 
   if (!isAdmin && profile?.store_ids?.length) {

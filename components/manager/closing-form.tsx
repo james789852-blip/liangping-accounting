@@ -113,6 +113,7 @@ interface FormData {
   panda_amount: number
   twpay_amount: number
   online_amount: number
+  online_cash_amount: number
   ck_total: number
   bills_1000: number; bills_500: number; bills_100: number
   coins_50: number; coins_10: number; coins_5: number; coins_1: number
@@ -145,7 +146,7 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayRec
       : 0
     return {
       pos_cash: 0, uber_amounts, panda_amount: 0, twpay_amount: 0,
-      online_amount: 0, ck_total,
+      online_amount: 0, online_cash_amount: 0, ck_total,
       bills_1000: 0, bills_500: 0, bills_100: 0,
       coins_50: 0, coins_10: 0, coins_5: 0, coins_1: 0,
       lump_1000: 0, lump_500: 0, lump_100: 0,
@@ -180,6 +181,7 @@ function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayRec
     panda_amount: rev.find((x: any) => x.channel === 'panda')?.gross_amount ?? 0,
     twpay_amount: rev.find((x: any) => x.channel === 'twpay')?.gross_amount ?? 0,
     online_amount: rev.find((x: any) => x.channel === 'online')?.gross_amount ?? 0,
+    online_cash_amount: rev.find((x: any) => x.channel === 'online_cash')?.gross_amount ?? 0,
     ck_total,
     bills_1000: cash.bills_1000 ?? 0, bills_500: cash.bills_500 ?? 0, bills_100: cash.bills_100 ?? 0,
     coins_50: cash.coins_50 ?? 0, coins_10: cash.coins_10 ?? 0, coins_5: cash.coins_5 ?? 0, coins_1: cash.coins_1 ?? 0,
@@ -227,7 +229,7 @@ function initHandwriteOrders(existing: any): HandwriteOrder[] {
 
 function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExpenses: number, handwriteTotal: number, adjustments: RemittanceAdjustment[], reserves: ReserveItem[]) {
   const uberTotal = Object.values(data.uber_amounts).reduce((a, b) => a + b, 0)
-  const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount
+  const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount + data.online_cash_amount
 
   const totalRevenue = store.ichef_uber_linked
     ? data.pos_cash
@@ -340,10 +342,11 @@ function GradientTitle({ step, total, title, desc }: { step: number; total: numb
   )
 }
 
-function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo, onPhotoClick, onViewPhoto, onClearPhoto }: {
+function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo, onPhotoClick, onViewPhoto, onClearPhoto, allowNegative }: {
   channelKey: string; name: string; hint?: string; value: number
   onChange: (v: number) => void; disabled?: boolean
   photo?: ChannelPhoto; onPhotoClick?: () => void; onViewPhoto?: () => void; onClearPhoto?: () => void
+  allowNegative?: boolean
 }) {
   const isUploading = photo?.status === 'uploading'
   const hasPhoto = photo && photo.status === 'uploaded' && photo.previewUrl
@@ -355,8 +358,8 @@ function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo,
         {hint && <span style={{ fontSize: '11px', color: '#a1a1aa' }}>{hint}</span>}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: '10px', alignItems: 'center' }}>
-        <input type="number" min="0" inputMode="numeric" disabled={disabled}
-          style={{ padding: '12px 14px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '20px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: disabled ? '#fafafa' : '#f8fafc', outline: 'none', color: '#18181b', opacity: disabled ? 0.7 : 1, width: '100%', boxSizing: 'border-box' }}
+        <input type="number" {...(allowNegative ? {} : { min: 0 })} inputMode="numeric" disabled={disabled}
+          style={{ padding: '12px 14px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '20px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: disabled ? '#fafafa' : '#f8fafc', outline: 'none', color: value < 0 ? '#dc2626' : '#18181b', opacity: disabled ? 0.7 : 1, width: '100%', boxSizing: 'border-box' }}
           value={value || ''} placeholder="0"
           onChange={e => onChange(parseInt(e.target.value) || 0)} />
 
@@ -1210,6 +1213,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (store.panda_enabled) channelLabelMap['panda'] = { label: '熊貓 foodpanda', amount: dataRef.current.panda_amount }
     if (store.twpay_enabled) channelLabelMap['twpay'] = { label: '台灣 Pay', amount: dataRef.current.twpay_amount }
     if (store.online_enabled) channelLabelMap['online'] = { label: '線上點餐', amount: dataRef.current.online_amount }
+    if (store.online_cash_enabled) channelLabelMap['online_cash'] = { label: '線上點餐（現金）', amount: dataRef.current.online_cash_amount }
     for (const [key, photo] of Object.entries(channelPhotos)) {
       if (photo.publicUrl && channelLabelMap[key]) {
         const info = channelLabelMap[key]
@@ -1359,6 +1363,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         ...(store.panda_enabled ? [{ closing_id: cid, channel: 'panda', gross_amount: d.panda_amount, is_cash: false }] : []),
         ...(store.twpay_enabled ? [{ closing_id: cid, channel: 'twpay', gross_amount: d.twpay_amount, is_cash: false }] : []),
         ...(store.online_enabled ? [{ closing_id: cid, channel: 'online', gross_amount: d.online_amount, is_cash: false }] : []),
+        ...(store.online_cash_enabled ? [{ closing_id: cid, channel: 'online_cash', gross_amount: d.online_cash_amount, is_cash: false }] : []),
         ...(store.mode !== 'ichef' ? [{ closing_id: cid, channel: 'handwrite', gross_amount: handwriteTotal, is_cash: true }] : []),
       ]
       if (revItems.length) await supabase.from('revenue_items').insert(revItems)
@@ -2679,6 +2684,27 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     photo={photo}
                     onPhotoClick={() => openChannelUpload(key, data.online_amount)}
 
+                    onViewPhoto={() => photo?.previewUrl && setPhotoLightbox(photo.previewUrl)}
+                    onClearPhoto={() => setChannelPhotos(prev => { const n = { ...prev }; delete n[key]; return n })}
+                  />
+                )
+              })()}
+
+              {/* Online order (cash portion) — negative amount */}
+              {store.online_cash_enabled && (() => {
+                const key = 'online_cash'
+                const photo = channelPhotos[key]
+                return (
+                  <PlatformRow
+                    channelKey={key}
+                    name="線上點餐（現金）"
+                    hint="輸入負數（已含在 POS 的部分）"
+                    value={data.online_cash_amount}
+                    onChange={v => set('online_cash_amount', v)}
+                    disabled={isLocked}
+                    allowNegative
+                    photo={photo}
+                    onPhotoClick={() => openChannelUpload(key, data.online_cash_amount)}
                     onViewPhoto={() => photo?.previewUrl && setPhotoLightbox(photo.previewUrl)}
                     onClearPhoto={() => setChannelPhotos(prev => { const n = { ...prev }; delete n[key]; return n })}
                   />

@@ -157,6 +157,8 @@ function getVendorGroupByCol(ws: ExcelJS.Worksheet, headerRowNum: number): Recor
 const SKIP_HEADERS = new Set([
   '日期', '星期', 'POS', 'TWPAY', '扣除後的$', '現場', '實際$',
   '配送(月底結)', '配送月底結', '結果', '營業額', '總', '食材', '耗材', '雜項',
+  '線上點餐', '線上點餐(現金)', '線上點餐（現金）', '(手動)POS', '(手動)實際$',
+  'Taiwan pay', '熊貓', 'foodpanda', 'panda', 'Uber',
 ])
 
 

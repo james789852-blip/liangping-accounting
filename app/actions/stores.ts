@@ -12,6 +12,7 @@ interface StoreSettings {
   panda_enabled: boolean
   twpay_enabled: boolean
   online_enabled: boolean
+  online_cash_enabled: boolean
   petty_cash: number
   name?: string
   type?: string
@@ -47,6 +48,7 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
       panda_enabled: settings.panda_enabled,
       twpay_enabled: settings.twpay_enabled,
       online_enabled: settings.online_enabled,
+      online_cash_enabled: settings.online_cash_enabled,
       petty_cash: settings.petty_cash,
       ...('google_sheets_id' in settings ? { google_sheets_id: settings.google_sheets_id ?? null } : {}),
     })

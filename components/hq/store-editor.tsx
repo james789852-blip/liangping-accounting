@@ -9,7 +9,8 @@ import { ChevronDown, ChevronUp, Plus, X, Loader2, Check, Pencil, Trash2 } from 
 interface Store {
   id: string; name: string; mode: string; ichef_uber_linked: boolean
   uber_enabled: boolean; uber_accounts: string[]; panda_enabled: boolean
-  twpay_enabled: boolean; online_enabled: boolean; petty_cash: number
+  twpay_enabled: boolean; online_enabled: boolean; online_cash_enabled?: boolean
+  petty_cash: number
   type?: string; assigned_store_ids?: string[]; google_sheets_id?: string
 }
 
@@ -57,6 +58,7 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
   const [pandaEnabled, setPandaEnabled] = useState(store.panda_enabled)
   const [twpayEnabled, setTwpayEnabled] = useState(store.twpay_enabled)
   const [onlineEnabled, setOnlineEnabled] = useState(store.online_enabled)
+  const [onlineCashEnabled, setOnlineCashEnabled] = useState(store.online_cash_enabled ?? false)
   const [pettyCash, setPettyCash] = useState(store.petty_cash)
   const [storeType, setStoreType] = useState(store.type ?? '店面')
   const [assignedStoreIds, setAssignedStoreIds] = useState<string[]>(store.assigned_store_ids ?? [])
@@ -127,7 +129,9 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
         name: storeName.trim(),
         type: storeType,
         mode, ichef_uber_linked: ichefLinked, uber_enabled: uberEnabled, uber_accounts: uberAccounts,
-        panda_enabled: pandaEnabled, twpay_enabled: twpayEnabled, online_enabled: onlineEnabled, petty_cash: pettyCash,
+        panda_enabled: pandaEnabled, twpay_enabled: twpayEnabled,
+        online_enabled: onlineEnabled, online_cash_enabled: onlineCashEnabled,
+        petty_cash: pettyCash,
         google_sheets_id: googleSheetsId.trim() || null,
       }),
       storeType === '央廚'
@@ -437,6 +441,13 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
                   <Toggle label="熊貓 foodpanda" checked={pandaEnabled} onChange={setPandaEnabled} disabled={!canEdit} />
                   <Toggle label="台灣Pay" checked={twpayEnabled} onChange={setTwpayEnabled} disabled={!canEdit} />
                   <Toggle label="線上點餐" checked={onlineEnabled} onChange={setOnlineEnabled} disabled={!canEdit} />
+                  {onlineEnabled && (
+                    <div style={{ paddingLeft: 12, borderLeft: '2px solid #fef3c7' }}>
+                      <Toggle label="線上點餐（含現金付款）"
+                        checked={onlineCashEnabled} onChange={setOnlineCashEnabled} disabled={!canEdit} />
+                      <p style={{ fontSize: 11, color: '#a1a1aa', marginTop: 2 }}>啟用後結帳會多一欄「現金付款」（請填負數）</p>
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -12,6 +12,7 @@ export interface Store {
   panda_rate: number
   online_enabled: boolean
   online_rate: number
+  online_cash_enabled?: boolean
   twpay_enabled: boolean
   twpay_rate: number
   ichef_uber_linked: boolean

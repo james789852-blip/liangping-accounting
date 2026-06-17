@@ -53,7 +53,7 @@ const STATUS: Record<string, { label: string; bg: string; color: string }> = {
   disputed:  { label: '退回',   bg: '#ffe4e6', color: '#be123c' },
 }
 
-const CHANNEL_LABEL: Record<string, string> = { pos: 'iChef POS', panda: '熊貓', twpay: '台灣Pay', online: '線上點餐' }
+const CHANNEL_LABEL: Record<string, string> = { pos: 'iChef POS', panda: '熊貓', twpay: '台灣Pay', online: '線上點餐', online_cash: '線上點餐（現金）' }
 function channelName(key: string) {
   if (key.startsWith('uber_')) return `Uber ${key.slice(5)}`
   return CHANNEL_LABEL[key] ?? key
@@ -327,7 +327,7 @@ function ClosingCard({
   ]
 
   const platformTotal = closing.revenue_items
-    .filter(r => ['uber', 'panda', 'twpay', 'online'].some(k => r.channel === k || r.channel.startsWith('uber_')))
+    .filter(r => ['uber', 'panda', 'twpay', 'online', 'online_cash'].some(k => r.channel === k || r.channel.startsWith('uber_')))
     .reduce((s, r) => s + r.gross_amount, 0)
 
   const ckItems = (closing.order_items ?? []).filter(o => o.item_name !== '央廚配送')
