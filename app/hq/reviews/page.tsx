@@ -38,21 +38,28 @@ export default async function ReviewsPage() {
     .in('status', ['submitted', 'disputed'])
     .order('submitted_at', { ascending: true })
 
+  // 一次撈所有待審 closings 的 receipts，JS 端 group by (store_id, business_date)
   const receiptsByClosing: Record<string, any[]> = {}
   if (pending && pending.length > 0) {
-    await Promise.all(
-      pending.map(async (c) => {
-        const store = c.stores as any
-        if (!store?.id) return
-        const { data: receipts } = await admin
-          .from('receipts')
-          .select('id, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, amount)')
-          .eq('store_id', store.id)
-          .eq('business_date', c.business_date)
-          .order('created_at', { ascending: true })
-        receiptsByClosing[c.id] = receipts ?? []
-      })
-    )
+    const storeIds = [...new Set(pending.map((c: any) => (c.stores as any)?.id).filter(Boolean))]
+    const dates = [...new Set(pending.map((c: any) => c.business_date as string))]
+    if (storeIds.length > 0 && dates.length > 0) {
+      const { data: receiptsBulk } = await admin
+        .from('receipts')
+        .select('id, store_id, business_date, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, amount), created_at')
+        .in('store_id', storeIds).in('business_date', dates)
+        .order('created_at', { ascending: true })
+      const recMap: Record<string, any[]> = {}
+      for (const r of (receiptsBulk ?? []) as any[]) {
+        const k = `${r.store_id}|${r.business_date}`
+        if (!recMap[k]) recMap[k] = []
+        recMap[k].push(r)
+      }
+      for (const c of pending) {
+        const sId = (c.stores as any)?.id
+        receiptsByClosing[c.id] = sId ? (recMap[`${sId}|${c.business_date}`] ?? []) : []
+      }
+    }
   }
 
   const { data: recent } = await supabase

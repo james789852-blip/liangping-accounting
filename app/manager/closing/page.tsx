@@ -1,5 +1,4 @@
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import ClosingForm from '@/components/manager/closing-form'
 import { Store, CKPrice } from '@/lib/types'
@@ -39,7 +38,6 @@ export default async function ClosingPage({
     ? requested
     : realToday
   const isBackfill = today !== realToday
-  const admin = createAdminClient()
 
   // 一次平行撈完所有依賴 storeId/today 的資料
   const [
@@ -56,7 +54,7 @@ export default async function ClosingPage({
     getCachedActiveCKPrices(),
     supabase
       .from('daily_closings')
-      .select('*, revenue_items(*), order_items(*), expense_items(*), handwrite_orders(*)')
+      .select('*, revenue_items(*), order_items(*), expense_items(*), handwrite_orders(*), cash_counts(*)')
       .eq('store_id', storeId)
       .eq('business_date', today)
       .maybeSingle(),
@@ -82,12 +80,6 @@ export default async function ClosingPage({
 
   // 央廚店家使用專屬流程
   if ((store as any)?.type === '央廚') redirect('/manager/ck')
-
-  // 補抓 cash_counts（必須等 existingClosing 才知道 id）
-  if (existingClosing) {
-    const { data: cashCounts } = await admin.from('cash_counts').select('*').eq('closing_id', existingClosing.id)
-    ;(existingClosing as any).cash_counts = cashCounts ?? []
-  }
 
   if (existingClosing?.status === 'disputed') {
     redirect(`/manager/edit/${existingClosing.id}`)

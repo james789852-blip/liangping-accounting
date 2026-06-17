@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
@@ -891,9 +891,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const dataRef = useRef(data)
   dataRef.current = data
 
-  const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0)
-  const handwriteTotal = handwriteOrders.reduce((s, o) => s + (o.voided ? 0 : (o.amount || 0)), 0)
-  const s = calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves)
+  const totalExpenses = useMemo(() => expenses.reduce((sum, e) => sum + (e.amount || 0), 0), [expenses])
+  const handwriteTotal = useMemo(() => handwriteOrders.reduce((sum, o) => sum + (o.voided ? 0 : (o.amount || 0)), 0), [handwriteOrders])
+  const s = useMemo(
+    () => calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves),
+    [data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves],
+  )
   const isLocked = (status === 'submitted' || status === 'verified') && !submitDone
   const isDisputed = status === 'disputed'
   const disputeNote = existingClosing?.dispute_note ?? ''

@@ -49,7 +49,7 @@ function getDaysInMonth(year: number, month: number) {
 }
 
 async function fillTemplate(
-  templateBlob: Blob,
+  templateBuf: Buffer,
   monthNum: number,
   year: number,
   days: string[],
@@ -60,7 +60,7 @@ async function fillTemplate(
 ): Promise<NextResponse | null> {
   const wb = new ExcelJS.Workbook()
   try {
-    await wb.xlsx.load(Buffer.from(await templateBlob.arrayBuffer()) as any)
+    await wb.xlsx.load(templateBuf as any)
   } catch (e) { console.warn('[fillTemplate] 載入模板失敗:', e); return null }
 
   const targetName = `${monthNum}月食耗成本`
@@ -133,13 +133,20 @@ export async function GET(req: NextRequest) {
     if (m.vendor_group) { vendorGroupLookup[m.item_name] = m.vendor_group; vendorGroupLookup[m.excel_column] = m.vendor_group }
   }
 
-  // Runtime fallback：直接從模板 row 1 群組標籤 + row 3 標題建立 col_name → vg 對應，
-  // 補齊 DB 內 vendor_group 為 null 的 mapping。即使店家忘記重新上傳，也能正確路由。
+  // 模板只下載一次（vg fallback + fillTemplate 共用），避免 storage roundtrip 兩次
+  let templateBuffer: Buffer | null = null
   try {
-    const { data: tmplForVG } = await admin.storage.from('excel-templates').download(`${storeId}.xlsx`)
-    if (tmplForVG) {
+    const { data: tmpl } = await admin.storage.from('excel-templates').download(`${storeId}.xlsx`)
+    if (tmpl) templateBuffer = Buffer.from(await tmpl.arrayBuffer())
+  } catch (e) {
+    console.warn('[food-cost] template download failed:', e)
+  }
+
+  // Runtime fallback：從模板 row 1/2 群組標籤補齊 DB 內 vendor_group 為 null 的 mapping
+  if (templateBuffer) {
+    try {
       const tmpWB = new ExcelJS.Workbook()
-      await tmpWB.xlsx.load(Buffer.from(await tmplForVG.arrayBuffer()) as any)
+      await tmpWB.xlsx.load(templateBuffer as any)
       const ws = tmpWB.getWorksheet(`${monthNum}月食耗成本`)
         ?? tmpWB.worksheets.find(s => s.name.includes('食耗'))
         ?? tmpWB.worksheets[0]
@@ -149,7 +156,6 @@ export async function GET(req: NextRequest) {
           if (ws.getRow(r).getCell(1).text?.replace(/[\s　]/g, '') === '日期') { headerRowNum = r; break }
         }
         if (headerRowNum >= 3) {
-          // 兩列分組邏輯：row1（vendor）→ row2（文件類型 發票/收據/估價單）→ 未分類
           const groupOfCol = buildGroupByMerge(ws, headerRowNum - 2, headerRowNum - 1)
           ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
             const headerName = cell.text?.trim()
@@ -162,9 +168,9 @@ export async function GET(req: NextRequest) {
           })
         }
       }
+    } catch (e) {
+      console.warn('[food-cost vg-fallback] failed:', e)
     }
-  } catch (e) {
-    console.warn('[food-cost vg-fallback] failed:', e)
   }
 
   // CK item name → excel column (fallback to item_name itself)
@@ -405,25 +411,22 @@ export async function GET(req: NextRequest) {
   const lianpingTaxRefund = totals.items['免洗稅金'] ?? 0
 
   // ─── Template mode: fill original Excel if uploaded ───────────────────────
+  // 重用先前下載的 templateBuffer
   let templateDebug = 'no_template'
-  try {
-    const { data: tmpl, error: dlErr } = await admin.storage.from('excel-templates').download(`${storeId}.xlsx`)
-    if (dlErr) {
-      templateDebug = `dl_err:${dlErr.message}`
-      console.warn(`[food-cost export] template download error:`, dlErr)
-    } else if (tmpl) {
+  if (templateBuffer) {
+    try {
       templateDebug = 'fill_attempt'
-      const result = await fillTemplate(tmpl, monthNum, year, days, dataRows, storeRow?.name ?? 'export', uberAccounts, vendorGroupLookup)
+      const result = await fillTemplate(templateBuffer, monthNum, year, days, dataRows, storeRow?.name ?? 'export', uberAccounts, vendorGroupLookup)
       if (result) {
         result.headers.set('X-Export-Mode', 'template')
         return result
       }
       templateDebug = 'fill_null'
       console.warn(`[food-cost export] fillTemplate returned null for store ${storeId}, month ${month}`)
+    } catch (e) {
+      templateDebug = `exception:${(e as Error)?.message ?? e}`
+      console.warn(`[food-cost export] template fill failed:`, e)
     }
-  } catch (e) {
-    templateDebug = `exception:${(e as Error)?.message ?? e}`
-    console.warn(`[food-cost export] template download/fill failed:`, e)
   }
 
   // ─── Excel workbook ───────────────────────────────────────────────────────
