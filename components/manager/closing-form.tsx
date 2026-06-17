@@ -679,9 +679,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (saved > 0) {
         setCurrentStep(saved)
       } else if (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified') {
-        // No saved step but closing already submitted → land directly on petty cash step
-        // 99 is clamped to totalSteps-1 (petty) by Math.min in the step computation
-        setCurrentStep(99)
+        // 已送出/已審核的帳目：判斷零用金是否已核對過，避免使用者重複跳回零用金頁面
+        const dbPetty = (existingClosing as { petty_counts?: { counts?: Record<string, number>; lumps?: Record<string, number> } } | null)?.petty_counts
+        const pettyDone = !!dbPetty && (
+          Object.values(dbPetty.counts ?? {}).some(v => (v as number) > 0) ||
+          Object.values(dbPetty.lumps ?? {}).some(v => (v as number) > 0)
+        )
+        // STEPS 結構：... summary, ai_verify, submit, result, petty
+        // ichef 店家少一個 handwrite 步驟，總共 9 步；其他 10 步
+        const totalStepsEstimate = (store.mode !== 'ichef') ? 10 : 9
+        const resultIdx = totalStepsEstimate - 2  // 倒數第二步（result）
+        // 零用金已核對 → 落地在「摘要」步驟；尚未核對 → 落地在零用金步驟（99 clamps 到最後一步）
+        setCurrentStep(pettyDone ? resultIdx : 99)
       }
     }
     setStepMounted(true)
