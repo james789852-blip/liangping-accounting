@@ -138,17 +138,19 @@ export async function fillWorksheet(
         if (itemSpecific) {
           colIdx = itemSpecific
         } else {
-          // 2) 通用 fallback：第一個在 vendor section 之後且非 item-specific 的稅金欄
-          //    （避免被 "豆腐稅金" 這種專屬欄搶走）
-          const isGeneric = (h: string) => {
-            const core = stripTax(h)
-            return core === ''
+          // 2) 依 receipt 品項實際在模板的最右欄位置之後找第一個稅金欄
+          //    （比依賴 vendorMaps 推算範圍更可靠）
+          const itemCols: number[] = []
+          for (const item of receiptItems) {
+            const c = vendorMaps[vgName]?.[item]
+              ?? vendorMaps[vgName]?.[norm(item)]
+              ?? colMap[item]
+              ?? colMap[norm(item)]
+            if (typeof c === 'number') itemCols.push(c)
           }
-          const genericAfter = allTaxCols.find(x => x.col > maxVGCol && isGeneric(x.header))
-          // 若連通用都找不到，最後 fallback 到任何在 section 後的稅金欄
-          colIdx = (genericAfter ?? allTaxCols.find(x => x.col > maxVGCol))?.col
+          const maxItemCol = itemCols.length > 0 ? Math.max(...itemCols) : maxVGCol
+          colIdx = allTaxCols.find(x => x.col > maxItemCol)?.col
         }
-        // 詳細除錯：印出每筆 _tax_ 路由結果
         console.log(`[fillWorksheet tax] key="${colName}" vg=${vgName} items=[${receiptItems.join(',')}] vgMapCols=${JSON.stringify([...new Set(Object.values(vendorMaps[vgName] || {}))])} maxVGCol=${maxVGCol} taxCols=${JSON.stringify(allTaxCols.map(t=>`${t.col}:${t.header}`))} → colIdx=${colIdx}`)
       } else if (colName.startsWith('_col_')) {
         // Vendor-disambiguated item: '_col_翁師傅_其他' → vendorMaps['翁師傅']['其他']
