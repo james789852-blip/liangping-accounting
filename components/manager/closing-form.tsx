@@ -2576,7 +2576,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         {(stepId === 'revenue' || (isLocked && !submitDone)) && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="各平台營業額"
-              desc="輸入今日各通路的原始金額，並上傳平台統計畫面照片 — AI 自動比對防止輸入錯誤。" />}
+              desc="輸入今日各通路的原始金額，並上傳平台統計畫面照片。" />}
 
             <div className="space-y-3">
               {/* iChef POS */}
