@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs'
 
 export interface RowVals {
   pos: number; twpay: number; uber: Record<string, number>
+  panda: number; online: number
   after_deduct: number; onsite: number; actual: number; ck: number
   result: number; revenue: number
   items: Record<string, number>
@@ -142,6 +143,7 @@ export async function fillWorksheet(
       if (note) cell.note = note
     }
 
+    // 主要欄位（單一名稱）
     const revPairs: [string, number][] = [
       ['pos', d.pos], ['twpay', d.twpay], ['實際$', d.actual],
       ['配送月底結', d.ck], ['結果', d.result],
@@ -150,6 +152,22 @@ export async function fillWorksheet(
     for (const [key, val] of revPairs) {
       const colIdx = colMap[key] ?? colMap[norm(key)]
       if (!colIdx || !val) continue
+      const cell = excelRow.getCell(colIdx)
+      cell.value = val
+    }
+    // 熊貓 / 線上點餐：欄位名稱版本多，逐一嘗試直到找到
+    const revAliases: { val: number; keys: string[] }[] = [
+      { val: d.panda, keys: ['熊貓', 'panda', 'foodpanda', '熊貓 foodpanda', 'fp'] },
+      { val: d.online, keys: ['線上', '線上點餐', 'online', '線上訂餐'] },
+    ]
+    for (const { val, keys } of revAliases) {
+      if (!val) continue
+      let colIdx: number | undefined
+      for (const k of keys) {
+        colIdx = colMap[k] ?? colMap[norm(k)]
+        if (colIdx) break
+      }
+      if (!colIdx) continue
       const cell = excelRow.getCell(colIdx)
       cell.value = val
     }

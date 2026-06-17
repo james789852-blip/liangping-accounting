@@ -183,13 +183,14 @@ export async function GET(req: NextRequest) {
     items: Record<string, number>
     notes: Record<string, string>
     pos: number; twpay: number
+    panda: number; online: number
     uber: Record<string, number>
     onsite: number; actual: number; ck: number
     revenue: number; variance: number
   }
   const byDate: Record<string, DayData> = {}
   function ensureDay(d: string): DayData {
-    if (!byDate[d]) byDate[d] = { items: {}, notes: {}, pos: 0, twpay: 0, uber: {}, onsite: 0, actual: 0, ck: 0, revenue: 0, variance: 0 }
+    if (!byDate[d]) byDate[d] = { items: {}, notes: {}, pos: 0, twpay: 0, panda: 0, online: 0, uber: {}, onsite: 0, actual: 0, ck: 0, revenue: 0, variance: 0 }
     return byDate[d]
   }
 
@@ -255,14 +256,14 @@ export async function GET(req: NextRequest) {
     dd.actual   = c.actual_remit   ?? 0
     dd.variance = c.variance       ?? 0
 
-    let panda = 0, online = 0, handwriteSum = 0
+    let handwriteSum = 0
     for (const rv of (c.revenue_items as any[]) ?? []) {
       // POS 欄只記實際的 POS channel；handwrite 走 onsite，避免被當成 POS 寫入 Excel POS 欄
       if (rv.channel === 'pos') dd.pos += rv.gross_amount ?? 0
       if (rv.channel === 'handwrite') handwriteSum += rv.gross_amount ?? 0
       if (rv.channel === 'twpay') dd.twpay  += rv.gross_amount ?? 0
-      if (rv.channel === 'panda') panda     += rv.gross_amount ?? 0
-      if (rv.channel === 'online') online   += rv.gross_amount ?? 0
+      if (rv.channel === 'panda') dd.panda  += rv.gross_amount ?? 0
+      if (rv.channel === 'online') dd.online += rv.gross_amount ?? 0
       if (rv.channel === 'uber' && rv.account_name) {
         dd.uber[rv.account_name] = (dd.uber[rv.account_name] || 0) + (rv.gross_amount ?? 0)
       }
@@ -271,7 +272,7 @@ export async function GET(req: NextRequest) {
     // ichef_uber_linked = true：iChef POS 含各平台，需扣除得到現場
     // ichef_uber_linked = false：POS 已是純現場金額
     // handwriteSum 永遠加進現場（手寫菜單是純現場交易）
-    dd.onsite = (ichefLinked ? (dd.pos - uberSum - dd.twpay - panda - online) : dd.pos) + handwriteSum
+    dd.onsite = (ichefLinked ? (dd.pos - uberSum - dd.twpay - dd.panda - dd.online) : dd.pos) + handwriteSum
 
     let ckItemsSum = 0
     let ckSummarySum = 0
@@ -310,6 +311,8 @@ export async function GET(req: NextRequest) {
     const d = byDate[date]
     const pos     = d?.pos ?? 0
     const twpay   = d?.twpay ?? 0
+    const panda   = d?.panda ?? 0
+    const online  = d?.online ?? 0
     const uber    = d?.uber ?? {}
     const onsite  = d?.onsite ?? 0
     const actual  = d?.actual ?? 0
@@ -327,7 +330,7 @@ export async function GET(req: NextRequest) {
     const grandTotal = foodTotal + packTotal + miscTotal
     return {
       date, row: {
-        pos, twpay, uber, after_deduct, onsite, actual, ck, result: variance,
+        pos, twpay, panda, online, uber, after_deduct, onsite, actual, ck, result: variance,
         revenue: computedRevenue, items, notes, foodTotal, packTotal, miscTotal, grandTotal,
       },
     }
@@ -337,6 +340,8 @@ export async function GET(req: NextRequest) {
   const totals: RowVals = {
     pos:          sumOf(r => r.pos),
     twpay:        sumOf(r => r.twpay),
+    panda:        sumOf(r => r.panda),
+    online:       sumOf(r => r.online),
     uber:         Object.fromEntries(uberAccounts.map(acc => [acc, dataRows.reduce((s, { row }) => s + (row.uber[acc] ?? 0), 0)])),
     after_deduct: sumOf(r => r.after_deduct),
     onsite:       sumOf(r => r.onsite),
