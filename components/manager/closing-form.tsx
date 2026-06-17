@@ -678,7 +678,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const resultIdx = totalStepsEstimate - 2
     const pettyIdx = totalStepsEstimate - 1
 
-    // 偵測零用金是否已完成（三來源任一即可，包含 DB、localStorage、完成 flag）
+    // 偵測零用金是否已完成（三來源任一即可）
     const dbPetty = (existingClosing as { petty_counts?: { counts?: Record<string, number>; lumps?: Record<string, number> } } | null)?.petty_counts
     const dbPettyDone = !!dbPetty && (
       Object.values(dbPetty.counts ?? {}).some(v => (v as number) > 0) ||
@@ -696,12 +696,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     try { donePressed = localStorage.getItem(`petty_done_${store.id}_${today}`) === '1' } catch {}
     const pettyDone = dbPettyDone || lsPettyDone || donePressed
 
+    // 零用金已完成 + 帳目已送出/已審核 → 直接轉到 /manager/summary（結算結果頁）
+    // 不在表單上停留，因為使用者已經結束今天的流程
+    if (pettyDone && (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified')) {
+      router.replace('/manager/summary')
+      return
+    }
+
     if (existingClosing?.status === 'disputed') {
       localStorage.removeItem(stepLsKey)
     } else {
       const saved = parseInt(localStorage.getItem(stepLsKey) ?? '0') || 0
       if (saved > 0) {
-        // 已存 step：若停在 petty 但零用金已完成，改回 result 步驟（避免重複跳回零用金頁）
         if (saved >= pettyIdx && pettyDone) {
           setCurrentStep(resultIdx)
         } else {
