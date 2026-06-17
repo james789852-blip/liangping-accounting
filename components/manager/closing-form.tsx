@@ -342,11 +342,12 @@ function GradientTitle({ step, total, title, desc }: { step: number; total: numb
   )
 }
 
-function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo, onPhotoClick, onViewPhoto, onClearPhoto, allowNegative }: {
+function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo, onPhotoClick, onViewPhoto, onClearPhoto, allowNegative, hidePhoto }: {
   channelKey: string; name: string; hint?: string; value: number
   onChange: (v: number) => void; disabled?: boolean
   photo?: ChannelPhoto; onPhotoClick?: () => void; onViewPhoto?: () => void; onClearPhoto?: () => void
   allowNegative?: boolean
+  hidePhoto?: boolean
 }) {
   const isUploading = photo?.status === 'uploading'
   const hasPhoto = photo && photo.status === 'uploaded' && photo.previewUrl
@@ -357,13 +358,13 @@ function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo,
         <span style={{ fontWeight: 600, fontSize: '14px', color: '#18181b' }}>{name}</span>
         {hint && <span style={{ fontSize: '11px', color: '#a1a1aa' }}>{hint}</span>}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: '10px', alignItems: 'center' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: hidePhoto ? '1fr' : '1fr 80px', gap: '10px', alignItems: 'center' }}>
         <input type="number" {...(allowNegative ? {} : { min: 0 })} inputMode="numeric" disabled={disabled}
           style={{ padding: '12px 14px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '20px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: disabled ? '#fafafa' : '#f8fafc', outline: 'none', color: value < 0 ? '#dc2626' : '#18181b', opacity: disabled ? 0.7 : 1, width: '100%', boxSizing: 'border-box' }}
           value={value || ''} placeholder="0"
           onChange={e => onChange(parseInt(e.target.value) || 0)} />
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '80px' }}>
+        {!hidePhoto && <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '80px' }}>
           <button type="button"
             onClick={hasPhoto ? onViewPhoto : (disabled || isUploading ? undefined : onPhotoClick)}
             disabled={!hasPhoto && (disabled || isUploading)}
@@ -398,7 +399,7 @@ function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo,
               </button>
             </div>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   )
@@ -2690,26 +2691,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 )
               })()}
 
-              {/* Online order (cash portion) — negative amount */}
-              {store.online_cash_enabled && (() => {
-                const key = 'online_cash'
-                const photo = channelPhotos[key]
-                return (
-                  <PlatformRow
-                    channelKey={key}
-                    name="線上點餐（現金）"
-                    hint="輸入負數（已含在 POS 的部分）"
-                    value={data.online_cash_amount}
-                    onChange={v => set('online_cash_amount', v)}
-                    disabled={isLocked}
-                    allowNegative
-                    photo={photo}
-                    onPhotoClick={() => openChannelUpload(key, data.online_cash_amount)}
-                    onViewPhoto={() => photo?.previewUrl && setPhotoLightbox(photo.previewUrl)}
-                    onClearPhoto={() => setChannelPhotos(prev => { const n = { ...prev }; delete n[key]; return n })}
-                  />
-                )
-              })()}
+              {/* Online order (cash portion) — negative amount, 共用上方 線上點餐 的照片 */}
+              {store.online_cash_enabled && (
+                <PlatformRow
+                  channelKey="online_cash"
+                  name="線上點餐（現金）"
+                  hint="輸入負數（已含在 POS 的部分）"
+                  value={data.online_cash_amount}
+                  onChange={v => set('online_cash_amount', v)}
+                  disabled={isLocked}
+                  allowNegative
+                  hidePhoto
+                />
+              )}
 
               {/* Handwrite subtotal summary row */}
               {store.mode !== 'ichef' && handwriteTotal > 0 && (
