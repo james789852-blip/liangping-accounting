@@ -34,17 +34,9 @@ export async function fillWorksheet(
     return null
   }
 
-  // Identify which columns belong to the 央廚配送 group (row 1 group labels)
-  const groupOfCol: Record<number, string> = {}
-  {
-    let lastGroup = ''
-    const endCol = (ws.columnCount || 0) + 10
-    for (let c = 1; c <= endCol; c++) {
-      const t = ws.getRow(1).getCell(c).text?.trim()
-      if (t) lastGroup = t
-      if (lastGroup) groupOfCol[c] = lastGroup
-    }
-  }
+  // Row 1 群組標籤：只認「合併儲存格」內部的繼承；獨立空白 cell 不分組（獨立項目）
+  // 避免將「翁師傅 | 達特 | 發票 | ...」中的「發票」欄位誤掛到「達特」下
+  const groupOfCol = buildGroupByMerge(ws, 1)
 
   // Build separate maps: CK group wins for duplicate column names
   const ckColMap: Record<string, number> = {}
@@ -389,6 +381,44 @@ function a1ToRC(a1: string): { r: number; c: number } {
   let c = 0
   for (const ch of m[1]) c = c * 26 + (ch.charCodeAt(0) - 64)
   return { r: parseInt(m[2]), c }
+}
+
+/**
+ * 依模板的合併儲存格判斷每個 column 在指定 row 的群組標籤。
+ * 規則：
+ *  - 該 column 是合併儲存格的一部分 → 取 master cell 的文字
+ *  - 該 column 為獨立 cell 且有文字 → 用自己的文字
+ *  - 獨立空白 cell → 不分組（傳回的 Map 不包含這個 col）
+ * 不再使用「lastGroup 向右傳遞」，避免獨立欄位被誤掛到前面 vendor 下。
+ */
+export function buildGroupByMerge(ws: ExcelJS.Worksheet, rowNum: number): Record<number, string> {
+  const result: Record<number, string> = {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const merges = ((ws as any).model?.merges as string[] | undefined) ?? []
+  // 建立 col → merge range（橫向，跨越 rowNum）
+  const colToMerge = new Map<number, { startCol: number }>()
+  for (const m of merges) {
+    const [start, end] = m.split(':')
+    const s = a1ToRC(start)
+    const e = a1ToRC(end)
+    if (s.r <= rowNum && e.r >= rowNum) {
+      for (let c = s.c; c <= e.c; c++) {
+        colToMerge.set(c, { startCol: s.c })
+      }
+    }
+  }
+  const maxCol = Math.max((ws.columnCount || 0) + 5, 100)
+  for (let c = 1; c <= maxCol; c++) {
+    const merge = colToMerge.get(c)
+    if (merge) {
+      const t = ws.getRow(rowNum).getCell(merge.startCol).text?.trim()
+      if (t) result[c] = t
+    } else {
+      const t = ws.getRow(rowNum).getCell(c).text?.trim()
+      if (t) result[c] = t
+    }
+  }
+  return result
 }
 
 /** Convert 1-based column number to letter(s), e.g. 1→"A", 27→"AA". */

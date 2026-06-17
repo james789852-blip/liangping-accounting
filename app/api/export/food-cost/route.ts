@@ -3,7 +3,7 @@ import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
-import { type RowVals, norm, fillWorksheet } from '@/lib/food-cost-template'
+import { type RowVals, norm, fillWorksheet, buildGroupByMerge } from '@/lib/food-cost-template'
 import { getMonthLastDay } from '@/lib/business-date'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
@@ -149,14 +149,8 @@ export async function GET(req: NextRequest) {
           if (ws.getRow(r).getCell(1).text?.replace(/[\s　]/g, '') === '日期') { headerRowNum = r; break }
         }
         if (headerRowNum > 0) {
-          const groupOfCol: Record<number, string> = {}
-          let lastGroup = ''
-          const endCol = (ws.columnCount || 0) + 10
-          for (let c = 1; c <= endCol; c++) {
-            const t = ws.getRow(1).getCell(c).text?.trim()
-            if (t) lastGroup = t
-            if (lastGroup) groupOfCol[c] = lastGroup
-          }
+          // Row 1 分組依「合併儲存格」判斷（獨立空白 cell 不分組）
+          const groupOfCol = buildGroupByMerge(ws, 1)
           ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
             const headerName = cell.text?.trim()
             if (!headerName) return

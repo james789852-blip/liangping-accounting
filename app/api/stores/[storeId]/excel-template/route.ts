@@ -92,41 +92,44 @@ function parseColumns(ws: ExcelJS.Worksheet): ParsedColumns | null {
   }
 }
 
-/** Returns vendor group keyed by column number (not column name), so duplicate-named columns get distinct groups. */
+/**
+ * Returns vendor group keyed by column number (not column name).
+ * 規則：只認「合併儲存格」分組；獨立 cell（無論有無文字）只代表自己。
+ * 避免類似「翁師傅 | 達特 | (空) 發票 | ...」中第三欄被誤掛到達特下。
+ */
 function getVendorGroupByCol(ws: ExcelJS.Worksheet, headerRowNum: number): Record<number, string> {
   const groupRowNum = headerRowNum - 2
   if (groupRowNum < 1) return {}
 
-  const itemCols = new Set<number>()
-  ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
-    const t = cell.text?.trim()
-    if (t && !SKIP_HEADERS.has(t) && !/^\d/.test(t) && t.length <= 15) itemCols.add(colNum)
-  })
-  if (itemCols.size === 0) return {}
-  const minItemCol = Math.min(...itemCols)
-
-  const groupStarts: Array<{ col: number; name: string }> = []
-  ws.getRow(groupRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
-    if (colNum < minItemCol) return
-    if (cell.value instanceof Date) return
-    const t = cell.text?.trim()
-    if (t && !/^\d/.test(t) && t.length >= 1 && t.length <= 20) groupStarts.push({ col: colNum, name: t })
-  })
-  if (groupStarts.length === 0) return {}
-
-  // Sort item cols and carry-forward group labels, but reset carry-forward across gaps > 2
-  // (gaps indicate section boundaries like 耗材→雜項, where group label should not bleed over)
-  const sortedItemCols = [...itemCols].sort((a, b) => a - b)
-  const result: Record<number, string> = {}
-  let lastGroup = ''
-  let lastItemCol = -1
-  for (const colNum of sortedItemCols) {
-    if (lastItemCol >= 0 && colNum - lastItemCol > 2) lastGroup = ''
-    for (const gs of groupStarts) {
-      if (gs.col > (lastItemCol < 0 ? 0 : lastItemCol) && gs.col <= colNum) lastGroup = gs.name
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const merges = ((ws as any).model?.merges as string[] | undefined) ?? []
+  const colToMerge = new Map<number, { startCol: number }>()
+  const parseA1 = (a1: string) => {
+    const m = a1.match(/^\$?([A-Z]+)\$?(\d+)$/)
+    if (!m) return { r: 1, c: 1 }
+    let c = 0
+    for (const ch of m[1]) c = c * 26 + (ch.charCodeAt(0) - 64)
+    return { r: parseInt(m[2]), c }
+  }
+  for (const m of merges) {
+    const [start, end] = m.split(':')
+    const s = parseA1(start)
+    const e = parseA1(end)
+    if (s.r <= groupRowNum && e.r >= groupRowNum) {
+      for (let c = s.c; c <= e.c; c++) colToMerge.set(c, { startCol: s.c })
     }
-    if (lastGroup) result[colNum] = lastGroup
-    lastItemCol = colNum
+  }
+  const result: Record<number, string> = {}
+  const maxCol = Math.max((ws.columnCount || 0) + 5, 100)
+  for (let c = 1; c <= maxCol; c++) {
+    const merge = colToMerge.get(c)
+    if (merge) {
+      const t = ws.getRow(groupRowNum).getCell(merge.startCol).text?.trim()
+      if (t && !/^\d/.test(t) && t.length <= 20) result[c] = t
+    } else {
+      const t = ws.getRow(groupRowNum).getCell(c).text?.trim()
+      if (t && !/^\d/.test(t) && t.length <= 20) result[c] = t
+    }
   }
   return result
 }
