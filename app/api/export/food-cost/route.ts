@@ -133,6 +133,44 @@ export async function GET(req: NextRequest) {
     if (m.vendor_group) { vendorGroupLookup[m.item_name] = m.vendor_group; vendorGroupLookup[m.excel_column] = m.vendor_group }
   }
 
+  // Runtime fallback：直接從模板 row 1 群組標籤 + row 3 標題建立 col_name → vg 對應，
+  // 補齊 DB 內 vendor_group 為 null 的 mapping。即使店家忘記重新上傳，也能正確路由。
+  try {
+    const { data: tmplForVG } = await admin.storage.from('excel-templates').download(`${storeId}.xlsx`)
+    if (tmplForVG) {
+      const tmpWB = new ExcelJS.Workbook()
+      await tmpWB.xlsx.load(Buffer.from(await tmplForVG.arrayBuffer()) as any)
+      const ws = tmpWB.getWorksheet(`${monthNum}月食耗成本`)
+        ?? tmpWB.worksheets.find(s => s.name.includes('食耗'))
+        ?? tmpWB.worksheets[0]
+      if (ws) {
+        let headerRowNum = -1
+        for (let r = 1; r <= 10; r++) {
+          if (ws.getRow(r).getCell(1).text?.replace(/[\s　]/g, '') === '日期') { headerRowNum = r; break }
+        }
+        if (headerRowNum > 0) {
+          // 用 lastGroup 推算 row 1 群組
+          const groupOfCol: Record<number, string> = {}
+          let lastGroup = ''
+          const endCol = (ws.columnCount || 0) + 10
+          for (let c = 1; c <= endCol; c++) {
+            const t = ws.getRow(1).getCell(c).text?.trim()
+            if (t) lastGroup = t
+            if (lastGroup) groupOfCol[c] = lastGroup
+          }
+          // 對每個 row 3 標題建立 vg 對應，僅補上 DB 沒有 vendor_group 的條目
+          ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
+            const headerName = cell.text?.trim()
+            if (!headerName) return
+            const vg = groupOfCol[colNum]
+            if (!vg || vg === '央廚配送' || vg === '退稅' || vg === '稅金') return
+            if (!vendorGroupLookup[headerName]) vendorGroupLookup[headerName] = vg
+          })
+        }
+      }
+    }
+  } catch { /* 沒模板就跳過，靠 DB mapping */ }
+
   // CK item name → excel column (fallback to item_name itself)
   const ckColLookup: Record<string, string> = {}
   for (const p of (ckPricesData ?? []) as any[]) {
