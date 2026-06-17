@@ -594,7 +594,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [])
   const envelopePhotoInputRef = useRef<HTMLInputElement>(null)
 
-  // 更多照片（選填）：零用金核對、預付款項等。結構 [{ url, label }]
+  // 更多照片（選填）：零用金核對、其他款項等。結構 [{ url, label }]
   type ExtraPhoto = { url: string; label: string }
   const [extraPhotos, setExtraPhotos] = useState<ExtraPhoto[]>(() => {
     const saved = (existingClosing as any)?.extra_photo_urls
@@ -3675,7 +3675,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </div>
             </div>
 
-            {/* 更多照片（選填）— 零用金照片 / 預付款項照片 等 */}
+            {/* 更多照片（選填）— 零用金照片 / 其他款項照片 等 */}
             <div className="bg-white rounded-2xl overflow-hidden mt-3" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <button type="button" onClick={() => setExtraPhotosOpen(v => !v)}
                 className="w-full flex items-center justify-between px-5 py-4 text-left"
@@ -3683,7 +3683,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <div>
                   <p className="text-sm font-semibold">更多照片（選填）</p>
                   <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
-                    {extraPhotos.length > 0 ? `已上傳 ${extraPhotos.length} 張` : '零用金清點、預付廠商款項等'}
+                    {extraPhotos.length > 0 ? `已上傳 ${extraPhotos.length} 張` : '零用金清點、其他款項照片等'}
                   </p>
                 </div>
                 <span style={{ color: '#a1a1aa', fontSize: 18 }}>{extraPhotosOpen ? '▴' : '▾'}</span>
@@ -3719,7 +3719,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   )}
                   {/* 上傳按鈕 */}
                   <div className="flex gap-2">
-                    {['零用金核對', '預付款項'].map(label => (
+                    {['零用金核對', '其他款項'].map(label => (
                       <button key={label} type="button"
                         disabled={extraPhotoUploading}
                         onClick={() => { setExtraPhotoUploadLabel(label); extraPhotoInputRef.current?.click() }}
