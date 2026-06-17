@@ -1809,15 +1809,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                         style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
                                         <option value="">— 選擇品項 —</option>
                                         {(() => {
-                                          // 依類別過濾：vendor_group 匹配優先，再試 name 完全匹配，否則顯示全部
+                                          // 依類別過濾：vendor_group / category / name 三個條件取聯集
+                                          // （避免某些品項 vendor_group=null 時被 short-circuit 排除）
                                           const base = form.category
                                             ? (() => {
-                                                const byGroup = mappingColumns.filter(c => c.vendor_group === form.category)
-                                                if (byGroup.length > 0) return byGroup
-                                                const byCat = mappingColumns.filter(c => c.category === form.category)
-                                                if (byCat.length > 0) return byCat
-                                                const byName = mappingColumns.filter(c => c.name === form.category)
-                                                return byName.length > 0 ? byName : mappingColumns
+                                                const merged = new Map<string, typeof mappingColumns[0]>()
+                                                for (const c of mappingColumns) {
+                                                  if (c.vendor_group === form.category
+                                                      || c.category === form.category
+                                                      || c.name === form.category) {
+                                                    if (!merged.has(c.name)) merged.set(c.name, c)
+                                                  }
+                                                }
+                                                return merged.size > 0 ? Array.from(merged.values()) : mappingColumns
                                               })()
                                             : mappingColumns
                                           const groups: { group: string; items: typeof mappingColumns }[] = []
@@ -2050,12 +2054,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             {(() => {
                                               const base = editCategory
                                                 ? (() => {
-                                                    const byGroup = mappingColumns.filter(c => c.vendor_group === editCategory)
-                                                    if (byGroup.length > 0) return byGroup
-                                                    const byCat = mappingColumns.filter(c => c.category === editCategory)
-                                                    if (byCat.length > 0) return byCat
-                                                    const byName = mappingColumns.filter(c => c.name === editCategory)
-                                                    return byName.length > 0 ? byName : mappingColumns
+                                                    const merged = new Map<string, typeof mappingColumns[0]>()
+                                                    for (const c of mappingColumns) {
+                                                      if (c.vendor_group === editCategory
+                                                          || c.category === editCategory
+                                                          || c.name === editCategory) {
+                                                        if (!merged.has(c.name)) merged.set(c.name, c)
+                                                      }
+                                                    }
+                                                    return merged.size > 0 ? Array.from(merged.values()) : mappingColumns
                                                   })()
                                                 : mappingColumns
                                               const groups: { group: string; items: typeof mappingColumns }[] = []
