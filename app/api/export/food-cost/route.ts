@@ -135,6 +135,7 @@ export async function GET(req: NextRequest) {
 
   // Runtime fallback：直接從模板 row 1 群組標籤 + row 3 標題建立 col_name → vg 對應，
   // 補齊 DB 內 vendor_group 為 null 的 mapping。即使店家忘記重新上傳，也能正確路由。
+  let vgFallbackDebug: Record<string, string> = {}
   try {
     const { data: tmplForVG } = await admin.storage.from('excel-templates').download(`${storeId}.xlsx`)
     if (tmplForVG) {
@@ -148,8 +149,8 @@ export async function GET(req: NextRequest) {
         for (let r = 1; r <= 10; r++) {
           if (ws.getRow(r).getCell(1).text?.replace(/[\s　]/g, '') === '日期') { headerRowNum = r; break }
         }
+        console.log(`[food-cost vg-fallback] ws=${ws.name} headerRowNum=${headerRowNum}`)
         if (headerRowNum > 0) {
-          // 用 lastGroup 推算 row 1 群組
           const groupOfCol: Record<number, string> = {}
           let lastGroup = ''
           const endCol = (ws.columnCount || 0) + 10
@@ -158,18 +159,23 @@ export async function GET(req: NextRequest) {
             if (t) lastGroup = t
             if (lastGroup) groupOfCol[c] = lastGroup
           }
-          // 對每個 row 3 標題建立 vg 對應，僅補上 DB 沒有 vendor_group 的條目
           ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
             const headerName = cell.text?.trim()
             if (!headerName) return
             const vg = groupOfCol[colNum]
             if (!vg || vg === '央廚配送' || vg === '退稅' || vg === '稅金') return
-            if (!vendorGroupLookup[headerName]) vendorGroupLookup[headerName] = vg
+            if (!vendorGroupLookup[headerName]) {
+              vendorGroupLookup[headerName] = vg
+              vgFallbackDebug[`${headerName}@${colNum}`] = vg
+            }
           })
+          console.log(`[food-cost vg-fallback] added ${Object.keys(vgFallbackDebug).length} entries:`, JSON.stringify(vgFallbackDebug))
         }
       }
     }
-  } catch { /* 沒模板就跳過，靠 DB mapping */ }
+  } catch (e) {
+    console.warn('[food-cost vg-fallback] failed:', e)
+  }
 
   // CK item name → excel column (fallback to item_name itself)
   const ckColLookup: Record<string, string> = {}
@@ -281,6 +287,7 @@ export async function GET(req: NextRequest) {
         const itemNames = [...new Set(positiveItems.map((it: any) => it.item_name as string).filter(Boolean))].join('|')
         const taxKey = vg ? `_tax_${vg}::${itemNames}` : '稅金'
         dd.items[taxKey] = (dd.items[taxKey] || 0) + taxAmt
+        console.log(`[food-cost tax-route] ${r.business_date} vendor="${r.vendor_name}" items=[${itemNames}] vg=${vg} taxKey="${taxKey}" tax=${taxAmt}`)
       }
     }
     // Items stay at exactly what the user entered; no proportional distribution.
