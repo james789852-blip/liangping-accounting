@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache'
 import { createAdminClient } from './supabase/admin'
+import { sortStores } from './store-order'
 
 export const getCachedUserProfile = unstable_cache(
   async (userId: string) => {
@@ -22,8 +23,7 @@ export const getCachedAllStores = unstable_cache(
       .from('stores')
       .select('id, name, type')
       .eq('active', true)
-      .order('name')
-    return data ?? []
+    return sortStores(data ?? [])
   },
   ['all-stores'],
   { revalidate: 60, tags: ['stores'] }

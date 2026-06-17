@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
 import CKDailyForm from '@/components/manager/ck-daily-form'
+import { sortStores } from '@/lib/store-order'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,7 +50,7 @@ export default async function CKPage() {
     { data: todayClosings },
   ] = await Promise.all([
     assignedStoreIds.length > 0
-      ? admin.from('stores').select('id, name').in('id', assignedStoreIds).order('name')
+      ? admin.from('stores').select('id, name').in('id', assignedStoreIds)
       : Promise.resolve({ data: [] }),
     admin.from('ck_external_stores').select('id, name').eq('ck_store_id', storeId).order('created_at'),
     admin.from('ck_daily_records')
@@ -122,7 +123,7 @@ export default async function CKPage() {
     }
   }
 
-  const memberOrders = (assignedStores ?? []).map((s: any) => ({
+  const memberOrders = sortStores((assignedStores ?? []) as { id: string; name: string }[]).map((s: any) => ({
     store_id: s.id as string,
     store_name: s.name as string,
     amount: memberOrderMap[s.id] ?? 0,

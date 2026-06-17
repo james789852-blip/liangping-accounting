@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import ItemMappingsClient from '@/components/hq/item-mappings-client'
+import { sortStores } from '@/lib/store-order'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,7 +31,7 @@ export default async function ItemMappingsPage({
   return (
     <ItemMappingsClient
       mappings={mappings ?? []}
-      stores={stores ?? []}
+      stores={sortStores(stores ?? [])}
       selectedStoreId={storeId}
     />
   )

@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import UserCreateDialog from '@/components/hq/user-create-dialog'
 import UserEditDialog from '@/components/hq/user-edit-dialog'
 import { Users, Building2 } from 'lucide-react'
+import { sortStores } from '@/lib/store-order'
 
 const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
   '老闆':   { bg: '#fef3c7', color: '#b45309' },
@@ -34,10 +35,11 @@ export default async function UsersPage() {
     .select('user_id, name, role, title, employee_id, store_ids, is_hq, active, created_at')
     .order('created_at', { ascending: false })
 
-  const { data: stores } = await supabase
-    .from('stores').select('id, name, type').eq('active', true).order('name')
+  const { data: storesRaw } = await supabase
+    .from('stores').select('id, name, type').eq('active', true)
+  const stores = sortStores(storesRaw ?? [])
 
-  const storeMap = Object.fromEntries((stores ?? []).map(s => [s.id, s.name]))
+  const storeMap = Object.fromEntries(stores.map(s => [s.id, s.name]))
 
   // 用 admin client 取得所有使用者帳號（email → 身分證字號）
   const admin = createAdminClient(
@@ -67,7 +69,7 @@ export default async function UsersPage() {
             <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>共 {users?.length ?? 0} 個帳號</p>
           </div>
           <div className="mt-1">
-            <UserCreateDialog stores={stores ?? []} />
+            <UserCreateDialog stores={stores} />
           </div>
         </div>
       </div>
@@ -123,7 +125,7 @@ export default async function UsersPage() {
                   </p>
                 </div>
 
-                <UserEditDialog user={{ ...u, account: accountMap[u.user_id] ?? '' }} stores={stores ?? []} />
+                <UserEditDialog user={{ ...u, account: accountMap[u.user_id] ?? '' }} stores={stores} />
               </div>
             )
           })}

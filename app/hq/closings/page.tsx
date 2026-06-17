@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ClosingsBrowser from '@/components/hq/closings-browser'
 import { getMonthLastDay } from '@/lib/business-date'
+import { sortStores } from '@/lib/store-order'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,8 +54,9 @@ export default async function ClosingsPage({
 
   const admin = createAdminClient()
 
-  const { data: stores } = await admin
-    .from('stores').select('id, name, type').eq('active', true).neq('type', '央廚').order('name')
+  const { data: storesRaw } = await admin
+    .from('stores').select('id, name, type').eq('active', true).neq('type', '央廚')
+  const stores = sortStores(storesRaw ?? [])
 
   let query = admin
     .from('daily_closings')
@@ -146,7 +148,7 @@ export default async function ClosingsPage({
           closings={(closings ?? []) as any[]}
           receiptsByClosing={receiptsByClosing}
           videosByClosing={videosByClosing}
-          stores={stores ?? []}
+          stores={stores}
           currentDate={currentDate}
           currentMonth={currentMonth}
           todayStr={todayStr}

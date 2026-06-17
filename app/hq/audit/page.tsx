@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { History as HistoryIcon } from 'lucide-react'
 import AuditClient from '@/components/hq/audit-client'
+import { sortStores } from '@/lib/store-order'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,7 +48,7 @@ export default async function HQAuditPage({
 
   const [{ data: logs }, { data: stores }, { data: users }] = await Promise.all([
     query,
-    admin.from('stores').select('id, name, type').eq('active', true).order('name'),
+    admin.from('stores').select('id, name, type').eq('active', true),
     admin.from('user_profiles').select('user_id, name'),
   ])
 
@@ -86,7 +87,7 @@ export default async function HQAuditPage({
 
       <AuditClient
         logs={enrichedLogs}
-        stores={(stores ?? []).map(s => ({ id: s.id as string, name: s.name as string, type: (s as { type?: string }).type ?? '店面' }))}
+        stores={sortStores(stores ?? []).map(s => ({ id: s.id as string, name: s.name as string, type: (s as { type?: string }).type ?? '店面' }))}
         eventTypes={[...EVENT_TYPES]}
         currentStore={storeFilter}
         currentEvent={eventFilter}

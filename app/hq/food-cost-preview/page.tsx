@@ -5,6 +5,7 @@ import { FileBarChart2 } from 'lucide-react'
 import FoodCostPreviewClient from '@/components/hq/food-cost-preview-client'
 import CKTemplateClient from '@/components/hq/ck-template-client'
 import { getMonthLastDay } from '@/lib/business-date'
+import { sortStores } from '@/lib/store-order'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,12 +27,12 @@ export default async function FoodCostPreviewPage({
   const isCK = params.type === 'ck'
 
   // 央廚模式：只撈央廚店家；店面模式：排除央廚
-  const { data: stores } = await admin
+  const { data: storesRaw } = await admin
     .from('stores').select('id, name, type').eq('active', true)
     .filter('type', isCK ? 'eq' : 'neq', '央廚')
-    .order('name')
+  const stores = sortStores(storesRaw ?? [])
 
-  const storeId = params.storeId ?? stores?.[0]?.id ?? ''
+  const storeId = params.storeId ?? stores[0]?.id ?? ''
   const now = new Date()
   const month = params.month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
@@ -125,7 +126,7 @@ export default async function FoodCostPreviewPage({
           </div>
         </div>
         <CKTemplateClient
-          stores={stores ?? []}
+          stores={stores}
           storeId={storeId}
           month={month}
           rows={ckRows}
@@ -294,7 +295,7 @@ export default async function FoodCostPreviewPage({
       </div>
 
       <FoodCostPreviewClient
-        stores={stores ?? []}
+        stores={stores}
         storeId={storeId}
         month={month}
         rows={rows}

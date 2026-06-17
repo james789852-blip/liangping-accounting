@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { Store as StoreIcon } from 'lucide-react'
 import StoreEditor from '@/components/hq/store-editor'
 import AddStoreForm from '@/components/hq/add-store-form'
+import { sortStores } from '@/lib/store-order'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,24 +30,24 @@ export default async function StoresPage() {
     .from('stores')
     .select('id, name, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, petty_cash, type, assigned_store_ids, google_sheets_id')
     .eq('active', true)
-    .order('name')
 
   if (!isAdmin && profile?.store_ids?.length) {
     query = query.in('id', profile.store_ids) as typeof query
   }
 
-  const { data: stores } = await query
+  const { data: storesRaw } = await query
+  const stores = sortStores(storesRaw ?? [])
 
   // 供央廚店家設定「服務店家」用的店面清單
-  const { data: memberStoreOptions } = await admin
+  const { data: memberStoreOptionsRaw } = await admin
     .from('stores')
     .select('id, name')
     .eq('active', true)
     .eq('type', '店面')
-    .order('name')
+  const memberStoreOptions = sortStores(memberStoreOptionsRaw ?? [])
 
   // 各央廚目前的體系外店家
-  const ckStoreIds = (stores ?? []).filter(s => (s as any).type === '央廚').map(s => s.id)
+  const ckStoreIds = stores.filter(s => (s as any).type === '央廚').map(s => s.id)
   const { data: allExternalStores } = ckStoreIds.length > 0
     ? await admin.from('ck_external_stores').select('id, ck_store_id, name').in('ck_store_id', ckStoreIds).order('created_at')
     : { data: [] }
@@ -67,7 +68,7 @@ export default async function StoresPage() {
 
       <div className="max-w-2xl mx-auto px-4 py-5 pb-28 space-y-6">
         {(['店面', '央廚'] as const).map(type => {
-          const group = (stores ?? []).filter(s => ((s as any).type ?? '店面') === type)
+          const group = stores.filter(s => ((s as any).type ?? '店面') === type)
           if (group.length === 0) return null
           return (
             <div key={type}>
@@ -84,7 +85,7 @@ export default async function StoresPage() {
                     key={store.id}
                     store={{ ...store, uber_accounts: store.uber_accounts ?? [], type: (store as any).type ?? '店面', assigned_store_ids: (store as any).assigned_store_ids ?? [], google_sheets_id: (store as any).google_sheets_id ?? '' }}
                     canEdit={canEdit}
-                    memberStoreOptions={type === '央廚' ? (memberStoreOptions ?? []) : []}
+                    memberStoreOptions={type === '央廚' ? memberStoreOptions : []}
                     externalStores={type === '央廚' ? (allExternalStores ?? []).filter((e: any) => e.ck_store_id === store.id).map((e: any) => ({ id: e.id, name: e.name })) : []}
                   />
                 ))}

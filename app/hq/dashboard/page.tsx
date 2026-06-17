@@ -8,6 +8,7 @@ import {
   Clock, ChevronRight, Calendar, FileText, LayoutDashboard,
 } from 'lucide-react'
 import Link from 'next/link'
+import { sortStores } from '@/lib/store-order'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,14 +55,14 @@ export default async function HQDashboard() {
     { data: monthClosings },
     { data: pendingCount },
   ] = await Promise.all([
-    admin.from('stores').select('id, name, type').order('name'),
+    admin.from('stores').select('id, name, type'),
     admin.from('daily_closings').select('id, store_id, status, total_revenue, variance').eq('business_date', today),
     admin.from('daily_closings').select('store_id, total_revenue, status')
       .gte('business_date', firstOfMonth).lte('business_date', today).in('status', ['submitted', 'verified']),
     admin.from('daily_closings').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
   ])
 
-  const storeList = stores ?? []
+  const storeList = sortStores(stores ?? [])
   const closingByStore = Object.fromEntries((todayClosings ?? []).map(c => [c.store_id, c]))
   const storeMap = Object.fromEntries(storeList.map(s => [s.id, s.name]))
 

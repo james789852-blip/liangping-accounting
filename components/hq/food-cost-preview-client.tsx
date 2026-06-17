@@ -219,7 +219,8 @@ export default function FoodCostPreviewClient({
       <div className="bg-white rounded-2xl px-4 py-3" style={{ border: '1px solid #f4f4f5' }}>
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-semibold" style={{ color: '#18181b' }}>品項對應狀況</p>
-          <a href="/hq/item-mappings" className="text-xs font-medium" style={{ color: '#F59E0B' }}>管理對應 →</a>
+          <a href={storeId ? `/hq/item-mappings?storeId=${storeId}` : '/hq/item-mappings'}
+            className="text-xs font-medium" style={{ color: '#F59E0B' }}>管理對應 →</a>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: '#f4f4f5' }}>

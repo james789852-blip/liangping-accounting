@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { FileSpreadsheet } from 'lucide-react'
 import HQExcelClient from './client'
+import { sortStores } from '@/lib/store-order'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,12 +24,12 @@ export default async function HQExcelPage() {
   }
 
   const admin = createAdminClient()
-  const { data: stores } = await admin
+  const { data: storesRaw } = await admin
     .from('stores')
     .select('id, name')
     .eq('active', true)
     .in('id', profile.store_ids)
-    .order('name')
+  const stores = sortStores(storesRaw ?? [])
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -42,7 +43,7 @@ export default async function HQExcelPage() {
           <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>選擇店家與月份，下載當月食耗成本報表</p>
         </div>
       </div>
-      <HQExcelClient stores={stores ?? []} />
+      <HQExcelClient stores={stores} />
     </div>
   )
 }
