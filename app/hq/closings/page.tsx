@@ -63,6 +63,7 @@ export default async function ClosingsPage({
       total_revenue, total_cost, total_expenses, expected_remit, variance,
       actual_remit, should_include_delivery, remittance_adjustments,
       ck_delivery_photo_url, channel_photo_urls,
+      envelope_photo_url, void_invoice_photo_urls, note_photo_url,
       stores(id, name),
       revenue_items(channel, account_name, gross_amount),
       order_items(item_name, quantity, unit_price, total_amount),

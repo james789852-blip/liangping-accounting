@@ -317,10 +317,13 @@ function ClosingCard({
     ...voidInvoicePhotos.map((url, i) => ({ url, label: `作廢發票 ${i + 1}` })),
     ...(notePhoto ? [{ url: notePhoto, label: '備註照片' }] : []),
   ]
-  // non-receipt photos (CK + channels), shown in 平台截圖 section
+  // non-receipt photos (CK + channels + 信封袋/作廢/備註), 顯示在「其他照片」區塊
   const otherPhotos: { url: string; label: string }[] = [
     ...(ckPhoto ? [{ url: ckPhoto, label: '央廚配送單' }] : []),
     ...Object.entries(channelPhotos).map(([k, url]) => ({ url: url as string, label: channelName(k) })),
+    ...(envelopePhoto ? [{ url: envelopePhoto, label: '信封袋' }] : []),
+    ...voidInvoicePhotos.map((url, i) => ({ url, label: `作廢發票${voidInvoicePhotos.length > 1 ? ` ${i + 1}` : ''}` })),
+    ...(notePhoto ? [{ url: notePhoto, label: '備註照片' }] : []),
   ]
 
   const platformTotal = closing.revenue_items
@@ -553,14 +556,14 @@ function ClosingCard({
             </div>
           )}
 
-          {/* ── 8. 平台照片 ──────────────────────────────── */}
+          {/* ── 8. 平台照片 / 配送單 / 信封袋 / 作廢 / 備註 ──────────────────────────────── */}
           {otherPhotos.length > 0 && (
             <div>
               <div className="flex items-center gap-1.5 mb-2">
                 <Camera className="h-3.5 w-3.5" style={{ color: '#F59E0B' }} />
                 <p className="text-xs font-semibold" style={{ color: '#52525b' }}>
-                  平台截圖 / 配送單
-                  <span className="ml-1.5 font-normal" style={{ color: '#a1a1aa' }}>（點擊可左右切換）</span>
+                  其他照片
+                  <span className="ml-1.5 font-normal" style={{ color: '#a1a1aa' }}>（配送單 / 平台截圖 / 信封袋 / 作廢 / 備註，點擊可左右切換）</span>
                 </p>
               </div>
               <div className="flex flex-wrap gap-1.5">
