@@ -414,6 +414,20 @@ function SummaryBlock({ label, value, warm }: { label: string; value: string; wa
 
 const PINNED_CATEGORIES = ['央廚配送', '小雲', '退稅', '菜商', '豆腐', '滷蛋', '雜貨', '免洗', '惠敘', 'Uber', 'Duskin', '翁師傅', '雜項', '瓦斯']
 
+// 收據品項下拉的分類排序：叫貨廠商 → 日用品 → 文件類型 → 退稅 → 未分類
+// 央廚配送不在收據錄入中（CK 走另一個流程），由呼叫端過濾
+const ORDER_VENDOR_KEYWORDS = ['菜商', '豬肉商', '雞蛋', '滷蛋', '油豆腐', '豆腐商', '雜貨', '免洗', '麵', '振源', '小雲', '海鮮', '冷凍', '飲料']
+const DOC_TYPE_GROUPS = ['發票', '收據', '估價單', '公司開']
+function dropdownGroupRank(name: string): number {
+  if (name === '央廚配送') return 99 // 應該已被過濾，保險起見排到最後
+  if (name === '未分類') return 5
+  if (name === '退稅' || name === '稅金') return 4
+  if (DOC_TYPE_GROUPS.includes(name)) return 3
+  if (ORDER_VENDOR_KEYWORDS.some(k => name.includes(k))) return 1
+  if (/商$|雲$|源$/.test(name)) return 1
+  return 2 // 日用品/維護廠商
+}
+
 function CategoryPicker({ categories, value, onChange }: {
   categories: CategoryWithVendors[]
   value: string
@@ -1904,20 +1918,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                         <option value="">— 選擇品項 —</option>
                                         {(() => {
                                           // 依類別過濾：vendor_group / category / name 三個條件取聯集
-                                          // （避免某些品項 vendor_group=null 時被 short-circuit 排除）
+                                          // 央廚配送品項不在收據錄入內
+                                          const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送')
                                           const base = form.category
                                             ? (() => {
                                                 const merged = new Map<string, typeof mappingColumns[0]>()
-                                                for (const c of mappingColumns) {
+                                                for (const c of baseAll) {
                                                   if (c.vendor_group === form.category
                                                       || c.category === form.category
                                                       || c.name === form.category) {
                                                     if (!merged.has(c.name)) merged.set(c.name, c)
                                                   }
                                                 }
-                                                return merged.size > 0 ? Array.from(merged.values()) : mappingColumns
+                                                return merged.size > 0 ? Array.from(merged.values()) : baseAll
                                               })()
-                                            : mappingColumns
+                                            : baseAll
                                           const groups: { group: string; items: typeof mappingColumns }[] = []
                                           for (const col of base) {
                                             const g = col.vendor_group ?? col.category
@@ -1925,6 +1940,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             if (existing) existing.items.push(col)
                                             else groups.push({ group: g, items: [col] })
                                           }
+                                          // 依分類優先級排序：叫貨廠商→日用品→文件類型→退稅→未分類
+                                          groups.sort((a, b) =>
+                                            dropdownGroupRank(a.group) - dropdownGroupRank(b.group)
+                                            || a.group.localeCompare(b.group, 'zh-Hant'),
+                                          )
                                           // 顯示時剝離 vendor_group 前綴（"翁師傅其他" → "其他"）
                                           const stripVg = (n: string, vg?: string) =>
                                             (vg && n.startsWith(vg) && n !== vg) ? n.slice(vg.length) : n
@@ -2149,19 +2169,20 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
                                             <option value="">— 選擇品項 —</option>
                                             {(() => {
+                                              const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送')
                                               const base = editCategory
                                                 ? (() => {
                                                     const merged = new Map<string, typeof mappingColumns[0]>()
-                                                    for (const c of mappingColumns) {
+                                                    for (const c of baseAll) {
                                                       if (c.vendor_group === editCategory
                                                           || c.category === editCategory
                                                           || c.name === editCategory) {
                                                         if (!merged.has(c.name)) merged.set(c.name, c)
                                                       }
                                                     }
-                                                    return merged.size > 0 ? Array.from(merged.values()) : mappingColumns
+                                                    return merged.size > 0 ? Array.from(merged.values()) : baseAll
                                                   })()
-                                                : mappingColumns
+                                                : baseAll
                                               const groups: { group: string; items: typeof mappingColumns }[] = []
                                               for (const col of base) {
                                                 const g = col.vendor_group ?? col.category
@@ -2169,6 +2190,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                                 if (existing) existing.items.push(col)
                                                 else groups.push({ group: g, items: [col] })
                                               }
+                                              groups.sort((a, b) =>
+                                                dropdownGroupRank(a.group) - dropdownGroupRank(b.group)
+                                                || a.group.localeCompare(b.group, 'zh-Hant'),
+                                              )
                                               const stripVg = (n: string, vg?: string) =>
                                                 (vg && n.startsWith(vg) && n !== vg) ? n.slice(vg.length) : n
                                               return groups.map(({ group, items }) => (

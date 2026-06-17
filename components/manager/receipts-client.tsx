@@ -295,7 +295,8 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
                     )}
                     {openItemIdx === idx && (() => {
                       const q = item.item_name.trim()
-                      const allNames = Object.keys(mappings)
+                      // 央廚配送品項不在收據錄入內
+                      const allNames = Object.keys(mappings).filter(n => mappings[n]?.vendor_group !== '央廚配送')
                       // 顯示時剝離 vendor_group 前綴 → 比對也包含剝離後字串
                       const stripVg = (n: string) => {
                         const vg = mappings[n]?.vendor_group?.trim()
@@ -310,6 +311,18 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
                         if (existing) existing.cols.push(name)
                         else groups.push({ group: g, cols: [name] })
                       }
+                      // 依分類優先級排序：叫貨廠商→日用品→文件類型→退稅→未分類
+                      const ORDER_VENDOR_KEYWORDS = ['菜商', '豬肉商', '雞蛋', '滷蛋', '油豆腐', '豆腐商', '雜貨', '免洗', '麵', '振源', '小雲', '海鮮', '冷凍', '飲料']
+                      const DOC_TYPE_GROUPS = ['發票', '收據', '估價單', '公司開']
+                      const rank = (name: string): number => {
+                        if (name === '未分類') return 5
+                        if (name === '退稅' || name === '稅金') return 4
+                        if (DOC_TYPE_GROUPS.includes(name)) return 3
+                        if (ORDER_VENDOR_KEYWORDS.some(k => name.includes(k))) return 1
+                        if (/商$|雲$|源$/.test(name)) return 1
+                        return 2
+                      }
+                      groups.sort((a, b) => rank(a.group) - rank(b.group) || a.group.localeCompare(b.group, 'zh-Hant'))
                       return (
                         <div style={{ position: 'absolute', top: '36px', left: 0, right: 0, zIndex: 50, background: 'white', border: '1px solid #e4e4e7', borderRadius: '10px', boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: '220px', overflowY: 'auto' }}>
                           {groups.map(({ group, cols }) => (
