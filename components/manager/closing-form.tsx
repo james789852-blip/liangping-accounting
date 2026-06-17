@@ -672,36 +672,42 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // useLayoutEffect runs synchronously before browser paint → user never sees step-0 flash
   // On SSR it's silently skipped (no window), so no hydration mismatch
   useLayoutEffect(() => {
+    // STEPS 結構：... ai_verify, submit, result, petty
+    // ichef 店家少一個 handwrite 步驟，總共 9 步；其他 10 步
+    const totalStepsEstimate = (store.mode !== 'ichef') ? 10 : 9
+    const resultIdx = totalStepsEstimate - 2
+    const pettyIdx = totalStepsEstimate - 1
+
+    // 偵測零用金是否已完成（三來源任一即可，包含 DB、localStorage、完成 flag）
+    const dbPetty = (existingClosing as { petty_counts?: { counts?: Record<string, number>; lumps?: Record<string, number> } } | null)?.petty_counts
+    const dbPettyDone = !!dbPetty && (
+      Object.values(dbPetty.counts ?? {}).some(v => (v as number) > 0) ||
+      Object.values(dbPetty.lumps ?? {}).some(v => (v as number) > 0)
+    )
+    let lsPettyDone = false
+    try {
+      const ls = JSON.parse(localStorage.getItem(`petty_counts_${store.id}_${today}`) ?? 'null')
+      lsPettyDone = !!ls && (
+        Object.values((ls.counts ?? {}) as Record<string, number>).some(v => v > 0) ||
+        Object.values((ls.lumps ?? {}) as Record<string, number>).some(v => v > 0)
+      )
+    } catch {}
+    let donePressed = false
+    try { donePressed = localStorage.getItem(`petty_done_${store.id}_${today}`) === '1' } catch {}
+    const pettyDone = dbPettyDone || lsPettyDone || donePressed
+
     if (existingClosing?.status === 'disputed') {
       localStorage.removeItem(stepLsKey)
     } else {
       const saved = parseInt(localStorage.getItem(stepLsKey) ?? '0') || 0
       if (saved > 0) {
-        setCurrentStep(saved)
+        // 已存 step：若停在 petty 但零用金已完成，改回 result 步驟（避免重複跳回零用金頁）
+        if (saved >= pettyIdx && pettyDone) {
+          setCurrentStep(resultIdx)
+        } else {
+          setCurrentStep(saved)
+        }
       } else if (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified') {
-        // 已送出/已審核的帳目：判斷零用金是否已核對過，避免使用者重複跳回零用金頁面
-        // 來源 1：DB 的 petty_counts 欄位
-        const dbPetty = (existingClosing as { petty_counts?: { counts?: Record<string, number>; lumps?: Record<string, number> } } | null)?.petty_counts
-        const dbPettyDone = !!dbPetty && (
-          Object.values(dbPetty.counts ?? {}).some(v => (v as number) > 0) ||
-          Object.values(dbPetty.lumps ?? {}).some(v => (v as number) > 0)
-        )
-        // 來源 2：localStorage（migration 018 尚未跑時的 fallback）
-        let lsPettyDone = false
-        try {
-          const ls = JSON.parse(localStorage.getItem(`petty_counts_${store.id}_${today}`) ?? 'null')
-          lsPettyDone = !!ls && (
-            Object.values((ls.counts ?? {}) as Record<string, number>).some(v => v > 0) ||
-            Object.values((ls.lumps ?? {}) as Record<string, number>).some(v => v > 0)
-          )
-        } catch {}
-        // 來源 3：完成按鈕按過會留下 flag
-        let donePressed = false
-        try { donePressed = localStorage.getItem(`petty_done_${store.id}_${today}`) === '1' } catch {}
-        const pettyDone = dbPettyDone || lsPettyDone || donePressed
-
-        const totalStepsEstimate = (store.mode !== 'ichef') ? 10 : 9
-        const resultIdx = totalStepsEstimate - 2
         setCurrentStep(pettyDone ? resultIdx : 99)
       }
     }
@@ -3508,7 +3514,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {/* Step 8: 零用金核對 → 完成結束 */}
             {stepId === 'petty' && (
               <button onClick={() => {
-                try { localStorage.setItem(`petty_done_${store.id}_${today}`, '1') } catch {}
+                try {
+                  localStorage.setItem(`petty_done_${store.id}_${today}`, '1')
+                  // 把 stepLsKey 改成 result，避免下次回來又跳回零用金
+                  localStorage.setItem(stepLsKey, String(Math.max(0, totalSteps - 2)))
+                } catch {}
                 router.push('/manager/summary')
               }}
                 className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-base font-bold text-white"
