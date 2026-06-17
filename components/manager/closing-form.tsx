@@ -229,15 +229,19 @@ function initHandwriteOrders(existing: any): HandwriteOrder[] {
 
 function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExpenses: number, handwriteTotal: number, adjustments: RemittanceAdjustment[], reserves: ReserveItem[]) {
   const uberTotal = Object.values(data.uber_amounts).reduce((a, b) => a + b, 0)
-  // 線上點餐(現金) 不計入總營業額（只是 Excel 紀錄用，標示線上中含現金的部分）
+  // platformTotal = 全部平台名目金額（含線上點餐的「現金部分」），算進總營業額
   const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount
+  // platformPaid = 真的進到平台帳戶（不在收銀台現金內）的金額
+  // 線上點餐(現金) 是負數，代表「線上點餐裡有 X 元是客人付現金」，所以從 platformTotal 扣回
+  const platformPaid = platformTotal + data.online_cash_amount
 
   const totalRevenue = store.ichef_uber_linked
     ? data.pos_cash
     : data.pos_cash + handwriteTotal + platformTotal
 
   const deliveryFee = data.ck_total
-  const shouldEnvelope = totalRevenue - platformTotal - totalExpenses
+  // 應包進信封 = 總營業額 - 真實平台收款 - 現金支出
+  const shouldEnvelope = totalRevenue - platformPaid - totalExpenses
   const netToHQ = shouldEnvelope - deliveryFee
 
   const cashTotal =
@@ -251,13 +255,13 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
 
   const actualRemit = cashTotal - store.petty_cash
   const variance = actualRemit - shouldEnvelope
-  const storeRevenue = totalRevenue - platformTotal
+  const storeRevenue = totalRevenue - platformPaid
   const adjustmentTotal = adjustments.reduce((sum, a) => sum + a.amount, 0)
   const finalRemit = actualRemit + adjustmentTotal
   const netVariance = finalRemit - shouldEnvelope
   const totalReserved = reserves.reduce((sum, r) => sum + r.amount, 0)
   const remitToHQ = finalRemit - totalReserved
-  return { totalRevenue, platformTotal, storeRevenue, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashTotal, actualRemit, variance, adjustmentTotal, finalRemit, netVariance, totalReserved, remitToHQ }
+  return { totalRevenue, platformTotal, platformPaid, storeRevenue, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashTotal, actualRemit, variance, adjustmentTotal, finalRemit, netVariance, totalReserved, remitToHQ }
 }
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -2786,7 +2790,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               <div className="px-5 py-4">
                 {[
                   { label: '總營業額', value: `$${fmt(s.totalRevenue)}`, bold: true },
-                  { label: '− 平台收款（Uber / 熊貓等）', value: `−$${fmt(s.platformTotal)}`, muted: true },
+                  { label: '− 平台收款（Uber / 熊貓等）', value: `−$${fmt(s.platformPaid)}`, muted: true },
                   ...(totalExpenses > 0 ? [{ label: '− 現金支出', value: `−$${fmt(totalExpenses)}`, muted: true }] : []),
                 ].map(r => (
                   <div key={r.label} className="flex justify-between items-center py-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
