@@ -970,8 +970,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     e.target.value = ''
     setExtraPhotoUploading(true)
     const ext = file.name.split('.').pop() || 'jpg'
-    const idx = extraPhotos.length
-    const path = `receipts/${store.id}/${today}/extra-${idx}.${ext}`
+    // 用 UUID 確保檔名唯一，避免連續上傳時 length 取到舊值造成路徑衝突
+    const uniqueId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const path = `receipts/${store.id}/${today}/extra-${uniqueId}.${ext}`
     const fd = new FormData(); fd.append('file', file)
     const result = await uploadToStorage(fd, 'receipts', path)
     setExtraPhotoUploading(false)
