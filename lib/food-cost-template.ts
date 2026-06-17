@@ -151,7 +151,6 @@ export async function fillWorksheet(
           const maxItemCol = itemCols.length > 0 ? Math.max(...itemCols) : maxVGCol
           colIdx = allTaxCols.find(x => x.col > maxItemCol)?.col
         }
-        console.log(`[fillWorksheet tax] key="${colName}" vg=${vgName} items=[${receiptItems.join(',')}] vgMapCols=${JSON.stringify([...new Set(Object.values(vendorMaps[vgName] || {}))])} maxVGCol=${maxVGCol} taxCols=${JSON.stringify(allTaxCols.map(t=>`${t.col}:${t.header}`))} → colIdx=${colIdx}`)
       } else if (colName.startsWith('_col_')) {
         // Vendor-disambiguated item: '_col_翁師傅_其他' → vendorMaps['翁師傅']['其他']
         // Used when the same excel column name appears in multiple vendor sections.
