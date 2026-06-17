@@ -672,13 +672,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // useLayoutEffect runs synchronously before browser paint → user never sees step-0 flash
   // On SSR it's silently skipped (no window), so no hydration mismatch
   useLayoutEffect(() => {
-    // STEPS 結構：... ai_verify, submit, result, petty
-    // ichef 店家少一個 handwrite 步驟，總共 9 步；其他 10 步
     const totalStepsEstimate = (store.mode !== 'ichef') ? 10 : 9
     const resultIdx = totalStepsEstimate - 2
     const pettyIdx = totalStepsEstimate - 1
 
-    // 偵測零用金是否已完成（三來源任一即可）
+    // 偵測零用金是否已完成
     const dbPetty = (existingClosing as { petty_counts?: { counts?: Record<string, number>; lumps?: Record<string, number> } } | null)?.petty_counts
     const dbPettyDone = !!dbPetty && (
       Object.values(dbPetty.counts ?? {}).some(v => (v as number) > 0) ||
@@ -694,10 +692,28 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     } catch {}
     let donePressed = false
     try { donePressed = localStorage.getItem(`petty_done_${store.id}_${today}`) === '1' } catch {}
+    let submitFlag = false
+    try { submitFlag = localStorage.getItem(`submit_done_${store.id}_${today}`) === '1' } catch {}
     const pettyDone = dbPettyDone || lsPettyDone || donePressed
+    const wasFinishedBefore = submitFlag || donePressed
 
-    // 零用金已完成 + 帳目已送出/已審核 → 直接轉到 /manager/summary（結算結果頁）
-    // 不在表單上停留，因為使用者已經結束今天的流程
+    // 偵測「HQ 刪除帳目」情境：本地有完成 flag，但 DB 卻沒有 closing 記錄
+    // → 表示總公司把帳目刪了，店長需要重新做帳，清掉所有 localStorage 殘留並重置步驟
+    if (!existingClosing && wasFinishedBefore) {
+      const stale = [
+        stepLsKey, submitDoneSsKey,
+        `petty_counts_${store.id}_${today}`,
+        `petty_done_${store.id}_${today}`,
+        cashLsKey, adjLsKey, reserveLsKey,
+        ckPhotoLsKey, channelPhotoLsKey, envelopePhotoLsKey,
+        voidInvoiceLsKey, notePhotoLsKey, receiptFormsDraftKey, saveBkKey,
+      ]
+      for (const k of stale) try { localStorage.removeItem(k) } catch {}
+      setStepMounted(true)
+      return
+    }
+
+    // 零用金已完成 + 帳目已送出/已審核 → 直接轉到 /manager/summary
     if (pettyDone && (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified')) {
       router.replace('/manager/summary')
       return
