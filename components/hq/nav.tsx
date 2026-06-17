@@ -68,7 +68,8 @@ const managerSections = [
   {
     label: '日常',
     items: [
-      { href: '/manager/dashboard',  label: '今日結帳', icon: ClipboardList },
+      { href: '/manager/closing',    label: '今日結帳', icon: ClipboardList },
+      { href: '/manager/dashboard',  label: '今日狀態', icon: LayoutDashboard },
       { href: '/manager/history',    label: '歷史紀錄', icon: History },
       { href: '/manager/analytics',  label: '營運洞察', icon: LineChart },
     ],
@@ -89,10 +90,10 @@ const mobileHQTabs = [
   // 「更多」由 nav 內部用 menu 處理
 ]
 const mobileManagerTabs = [
-  { href: '/manager/dashboard',  label: '今日結帳', icon: ClipboardList },
+  { href: '/manager/closing',    label: '今日結帳', icon: ClipboardList },
+  { href: '/manager/dashboard',  label: '今日狀態', icon: LayoutDashboard },
   { href: '/manager/history',    label: '歷史紀錄', icon: History },
   { href: '/manager/analytics',  label: '營運洞察', icon: LineChart },
-  { href: '/manager/settings',   label: '收據設定', icon: Settings },
 ]
 
 interface Props {
@@ -179,7 +180,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         {hasStores && (
           <div className="px-4 pb-3">
             <Link
-              href={isManagerPath ? '/hq/dashboard' : '/manager/dashboard'}
+              href={isManagerPath ? '/hq/dashboard' : '/manager/closing'}
               className="flex items-center justify-center gap-2 w-full py-2 rounded-[10px] text-xs font-semibold transition-all hover:opacity-80"
               style={isManagerPath
                 ? { backgroundColor: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }
@@ -271,7 +272,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
             <ExternalLink className="h-3 w-3" />HR
           </a>
           {!isManagerPath && hasStores && (
-            <Link href="/manager/dashboard"
+            <Link href="/manager/closing"
               className="text-xs font-bold text-white rounded-lg px-2 py-1.5 whitespace-nowrap"
               style={{ background: 'linear-gradient(135deg,#f97316,#f59e0b)' }}>
               店長端
