@@ -186,6 +186,21 @@ export async function fillWorksheet(
       const cell = excelRow.getCell(colIdx)
       cell.value = val
     }
+    // 「(手動)POS」欄位專屬處理：適用沒有真正 POS（手寫店家）的店家，
+    // 店長手動把當日全部營收（手寫+uber+...）填到 POS 欄位 → 寫總營業額
+    // 比對 raw header 必須含「手動」字樣
+    {
+      let manualPOSCol: number | undefined
+      ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
+        if (manualPOSCol) return
+        const t = (cell.text ?? '').trim()
+        // 同時匹配半形/全形括號版本
+        if ((t.includes('手動') && t.toLowerCase().includes('pos'))) manualPOSCol = colNum
+      })
+      if (manualPOSCol && d.revenue) {
+        excelRow.getCell(manualPOSCol).value = d.revenue
+      }
+    }
     // 熊貓 / 線上點餐：欄位名稱版本多，逐一嘗試直到找到
     const revAliases: { val: number; keys: string[] }[] = [
       { val: d.panda, keys: ['熊貓', 'panda', 'foodpanda', '熊貓 foodpanda', 'fp'] },
