@@ -524,6 +524,26 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   })
   const ckQuantitiesRef = useRef(ckQuantities)
   ckQuantitiesRef.current = ckQuantities
+  // 央廚單價覆寫：補做過往帳目時，店長可以填當天的實際單價
+  // key = ckPrice.id, value = 覆寫單價（沒覆寫就用 ckPrice.unit_price）
+  const [ckPriceOverrides, setCkPriceOverrides] = useState<Record<string, number>>(() => {
+    const result: Record<string, number> = {}
+    if (existingClosing) {
+      const items = existingClosing.order_items ?? []
+      ckPrices.forEach(p => {
+        const found = items.find((i: any) => i.vendor === '央廚' && i.item_name === p.item_name)
+        // 儲存於 order_items 的單價與目前的 central_kitchen_prices 不同 → 視為覆寫
+        if (found && typeof found.unit_price === 'number' && found.unit_price !== p.unit_price) {
+          result[p.id] = found.unit_price
+        }
+      })
+    }
+    return result
+  })
+  const ckPriceOverridesRef = useRef(ckPriceOverrides)
+  ckPriceOverridesRef.current = ckPriceOverrides
+  // 取得每個品項的有效單價：先看覆寫、沒有就用 ckPrices 預設
+  const effectiveCKPrice = useCallback((p: CKPrice) => ckPriceOverrides[p.id] ?? p.unit_price, [ckPriceOverrides])
   const [ckPhotoPreview, setCkPhotoPreview] = useState<string | undefined>(undefined)
   const ckPhotoLsKey = `ck_photo_${store.id}_${today}`
   const [ckPhotoUrl, setCkPhotoUrl] = useState<string | undefined>(
@@ -857,11 +877,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [data, expenses, handwriteOrders, adjustments, reserves, channelPhotos, ckPhotoUrl, envelopePhotoUrl, voidInvoicePhotos, notePhotoUrl, ckQuantities, isLocked, isDisputed, submitDone])
 
   useEffect(() => {
-    const fromQty = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * p.unit_price, 0)
+    const fromQty = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * effectiveCKPrice(p), 0)
     // Only override when quantities produce a positive total (handles both current and legacy order_items format)
     if (fromQty > 0) set('ck_total', fromQty)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ckQuantities])
+  }, [ckQuantities, ckPriceOverrides])
 
 
 
@@ -1340,14 +1360,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       await supabase.from('order_items').delete().eq('closing_id', cid)
       const ckItems = ckPrices
         .filter(p => (ckQuantitiesRef.current[p.id] || 0) > 0)
-        .map(p => ({
-          closing_id: cid,
-          vendor: '央廚',
-          item_name: p.item_name,
-          unit_price: p.unit_price,
-          quantity: ckQuantitiesRef.current[p.id],
-          total_amount: Math.round(p.unit_price * (ckQuantitiesRef.current[p.id] || 0)),
-        }))
+        .map(p => {
+          const effPrice = ckPriceOverridesRef.current[p.id] ?? p.unit_price
+          const qty = ckQuantitiesRef.current[p.id] || 0
+          return {
+            closing_id: cid,
+            vendor: '央廚',
+            item_name: p.item_name,
+            unit_price: effPrice,
+            quantity: qty,
+            total_amount: Math.round(effPrice * qty),
+          }
+        })
       if (ckItems.length) await supabase.from('order_items').insert(ckItems)
       await supabase.from('expense_items').delete().eq('closing_id', cid)
       const expItems = expenses
@@ -2317,12 +2341,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   <Package className="h-4 w-4" style={{ color: '#f97316' }} />
                 </div>
                 <p className="text-sm font-semibold" style={{ color: '#18181b' }}>配送品項</p>
-                <p className="text-xs ml-auto" style={{ color: '#a1a1aa' }}>單價由總公司設定</p>
+                <p className="text-xs ml-auto" style={{ color: '#a1a1aa' }}>
+                  {isBackfill ? '補做模式：可填當天實際單價' : '單價由總公司設定'}
+                </p>
               </div>
 
               {ckPrices.map((p, idx) => {
                 const qty = ckQuantities[p.id] || 0
-                const subtotal = qty * p.unit_price
+                const effPrice = effectiveCKPrice(p)
+                const subtotal = qty * effPrice
                 return (
                   <div key={p.id} className="flex items-center gap-3 px-4 py-3"
                     style={{ borderBottom: idx !== ckPrices.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
@@ -2352,7 +2379,29 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     )}
                     <span className="text-xs shrink-0" style={{ color: '#a1a1aa' }}>{p.unit || '份'}</span>
                     <span className="text-xs shrink-0" style={{ color: '#d4d4d8' }}>×</span>
-                    <span className="text-xs tabular-nums shrink-0" style={{ color: '#71717a' }}>${p.unit_price}</span>
+                    {isBackfill && !isLocked ? (
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <span className="text-xs" style={{ color: '#71717a' }}>$</span>
+                        <input
+                          type="number" min="0" step="0.01"
+                          placeholder={String(p.unit_price)}
+                          value={ckPriceOverrides[p.id] ?? ''}
+                          onChange={e => {
+                            const v = e.target.value
+                            setCkPriceOverrides(prev => {
+                              const next = { ...prev }
+                              if (v === '' || v === null) delete next[p.id]
+                              else next[p.id] = parseFloat(v) || 0
+                              return next
+                            })
+                          }}
+                          style={{ width: '64px', height: '28px', padding: '0 6px', border: '1.5px solid #fed7aa', borderRadius: '6px', fontSize: '12px', textAlign: 'right', outline: 'none', background: '#fffbeb', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit' }}
+                          title={`預設 $${p.unit_price}`}
+                        />
+                      </div>
+                    ) : (
+                      <span className="text-xs tabular-nums shrink-0" style={{ color: '#71717a' }}>${effPrice}</span>
+                    )}
                     <span className="ml-auto text-sm font-semibold tabular-nums shrink-0"
                       style={{ color: qty > 0 ? '#f97316' : '#d4d4d8' }}>
                       {qty > 0 ? `$${fmt(subtotal)}` : '—'}
