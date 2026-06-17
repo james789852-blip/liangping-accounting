@@ -173,7 +173,7 @@ export async function fillWorksheet(
 
     // 主要欄位（單一名稱）— 若 cell 已有公式則保留模板的公式，不覆寫
     const revPairs: [string, number][] = [
-      ['pos', d.pos], ['twpay', d.twpay], ['實際$', d.actual],
+      ['pos', d.pos], ['實際$', d.actual],
       ['配送月底結', d.ck], ['結果', d.result],
       ['現場', d.onsite], ['扣除後的$', d.after_deduct], ['營業額', d.revenue],
     ]
@@ -199,10 +199,11 @@ export async function fillWorksheet(
         if (!hasFormula(cell)) cell.value = totalRev
       }
     }
-    // 熊貓 / 線上點餐：欄位名稱版本多，逐一嘗試直到找到
+    // 熊貓 / 線上點餐 / 台灣Pay：欄位名稱版本多，逐一嘗試直到找到
     const revAliases: { val: number; keys: string[] }[] = [
       { val: d.panda, keys: ['熊貓', 'panda', 'foodpanda', '熊貓 foodpanda', 'fp'] },
       { val: d.online, keys: ['線上', '線上點餐', 'online', '線上訂餐'] },
+      { val: d.twpay, keys: ['twpay', 'tw pay', 'taiwan pay', 'taiwanpay', '台灣pay', '台灣 pay', '台灣支付'] },
     ]
     for (const { val, keys } of revAliases) {
       if (!val) continue
