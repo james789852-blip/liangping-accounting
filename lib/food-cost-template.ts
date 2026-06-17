@@ -104,22 +104,50 @@ export async function fillWorksheet(
       let colIdx: number | undefined
 
       if (colName.startsWith('_tax_')) {
-        // Namespaced vendor tax: '_tax_小雲' → find nearest tax column after 小雲's items.
-        // A "tax column" is any column whose row 3 header contains the character '稅'
-        // (catches variants: '稅金', '退稅', '稅', '雜貨-稅', '免洗稅金', '感熱稅', etc.).
-        // Excluded from vgCols so maxVGCol doesn't include the tax column itself.
-        const vgName = colName.slice(5)
-        const allTaxCols: number[] = []
+        // Namespaced vendor tax: '_tax_菜商::油豆腐|青江菜' → 解析出 vendor 和品項
+        // 先找品項專屬稅金欄（例如 "豆腐稅金" 給 油豆腐），找不到再 fallback
+        // 到 vendor section 後第一個通用稅金欄（退稅/稅金）。
+        const tail = colName.slice(5)
+        const [vgName, itemsCSV] = tail.split('::')
+        const receiptItems = (itemsCSV ?? '').split('|').filter(Boolean)
+
+        const allTaxCols: { col: number; header: string }[] = []
         ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
           const t = (cell.text ?? '').trim()
-          if (t.includes('稅')) allTaxCols.push(colNum)
+          if (t.includes('稅')) allTaxCols.push({ col: colNum, header: t })
         })
-        allTaxCols.sort((a, b) => a - b)
-        const taxColSet = new Set(allTaxCols)
+        allTaxCols.sort((a, b) => a.col - b.col)
+        const taxColSet = new Set(allTaxCols.map(x => x.col))
         const vgCols = Object.values(vendorMaps[vgName] || {})
           .filter((v): v is number => typeof v === 'number' && !taxColSet.has(v))
         const maxVGCol = vgCols.length > 0 ? Math.max(...vgCols) : 0
-        colIdx = allTaxCols.find(c => c > maxVGCol)
+
+        // 1) 嘗試 item-specific 稅金欄：header 去掉「稅金/退稅/稅」之後若為品項名子字串，視為專屬欄
+        // 例：header "豆腐稅金" → 去掉 "稅金" 剩 "豆腐"；item "油豆腐" 包含 "豆腐" → 匹配
+        const stripTax = (h: string) => h.replace(/稅金|退稅|稅/g, '').replace(/[\s　（）()-]/g, '').trim()
+        let itemSpecific: number | undefined
+        for (const tc of allTaxCols) {
+          const core = stripTax(tc.header)
+          if (!core) continue  // 純 "退稅"/"稅金"/"稅" 不算 item-specific
+          if (receiptItems.some(it => it.includes(core) || core.includes(it))) {
+            itemSpecific = tc.col
+            break
+          }
+        }
+
+        if (itemSpecific) {
+          colIdx = itemSpecific
+        } else {
+          // 2) 通用 fallback：第一個在 vendor section 之後且非 item-specific 的稅金欄
+          //    （避免被 "豆腐稅金" 這種專屬欄搶走）
+          const isGeneric = (h: string) => {
+            const core = stripTax(h)
+            return core === ''
+          }
+          const genericAfter = allTaxCols.find(x => x.col > maxVGCol && isGeneric(x.header))
+          // 若連通用都找不到，最後 fallback 到任何在 section 後的稅金欄
+          colIdx = (genericAfter ?? allTaxCols.find(x => x.col > maxVGCol))?.col
+        }
       } else if (colName.startsWith('_col_')) {
         // Vendor-disambiguated item: '_col_翁師傅_其他' → vendorMaps['翁師傅']['其他']
         // Used when the same excel column name appears in multiple vendor sections.

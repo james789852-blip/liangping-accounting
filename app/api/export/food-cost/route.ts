@@ -226,6 +226,8 @@ export async function GET(req: NextRequest) {
       }
     }
     // Route tax_amount: 耗材 → '免洗稅金'; food/misc → vendor-specific '稅金' column
+    // 把 receipt 的品項名稱一起帶到 key 內，fillWorksheet 可優先寫進
+    // 品項專屬稅金欄（例如 "豆腐稅金" 收 油豆腐 receipt 的稅）。
     const taxAmt = (r.tax_amount ?? 0) as number
     if (taxAmt > 0 && positiveItems.length > 0) {
       const hasPackItem = positiveItems.some((it: any) =>
@@ -234,12 +236,12 @@ export async function GET(req: NextRequest) {
       if (hasPackItem) {
         dd.items['免洗稅金'] = (dd.items['免洗稅金'] || 0) + taxAmt
       } else {
-        // Determine vendor group from the receipt items; write tax with a namespaced key
-        // so fillWorksheet can look up the correct '稅金' column per vendor section
         const vg = positiveItems
           .map((it: any) => vendorGroupLookup[it.item_name] ?? vendorGroupLookup[it.resolved_col])
           .find(Boolean)
-        const taxKey = vg ? `_tax_${vg}` : '稅金'
+        // 把品項名稱以 | 分隔附在 key 後，fillWorksheet 用來找 item-specific 稅金欄
+        const itemNames = [...new Set(positiveItems.map((it: any) => it.item_name as string).filter(Boolean))].join('|')
+        const taxKey = vg ? `_tax_${vg}::${itemNames}` : '稅金'
         dd.items[taxKey] = (dd.items[taxKey] || 0) + taxAmt
       }
     }

@@ -167,7 +167,8 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
         const vg = positiveItems
           .map((it: AnyRecord) => vendorGroupLookup[it.item_name] ?? vendorGroupLookup[it.resolved_col])
           .find(Boolean)
-        const taxKey = vg ? `_tax_${vg}` : '稅金'
+        const itemNames = [...new Set(positiveItems.map((it: AnyRecord) => it.item_name as string).filter(Boolean))].join('|')
+        const taxKey = vg ? `_tax_${vg}::${itemNames}` : '稅金'
         dd.items[taxKey] = (dd.items[taxKey] || 0) + taxAmt
       }
     }
