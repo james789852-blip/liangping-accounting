@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
+import { getCachedUserProfile, getCachedStoreById } from '@/lib/cached-queries'
 import { ArrowRight } from 'lucide-react'
 import RecentClosingsList from '@/components/manager/recent-closings'
 
@@ -34,8 +35,7 @@ export default async function ManagerDashboard() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
-    .from('user_profiles').select('name, role, store_ids').eq('user_id', user.id).single()
+  const profile = await getCachedUserProfile(user.id)
 
   const storeId = await getEffectiveStoreId(profile)
   const today = getBusinessDate()
@@ -48,8 +48,8 @@ export default async function ManagerDashboard() {
   let storeName = ''
 
   if (storeId) {
-    const [storeRes, closingRes, recentRes] = await Promise.all([
-      supabase.from('stores').select('name, type').eq('id', storeId).single(),
+    const [storeData, closingRes, recentRes] = await Promise.all([
+      getCachedStoreById(storeId),
       supabase.from('daily_closings')
         .select('id, status, total_revenue, should_include_delivery, actual_remit, total_cost, variance')
         .eq('store_id', storeId).eq('business_date', today).maybeSingle(),
@@ -57,8 +57,8 @@ export default async function ManagerDashboard() {
         .select('id, business_date, status, total_revenue, should_include_delivery, variance')
         .eq('store_id', storeId).order('business_date', { ascending: false }).limit(8),
     ])
-    storeName = storeRes.data?.name ?? ''
-    if ((storeRes.data as any)?.type === '央廚') redirect('/manager/ck')
+    storeName = (storeData as any)?.name ?? ''
+    if ((storeData as any)?.type === '央廚') redirect('/manager/ck')
     todayClosing = closingRes.data
     recentClosings = (recentRes.data ?? []).filter((c: any) => c.business_date !== today).slice(0, 7)
   }

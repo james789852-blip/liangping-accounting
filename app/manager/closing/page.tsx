@@ -6,6 +6,7 @@ import { Store, CKPrice } from '@/lib/types'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
+import { getCachedUserProfile, getCachedStoreFull, getCachedActiveCKPrices } from '@/lib/cached-queries'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,11 +15,8 @@ export default async function ClosingPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('name, role, store_ids')
-    .eq('user_id', user.id)
-    .single()
+  // 共用 layout 的 user_profile 快取，避免重複查
+  const profile = await getCachedUserProfile(user.id)
 
   const storeId = await getEffectiveStoreId(profile)
   if (!storeId) {
@@ -29,52 +27,36 @@ export default async function ClosingPage() {
     )
   }
 
-  const { data: store } = await supabase
-    .from('stores')
-    .select('*')
-    .eq('id', storeId)
-    .single()
-
-  // 央廚店家使用專屬流程，不走一般結帳
-  if ((store as any)?.type === '央廚') redirect('/manager/ck')
-
-  const { data: ckPrices } = await supabase
-    .from('central_kitchen_prices')
-    .select('id, item_name, unit_price, unit, excel_column')
-    .eq('active', true)
-    .order('sort_order').order('item_name')
-
   const today = getBusinessDate()
+  const admin = createAdminClient()
 
-  const { data: existingClosing } = await supabase
-    .from('daily_closings')
-    .select('*, revenue_items(*), order_items(*), expense_items(*), handwrite_orders(*)')
-    .eq('store_id', storeId)
-    .eq('business_date', today)
-    .maybeSingle()
-
-  if (existingClosing) {
-    const admin = createAdminClient()
-    const { data: cashCounts } = await admin.from('cash_counts').select('*').eq('closing_id', existingClosing.id)
-    ;(existingClosing as any).cash_counts = cashCounts ?? []
-  }
-
-  if (existingClosing?.status === 'disputed') {
-    redirect(`/manager/edit/${existingClosing.id}`)
-  }
-
-  // 撈今日收據，供結帳表單自動填入「當日現金支出」
-  const { data: todayReceipts } = await supabase
-    .from('receipts')
-    .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount)')
-    .eq('store_id', storeId)
-    .eq('business_date', today)
-    .order('created_at')
-
-  const admin2 = createAdminClient()
-  const [receiptCategories, { data: mappingRows }, { data: prevClosing }, itemOrderText] = await Promise.all([
+  // 一次平行撈完所有依賴 storeId/today 的資料
+  const [
+    store,
+    ckPrices,
+    { data: existingClosing },
+    { data: todayReceipts },
+    receiptCategories,
+    { data: mappingRows },
+    { data: prevClosing },
+    itemOrderText,
+  ] = await Promise.all([
+    getCachedStoreFull(storeId),
+    getCachedActiveCKPrices(),
+    supabase
+      .from('daily_closings')
+      .select('*, revenue_items(*), order_items(*), expense_items(*), handwrite_orders(*)')
+      .eq('store_id', storeId)
+      .eq('business_date', today)
+      .maybeSingle(),
+    supabase
+      .from('receipts')
+      .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount)')
+      .eq('store_id', storeId)
+      .eq('business_date', today)
+      .order('created_at'),
     getReceiptSettings(storeId),
-    admin2.from('item_column_mappings').select('item_name, item_category, vendor_group, excel_column').eq('store_id', storeId),
+    admin.from('item_column_mappings').select('item_name, item_category, vendor_group, excel_column').eq('store_id', storeId),
     supabase
       .from('daily_closings')
       .select('reserve_items, business_date')
@@ -84,10 +66,23 @@ export default async function ClosingPage() {
       .order('business_date', { ascending: false })
       .limit(1)
       .maybeSingle(),
-    admin2.storage.from('excel-templates').download(`${storeId}-item-order.json`)
+    admin.storage.from('excel-templates').download(`${storeId}-item-order.json`)
       .then(async ({ data }) => (data ? data.text() : null))
       .catch((): null => null),
   ])
+
+  // 央廚店家使用專屬流程
+  if ((store as any)?.type === '央廚') redirect('/manager/ck')
+
+  // 補抓 cash_counts（必須等 existingClosing 才知道 id）
+  if (existingClosing) {
+    const { data: cashCounts } = await admin.from('cash_counts').select('*').eq('closing_id', existingClosing.id)
+    ;(existingClosing as any).cash_counts = cashCounts ?? []
+  }
+
+  if (existingClosing?.status === 'disputed') {
+    redirect(`/manager/edit/${existingClosing.id}`)
+  }
 
   const prevReserveItems = (prevClosing?.reserve_items as any[]) ?? []
   const prevDayReserves = prevReserveItems.length > 0
