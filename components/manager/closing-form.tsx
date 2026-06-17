@@ -1919,7 +1919,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                         {(() => {
                                           // 依類別過濾：vendor_group / category / name 三個條件取聯集
                                           // 央廚配送品項不在收據錄入內
-                                          const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送')
+                                          const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送' && c.vendor_group !== '退稅')
                                           const base = form.category
                                             ? (() => {
                                                 const merged = new Map<string, typeof mappingColumns[0]>()
@@ -2169,7 +2169,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
                                             <option value="">— 選擇品項 —</option>
                                             {(() => {
-                                              const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送')
+                                              const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送' && c.vendor_group !== '退稅')
                                               const base = editCategory
                                                 ? (() => {
                                                     const merged = new Map<string, typeof mappingColumns[0]>()

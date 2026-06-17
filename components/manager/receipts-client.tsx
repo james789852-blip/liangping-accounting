@@ -295,8 +295,10 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
                     )}
                     {openItemIdx === idx && (() => {
                       const q = item.item_name.trim()
-                      // 央廚配送品項不在收據錄入內
-                      const allNames = Object.keys(mappings).filter(n => mappings[n]?.vendor_group !== '央廚配送')
+                      // 央廚配送、退稅品項不在收據錄入下拉內（央廚有獨立流程，退稅是審核階段才用）
+                      const allNames = Object.keys(mappings).filter(n =>
+                        mappings[n]?.vendor_group !== '央廚配送' && mappings[n]?.vendor_group !== '退稅'
+                      )
                       // 顯示時剝離 vendor_group 前綴 → 比對也包含剝離後字串
                       const stripVg = (n: string) => {
                         const vg = mappings[n]?.vendor_group?.trim()
