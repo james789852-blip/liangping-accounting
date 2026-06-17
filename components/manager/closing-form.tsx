@@ -229,7 +229,8 @@ function initHandwriteOrders(existing: any): HandwriteOrder[] {
 
 function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExpenses: number, handwriteTotal: number, adjustments: RemittanceAdjustment[], reserves: ReserveItem[]) {
   const uberTotal = Object.values(data.uber_amounts).reduce((a, b) => a + b, 0)
-  const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount + data.online_cash_amount
+  // 線上點餐(現金) 不計入總營業額（只是 Excel 紀錄用，標示線上中含現金的部分）
+  const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount
 
   const totalRevenue = store.ichef_uber_linked
     ? data.pos_cash
