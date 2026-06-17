@@ -228,14 +228,14 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     const ck       = d?.ck ?? 0
     const variance = d?.variance ?? 0
     const after_deduct = actual - ck - variance
-    // 營業額 = DB 的 total_revenue（含所有 channel）
-    const dbRevenue = d?.revenue ?? 0
+    const computedRevenue = onsite + variance
+    const totalRevenue = d?.revenue ?? 0
     const items = d?.items ?? {}
     const foodTotal = foodCols.reduce((s, col) => s + (items[col] || 0), 0)
     const packTotal = packCols.reduce((s, col) => s + (items[col] || 0), 0)
     const miscTotal = miscCols.reduce((s, col) => s + (items[col] || 0), 0)
     const notes = d?.notes ?? {}
-    return { date, row: { pos, twpay, panda, online, uber, after_deduct, onsite, actual, ck, result: variance, revenue: dbRevenue, items, notes, foodTotal, packTotal, miscTotal, grandTotal: foodTotal + packTotal + miscTotal } }
+    return { date, row: { pos, twpay, panda, online, uber, after_deduct, onsite, actual, ck, result: variance, revenue: computedRevenue, totalRevenue, items, notes, foodTotal, packTotal, miscTotal, grandTotal: foodTotal + packTotal + miscTotal } }
   })
 
   const sumOf = (fn: (r: RowVals) => number) => dataRows.reduce((s, { row }) => s + fn(row), 0)
@@ -251,6 +251,7 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     ck:           sumOf(r => r.ck),
     result:       sumOf(r => r.result),
     revenue:      sumOf(r => r.revenue),
+    totalRevenue: dataRows.reduce((s, { row }) => s + (row.totalRevenue ?? 0), 0),
     items:        Object.fromEntries([...foodCols, ...packCols, ...miscCols].map(col => [col, dataRows.reduce((s, { row }) => s + (row.items[col] || 0), 0)])),
     notes:        {},
     foodTotal:    sumOf(r => r.foodTotal),

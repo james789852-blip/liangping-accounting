@@ -362,8 +362,10 @@ export async function GET(req: NextRequest) {
     const variance = d?.variance ?? 0
     // 扣除後的$ = 實際$ − 配送(月底結) − 結果
     const after_deduct = actual - ck - variance
-    // 營業額 = DB 的 total_revenue（含所有 channel：pos + handwrite + uber + 等）
-    const dbRevenue = d?.revenue ?? 0
+    // 「營業額」欄沿用 onsite + variance（模板若有公式會保留不覆寫）
+    const computedRevenue = onsite + variance
+    // 「(手動)POS」欄要寫 DB 的真實總營業額（含所有 channel）
+    const totalRevenue = d?.revenue ?? 0
     const items = d?.items ?? {}
     const notes = d?.notes ?? {}
     const foodTotal = foodCols.reduce((s, col) => s + (items[col] || 0), 0)
@@ -373,7 +375,8 @@ export async function GET(req: NextRequest) {
     return {
       date, row: {
         pos, twpay, panda, online, uber, after_deduct, onsite, actual, ck, result: variance,
-        revenue: dbRevenue, items, notes, foodTotal, packTotal, miscTotal, grandTotal,
+        revenue: computedRevenue, totalRevenue,
+        items, notes, foodTotal, packTotal, miscTotal, grandTotal,
       },
     }
   })
@@ -391,6 +394,7 @@ export async function GET(req: NextRequest) {
     ck:           sumOf(r => r.ck),
     result:       sumOf(r => r.result),
     revenue:      sumOf(r => r.revenue),
+    totalRevenue: dataRows.reduce((s, { row }) => s + (row.totalRevenue ?? 0), 0),
     items:        Object.fromEntries([...foodCols, ...packCols, ...miscCols].map(col => [
       col, dataRows.reduce((s, { row }) => s + (row.items[col] || 0), 0),
     ])),

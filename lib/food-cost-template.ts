@@ -4,7 +4,8 @@ export interface RowVals {
   pos: number; twpay: number; uber: Record<string, number>
   panda: number; online: number
   after_deduct: number; onsite: number; actual: number; ck: number
-  result: number; revenue: number
+  result: number; revenue: number        // 營業額 = 現場 + 結果（給 "營業額" 欄）
+  totalRevenue?: number                  // 真實總營業額（給 "(手動)POS" 欄）
   items: Record<string, number>
   notes: Record<string, string>
   foodTotal: number; packTotal: number; miscTotal: number; grandTotal: number
@@ -169,12 +170,13 @@ export async function fillWorksheet(
 
       if (!colIdx) continue
       const cell = excelRow.getCell(colIdx)
+      if (hasFormula(cell)) continue  // 尊重模板公式
       cell.value = amount
       const note = d.notes?.[colName]
       if (note) cell.note = note
     }
 
-    // 主要欄位（單一名稱）
+    // 主要欄位（單一名稱）— 若 cell 已有公式則保留模板的公式，不覆寫
     const revPairs: [string, number][] = [
       ['pos', d.pos], ['twpay', d.twpay], ['實際$', d.actual],
       ['配送月底結', d.ck], ['結果', d.result],
@@ -184,21 +186,22 @@ export async function fillWorksheet(
       const colIdx = colMap[key] ?? colMap[norm(key)]
       if (!colIdx || !val) continue
       const cell = excelRow.getCell(colIdx)
+      if (hasFormula(cell)) continue  // 尊重模板公式
       cell.value = val
     }
     // 「(手動)POS」欄位專屬處理：適用沒有真正 POS（手寫店家）的店家，
     // 店長手動把當日全部營收（手寫+uber+...）填到 POS 欄位 → 寫總營業額
-    // 比對 raw header 必須含「手動」字樣
     {
       let manualPOSCol: number | undefined
       ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
         if (manualPOSCol) return
         const t = (cell.text ?? '').trim()
-        // 同時匹配半形/全形括號版本
-        if ((t.includes('手動') && t.toLowerCase().includes('pos'))) manualPOSCol = colNum
+        if (t.includes('手動') && t.toLowerCase().includes('pos')) manualPOSCol = colNum
       })
-      if (manualPOSCol && d.revenue) {
-        excelRow.getCell(manualPOSCol).value = d.revenue
+      const totalRev = d.totalRevenue ?? 0
+      if (manualPOSCol && totalRev) {
+        const cell = excelRow.getCell(manualPOSCol)
+        if (!hasFormula(cell)) cell.value = totalRev
       }
     }
     // 熊貓 / 線上點餐：欄位名稱版本多，逐一嘗試直到找到
@@ -215,6 +218,7 @@ export async function fillWorksheet(
       }
       if (!colIdx) continue
       const cell = excelRow.getCell(colIdx)
+      if (hasFormula(cell)) continue
       cell.value = val
     }
 
@@ -224,6 +228,7 @@ export async function fillWorksheet(
       const val = d.uber[raw] ?? 0
       if (!val) continue
       const cell = excelRow.getCell(colIdx)
+      if (hasFormula(cell)) continue
       cell.value = val
     }
   })
