@@ -80,13 +80,13 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
   try { if (itemOrderText) itemOrder = JSON.parse(itemOrderText) } catch {}
   const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
 
+  // 不過濾：item-order.json 只用於排序，沒在裡面的品項排到最後。
   const mappingColumns = (mappingRows ?? []).map((r: any) => ({
     name: r.item_name,
     category: r.item_category,
     vendor_group: r.vendor_group ?? undefined,
     excel_column: r.excel_column,
   }))
-    .filter(col => itemOrder.length === 0 || orderMap.has(col.name))
     .sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
 
   return (

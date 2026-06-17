@@ -98,13 +98,14 @@ export default async function ClosingPage() {
   try { if (itemOrderText) itemOrder = JSON.parse(itemOrderText) } catch {}
   const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
 
+  // 不過濾任何 mapping 品項：item-order.json 僅用於排序，沒在裡面的品項排到最後。
+  // 之前 .filter 會把後來加的 mapping、或舊模板留下的品項擋掉。
   const mappingColumns = (mappingRows ?? []).map((r: { item_name: string; item_category: string; vendor_group: string | null; excel_column: string }) => ({
     name: r.item_name,
     category: r.item_category,
     vendor_group: r.vendor_group ?? undefined,
     excel_column: r.excel_column,
   }))
-    .filter(col => itemOrder.length === 0 || orderMap.has(col.name))
     .sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
 
   return (
