@@ -2342,7 +2342,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 </div>
                 <p className="text-sm font-semibold" style={{ color: '#18181b' }}>配送品項</p>
                 <p className="text-xs ml-auto" style={{ color: '#a1a1aa' }}>
-                  {isBackfill ? '補做模式：可填當天實際單價' : '單價由總公司設定'}
+                  {isBackfill ? '補做模式：雞肉單價可改' : '單價由總公司設定'}
                 </p>
               </div>
 
@@ -2350,6 +2350,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 const qty = ckQuantities[p.id] || 0
                 const effPrice = effectiveCKPrice(p)
                 const subtotal = qty * effPrice
+                // 只有雞肉品項在補做模式可以改單價（其他品項單價固定）
+                const isPriceEditable = isBackfill && !isLocked && p.item_name.includes('雞肉')
                 return (
                   <div key={p.id} className="flex items-center gap-3 px-4 py-3"
                     style={{ borderBottom: idx !== ckPrices.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
@@ -2379,7 +2381,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     )}
                     <span className="text-xs shrink-0" style={{ color: '#a1a1aa' }}>{p.unit || '份'}</span>
                     <span className="text-xs shrink-0" style={{ color: '#d4d4d8' }}>×</span>
-                    {isBackfill && !isLocked ? (
+                    {isPriceEditable ? (
                       <div className="flex items-center gap-0.5 shrink-0">
                         <span className="text-xs" style={{ color: '#71717a' }}>$</span>
                         <input
@@ -2396,7 +2398,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             })
                           }}
                           style={{ width: '64px', height: '28px', padding: '0 6px', border: '1.5px solid #fed7aa', borderRadius: '6px', fontSize: '12px', textAlign: 'right', outline: 'none', background: '#fffbeb', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit' }}
-                          title={`預設 $${p.unit_price}`}
+                          title={`預設 $${p.unit_price}（雞肉單價浮動，可填當天實際單價）`}
                         />
                       </div>
                     ) : (
