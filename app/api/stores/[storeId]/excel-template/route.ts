@@ -286,22 +286,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
     const nameCount: Record<string, number> = {}
     for (const c of allCols) nameCount[c.name] = (nameCount[c.name] || 0) + 1
 
-    // Fetch both global and store-specific existing mappings
+    // Fetch both global and store-specific existing mappings (含 id 與 vendor_group)
     const { data: allExisting } = await admin.from('item_column_mappings')
-      .select('item_name, vendor_group, store_id')
+      .select('id, item_name, vendor_group, store_id')
       .or(`store_id.is.null,store_id.eq.${storeId}`)
 
     // Global keys: "item_name|vendor_group" combinations already handled universally
     const globalKeys = new Set<string>()
-    const storeItemNames = new Set<string>()
+    const storeMappingMap = new Map<string, { id: string; vendor_group: string | null }>()
     for (const m of (allExisting ?? []) as any[]) {
       if (!m.store_id) globalKeys.add(`${m.item_name}|${m.vendor_group ?? ''}`)
-      else storeItemNames.add(m.item_name)
+      else storeMappingMap.set(m.item_name, { id: m.id as string, vendor_group: (m.vendor_group as string | null) ?? null })
     }
 
     // Track (name, vg) occurrences to handle duplicates within the same vendor group
     const seenCombo: Record<string, number> = {}
     const newMappings: any[] = []
+    const updates: { id: string; vendor_group: string | null; item_category: string; excel_column: string }[] = []
     const orderedItemNames: string[] = [] // Excel column order for dropdown sorting
 
     for (const c of allCols) {
@@ -310,7 +311,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
       const occurrence = (seenCombo[comboKey] || 0) + 1
       seenCombo[comboKey] = occurrence
 
-      // Determine item_name for dropdown display (needed before skip checks for order tracking):
+      // Determine item_name for dropdown display:
       // - duplicate names with different vendor groups → prefix with vendor group (e.g. "翁師傅其他")
       // - same (name, vg) appears again → numbered suffix (e.g. "其他2", "退稅其他2")
       let itemName: string
@@ -320,14 +321,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
         itemName = vg ? `${vg}${c.name}${occurrence}` : `${c.name}${occurrence}`
       }
 
-      // Always track position (including items already covered by global mappings)
       orderedItemNames.push(itemName)
 
       // First occurrence of (name, vg): skip if a global mapping already covers it
       if (occurrence === 1 && globalKeys.has(comboKey)) continue
 
-      if (storeItemNames.has(itemName)) continue
-      storeItemNames.add(itemName)
+      const existing = storeMappingMap.get(itemName)
+      if (existing) {
+        // Existing store mapping → update if vendor_group / category / column changed
+        // (especially補回缺漏的 vendor_group，避免稅金路由 fallback 出錯)
+        if (existing.vendor_group !== vg) {
+          updates.push({ id: existing.id, vendor_group: vg, item_category: c.cat, excel_column: c.name })
+        }
+        continue
+      }
 
       newMappings.push({
         item_name: itemName,
@@ -342,6 +349,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
     if (newMappings.length > 0) {
       const { error: insertErr } = await admin.from('item_column_mappings').insert(newMappings)
       if (insertErr) console.warn('[excel-template] mapping insert error:', insertErr.message, JSON.stringify(newMappings.map(m => m.item_name)))
+    }
+    if (updates.length > 0) {
+      // 批次更新缺漏的 vendor_group / category / column
+      for (const u of updates) {
+        await admin.from('item_column_mappings')
+          .update({ vendor_group: u.vendor_group, item_category: u.item_category, excel_column: u.excel_column, updated_at: new Date().toISOString() })
+          .eq('id', u.id)
+      }
+      console.log(`[excel-template] updated ${updates.length} existing mappings with vendor_group`)
     }
 
     // Save item order file so closing form dropdown matches Excel column order
