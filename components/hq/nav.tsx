@@ -151,7 +151,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         <div className="flex items-center gap-3 px-5 pt-6 pb-4">
           <img src="/icon-192.png" alt="logo" className="h-9 w-9 rounded-[10px] object-cover shrink-0" />
           <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>鑫系統-作帳</p>
+            <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>結帳系統</p>
             <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>{isManagerPath ? '店長端' : '總公司端'}</p>
           </div>
         </div>

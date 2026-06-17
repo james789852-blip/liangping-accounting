@@ -96,12 +96,12 @@ export default function LoginPage() {
           <h1 className="font-bold mb-1.5" style={{ fontSize: '28px', letterSpacing: '-0.02em', color: '#18181b' }}>
             歡迎回來
           </h1>
-          <p className="text-sm mb-8" style={{ color: '#52525b' }}>登入鑫系統-作帳繼續</p>
+          <p className="text-sm mb-8" style={{ color: '#52525b' }}>登入結帳系統繼續</p>
 
           <form onSubmit={handleLogin} className="space-y-[18px]">
             <div>
               <label className="block text-[13px] font-medium mb-1.5" style={{ color: '#52525b' }}>
-                帳號（身分證字號）
+                帳號（身分證字號）<span style={{ color: '#a1a1aa', fontWeight: 400 }}>· 第一個字母請大寫</span>
               </label>
               <input
                 type="text"
@@ -117,7 +117,7 @@ export default function LoginPage() {
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
                 }}
-                placeholder="A123456789"
+                placeholder=""
                 value={account}
                 onChange={e => setAccount(e.target.value.toUpperCase())}
                 required
@@ -145,7 +145,7 @@ export default function LoginPage() {
                   color: '#18181b',
                   fontFamily: 'inherit',
                 }}
-                placeholder="如 830719"
+                placeholder=""
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required

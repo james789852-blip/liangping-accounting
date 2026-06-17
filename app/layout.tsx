@@ -11,8 +11,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "鑫系統-作帳",
-  description: "鑫系統多店作帳管理",
+  title: "結帳系統",
+  description: "多店作帳管理系統",
 };
 
 export const viewport: Viewport = {

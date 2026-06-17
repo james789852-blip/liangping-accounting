@@ -62,7 +62,7 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
         <div className="flex items-center gap-3 px-5 pt-6 pb-5">
           <img src="/icon-192.png" alt="logo" className="h-9 w-9 rounded-[10px] object-cover shrink-0" />
           <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>鑫系統-作帳</p>
+            <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>結帳系統</p>
             <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>{storeName || '未指派'} · {role}</p>
           </div>
         </div>
@@ -109,7 +109,7 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
           <img src="/icon-192.png" alt="logo" className="h-8 w-8 rounded-[8px] object-cover shrink-0" />
           <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-900 truncate leading-tight">{storeName || '鑫系統-作帳'}</p>
+            <p className="text-sm font-bold text-slate-900 truncate leading-tight">{storeName || '結帳系統'}</p>
             <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{role}</p>
           </div>
         </div>
