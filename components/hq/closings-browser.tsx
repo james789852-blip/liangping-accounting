@@ -19,6 +19,7 @@ interface Closing {
   remittance_adjustments?: RemittanceAdjustment[]
   ck_delivery_photo_url?: string; channel_photo_urls?: Record<string, string>
   envelope_photo_url?: string; void_invoice_photo_urls?: string[]; note_photo_url?: string
+  extra_photo_urls?: { url: string; label: string }[]
   stores: { id: string; name: string }
   revenue_items: { channel: string; account_name?: string; gross_amount: number }[]
   order_items: { item_name: string; quantity: number; unit_price: number; total_amount: number }[]
@@ -307,6 +308,7 @@ function ClosingCard({
   const envelopePhoto = closing.envelope_photo_url
   const voidInvoicePhotos = closing.void_invoice_photo_urls ?? []
   const notePhoto = closing.note_photo_url
+  const extraPhotos = Array.isArray(closing.extra_photo_urls) ? closing.extra_photo_urls : []
 
   // allPhotos: receipt photos first, then CK + channel (for lightbox continuity)
   const allPhotos: { url: string; label: string }[] = [
@@ -316,6 +318,7 @@ function ClosingCard({
     ...(envelopePhoto ? [{ url: envelopePhoto, label: '信封袋' }] : []),
     ...voidInvoicePhotos.map((url, i) => ({ url, label: `作廢發票 ${i + 1}` })),
     ...(notePhoto ? [{ url: notePhoto, label: '備註照片' }] : []),
+    ...extraPhotos.map(p => ({ url: p.url, label: p.label || '更多照片' })),
   ]
   // non-receipt photos (CK + channels + 信封袋/作廢/備註), 顯示在「其他照片」區塊
   const otherPhotos: { url: string; label: string }[] = [
@@ -576,6 +579,27 @@ function ClosingCard({
                 ))}
               </div>
             </div>
+          )}
+
+          {/* ── 8b. 店家加上傳的其他照片（零用金 / 預付款項等）— 可收合 ─────────── */}
+          {extraPhotos.length > 0 && (
+            <details>
+              <summary className="cursor-pointer text-xs font-semibold flex items-center gap-1.5"
+                style={{ color: '#52525b', listStyle: 'none', padding: '4px 0' }}>
+                <Camera className="h-3.5 w-3.5" style={{ color: '#F59E0B' }} />
+                店家自上傳照片
+                <span className="font-normal" style={{ color: '#a1a1aa' }}>（{extraPhotos.length} 張，點擊展開）</span>
+              </summary>
+              <div className="flex flex-wrap gap-1.5 mt-2 pl-1">
+                {extraPhotos.map(p => (
+                  <PhotoThumb key={p.url} url={p.url} label={p.label || '更多'}
+                    onClick={() => {
+                      const idx = allPhotos.findIndex(x => x.url === p.url)
+                      setLightboxIndex(idx >= 0 ? idx : 0)
+                    }} />
+                ))}
+              </div>
+            </details>
           )}
 
           {/* ── 9. 影片 ──────────────────────────────────── */}

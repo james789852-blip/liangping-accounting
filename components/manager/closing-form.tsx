@@ -594,6 +594,31 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [])
   const envelopePhotoInputRef = useRef<HTMLInputElement>(null)
 
+  // 更多照片（選填）：零用金核對、預付款項等。結構 [{ url, label }]
+  type ExtraPhoto = { url: string; label: string }
+  const [extraPhotos, setExtraPhotos] = useState<ExtraPhoto[]>(() => {
+    const saved = (existingClosing as any)?.extra_photo_urls
+    if (Array.isArray(saved)) return saved as ExtraPhoto[]
+    return []
+  })
+  const extraPhotosLsKey = `extra_photos_${store.id}_${today}`
+  useEffect(() => {
+    const saved = (existingClosing as any)?.extra_photo_urls
+    if (!Array.isArray(saved) || saved.length === 0) {
+      try {
+        const stored = JSON.parse(localStorage.getItem(extraPhotosLsKey) ?? '[]')
+        if (Array.isArray(stored) && stored.length > 0) setExtraPhotos(stored)
+      } catch {}
+    }
+  }, [])
+  useEffect(() => {
+    try { localStorage.setItem(extraPhotosLsKey, JSON.stringify(extraPhotos)) } catch {}
+  }, [extraPhotos])
+  const extraPhotoInputRef = useRef<HTMLInputElement>(null)
+  const [extraPhotoUploadLabel, setExtraPhotoUploadLabel] = useState<string>('零用金核對')
+  const [extraPhotoUploading, setExtraPhotoUploading] = useState(false)
+  const [extraPhotosOpen, setExtraPhotosOpen] = useState(false)
+
   // Void invoice photos (multiple)
   const [voidInvoicePhotos, setVoidInvoicePhotos] = useState<string[]>(() => {
     const saved = (existingClosing as any)?.void_invoice_photo_urls
@@ -937,6 +962,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setEnvelopePhotoUrl(result.publicUrl)
     localStorage.setItem(envelopePhotoLsKey, result.publicUrl)
     toast.success('信封袋照片已上傳')
+  }
+
+  async function handleExtraPhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setExtraPhotoUploading(true)
+    const ext = file.name.split('.').pop() || 'jpg'
+    const idx = extraPhotos.length
+    const path = `receipts/${store.id}/${today}/extra-${idx}.${ext}`
+    const fd = new FormData(); fd.append('file', file)
+    const result = await uploadToStorage(fd, 'receipts', path)
+    setExtraPhotoUploading(false)
+    if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
+    setExtraPhotos(prev => [...prev, { url: result.publicUrl, label: extraPhotoUploadLabel }])
+    toast.success(`${extraPhotoUploadLabel}照片已上傳`)
   }
 
   async function handleVoidInvoicePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1345,6 +1386,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         envelope_photo_url: envelopePhotoUrl ?? null,
         void_invoice_photo_urls: voidInvoicePhotos,
         note_photo_url: notePhotoUrl ?? null,
+        extra_photo_urls: extraPhotos,
       }
       if (!cid) {
         const { data: nc, error } = await supabase.from('daily_closings').insert(payload).select('id').single()
@@ -1594,6 +1636,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       <input ref={voidInvoiceInputRef} type="file" accept="image/*"
         style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px', opacity: 0 }}
         onChange={handleVoidInvoicePhotoUpload} />
+      <input ref={extraPhotoInputRef} type="file" accept="image/*"
+        style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px', opacity: 0 }}
+        onChange={handleExtraPhotoUpload} />
       <input ref={notePhotoInputRef} type="file" accept="image/*"
         style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px', opacity: 0 }}
         onChange={handleNotePhotoUpload} />
@@ -3628,6 +3673,65 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* 更多照片（選填）— 零用金照片 / 預付款項照片 等 */}
+            <div className="bg-white rounded-2xl overflow-hidden mt-3" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <button type="button" onClick={() => setExtraPhotosOpen(v => !v)}
+                className="w-full flex items-center justify-between px-5 py-4 text-left"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <div>
+                  <p className="text-sm font-semibold">更多照片（選填）</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
+                    {extraPhotos.length > 0 ? `已上傳 ${extraPhotos.length} 張` : '零用金清點、預付廠商款項等'}
+                  </p>
+                </div>
+                <span style={{ color: '#a1a1aa', fontSize: 18 }}>{extraPhotosOpen ? '▴' : '▾'}</span>
+              </button>
+              {extraPhotosOpen && (
+                <div className="px-5 pb-5 pt-1" style={{ borderTop: '1px solid #f4f4f5' }}>
+                  {/* 已上傳清單 */}
+                  {extraPhotos.length > 0 && (
+                    <div className="space-y-2 mb-3">
+                      {extraPhotos.map((p, idx) => (
+                        <div key={idx} className="flex items-center gap-3 rounded-xl px-3 py-2" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
+                          <button type="button" onClick={() => setPhotoLightbox(p.url)}
+                            style={{ width: 56, height: 56, borderRadius: 10, overflow: 'hidden', border: '1px solid #e4e4e7', padding: 0, background: 'none', cursor: 'zoom-in', flexShrink: 0 }}>
+                            <img src={p.url} alt={p.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          </button>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <input value={p.label}
+                              onChange={e => {
+                                const v = e.target.value
+                                setExtraPhotos(prev => prev.map((x, i) => i === idx ? { ...x, label: v } : x))
+                              }}
+                              style={{ width: '100%', padding: '6px 10px', border: '1px solid #e4e4e7', borderRadius: 8, fontSize: 13, outline: 'none', background: 'white', fontFamily: 'inherit' }}
+                              placeholder="照片標籤" />
+                          </div>
+                          <button type="button"
+                            onClick={() => setExtraPhotos(prev => prev.filter((_, i) => i !== idx))}
+                            style={{ padding: '4px 8px', border: '1px solid #fca5a5', borderRadius: 8, background: 'white', color: '#ef4444', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                            刪除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* 上傳按鈕 */}
+                  <div className="flex gap-2">
+                    {['零用金核對', '預付款項'].map(label => (
+                      <button key={label} type="button"
+                        disabled={extraPhotoUploading}
+                        onClick={() => { setExtraPhotoUploadLabel(label); extraPhotoInputRef.current?.click() }}
+                        className="flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold"
+                        style={{ background: 'white', border: '1.5px solid #FEF3C7', color: '#92400E', cursor: extraPhotoUploading ? 'not-allowed' : 'pointer', opacity: extraPhotoUploading ? 0.6 : 1 }}>
+                        {extraPhotoUploading && extraPhotoUploadLabel === label ? '上傳中…' : `+ ${label}`}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] mt-2" style={{ color: '#a1a1aa' }}>每張可改標籤。其他類型也可上傳後手動命名。</p>
+                </div>
+              )}
             </div>
           </>
         )}
