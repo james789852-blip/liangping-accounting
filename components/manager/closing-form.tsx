@@ -1925,9 +1925,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             if (existing) existing.items.push(col)
                                             else groups.push({ group: g, items: [col] })
                                           }
+                                          // 顯示時剝離 vendor_group 前綴（"翁師傅其他" → "其他"）
+                                          const stripVg = (n: string, vg?: string) =>
+                                            (vg && n.startsWith(vg) && n !== vg) ? n.slice(vg.length) : n
                                           return groups.map(({ group, items }) => (
                                             <optgroup key={group} label={group}>
-                                              {items.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                                              {items.map(c => <option key={c.name} value={c.name}>{stripVg(c.name, c.vendor_group)}</option>)}
                                             </optgroup>
                                           ))
                                         })()}
@@ -2166,9 +2169,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                                 if (existing) existing.items.push(col)
                                                 else groups.push({ group: g, items: [col] })
                                               }
+                                              const stripVg = (n: string, vg?: string) =>
+                                                (vg && n.startsWith(vg) && n !== vg) ? n.slice(vg.length) : n
                                               return groups.map(({ group, items }) => (
                                                 <optgroup key={group} label={group}>
-                                                  {items.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                                                  {items.map(c => <option key={c.name} value={c.name}>{stripVg(c.name, c.vendor_group)}</option>)}
                                                 </optgroup>
                                               ))
                                             })()}

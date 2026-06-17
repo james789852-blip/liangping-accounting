@@ -208,7 +208,10 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
                     gridTemplateColumns: '1fr 3rem 2.5rem 4rem 4rem', gap: '8px',
                     borderBottom: idx !== receipt.receipt_items.length - 1 ? '1px solid #f4f4f5' : 'none'
                   }}>
-                    <span className="text-xs font-medium" style={{ color: '#18181b' }}>{item.item_name}</span>
+                    <span className="text-xs font-medium" style={{ color: '#18181b' }}>{(() => {
+                      const vg = mappings[item.item_name]?.vendor_group?.trim()
+                      return vg && item.item_name.startsWith(vg) && item.item_name !== vg ? item.item_name.slice(vg.length) : item.item_name
+                    })()}</span>
                     <span className="text-xs text-right tabular-nums" style={{ color: '#52525b' }}>{(item.quantity ?? 0) > 0 ? item.quantity : '—'}</span>
                     <span className="text-xs text-right" style={{ color: '#71717a' }}>{item.unit || '—'}</span>
                     <span className="text-xs text-right tabular-nums" style={{ color: '#52525b' }}>{(item.unit_price ?? 0) > 0 ? `$${fmt(item.unit_price ?? 0)}` : '—'}</span>
@@ -293,11 +296,16 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
                     {openItemIdx === idx && (() => {
                       const q = item.item_name.trim()
                       const allNames = Object.keys(mappings)
-                      const filtered = q ? allNames.filter(n => n.includes(q)) : allNames
+                      // 顯示時剝離 vendor_group 前綴 → 比對也包含剝離後字串
+                      const stripVg = (n: string) => {
+                        const vg = mappings[n]?.vendor_group?.trim()
+                        return vg && n.startsWith(vg) && n !== vg ? n.slice(vg.length) : n
+                      }
+                      const filtered = q ? allNames.filter(n => n.includes(q) || stripVg(n).includes(q)) : allNames
                       if (filtered.length === 0) return null
                       const groups: { group: string; cols: string[] }[] = []
                       for (const name of filtered) {
-                        const g = mappings[name]?.vendor_group || mappings[name]?.item_category || '其他'
+                        const g = mappings[name]?.vendor_group || mappings[name]?.item_category || '未分類'
                         const existing = groups.find(x => x.group === g)
                         if (existing) existing.cols.push(name)
                         else groups.push({ group: g, cols: [name] })
@@ -311,7 +319,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
                                 <button key={name}
                                   onMouseDown={e => { e.preventDefault(); selectMappedItem(idx, name) }}
                                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: '13px', background: 'none', border: 'none', borderBottom: '1px solid #f9f9f9', cursor: 'pointer', color: '#18181b', fontFamily: 'inherit' }}>
-                                  {name}
+                                  {stripVg(name)}
                                 </button>
                               ))}
                             </div>

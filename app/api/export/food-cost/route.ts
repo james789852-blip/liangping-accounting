@@ -148,14 +148,14 @@ export async function GET(req: NextRequest) {
         for (let r = 1; r <= 10; r++) {
           if (ws.getRow(r).getCell(1).text?.replace(/[\s　]/g, '') === '日期') { headerRowNum = r; break }
         }
-        if (headerRowNum > 0) {
-          // Row 1 分組依「合併儲存格」判斷（獨立空白 cell 不分組）
-          const groupOfCol = buildGroupByMerge(ws, 1)
+        if (headerRowNum >= 3) {
+          // 兩列分組邏輯：row1（vendor）→ row2（文件類型 發票/收據/估價單）→ 未分類
+          const groupOfCol = buildGroupByMerge(ws, headerRowNum - 2, headerRowNum - 1)
           ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
             const headerName = cell.text?.trim()
             if (!headerName) return
             const vg = groupOfCol[colNum]
-            if (!vg || vg === '央廚配送' || vg === '退稅' || vg === '稅金') return
+            if (!vg || vg === '未分類' || vg === '央廚配送' || vg === '退稅' || vg === '稅金') return
             if (!vendorGroupLookup[headerName]) {
               vendorGroupLookup[headerName] = vg
             }

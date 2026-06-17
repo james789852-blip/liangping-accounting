@@ -34,9 +34,12 @@ export async function fillWorksheet(
     return null
   }
 
-  // Row 1 群組標籤：只認「合併儲存格」內部的繼承；獨立空白 cell 不分組（獨立項目）
-  // 避免將「翁師傅 | 達特 | 發票 | ...」中的「發票」欄位誤掛到「達特」下
-  const groupOfCol = buildGroupByMerge(ws, 1)
+  // 群組標籤：以 vendor 列為主、文件類型列（發票/收據/估價單）為輔，否則歸「未分類」
+  // 避免將「翁師傅 | 達特 | (空) 發票 | ...」中的「發票」欄位誤掛到「達特」下
+  // 若 headerRowNum < 3 表示模板沒有 vendor / docType 列，跳過分組
+  const groupOfCol: Record<number, string> = headerRowNum >= 3
+    ? buildGroupByMerge(ws, headerRowNum - 2, headerRowNum - 1)
+    : {}
 
   // Build separate maps: CK group wins for duplicate column names
   const ckColMap: Record<string, number> = {}
@@ -384,39 +387,70 @@ function a1ToRC(a1: string): { r: number; c: number } {
 }
 
 /**
- * 依模板的合併儲存格判斷每個 column 在指定 row 的群組標籤。
- * 規則：
- *  - 該 column 是合併儲存格的一部分 → 取 master cell 的文字
- *  - 該 column 為獨立 cell 且有文字 → 用自己的文字
- *  - 獨立空白 cell → 不分組（傳回的 Map 不包含這個 col）
- * 不再使用「lastGroup 向右傳遞」，避免獨立欄位被誤掛到前面 vendor 下。
+ * 取得指定 row 在某 column 的文字：若 column 屬於合併儲存格 → 用 master cell；
+ * 否則取自己 cell 的 text。傳回 trim 後的字串，無內容時為空字串。
  */
-export function buildGroupByMerge(ws: ExcelJS.Worksheet, rowNum: number): Record<number, string> {
-  const result: Record<number, string> = {}
+function readRowTextByMerge(
+  ws: ExcelJS.Worksheet,
+  rowNum: number,
+  maxCol: number,
+): string[] {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const merges = ((ws as any).model?.merges as string[] | undefined) ?? []
-  // 建立 col → merge range（橫向，跨越 rowNum）
-  const colToMerge = new Map<number, { startCol: number }>()
+  const colToMaster = new Map<number, number>()
   for (const m of merges) {
     const [start, end] = m.split(':')
     const s = a1ToRC(start)
     const e = a1ToRC(end)
     if (s.r <= rowNum && e.r >= rowNum) {
-      for (let c = s.c; c <= e.c; c++) {
-        colToMerge.set(c, { startCol: s.c })
-      }
+      for (let c = s.c; c <= e.c; c++) colToMaster.set(c, s.c)
     }
   }
-  const maxCol = Math.max((ws.columnCount || 0) + 5, 100)
+  const result: string[] = []
   for (let c = 1; c <= maxCol; c++) {
-    const merge = colToMerge.get(c)
-    if (merge) {
-      const t = ws.getRow(rowNum).getCell(merge.startCol).text?.trim()
-      if (t) result[c] = t
+    const masterCol = colToMaster.get(c)
+    if (masterCol !== undefined) {
+      // 合併儲存格內：所有欄位都用 master cell 的文字
+      result[c] = ws.getRow(rowNum).getCell(masterCol).text?.trim() ?? ''
     } else {
-      const t = ws.getRow(rowNum).getCell(c).text?.trim()
-      if (t) result[c] = t
+      result[c] = ws.getRow(rowNum).getCell(c).text?.trim() ?? ''
     }
+  }
+  return result
+}
+
+const DOC_TYPE_PATTERNS = ['發票', '收據', '估價單', '公司開']
+
+/**
+ * 依模板的「廠商列 (vendorRow) + 單據類型列 (docTypeRow)」判斷 column 的分類群組。
+ *
+ * 規則（優先級由上而下）：
+ *  1. vendorRow 有文字 → 用該文字（合併儲存格取 master）
+ *  2. vendorRow 空白、docTypeRow 有文字（限 發票/收據/估價單 等）→ 用 docTypeRow
+ *  3. 兩列都空 → 標記為「未分類」
+ *
+ * 注意：獨立空白 cell **不再向左繼承**；發票列的群組獨立於旁邊 vendor 之外。
+ */
+export function buildGroupByMerge(
+  ws: ExcelJS.Worksheet,
+  vendorRow: number,
+  docTypeRow?: number,
+): Record<number, string> {
+  const maxCol = Math.max((ws.columnCount || 0) + 5, 100)
+  const vendorTexts = readRowTextByMerge(ws, vendorRow, maxCol)
+  const docTexts = docTypeRow ? readRowTextByMerge(ws, docTypeRow, maxCol) : []
+
+  const result: Record<number, string> = {}
+  for (let c = 1; c <= maxCol; c++) {
+    const v = vendorTexts[c] ?? ''
+    if (v) { result[c] = v; continue }
+    const d = docTexts[c] ?? ''
+    if (d && DOC_TYPE_PATTERNS.some(p => d.includes(p))) {
+      result[c] = d
+      continue
+    }
+    // 兩列都空 → 標記未分類（呼叫端可決定要不要存）
+    result[c] = '未分類'
   }
   return result
 }

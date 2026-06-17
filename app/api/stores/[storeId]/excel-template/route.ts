@@ -94,16 +94,19 @@ function parseColumns(ws: ExcelJS.Worksheet): ParsedColumns | null {
 
 /**
  * Returns vendor group keyed by column number (not column name).
- * 規則：只認「合併儲存格」分組；獨立 cell（無論有無文字）只代表自己。
- * 避免類似「翁師傅 | 達特 | (空) 發票 | ...」中第三欄被誤掛到達特下。
+ * 規則（優先級）：
+ *  1. 廠商列（headerRowNum - 2）有文字（含合併） → 用該文字
+ *  2. 文件類型列（headerRowNum - 1）有文字（發票/收據/估價單/公司開） → 用該文字
+ *  3. 兩列都空 → 「未分類」
+ * 避免類似「翁師傅 | (空) 估價單 | ...」中第二欄被誤掛到翁師傅下。
  */
-function getVendorGroupByCol(ws: ExcelJS.Worksheet, headerRowNum: number): Record<number, string> {
-  const groupRowNum = headerRowNum - 2
-  if (groupRowNum < 1) return {}
+const DOC_TYPE_PATTERNS = ['發票', '收據', '估價單', '公司開']
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const merges = ((ws as any).model?.merges as string[] | undefined) ?? []
-  const colToMerge = new Map<number, { startCol: number }>()
+function getVendorGroupByCol(ws: ExcelJS.Worksheet, headerRowNum: number): Record<number, string> {
+  const vendorRowNum = headerRowNum - 2
+  const docTypeRowNum = headerRowNum - 1
+  if (vendorRowNum < 1) return {}
+
   const parseA1 = (a1: string) => {
     const m = a1.match(/^\$?([A-Z]+)\$?(\d+)$/)
     if (!m) return { r: 1, c: 1 }
@@ -111,25 +114,42 @@ function getVendorGroupByCol(ws: ExcelJS.Worksheet, headerRowNum: number): Recor
     for (const ch of m[1]) c = c * 26 + (ch.charCodeAt(0) - 64)
     return { r: parseInt(m[2]), c }
   }
-  for (const m of merges) {
-    const [start, end] = m.split(':')
-    const s = parseA1(start)
-    const e = parseA1(end)
-    if (s.r <= groupRowNum && e.r >= groupRowNum) {
-      for (let c = s.c; c <= e.c; c++) colToMerge.set(c, { startCol: s.c })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const merges = ((ws as any).model?.merges as string[] | undefined) ?? []
+  const readMerged = (rowNum: number, maxCol: number): string[] => {
+    const masterCol = new Map<number, number>()
+    for (const m of merges) {
+      const [start, end] = m.split(':')
+      const s = parseA1(start)
+      const e = parseA1(end)
+      if (s.r <= rowNum && e.r >= rowNum) {
+        for (let c = s.c; c <= e.c; c++) masterCol.set(c, s.c)
+      }
     }
+    const out: string[] = []
+    for (let c = 1; c <= maxCol; c++) {
+      const src = masterCol.get(c) ?? c
+      out[c] = ws.getRow(rowNum).getCell(src).text?.trim() ?? ''
+    }
+    return out
   }
-  const result: Record<number, string> = {}
+
   const maxCol = Math.max((ws.columnCount || 0) + 5, 100)
+  const vendorTexts = readMerged(vendorRowNum, maxCol)
+  const docTexts = docTypeRowNum >= 1 ? readMerged(docTypeRowNum, maxCol) : []
+
+  const result: Record<number, string> = {}
+  const valid = (t: string) => t && !/^\d/.test(t) && t.length <= 20
   for (let c = 1; c <= maxCol; c++) {
-    const merge = colToMerge.get(c)
-    if (merge) {
-      const t = ws.getRow(groupRowNum).getCell(merge.startCol).text?.trim()
-      if (t && !/^\d/.test(t) && t.length <= 20) result[c] = t
-    } else {
-      const t = ws.getRow(groupRowNum).getCell(c).text?.trim()
-      if (t && !/^\d/.test(t) && t.length <= 20) result[c] = t
+    const v = vendorTexts[c] ?? ''
+    if (valid(v)) { result[c] = v; continue }
+    const d = docTexts[c] ?? ''
+    if (valid(d) && DOC_TYPE_PATTERNS.some(p => d.includes(p))) {
+      result[c] = d
+      continue
     }
+    result[c] = '未分類'
   }
   return result
 }
@@ -285,7 +305,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
       ...columns['雜項'].map(c => ({ ...c, cat: '雜項' })),
     ]
 
-    // Count occurrences of each column name to detect duplicates
+    // 計算每個品項名稱出現幾次 → 多個 vendor 群組下會用 prefix 區分
     const nameCount: Record<string, number> = {}
     for (const c of allCols) nameCount[c.name] = (nameCount[c.name] || 0) + 1
 
@@ -294,7 +314,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
       .select('id, item_name, vendor_group, store_id')
       .or(`store_id.is.null,store_id.eq.${storeId}`)
 
-    // Global keys: "item_name|vendor_group" combinations already handled universally
     const globalKeys = new Set<string>()
     const storeMappingMap = new Map<string, { id: string; vendor_group: string | null }>()
     for (const m of (allExisting ?? []) as any[]) {
@@ -302,39 +321,35 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
       else storeMappingMap.set(m.item_name, { id: m.id as string, vendor_group: (m.vendor_group as string | null) ?? null })
     }
 
-    // Track (name, vg) occurrences to handle duplicates within the same vendor group
     const seenCombo: Record<string, number> = {}
     const newMappings: any[] = []
     const updates: { id: string; vendor_group: string | null; item_category: string; excel_column: string }[] = []
-    const orderedItemNames: string[] = [] // Excel column order for dropdown sorting
+    const orderedItemNames: string[] = []
 
     for (const c of allCols) {
-      const vg = vendorGroupByCol[c.col] ?? null
-      const comboKey = `${c.name}|${vg ?? ''}`
+      // vg 必為非空字串：row1 → row2 → '未分類'。儲存時若是 '未分類' 寫入 null 以維持與舊查找邏輯相容。
+      const vgRaw = vendorGroupByCol[c.col] ?? '未分類'
+      const vgForKey = vgRaw === '未分類' ? null : vgRaw
+      const comboKey = `${c.name}|${vgRaw === '未分類' ? '' : vgRaw}`
       const occurrence = (seenCombo[comboKey] || 0) + 1
       seenCombo[comboKey] = occurrence
 
-      // Determine item_name for dropdown display:
-      // - duplicate names with different vendor groups → prefix with vendor group (e.g. "翁師傅其他")
-      // - same (name, vg) appears again → numbered suffix (e.g. "其他2", "退稅其他2")
+      // 多群組同名 → 加上 vendor 前綴（如「翁師傅其他」「發票其他」），UI 顯示時剝離 prefix
       let itemName: string
       if (occurrence === 1) {
-        itemName = (nameCount[c.name] > 1 && vg) ? `${vg}${c.name}` : c.name
+        itemName = (nameCount[c.name] > 1 && vgForKey) ? `${vgForKey}${c.name}` : c.name
       } else {
-        itemName = vg ? `${vg}${c.name}${occurrence}` : `${c.name}${occurrence}`
+        itemName = vgForKey ? `${vgForKey}${c.name}${occurrence}` : `${c.name}${occurrence}`
       }
 
       orderedItemNames.push(itemName)
 
-      // First occurrence of (name, vg): skip if a global mapping already covers it
       if (occurrence === 1 && globalKeys.has(comboKey)) continue
 
       const existing = storeMappingMap.get(itemName)
       if (existing) {
-        // Existing store mapping → update if vendor_group / category / column changed
-        // (especially補回缺漏的 vendor_group，避免稅金路由 fallback 出錯)
-        if (existing.vendor_group !== vg) {
-          updates.push({ id: existing.id, vendor_group: vg, item_category: c.cat, excel_column: c.name })
+        if (existing.vendor_group !== vgForKey) {
+          updates.push({ id: existing.id, vendor_group: vgForKey, item_category: c.cat, excel_column: c.name })
         }
         continue
       }
@@ -343,7 +358,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
         item_name: itemName,
         excel_column: c.name,
         item_category: c.cat,
-        vendor_group: vg,
+        vendor_group: vgForKey,
         store_id: storeId,
         updated_at: new Date().toISOString(),
       })
@@ -354,7 +369,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
       if (insertErr) console.warn('[excel-template] mapping insert error:', insertErr.message, JSON.stringify(newMappings.map(m => m.item_name)))
     }
     if (updates.length > 0) {
-      // 批次更新缺漏的 vendor_group / category / column
       for (const u of updates) {
         await admin.from('item_column_mappings')
           .update({ vendor_group: u.vendor_group, item_category: u.item_category, excel_column: u.excel_column, updated_at: new Date().toISOString() })

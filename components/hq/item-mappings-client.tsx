@@ -18,6 +18,11 @@ const CAT_STYLE: Record<string, { bg: string; color: string }> = {
   '雜項': { bg: '#f4f4f5', color: '#71717a' },
 }
 
+const VG_STYLE = { bg: '#FEF3C7', color: '#92400E' }
+const VG_STYLE_UNCAT = { bg: '#f4f4f5', color: '#71717a' }
+const VG_STYLE_DOC = { bg: '#DBEAFE', color: '#1E40AF' }
+const DOC_TYPES = new Set(['發票', '收據', '估價單', '公司開'])
+
 const SELECT_STYLE: React.CSSProperties = {
   height: '32px', padding: '0 8px', border: '1.5px solid #F59E0B', borderRadius: '8px',
   fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit',
@@ -111,12 +116,30 @@ export default function ItemMappingsClient({
     })
   }
 
+  // 顯示用：若 item_name 以 vendor_group 開頭就剝離前綴（"翁師傅其他" → "其他"）
+  function displayName(m: Mapping): string {
+    const vg = m.vendor_group?.trim()
+    if (vg && m.item_name.startsWith(vg) && m.item_name !== vg) {
+      return m.item_name.slice(vg.length)
+    }
+    return m.item_name
+  }
+
+  // 以 vendor_group 為主分類（無則歸「未分類」），分組內依 item_name 排序
   const grouped = displayMappings.reduce<Record<string, Mapping[]>>((acc, m) => {
-    const cat = m.item_category || '其他'
-    if (!acc[cat]) acc[cat] = []
-    acc[cat].push(m)
+    const vg = (m.vendor_group?.trim() || '未分類')
+    if (!acc[vg]) acc[vg] = []
+    acc[vg].push(m)
     return acc
   }, {})
+
+  // 排序：文件類型分類（發票/收據/估價單/公司開）放在 vendor 後、未分類最後
+  const groupOrder = Object.keys(grouped).sort((a, b) => {
+    const rank = (g: string) => g === '未分類' ? 2 : DOC_TYPES.has(g) ? 1 : 0
+    const ra = rank(a), rb = rank(b)
+    if (ra !== rb) return ra - rb
+    return a.localeCompare(b, 'zh-Hant')
+  })
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -246,65 +269,68 @@ export default function ItemMappingsClient({
           </div>
         ) : null}
 
-        {/* Mapping list */}
-        {Object.entries(grouped).map(([cat, items]) => {
-          const catSt = CAT_STYLE[cat] ?? CAT_STYLE['雜項']
+        {/* Mapping list — 以 vendor_group 為主分類 */}
+        {groupOrder.map(vg => {
+          const items = grouped[vg]
+          const vgSt = vg === '未分類' ? VG_STYLE_UNCAT : DOC_TYPES.has(vg) ? VG_STYLE_DOC : VG_STYLE
           return (
-            <div key={cat}>
+            <div key={vg}>
               <div className="flex items-center gap-2 mb-2 px-1">
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                  style={{ background: catSt.bg, color: catSt.color }}>
-                  {cat}
+                  style={{ background: vgSt.bg, color: vgSt.color }}>
+                  {vg}
                 </span>
                 <span className="text-xs" style={{ color: '#a1a1aa' }}>{items.length} 項</span>
               </div>
               <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                {items.map((m, idx) => (
-                  <div key={m.id} className="flex items-center gap-3 px-4 py-2.5"
-                    style={{ borderBottom: idx !== items.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
-                    <span className="flex-1 text-sm font-semibold" style={{ color: '#18181b' }}>{m.item_name}</span>
+                {items.map((m, idx) => {
+                  const catSt = CAT_STYLE[m.item_category] ?? CAT_STYLE['雜項']
+                  return (
+                    <div key={m.id} className="flex items-center gap-3 px-4 py-2.5"
+                      style={{ borderBottom: idx !== items.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
+                      <span className="flex-1 text-sm font-semibold" style={{ color: '#18181b' }}>{displayName(m)}</span>
 
-                    {editId === m.id ? (
-                      <>
-                        <select style={SELECT_STYLE} value={editCol} onChange={e => setEditCol(e.target.value)}>
-                          {Object.entries(EXCEL_COLUMNS).map(([c, cols]) => (
-                            <optgroup key={c} label={c}>
-                              {cols.map(col => <option key={col} value={col}>{col}</option>)}
-                            </optgroup>
-                          ))}
-                        </select>
-                        <select style={SELECT_STYLE} value={editCat} onChange={e => setEditCat(e.target.value)}>
-                          <option>食材</option><option>耗材</option><option>雜項</option>
-                        </select>
-                        <input placeholder="廠商群組（如菜商）" value={editVendorGroup} onChange={e => setEditVendorGroup(e.target.value)}
-                          style={{ height: '32px', padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit', width: '90px' }} />
-                        <button onClick={() => handleUpdate(m.id)} style={{ color: '#047857' }}>
-                          <Check className="h-4 w-4" />
-                        </button>
-                        <button onClick={() => setEditId(null)} style={{ color: '#a1a1aa' }}>
-                          <X className="h-4 w-4" />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        {m.vendor_group && (
-                          <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0" style={{ background: '#FEF3C7', color: '#92400E' }}>{m.vendor_group}</span>
-                        )}
-                        <span className="text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
-                        <button onClick={() => startEdit(m)} style={{ color: '#d4d4d8' }}
-                          onMouseEnter={e => (e.currentTarget.style.color = '#F59E0B')}
-                          onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button onClick={() => handleDelete(m.id)} style={{ color: '#d4d4d8' }}
-                          onMouseEnter={e => (e.currentTarget.style.color = '#be123c')}
-                          onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                ))}
+                      {editId === m.id ? (
+                        <>
+                          <select style={SELECT_STYLE} value={editCol} onChange={e => setEditCol(e.target.value)}>
+                            {Object.entries(EXCEL_COLUMNS).map(([c, cols]) => (
+                              <optgroup key={c} label={c}>
+                                {cols.map(col => <option key={col} value={col}>{col}</option>)}
+                              </optgroup>
+                            ))}
+                          </select>
+                          <select style={SELECT_STYLE} value={editCat} onChange={e => setEditCat(e.target.value)}>
+                            <option>食材</option><option>耗材</option><option>雜項</option>
+                          </select>
+                          <input placeholder="分類（廠商或發票）" value={editVendorGroup} onChange={e => setEditVendorGroup(e.target.value)}
+                            style={{ height: '32px', padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit', width: '110px' }} />
+                          <button onClick={() => handleUpdate(m.id)} style={{ color: '#047857' }}>
+                            <Check className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => setEditId(null)} style={{ color: '#a1a1aa' }}>
+                            <X className="h-4 w-4" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
+                            style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
+                          <span className="text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
+                          <button onClick={() => startEdit(m)} style={{ color: '#d4d4d8' }}
+                            onMouseEnter={e => (e.currentTarget.style.color = '#F59E0B')}
+                            onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => handleDelete(m.id)} style={{ color: '#d4d4d8' }}
+                            onMouseEnter={e => (e.currentTarget.style.color = '#be123c')}
+                            onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )
