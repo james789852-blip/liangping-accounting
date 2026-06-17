@@ -680,16 +680,28 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         setCurrentStep(saved)
       } else if (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified') {
         // 已送出/已審核的帳目：判斷零用金是否已核對過，避免使用者重複跳回零用金頁面
+        // 來源 1：DB 的 petty_counts 欄位
         const dbPetty = (existingClosing as { petty_counts?: { counts?: Record<string, number>; lumps?: Record<string, number> } } | null)?.petty_counts
-        const pettyDone = !!dbPetty && (
+        const dbPettyDone = !!dbPetty && (
           Object.values(dbPetty.counts ?? {}).some(v => (v as number) > 0) ||
           Object.values(dbPetty.lumps ?? {}).some(v => (v as number) > 0)
         )
-        // STEPS 結構：... summary, ai_verify, submit, result, petty
-        // ichef 店家少一個 handwrite 步驟，總共 9 步；其他 10 步
+        // 來源 2：localStorage（migration 018 尚未跑時的 fallback）
+        let lsPettyDone = false
+        try {
+          const ls = JSON.parse(localStorage.getItem(`petty_counts_${store.id}_${today}`) ?? 'null')
+          lsPettyDone = !!ls && (
+            Object.values((ls.counts ?? {}) as Record<string, number>).some(v => v > 0) ||
+            Object.values((ls.lumps ?? {}) as Record<string, number>).some(v => v > 0)
+          )
+        } catch {}
+        // 來源 3：完成按鈕按過會留下 flag
+        let donePressed = false
+        try { donePressed = localStorage.getItem(`petty_done_${store.id}_${today}`) === '1' } catch {}
+        const pettyDone = dbPettyDone || lsPettyDone || donePressed
+
         const totalStepsEstimate = (store.mode !== 'ichef') ? 10 : 9
-        const resultIdx = totalStepsEstimate - 2  // 倒數第二步（result）
-        // 零用金已核對 → 落地在「摘要」步驟；尚未核對 → 落地在零用金步驟（99 clamps 到最後一步）
+        const resultIdx = totalStepsEstimate - 2
         setCurrentStep(pettyDone ? resultIdx : 99)
       }
     }
@@ -3495,7 +3507,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
             {/* Step 8: 零用金核對 → 完成結束 */}
             {stepId === 'petty' && (
-              <button onClick={() => router.push('/manager/summary')}
+              <button onClick={() => {
+                try { localStorage.setItem(`petty_done_${store.id}_${today}`, '1') } catch {}
+                router.push('/manager/summary')
+              }}
                 className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-base font-bold text-white"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 8px 20px rgba(245,158,11,0.3)' }}>
                 <CheckCircle2 className="h-5 w-5" />
