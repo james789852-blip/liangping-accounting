@@ -59,7 +59,7 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
   revalidatePath('/hq/stores')
   revalidatePath('/manager', 'layout')
   revalidatePath('/manager/closing')
-  revalidateTag('stores')   // 失效 getCachedAllStores / getCachedStoreById / getCachedStoreFull
+  revalidateTag('stores', 'default')   // 失效 getCachedAllStores / getCachedStoreById / getCachedStoreFull
   return { success: true }
 }
 
@@ -81,6 +81,6 @@ export async function createStore(name: string, mode: string, type = '店面') {
 
   revalidatePath('/hq/stores')
   revalidatePath('/manager', 'layout')
-  revalidateTag('stores')
+  revalidateTag('stores', 'default')
   return { success: true, id: data.id }
 }
