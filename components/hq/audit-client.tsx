@@ -144,24 +144,36 @@ export default function AuditClient({
               <option value="warn">警告 warn</option>
               <option value="error">錯誤 error</option>
             </select>
-            <label className="flex items-center gap-2 text-sm px-3 py-2 rounded-xl border" style={{ border: '1.5px solid #e4e4e7', background: 'white', fontFamily: 'inherit' }}>
-              <span style={{ color: pendingFrom ? '#18181b' : '#a1a1aa', flexShrink: 0, minWidth: 56 }}>{pendingFrom ? '從' : '從 (起)'}</span>
-              <input type="date" value={pendingFrom} onChange={e => setPendingFrom(e.target.value)}
-                style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, color: '#18181b', fontFamily: 'inherit', fontSize: 14, minWidth: 0 }} />
+            <div className="flex items-center gap-2 rounded-xl border" style={{ border: '1.5px solid #e4e4e7', background: 'white' }}>
+              <label className="flex items-center gap-2 flex-1 px-3 py-2 text-sm" style={{ fontFamily: 'inherit', cursor: 'pointer' }}>
+                <span style={{ color: pendingFrom ? '#18181b' : '#a1a1aa', flexShrink: 0, minWidth: 56 }}>{pendingFrom ? '從' : '從 (起)'}</span>
+                <input type="date" value={pendingFrom} onChange={e => setPendingFrom(e.target.value)}
+                  style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, color: '#18181b', fontFamily: 'inherit', fontSize: 14, minWidth: 0 }} />
+              </label>
               {pendingFrom && (
-                <button type="button" onClick={() => setPendingFrom('')}
-                  style={{ color: '#a1a1aa', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 16, lineHeight: 1 }}>✕</button>
+                <button type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setPendingFrom('') }}
+                  aria-label="清除起始日期"
+                  style={{ width: 40, height: 40, marginRight: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#71717a', background: '#f4f4f5', border: 'none', cursor: 'pointer', borderRadius: 10, fontSize: 18, lineHeight: 1, padding: 0, flexShrink: 0 }}>
+                  ✕
+                </button>
               )}
-            </label>
-            <label className="flex items-center gap-2 text-sm px-3 py-2 rounded-xl border" style={{ border: '1.5px solid #e4e4e7', background: 'white', fontFamily: 'inherit' }}>
-              <span style={{ color: pendingTo ? '#18181b' : '#a1a1aa', flexShrink: 0, minWidth: 56 }}>{pendingTo ? '到' : '到 (迄)'}</span>
-              <input type="date" value={pendingTo} onChange={e => setPendingTo(e.target.value)}
-                style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, color: '#18181b', fontFamily: 'inherit', fontSize: 14, minWidth: 0 }} />
+            </div>
+            <div className="flex items-center gap-2 rounded-xl border" style={{ border: '1.5px solid #e4e4e7', background: 'white' }}>
+              <label className="flex items-center gap-2 flex-1 px-3 py-2 text-sm" style={{ fontFamily: 'inherit', cursor: 'pointer' }}>
+                <span style={{ color: pendingTo ? '#18181b' : '#a1a1aa', flexShrink: 0, minWidth: 56 }}>{pendingTo ? '到' : '到 (迄)'}</span>
+                <input type="date" value={pendingTo} onChange={e => setPendingTo(e.target.value)}
+                  style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, color: '#18181b', fontFamily: 'inherit', fontSize: 14, minWidth: 0 }} />
+              </label>
               {pendingTo && (
-                <button type="button" onClick={() => setPendingTo('')}
-                  style={{ color: '#a1a1aa', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 16, lineHeight: 1 }}>✕</button>
+                <button type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setPendingTo('') }}
+                  aria-label="清除結束日期"
+                  style={{ width: 40, height: 40, marginRight: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#71717a', background: '#f4f4f5', border: 'none', cursor: 'pointer', borderRadius: 10, fontSize: 18, lineHeight: 1, padding: 0, flexShrink: 0 }}>
+                  ✕
+                </button>
               )}
-            </label>
+            </div>
             {dateDirty && (
               <button type="button"
                 onClick={() => applyFilter({ from: pendingFrom, to: pendingTo })}
