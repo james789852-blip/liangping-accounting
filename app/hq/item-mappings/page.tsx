@@ -22,7 +22,8 @@ export default async function ItemMappingsPage({
   const admin = createAdminClient()
   const [{ data: stores }, { data: mappings }] = await Promise.all([
     admin.from('stores').select('id, name').eq('active', true).order('name'),
-    admin.from('item_column_mappings').select('*').order('item_category').order('item_name'),
+    // Supabase 預設 limit 1000；mappings 已累積超過此數，明確 limit 防止再次溢出
+    admin.from('item_column_mappings').select('*').order('item_category').order('item_name').limit(10000),
   ])
 
   const params = await searchParams
