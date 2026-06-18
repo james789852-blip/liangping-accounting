@@ -9,10 +9,11 @@ export default async function Home() {
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('role')
+    .select('role, is_hq')
     .eq('user_id', user.id)
     .single()
 
-  const isHQ = profile && ['顧問', '經理', '總監'].includes(profile.role)
+  // 判定一致：is_hq 旗標為主，老闆也算總公司
+  const isHQ = !!profile?.is_hq || profile?.role === '老闆'
   redirect(isHQ ? '/hq/dashboard' : '/manager/dashboard')
 }

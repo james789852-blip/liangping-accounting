@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Filter, ChevronDown, ChevronUp, AlertCircle, AlertTriangle, Info } from 'lucide-react'
 import Link from 'next/link'
@@ -77,6 +77,12 @@ export default function AuditClient({
   const router = useRouter()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [filterOpen, setFilterOpen] = useState(false)
+  // 日期改用 local state，按「套用」才送出 → 避免手機選日期時自動觸發 query
+  const [pendingFrom, setPendingFrom] = useState(currentFrom)
+  const [pendingTo, setPendingTo] = useState(currentTo)
+  useEffect(() => { setPendingFrom(currentFrom) }, [currentFrom])
+  useEffect(() => { setPendingTo(currentTo) }, [currentTo])
+  const dateDirty = pendingFrom !== currentFrom || pendingTo !== currentTo
 
   function applyFilter(updates: Partial<{ store: string; event: string; severity: string; from: string; to: string }>) {
     const params = new URLSearchParams()
@@ -139,23 +145,31 @@ export default function AuditClient({
               <option value="error">錯誤 error</option>
             </select>
             <label className="flex items-center gap-2 text-sm px-3 py-2 rounded-xl border" style={{ border: '1.5px solid #e4e4e7', background: 'white', fontFamily: 'inherit' }}>
-              <span style={{ color: currentFrom ? '#18181b' : '#a1a1aa', flexShrink: 0, minWidth: 56 }}>{currentFrom ? '從' : '從 (起)'}</span>
-              <input type="date" value={currentFrom} onChange={e => applyFilter({ from: e.target.value })}
+              <span style={{ color: pendingFrom ? '#18181b' : '#a1a1aa', flexShrink: 0, minWidth: 56 }}>{pendingFrom ? '從' : '從 (起)'}</span>
+              <input type="date" value={pendingFrom} onChange={e => setPendingFrom(e.target.value)}
                 style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, color: '#18181b', fontFamily: 'inherit', fontSize: 14, minWidth: 0 }} />
-              {currentFrom && (
-                <button type="button" onClick={() => applyFilter({ from: '' })}
+              {pendingFrom && (
+                <button type="button" onClick={() => setPendingFrom('')}
                   style={{ color: '#a1a1aa', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 16, lineHeight: 1 }}>✕</button>
               )}
             </label>
             <label className="flex items-center gap-2 text-sm px-3 py-2 rounded-xl border" style={{ border: '1.5px solid #e4e4e7', background: 'white', fontFamily: 'inherit' }}>
-              <span style={{ color: currentTo ? '#18181b' : '#a1a1aa', flexShrink: 0, minWidth: 56 }}>{currentTo ? '到' : '到 (迄)'}</span>
-              <input type="date" value={currentTo} onChange={e => applyFilter({ to: e.target.value })}
+              <span style={{ color: pendingTo ? '#18181b' : '#a1a1aa', flexShrink: 0, minWidth: 56 }}>{pendingTo ? '到' : '到 (迄)'}</span>
+              <input type="date" value={pendingTo} onChange={e => setPendingTo(e.target.value)}
                 style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, color: '#18181b', fontFamily: 'inherit', fontSize: 14, minWidth: 0 }} />
-              {currentTo && (
-                <button type="button" onClick={() => applyFilter({ to: '' })}
+              {pendingTo && (
+                <button type="button" onClick={() => setPendingTo('')}
                   style={{ color: '#a1a1aa', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 16, lineHeight: 1 }}>✕</button>
               )}
             </label>
+            {dateDirty && (
+              <button type="button"
+                onClick={() => applyFilter({ from: pendingFrom, to: pendingTo })}
+                className="text-sm font-semibold px-4 py-2 rounded-xl text-white"
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+                套用日期
+              </button>
+            )}
           </div>
         )}
         {hasActiveFilters && filterOpen && (
