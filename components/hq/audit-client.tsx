@@ -138,10 +138,24 @@ export default function AuditClient({
               <option value="warn">警告 warn</option>
               <option value="error">錯誤 error</option>
             </select>
-            <input type="date" value={currentFrom} onChange={e => applyFilter({ from: e.target.value })}
-              className="text-sm px-3 py-2 rounded-xl outline-none border" style={{ border: '1.5px solid #e4e4e7', background: 'white', color: '#18181b', fontFamily: 'inherit' }} />
-            <input type="date" value={currentTo} onChange={e => applyFilter({ to: e.target.value })}
-              className="text-sm px-3 py-2 rounded-xl outline-none border" style={{ border: '1.5px solid #e4e4e7', background: 'white', color: '#18181b', fontFamily: 'inherit' }} />
+            <label className="flex items-center gap-2 text-sm px-3 py-2 rounded-xl border" style={{ border: '1.5px solid #e4e4e7', background: 'white', fontFamily: 'inherit' }}>
+              <span style={{ color: currentFrom ? '#18181b' : '#a1a1aa', flexShrink: 0, minWidth: 56 }}>{currentFrom ? '從' : '從 (起)'}</span>
+              <input type="date" value={currentFrom} onChange={e => applyFilter({ from: e.target.value })}
+                style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, color: '#18181b', fontFamily: 'inherit', fontSize: 14, minWidth: 0 }} />
+              {currentFrom && (
+                <button type="button" onClick={() => applyFilter({ from: '' })}
+                  style={{ color: '#a1a1aa', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 16, lineHeight: 1 }}>✕</button>
+              )}
+            </label>
+            <label className="flex items-center gap-2 text-sm px-3 py-2 rounded-xl border" style={{ border: '1.5px solid #e4e4e7', background: 'white', fontFamily: 'inherit' }}>
+              <span style={{ color: currentTo ? '#18181b' : '#a1a1aa', flexShrink: 0, minWidth: 56 }}>{currentTo ? '到' : '到 (迄)'}</span>
+              <input type="date" value={currentTo} onChange={e => applyFilter({ to: e.target.value })}
+                style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, color: '#18181b', fontFamily: 'inherit', fontSize: 14, minWidth: 0 }} />
+              {currentTo && (
+                <button type="button" onClick={() => applyFilter({ to: '' })}
+                  style={{ color: '#a1a1aa', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 16, lineHeight: 1 }}>✕</button>
+              )}
+            </label>
           </div>
         )}
         {hasActiveFilters && filterOpen && (
