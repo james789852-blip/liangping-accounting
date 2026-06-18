@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 
 export async function updateCKPrice(id: string, newPrice: number, reason: string, unit?: string) {
   const supabase = await createClient()
@@ -52,5 +52,6 @@ export async function updateCKPrice(id: string, newPrice: number, reason: string
   revalidatePath('/hq/settings')
   revalidatePath('/manager/closing')
   revalidatePath('/manager', 'layout')
+  revalidateTag('ck-prices')  // 失效 getCachedActiveCKPrices
   return { success: true }
 }

@@ -843,12 +843,25 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
   ])
 
   // Build dataMap (mirrors /api/export/ck)
+  // 預先 group by ck_daily_record_id 避免 O(N×M) 線性掃描
+  const ordersByRecordId: Record<string, AnyRecord[]> = {}
+  for (const o of (storeOrders ?? []) as AnyRecord[]) {
+    const k = o.ck_daily_record_id as string
+    if (!ordersByRecordId[k]) ordersByRecordId[k] = []
+    ordersByRecordId[k].push(o)
+  }
+  const expsByRecordId: Record<string, AnyRecord[]> = {}
+  for (const e of (expenseItems ?? []) as AnyRecord[]) {
+    const k = e.ck_daily_record_id as string
+    if (!expsByRecordId[k]) expsByRecordId[k] = []
+    expsByRecordId[k].push(e)
+  }
   const days = getDaysInMonth(year, monthNum)
   const dataMap: Record<string, CKDayData> = {}
   for (const record of records ?? []) {
     const date = record.business_date as string
-    const orders = (storeOrders ?? []).filter((o: AnyRecord) => o.ck_daily_record_id === record.id)
-    const exps = (expenseItems ?? []).filter((e: AnyRecord) => e.ck_daily_record_id === record.id)
+    const orders = ordersByRecordId[record.id as string] ?? []
+    const exps = expsByRecordId[record.id as string] ?? []
 
     const storeRevenues: Record<string, number> = {}
     for (const o of orders) {

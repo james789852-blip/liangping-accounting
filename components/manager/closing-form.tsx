@@ -707,12 +707,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => {
-    try {
-      const cashData = Object.fromEntries(CASH_KEYS.map(k => [k, data[k]]))
-      const total = CASH_KEYS.reduce((s, k) => s + (data[k] as number), 0)
-      if (total > 0) localStorage.setItem(cashLsKey, JSON.stringify(cashData))
-    } catch {}
-  }, [CASH_KEYS.map(k => data[k]).join(',')])
+    const h = setTimeout(() => {
+      try {
+        const cashData = Object.fromEntries(CASH_KEYS.map(k => [k, data[k]]))
+        const total = CASH_KEYS.reduce((s, k) => s + (data[k] as number), 0)
+        if (total > 0) localStorage.setItem(cashLsKey, JSON.stringify(cashData))
+      } catch {}
+    }, 300)
+    return () => clearTimeout(h)
+  }, [...CASH_KEYS.map(k => data[k])])
   useEffect(() => {
     try {
       const stored = localStorage.getItem(receiptFormsDraftKey)
@@ -857,15 +860,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  // localStorage 雙寫（離線/暫存用）
+  // localStorage 雙寫（離線/暫存用，debounce 300ms 減少頻繁 stringify）
   useEffect(() => {
-    const total = Object.values(pettyCounts).reduce((s, v) => s + v, 0) + Object.values(pettyLumps).reduce((s, v) => s + v, 0)
-    if (total > 0) try { localStorage.setItem(pettyLsKey, JSON.stringify({ counts: pettyCounts, lumps: pettyLumps })) } catch {}
+    const h = setTimeout(() => {
+      const total = Object.values(pettyCounts).reduce((s, v) => s + v, 0) + Object.values(pettyLumps).reduce((s, v) => s + v, 0)
+      if (total > 0) try { localStorage.setItem(pettyLsKey, JSON.stringify({ counts: pettyCounts, lumps: pettyLumps })) } catch {}
+    }, 300)
+    return () => clearTimeout(h)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(pettyCounts), JSON.stringify(pettyLumps)])
   const [newOrderNum, setNewOrderNum] = useState('')
   const [newOrderAmt, setNewOrderAmt] = useState(0)
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)  // mutex 防止並發 handleSave 衝突（自動存 + 手動下一步）
   const [submitting, setSubmitting] = useState(false)
   const [closingId, setClosingId] = useState<string | null>(existingClosing?.id ?? null)
   // DB 寫入零用金清點：debounced 1.5 秒（放在 closingId 宣告後）
@@ -1371,6 +1378,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   async function handleSave(silent = false) {
     if (status === 'submitted' || status === 'verified') return null
+    if (savingRef.current) return closingId  // 已有 save 進行中，直接 return（防 race）
+    savingRef.current = true
     setSaving(true)
     const supabase = createClient()
     const d = dataRef.current
@@ -1473,6 +1482,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       toast.error('儲存失敗：' + err.message + '（請勿重新整理頁面，可重試儲存）')
       return null
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }

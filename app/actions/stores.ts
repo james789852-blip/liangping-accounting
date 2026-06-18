@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 
 interface StoreSettings {
   mode: string
@@ -59,6 +59,7 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
   revalidatePath('/hq/stores')
   revalidatePath('/manager', 'layout')
   revalidatePath('/manager/closing')
+  revalidateTag('stores')   // 失效 getCachedAllStores / getCachedStoreById / getCachedStoreFull
   return { success: true }
 }
 
@@ -80,5 +81,6 @@ export async function createStore(name: string, mode: string, type = '店面') {
 
   revalidatePath('/hq/stores')
   revalidatePath('/manager', 'layout')
+  revalidateTag('stores')
   return { success: true, id: data.id }
 }

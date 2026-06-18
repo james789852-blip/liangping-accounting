@@ -24,16 +24,10 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
 
   const { data: closing } = await supabase
     .from('daily_closings')
-    .select('*, revenue_items(*), order_items(*), expense_items(*), handwrite_orders(*)')
+    .select('*, revenue_items(*), order_items(*), expense_items(*), handwrite_orders(*), cash_counts(*)')
     .eq('id', id)
     .eq('store_id', storeId)
     .single()
-
-  if (closing) {
-    const admin = createAdminClient()
-    const { data: cashCounts } = await admin.from('cash_counts').select('*').eq('closing_id', closing.id)
-    ;(closing as any).cash_counts = cashCounts ?? []
-  }
 
   if (!closing) return <div className="p-6 text-slate-500">找不到此帳目或無權限</div>
 

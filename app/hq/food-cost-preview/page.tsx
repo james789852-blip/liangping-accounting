@@ -75,21 +75,34 @@ export default async function FoodCostPreviewPage({
     const byDate: Record<string, { revenueTotal: number; expenseTotal: number; foodTotal: number; packTotal: number; miscTotal: number }> = {}
     for (const date of days) byDate[date] = { revenueTotal: 0, expenseTotal: 0, foodTotal: 0, packTotal: 0, miscTotal: 0 }
 
+    // 預先 group by ck_daily_record_id 避免 O(N×M)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ordersByRecord: Record<string, any[]> = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const o of (storeOrders ?? []) as any[]) {
+      const k = o.ck_daily_record_id as string
+      if (!ordersByRecord[k]) ordersByRecord[k] = []
+      ordersByRecord[k].push(o)
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const expsByRecord: Record<string, any[]> = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const e of (expenseItems ?? []) as any[]) {
+      const k = e.ck_daily_record_id as string
+      if (!expsByRecord[k]) expsByRecord[k] = []
+      expsByRecord[k].push(e)
+    }
+
     for (const record of records ?? []) {
       const date = record.business_date as string
       const row = byDate[date]
       if (!row) continue
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      for (const o of (storeOrders ?? []).filter((x: any) => x.ck_daily_record_id === record.id)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        row.revenueTotal += ((o as any).amount as number) ?? 0
+      for (const o of (ordersByRecord[record.id as string] ?? [])) {
+        row.revenueTotal += (o.amount as number) ?? 0
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      for (const e of (expenseItems ?? []).filter((x: any) => x.ck_daily_record_id === record.id)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const amt = ((e as any).amount as number) ?? 0
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const cat = (e as any).category as string
+      for (const e of (expsByRecord[record.id as string] ?? [])) {
+        const amt = (e.amount as number) ?? 0
+        const cat = e.category as string
         row.expenseTotal += amt
         if (cat === '食材') row.foodTotal += amt
         else if (cat === '耗材') row.packTotal += amt
@@ -182,18 +195,22 @@ export default async function FoodCostPreviewPage({
   } catch { /* storage unavailable, features degrade gracefully */ }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const storeMappings = (mappings ?? []).filter((m: any) => m.store_id === storeId)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((m: any) => ({ id: m.id as string, item_name: m.item_name as string, excel_column: m.excel_column as string, item_category: m.item_category as string, vendor_group: (m.vendor_group ?? null) as string | null }))
-
-  // Build priority map: global first, then store-specific overrides
+  // 單次 pass 同時做 storeMappings 收集與 mappingMap 建構（原本 3 次 filter）
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const storeMappings: { id: string; item_name: string; excel_column: string; item_category: string; vendor_group: string | null }[] = []
   const mappingMap: Record<string, { excel_column: string; item_category: string; vendor_group: string | null }> = {}
-  for (const m of (mappings ?? []).filter((m: any) => !m.store_id)) {
-    mappingMap[m.item_name] = { excel_column: m.excel_column, item_category: m.item_category, vendor_group: m.vendor_group ?? null }
+  const storeOverrides: typeof mappingMap = {}
+  for (const m of (mappings ?? []) as any[]) {
+    const entry = { excel_column: m.excel_column, item_category: m.item_category, vendor_group: m.vendor_group ?? null }
+    if (!m.store_id) {
+      mappingMap[m.item_name] = entry
+    } else if (m.store_id === storeId) {
+      storeOverrides[m.item_name] = entry
+      storeMappings.push({ id: m.id as string, item_name: m.item_name as string, ...entry })
+    }
   }
-  for (const m of (mappings ?? []).filter((m: any) => m.store_id === storeId)) {
-    mappingMap[m.item_name] = { excel_column: m.excel_column, item_category: m.item_category, vendor_group: m.vendor_group ?? null }
-  }
+  // 套用 store-specific overrides 後勝（與原本 global → store 順序相同）
+  Object.assign(mappingMap, storeOverrides)
 
   const revenueMap: Record<string, number> = {}
   for (const c of closings ?? []) {
