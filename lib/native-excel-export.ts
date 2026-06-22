@@ -191,7 +191,7 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
   const ws = wb.addWorksheet('月度總覽', { properties: { defaultRowHeight: 22 } })
   ws.views = [{ showGridLines: true, state: 'normal' }]
 
-  for (let i = 1; i <= 8; i++) ws.getColumn(i).width = 14
+  for (let i = 1; i <= 8; i++) ws.getColumn(i).width = 17
 
   // ─ 標題列 ─
   ws.mergeCells('A1:H1')
@@ -384,14 +384,14 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
     }
   }
 
-  ws.getColumn(1).width = 14
-  ws.getColumn(2).width = 12
-  ws.getColumn(3).width = 13
-  ws.getColumn(4).width = 13
-  ws.getColumn(5).width = 13
-  ws.getColumn(6).width = 14
-  ws.getColumn(7).width = 11
-  ws.getColumn(8).width = 18
+  ws.getColumn(1).width = 16
+  ws.getColumn(2).width = 14
+  ws.getColumn(3).width = 15
+  ws.getColumn(4).width = 15
+  ws.getColumn(5).width = 15
+  ws.getColumn(6).width = 16
+  ws.getColumn(7).width = 13
+  ws.getColumn(8).width = 20
 }
 
 // ────────────────────────────────────────────────
@@ -514,9 +514,9 @@ function addAnnualOverviewSheet(wb: ExcelJS.Workbook, opts: {
   }
 
   // 欄寬
-  ws.getColumn(1).width = 10
-  for (let i = 2; i <= 8; i++) ws.getColumn(i).width = 14
-  ws.getColumn(9).width = 9
+  ws.getColumn(1).width = 12
+  for (let i = 2; i <= 8; i++) ws.getColumn(i).width = 17
+  ws.getColumn(9).width = 11
 }
 
 // ────────────────────────────────────────────────
@@ -1024,20 +1024,22 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
   // ────────────────────────────────────────────────
   ws.getColumn(colOfKey['date']).width = 11
   ws.getColumn(colOfKey['weekday']).width = 9
-  ws.getColumn(colOfKey['pos']).width = 13
-  for (const p of platformCols) ws.getColumn(colOfKey[p.key]).width = 12
-  ws.getColumn(colOfKey['deducted']).width = 13
-  ws.getColumn(colOfKey['onsite']).width = 11
+  ws.getColumn(colOfKey['pos']).width = 14
+  for (const p of platformCols) ws.getColumn(colOfKey[p.key]).width = 13
+  ws.getColumn(colOfKey['deducted']).width = 14
+  ws.getColumn(colOfKey['onsite']).width = 13
   ws.getColumn(colOfKey['actual']).width = 14
   ws.getColumn(colOfKey['ck']).width = 16
-  ws.getColumn(colOfKey['result']).width = 11
-  ws.getColumn(colOfKey['revenue']).width = 11
+  ws.getColumn(colOfKey['result']).width = 13
+  ws.getColumn(colOfKey['revenue']).width = 13
   ws.getColumn(colOfKey['spacer']).width = 3
-  ws.getColumn(colOfKey['sub_all']).width = 9
-  ws.getColumn(colOfKey['sub_food']).width = 9
-  ws.getColumn(colOfKey['sub_pack']).width = 9
-  ws.getColumn(colOfKey['sub_misc']).width = 9
-  for (const c of allItemCols) ws.getColumn(c).width = 7
+  // 小計欄要裝得下月份合計（可能 5-7 位數含千分位逗號）
+  ws.getColumn(colOfKey['sub_all']).width = 14
+  ws.getColumn(colOfKey['sub_food']).width = 13
+  ws.getColumn(colOfKey['sub_pack']).width = 13
+  ws.getColumn(colOfKey['sub_misc']).width = 13
+  // 品項欄要裝得下月份合計（單品項月合計可能 4-6 位數）
+  for (const c of allItemCols) ws.getColumn(c).width = 10
 
   ws.getRow(1).height = 26
   ws.getRow(2).height = 24
