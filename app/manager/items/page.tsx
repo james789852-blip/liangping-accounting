@@ -13,7 +13,7 @@ export default async function ManagerItemsPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, store_ids').eq('user_id', user.id).single()
+    .from('user_profiles').select('role, store_ids, is_hq').eq('user_id', user.id).single()
   if (!profile) return <div className="p-6" style={{ color: '#be123c' }}>找不到帳號</div>
 
   const storeId = await getEffectiveStoreId(profile as any)

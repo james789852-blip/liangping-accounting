@@ -14,7 +14,7 @@ export default async function ReceiptsPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('name, role, store_ids').eq('user_id', user.id).single()
+    .from('user_profiles').select('name, role, store_ids, is_hq').eq('user_id', user.id).single()
 
   const storeId = await getEffectiveStoreId(profile)
   if (!storeId) {

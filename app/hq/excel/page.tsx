@@ -13,7 +13,7 @@ export default async function HQExcelPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, store_ids').eq('user_id', user.id).single()
+    .from('user_profiles').select('role, store_ids, is_hq').eq('user_id', user.id).single()
 
   if (!profile?.store_ids?.length) {
     return (
