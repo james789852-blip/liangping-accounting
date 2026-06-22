@@ -825,11 +825,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return
     }
 
-    // 零用金已完成 + 帳目已送出/已審核 → 直接轉到 /manager/summary
-    if (pettyDone && (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified')) {
-      router.replace('/manager/summary')
-      return
-    }
+    // 過往：pettyDone + submitted/verified 會強制 router.replace 到 summary，
+    // 導致店長想重新核對零用金時被擋。改成不強制 redirect，讓 stepper / 底部 bar 自由 navigate。
 
     if (existingClosing?.status === 'disputed') {
       localStorage.removeItem(stepLsKey)
