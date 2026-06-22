@@ -355,7 +355,8 @@ function GradientTitle({ step, total, title, desc }: { step: number; total: numb
 const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, onReupload }: {
   src: string; alt: string; onLightbox?: () => void; onReupload?: () => void
 }) {
-  const [compact, setCompact] = useState(false)
+  // 預設縮小：sticky 在頂部不佔太多螢幕，輸入品項時保留最大視窗給品項區
+  const [compact, setCompact] = useState(true)
   return (
     <div className="rounded-2xl overflow-hidden shadow-md"
       style={{ border: '1px solid #f4f4f5', background: 'white' }}>
@@ -363,7 +364,7 @@ const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, on
       <div className="flex items-center gap-2 px-3 py-1.5"
         style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa' }}>
         <span className="text-xs font-semibold" style={{ color: '#c2410c' }}>📷 {alt}</span>
-        <span className="text-[10px] ml-auto" style={{ color: '#a1a1aa' }}>{compact ? '縮小中' : '輸入時也看得到'}</span>
+        <span className="text-[10px] ml-auto" style={{ color: '#a1a1aa' }}>{compact ? '點圖看大圖 / 展開' : '輸入時也看得到'}</span>
         <button type="button" onClick={() => setCompact(c => !c)}
           className="px-2 py-0.5 rounded-md text-[10px] font-semibold"
           style={{ background: 'white', border: '1px solid #fed7aa', color: '#c2410c', cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -382,9 +383,9 @@ const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, on
         <img src={src} alt={alt}
           style={{
             width: '100%',
-            maxHeight: compact ? '64px' : '280px',
+            maxHeight: compact ? '72px' : '280px',
             objectFit: compact ? 'cover' : 'contain',
-            objectPosition: compact ? 'top' : 'center',
+            objectPosition: compact ? 'center' : 'center',
             display: 'block',
             transition: 'max-height 0.2s ease',
           }} />
