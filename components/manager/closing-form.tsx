@@ -387,6 +387,8 @@ const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, on
             objectFit: compact ? 'cover' : 'contain',
             display: 'block',
             transition: 'max-height 0.2s ease',
+            // 強制讀 EXIF 方向，避免手機直拍照片在瀏覽器上顯示歪掉
+            imageOrientation: 'from-image' as any,
           }} />
       </button>
     </div>
@@ -1475,8 +1477,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         lump_1000: d.lump_1000, lump_500: d.lump_500, lump_100: d.lump_100,
         lump_50: d.lump_50, lump_10: d.lump_10, lump_5: d.lump_5, lump_1: d.lump_1,
       }
-      const cashResult = await saveCashCounts(cid, cashPayload)
-      if (cashResult.error) throw new Error('現金清點儲存失敗：' + cashResult.error)
+      // 只有 cash 加總 > 0 才寫入，避免 autoSave 把店長尚未輸入的現金（全 0）覆蓋既有資料
+      // （HQ 退回後店長重新打開，舊現金清點仍保留，等使用者進 cash step 填寫才更新）
+      const cashTotal = Object.values(cashPayload).reduce((s, v) => s + (v as number), 0)
+      if (cashTotal > 0) {
+        const cashResult = await saveCashCounts(cid, cashPayload)
+        if (cashResult.error) throw new Error('現金清點儲存失敗：' + cashResult.error)
+      }
       await supabase.from('order_items').delete().eq('closing_id', cid)
       const ckItems = ckPrices
         .filter(p => (ckQuantitiesRef.current[p.id] || 0) > 0)
@@ -2650,12 +2657,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 )
               })}
 
-              <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid #f4f4f5', background: '#fafafa' }}>
-                <span className="text-sm font-bold" style={{ color: '#18181b' }}>配送總計</span>
-                <span className="text-xl font-bold tabular-nums" style={{ color: data.ck_total > 0 ? '#f97316' : '#d4d4d8' }}>
-                  {data.ck_total > 0 ? `$${fmt(data.ck_total)}` : '$0'}
-                </span>
-              </div>
+              {(() => {
+                // 直接從目前 ckQuantities × unit_price 即時計算，避免 data.ck_total state 延遲或 race
+                const liveCkTotal = ckPrices.reduce((s, p) => s + (ckQuantities[p.id] || 0) * effectiveCKPrice(p), 0)
+                return (
+                  <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid #f4f4f5', background: '#fafafa' }}>
+                    <span className="text-sm font-bold" style={{ color: '#18181b' }}>配送總計</span>
+                    <span className="text-xl font-bold tabular-nums" style={{ color: liveCkTotal > 0 ? '#f97316' : '#d4d4d8' }}>
+                      {liveCkTotal > 0 ? `$${fmt(liveCkTotal)}` : '$0'}
+                    </span>
+                  </div>
+                )
+              })()}
             </div>
           </>
         )}
