@@ -2098,8 +2098,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   <div key={item.id} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                     {mappingColumns.length > 0 ? (
                                       <select
-                                        value={item.item_name}
-                                        onChange={e => updateItem(item.id, 'item_name', e.target.value)}
+                                        value={(item as any).vendor_group_hint ? `${(item as any).vendor_group_hint}|${item.item_name}` : item.item_name}
+                                        onChange={e => {
+                                          const raw = e.target.value
+                                          const sepIdx = raw.indexOf('|')
+                                          if (sepIdx > 0) {
+                                            // value 為「{vg}|{name}」格式（多個同名品項需要 vg 區分）
+                                            const vg = raw.slice(0, sepIdx)
+                                            const name = raw.slice(sepIdx + 1)
+                                            updateItem(item.id, 'item_name', name)
+                                            updateItem(item.id, 'vendor_group_hint', vg)
+                                          } else {
+                                            updateItem(item.id, 'item_name', raw)
+                                            updateItem(item.id, 'vendor_group_hint', '')
+                                          }
+                                        }}
                                         style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
                                         <option value="">— 選擇品項 —</option>
                                         {(() => {
@@ -2134,9 +2147,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           // 顯示時剝離 vendor_group 前綴（"翁師傅其他" → "其他"）
                                           const stripVg = (n: string, vg?: string) =>
                                             (vg && n.startsWith(vg) && n !== vg) ? n.slice(vg.length) : n
+                                          // 偵測「同名品項出現在多個分組」— 若有，value 用「{vg}|{name}」確保唯一
+                                          const nameCount = new Map<string, number>()
+                                          for (const c of base) nameCount.set(c.name, (nameCount.get(c.name) ?? 0) + 1)
                                           return groups.map(({ group, items }) => (
                                             <optgroup key={group} label={group}>
-                                              {items.map(c => <option key={c.name} value={c.name}>{stripVg(c.name, c.vendor_group)}</option>)}
+                                              {items.map(c => {
+                                                const needVgPrefix = (nameCount.get(c.name) ?? 0) > 1
+                                                const val = needVgPrefix && c.vendor_group ? `${c.vendor_group}|${c.name}` : c.name
+                                                return <option key={`${group}|${c.name}`} value={val}>{stripVg(c.name, c.vendor_group)}</option>
+                                              })}
                                             </optgroup>
                                           ))
                                         })()}
