@@ -143,6 +143,27 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
 
   const isToday = date === today
 
+  // 全公司過去 7 天對帳異常（跨所有央廚）
+  const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10)
+  const { data: weekMismatchRows } = await admin
+    .from('ck_store_orders')
+    .select('amount, ck_confirmed_amount, store_id, ck_daily_records!inner(business_date, ck_store_id)')
+    .not('ck_confirmed_amount', 'is', null)
+    .gte('ck_daily_records.business_date', sevenDaysAgoStr)
+    .in('ck_daily_records.ck_store_id', ckStoreIds)
+  const ckNameMap = Object.fromEntries(ckStores.map(s => [s.id, s.name]))
+  const weekMismatches = (weekMismatchRows ?? [])
+    .filter((o: any) => Number(o.ck_confirmed_amount) !== Number(o.amount))
+    .map((o: any) => ({
+      business_date: (o.ck_daily_records as any)?.business_date as string,
+      ck_store_name: ckNameMap[(o.ck_daily_records as any)?.ck_store_id as string] ?? '',
+      store_name: assignedStoreMap[o.store_id as string] ?? '',
+      amount: Number(o.amount),
+      ck_confirmed_amount: Number(o.ck_confirmed_amount),
+    }))
+    .sort((a, b) => b.business_date.localeCompare(a.business_date))
+
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
       <div className="bg-white px-4 sm:px-6 py-4 sm:py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
@@ -173,6 +194,42 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       </div>
 
       <div className="max-w-3xl mx-auto px-4 py-5 pb-28 space-y-4">
+        {/* 全公司對帳異常橫幅 */}
+        {weekMismatches.length > 0 && (
+          <div className="rounded-2xl overflow-hidden" style={{ background: '#FEF2F2', border: '1.5px solid #FECACA' }}>
+            <div className="px-4 py-3" style={{ borderBottom: '1px solid #FECACA', background: '#FEE2E2' }}>
+              <p className="text-sm font-bold flex items-center gap-2" style={{ color: '#991B1B' }}>
+                ⚠️ 全公司對帳異常（過去 7 天 {weekMismatches.length} 筆）
+              </p>
+            </div>
+            <div>
+              {weekMismatches.slice(0, 10).map((m, i) => {
+                const diff = m.ck_confirmed_amount - m.amount
+                return (
+                  <div key={i} className="px-4 py-2.5 flex items-center justify-between text-xs"
+                    style={{ borderBottom: i < Math.min(weekMismatches.length, 10) - 1 ? '1px solid #FECACA' : 'none' }}>
+                    <div className="flex items-center gap-2">
+                      <span style={{ color: '#52525b' }}>{m.business_date}</span>
+                      <span className="font-semibold" style={{ color: '#18181b' }}>{m.store_name}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: '#fff', color: '#92400E', border: '1px solid #FDE68A' }}>{m.ck_store_name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 tabular-nums">
+                      <span style={{ color: '#71717a' }}>店 ${Math.round(m.amount).toLocaleString()}</span>
+                      <span style={{ color: '#71717a' }}>央 ${Math.round(m.ck_confirmed_amount).toLocaleString()}</span>
+                      <span className="font-bold" style={{ color: diff > 0 ? '#dc2626' : '#0369a1' }}>
+                        {diff > 0 ? '+' : ''}{Math.round(diff).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+              {weekMismatches.length > 10 && (
+                <p className="text-xs text-center py-2" style={{ color: '#7F1D1D' }}>… 還有 {weekMismatches.length - 10} 筆</p>
+              )}
+            </div>
+          </div>
+        )}
+
         <CKOverview data={ckData} date={date} />
       </div>
     </div>
