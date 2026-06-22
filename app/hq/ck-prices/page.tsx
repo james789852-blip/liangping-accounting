@@ -24,8 +24,24 @@ export default async function CKPricesPage() {
   const canEdit = ['經理', '總監', '老闆', '廠長', '副廠長'].includes(profile.role ?? '')
 
   const admin = createAdminClient()
-  const { data: prices } = await admin
+  const { data: pricesRaw } = await admin
     .from('central_kitchen_prices').select('*').order('sort_order').order('item_name')
+
+  // 把 prices 的 updated_by (user_id) 換成姓名 / 角色（給編輯器顯示「誰最後調整」）
+  const priceUserIds = [...new Set((pricesRaw ?? []).map((p: any) => p.updated_by).filter(Boolean))]
+  const priceNameMap = new Map<string, { name: string; role: string }>()
+  if (priceUserIds.length > 0) {
+    const { data: users } = await admin
+      .from('user_profiles').select('user_id, name, role').in('user_id', priceUserIds)
+    for (const u of (users ?? []) as any[]) {
+      priceNameMap.set(u.user_id, { name: u.name, role: u.role })
+    }
+  }
+  const prices = (pricesRaw ?? []).map((p: any) => ({
+    ...p,
+    updated_by_name: p.updated_by ? priceNameMap.get(p.updated_by)?.name ?? null : null,
+    updated_by_role: p.updated_by ? priceNameMap.get(p.updated_by)?.role ?? null : null,
+  }))
 
   let history: any[] = []
   try {
@@ -63,7 +79,7 @@ export default async function CKPricesPage() {
         </div>
       </div>
       <div className="max-w-3xl mx-auto px-4 py-5 pb-28">
-        <CKPriceEditor items={prices ?? []} priceHistory={history} canEdit={canEdit} />
+        <CKPriceEditor items={prices} priceHistory={history} canEdit={canEdit} />
       </div>
     </div>
   )

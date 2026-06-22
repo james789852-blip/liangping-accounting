@@ -5,7 +5,15 @@ import { updateCKPrice } from '@/app/actions/ck-prices'
 import { toast } from 'sonner'
 import { Loader2, Pencil, Check, X } from 'lucide-react'
 
-interface CKItem { id: string; item_name: string; unit_price: number; unit?: string; updated_at: string }
+interface CKItem {
+  id: string
+  item_name: string
+  unit_price: number
+  unit?: string
+  updated_at: string
+  updated_by_name?: string | null
+  updated_by_role?: string | null
+}
 
 export default function CKPriceEditor({ items, priceHistory = [], canEdit }: { items: CKItem[]; priceHistory?: any[]; canEdit: boolean }) {
   const [editing, setEditing] = useState<string | null>(null)
@@ -48,6 +56,15 @@ export default function CKPriceEditor({ items, priceHistory = [], canEdit }: { i
             <p className="font-semibold text-sm" style={{ color: '#18181b' }}>{item.item_name}</p>
             <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
               上次更新：{new Date(item.updated_at).toLocaleDateString('zh-TW')}
+              {item.updated_by_name && (
+                <>
+                  <span style={{ margin: '0 6px', color: '#d4d4d8' }}>·</span>
+                  <span style={{ color: '#71717a' }}>{item.updated_by_name}</span>
+                  {item.updated_by_role && (
+                    <span style={{ color: '#a1a1aa', marginLeft: 4 }}>（{item.updated_by_role}）</span>
+                  )}
+                </>
+              )}
             </p>
           </div>
 
