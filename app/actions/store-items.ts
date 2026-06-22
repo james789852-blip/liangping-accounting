@@ -101,6 +101,43 @@ export async function deleteCustomItem(id: string, storeId: string) {
   return { success: true }
 }
 
+/** 重新排序店家品項 — 同 vendor_group 內的順序 */
+export async function reorderStoreItems(
+  storeId: string,
+  items: { system_item_id?: string; store_item_id?: string }[],
+) {
+  const { error: authErr } = await checkStoreAccess(storeId)
+  if (authErr) return { error: authErr }
+  const admin = createAdminClient()
+
+  // 平行處理：每個 item 對應 store_items 表的 row（system → 找 / 建；custom → 直接 update）
+  await Promise.all(
+    items.map(async (it, i) => {
+      const sort_order = (i + 1) * 10
+      if (it.store_item_id) {
+        await admin.from('store_items')
+          .update({ sort_order, updated_at: new Date().toISOString() })
+          .eq('id', it.store_item_id)
+      } else if (it.system_item_id) {
+        const { data: existing } = await admin.from('store_items')
+          .select('id')
+          .eq('store_id', storeId)
+          .eq('system_item_id', it.system_item_id)
+          .maybeSingle()
+        if (existing) {
+          await admin.from('store_items')
+            .update({ sort_order, updated_at: new Date().toISOString() })
+            .eq('id', existing.id)
+        } else {
+          await admin.from('store_items')
+            .insert({ store_id: storeId, system_item_id: it.system_item_id, enabled: false, sort_order })
+        }
+      }
+    })
+  )
+  return { success: true }
+}
+
 /** 一鍵套用「預設啟用」全部 */
 export async function applyAllDefaults(storeId: string) {
   const { error: authErr } = await checkStoreAccess(storeId)

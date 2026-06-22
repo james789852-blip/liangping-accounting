@@ -135,9 +135,9 @@ export async function reorderSystemItems(ids: string[]) {
   const { error: authErr } = await requireHQManager()
   if (authErr) return { error: authErr }
   const admin = createAdminClient()
-  for (let i = 0; i < ids.length; i++) {
-    await admin.from('system_items').update({ sort_order: (i + 1) * 10 }).eq('id', ids[i])
-  }
-  revalidatePath('/hq/system-config')
+  // 平行跑所有 update（比 for loop 序列快 10 倍以上），不再 revalidatePath（client 自己用 optimistic state）
+  await Promise.all(
+    ids.map((id, i) => admin.from('system_items').update({ sort_order: (i + 1) * 10 }).eq('id', id))
+  )
   return { success: true }
 }

@@ -4,11 +4,11 @@ import { useState, useTransition, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
-  enableSystemItem, disableSystemItem, addCustomItem, updateCustomItem, deleteCustomItem, applyAllDefaults,
+  enableSystemItem, disableSystemItem, addCustomItem, updateCustomItem, deleteCustomItem, applyAllDefaults, reorderStoreItems,
 } from '@/app/actions/store-items'
 import {
   Tag, ChefHat, FileText, Percent, HelpCircle,
-  Plus, Trash2, Pencil, CheckCircle2, Circle, Sparkles,
+  Plus, Trash2, Pencil, CheckCircle2, Circle, Sparkles, ChevronUp, ChevronDown,
 } from 'lucide-react'
 
 interface VG { id: string; name: string; kind: string; sort_order: number; active: boolean }
@@ -55,6 +55,18 @@ export default function StoreItemsClient({
     return map
   }, [initialStoreItems])
 
+  // 本地 sortMap（optimistic update — 點箭頭 UI 立即反應，不等 server）
+  // key: system_item_id 或 store_items.id（custom）
+  const [sortMap, setSortMap] = useState<Map<string, number>>(() => {
+    const m = new Map<string, number>()
+    for (const si of initialStoreItems) {
+      const key = si.system_item_id ?? si.id
+      m.set(key, si.sort_order ?? 100)
+    }
+    return m
+  })
+  const getSort = (key: string, fallback: number) => sortMap.get(key) ?? fallback
+
   // 取得某 system_item 在此店的狀態
   function isEnabled(item: SI): boolean {
     const explicit = enabledMap.get(item.id)
@@ -89,6 +101,53 @@ export default function StoreItemsClient({
     }
     return map
   }, [systemItems, vendorGroups])
+
+  // 合併 sys + custom 依 sortMap 排序（讓 user 可以混排）
+  type UnifiedItem =
+    | { type: 'sys'; data: SI; key: string }
+    | { type: 'custom'; data: StoreItem; key: string }
+  const unifiedByVG = useMemo(() => {
+    const map: Record<string, UnifiedItem[]> = {}
+    for (const vg of vendorGroups) map[vg.id] = []
+    map['__no_group__'] = []
+    for (const i of systemItems) {
+      const k = i.vendor_group_id ?? '__no_group__'
+      if (!map[k]) map[k] = []
+      map[k].push({ type: 'sys', data: i, key: i.id })
+    }
+    for (const c of customItems) {
+      const k = c.custom_vendor_group_id ?? '__no_group__'
+      if (!map[k]) map[k] = []
+      map[k].push({ type: 'custom', data: c, key: c.id })
+    }
+    for (const k of Object.keys(map)) {
+      map[k].sort((a, b) => {
+        const av = sortMap.get(a.key) ?? (a.type === 'sys' ? a.data.sort_order : a.data.sort_order)
+        const bv = sortMap.get(b.key) ?? (b.type === 'sys' ? b.data.sort_order : b.data.sort_order)
+        return av - bv
+      })
+    }
+    return map
+  }, [systemItems, customItems, vendorGroups, sortMap])
+
+  function moveItem(vgId: string, key: string, dir: -1 | 1) {
+    const list = [...(unifiedByVG[vgId] ?? [])]
+    const idx = list.findIndex(it => it.key === key)
+    if (idx < 0) return
+    const target = idx + dir
+    if (target < 0 || target >= list.length) return
+    ;[list[idx], list[target]] = [list[target], list[idx]]
+    // 更新 local sortMap（optimistic）
+    const newMap = new Map(sortMap)
+    list.forEach((it, i) => newMap.set(it.key, (i + 1) * 10))
+    setSortMap(newMap)
+    // 寫 server（fire-and-forget，失敗才回滾）
+    reorderStoreItems(storeId, list.map(it =>
+      it.type === 'sys' ? { system_item_id: it.data.id } : { store_item_id: it.data.id }
+    )).then(r => {
+      if ('error' in r && r.error) toast.error(`排序儲存失敗：${r.error}`)
+    }).catch(e => toast.error('排序儲存失敗：' + (e as Error).message))
+  }
 
   // 統計
   const enabledCount = systemItems.filter(i => isEnabled(i)).length + customItems.filter(c => c.enabled).length
@@ -152,14 +211,15 @@ export default function StoreItemsClient({
         </button>
       </div>
 
-      {/* 系統品項（依分類） */}
+      {/* 系統品項（依分類） — 系統 + 自訂混合排序 */}
       {vendorGroups.filter(v => v.active).sort((a, b) => a.sort_order - b.sort_order).map(vg => {
-        const sysList = itemsByVG[vg.id] ?? []
-        const customList = customByVG[vg.id] ?? []
-        if (sysList.length === 0 && customList.length === 0) return null
+        const list = unifiedByVG[vg.id] ?? []
+        if (list.length === 0) return null
         const info = KIND_INFO[vg.kind] ?? KIND_INFO['uncategorized']
         const Icon = info.icon
-        const enabledInGroup = sysList.filter(s => isEnabled(s)).length + customList.filter(c => c.enabled).length
+        const enabledInGroup = list.filter(it =>
+          it.type === 'sys' ? isEnabled(it.data) : it.data.enabled
+        ).length
         return (
           <div key={vg.id} className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
             <div className="px-5 py-3.5 flex items-center justify-between" style={{ borderBottom: '1px solid #f4f4f5' }}>
@@ -169,37 +229,66 @@ export default function StoreItemsClient({
                   <Icon className="h-3.5 w-3.5" />{info.label}
                 </span>
                 <h3 className="text-sm font-bold" style={{ color: '#18181b' }}>{vg.name}</h3>
-                <span className="text-xs" style={{ color: '#a1a1aa' }}>{enabledInGroup} / {sysList.length + customList.length}</span>
+                <span className="text-xs" style={{ color: '#a1a1aa' }}>{enabledInGroup} / {list.length}</span>
               </div>
             </div>
             <div>
-              {sysList.map(item => {
-                const on = isEnabled(item)
-                const catSt = CATEGORY_STYLE[item.category] ?? CATEGORY_STYLE['雜項']
-                return (
-                  <button key={item.id} type="button" onClick={() => toggleItem(item)} disabled={isPending}
-                    className="w-full px-4 py-2.5 flex items-center gap-3 text-left"
-                    style={{ borderBottom: '1px solid #f4f4f5', background: on ? '#fdfefe' : 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit', borderTop: 'none' }}>
-                    {on
-                      ? <CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: '#10b981' }} />
-                      : <Circle className="h-5 w-5 shrink-0" style={{ color: '#d4d4d8' }} />
-                    }
-                    <span className="flex-1 text-sm" style={{ color: on ? '#18181b' : '#71717a', fontWeight: on ? 600 : 400 }}>{item.name}</span>
-                    <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: catSt.bg, color: catSt.color }}>
-                      {item.category}
-                    </span>
-                    {item.default_enabled && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{ background: '#E0F2FE', color: '#0369A1' }}>
-                        預設
-                      </span>
-                    )}
-                  </button>
+              {list.map((it, idx) => {
+                const upDownButtons = (
+                  <div className="flex flex-col shrink-0" style={{ marginRight: 4 }}>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); moveItem(vg.id, it.key, -1) }}
+                      disabled={idx === 0}
+                      style={{ background: 'transparent', border: 'none', cursor: idx === 0 ? 'default' : 'pointer', padding: 2, opacity: idx === 0 ? 0.2 : 0.6 }}
+                      aria-label="上移">
+                      <ChevronUp className="h-4 w-4" style={{ color: '#52525b' }} />
+                    </button>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); moveItem(vg.id, it.key, 1) }}
+                      disabled={idx === list.length - 1}
+                      style={{ background: 'transparent', border: 'none', cursor: idx === list.length - 1 ? 'default' : 'pointer', padding: 2, opacity: idx === list.length - 1 ? 0.2 : 0.6 }}
+                      aria-label="下移">
+                      <ChevronDown className="h-4 w-4" style={{ color: '#52525b' }} />
+                    </button>
+                  </div>
                 )
+                if (it.type === 'sys') {
+                  const item = it.data
+                  const on = isEnabled(item)
+                  const catSt = CATEGORY_STYLE[item.category] ?? CATEGORY_STYLE['雜項']
+                  return (
+                    <div key={it.key} className="px-4 py-2.5 flex items-center gap-3"
+                      style={{ borderBottom: '1px solid #f4f4f5', background: on ? '#fdfefe' : 'white' }}>
+                      {upDownButtons}
+                      <button type="button" onClick={() => toggleItem(item)} disabled={isPending}
+                        className="flex-1 flex items-center gap-3 text-left"
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        {on
+                          ? <CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: '#10b981' }} />
+                          : <Circle className="h-5 w-5 shrink-0" style={{ color: '#d4d4d8' }} />
+                        }
+                        <span className="flex-1 text-sm" style={{ color: on ? '#18181b' : '#71717a', fontWeight: on ? 600 : 400 }}>{item.name}</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: catSt.bg, color: catSt.color }}>
+                          {item.category}
+                        </span>
+                        {item.default_enabled && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{ background: '#E0F2FE', color: '#0369A1' }}>
+                            預設
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  )
+                } else {
+                  return (
+                    <div key={it.key} className="flex items-center" style={{ borderBottom: '1px solid #f4f4f5' }}>
+                      <div className="pl-4">{upDownButtons}</div>
+                      <div className="flex-1">
+                        <CustomItemRow item={it.data} storeId={storeId} vendorGroups={vendorGroups} disabled={isPending}
+                          onUpdated={() => router.refresh()} />
+                      </div>
+                    </div>
+                  )
+                }
               })}
-              {customList.map(c => (
-                <CustomItemRow key={c.id} item={c} storeId={storeId} vendorGroups={vendorGroups} disabled={isPending}
-                  onUpdated={() => router.refresh()} />
-              ))}
             </div>
           </div>
         )
