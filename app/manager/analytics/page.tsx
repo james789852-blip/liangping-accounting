@@ -18,7 +18,12 @@ export default async function AnalyticsPage() {
     <div className="p-6 text-sm" style={{ color: '#be123c' }}>您尚未被指派到任何店家，請聯絡系統管理員。</div>
   )
 
-  const { data: store } = await supabase.from('stores').select('name').eq('id', storeId).single()
+  const { data: store } = await supabase.from('stores')
+    .select('name, meeting_anchor_date, meeting_frequency_days').eq('id', storeId).single()
 
-  return <AnalyticsClient storeId={storeId} storeName={store?.name ?? ''} />
+  return <AnalyticsClient
+    storeId={storeId}
+    storeName={store?.name ?? ''}
+    meetingAnchorDate={(store?.meeting_anchor_date as string | null) ?? null}
+    meetingFrequencyDays={(store?.meeting_frequency_days as number) ?? 14} />
 }

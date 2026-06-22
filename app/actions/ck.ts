@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { syncCKMonthToSheets as syncCKMonthToSheetsImpl } from '@/lib/google-sheets'
 import { getAuthContext, canAccessStore } from '@/lib/permissions'
@@ -26,6 +27,46 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string) {
     })
     return { error: msg }
   }
+}
+
+// ──────────────────────────────────────────────────────
+// 央廚交叉對帳：央廚管理人員輸入該店配送金額，與店家自報比對
+// ──────────────────────────────────────────────────────
+export async function confirmCKOrder(input: {
+  ckDailyRecordId: string
+  storeId: string
+  confirmedAmount: number | null   // null = 取消對帳
+}) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+
+  // 權限：央廚管理人員（廠長/副廠長）+ 總公司管理層
+  const supabase = await createClient()
+  const { data: profile } = await supabase
+    .from('user_profiles').select('role, is_hq').eq('user_id', ctx.userId).single()
+  const allowed = profile?.is_hq ||
+    ['老闆', '經理', '總監', '廠長', '副廠長'].includes(profile?.role ?? '')
+  if (!allowed) return { error: '權限不足，僅限央廚管理或總公司操作' }
+
+  const admin = createAdminClient()
+  if (input.confirmedAmount === null) {
+    await admin.from('ck_store_orders')
+      .update({ ck_confirmed_amount: null, ck_confirmed_at: null, ck_confirmed_by: null })
+      .eq('ck_daily_record_id', input.ckDailyRecordId)
+      .eq('store_id', input.storeId)
+  } else {
+    await admin.from('ck_store_orders')
+      .update({
+        ck_confirmed_amount: input.confirmedAmount,
+        ck_confirmed_at: new Date().toISOString(),
+        ck_confirmed_by: ctx.userId,
+      })
+      .eq('ck_daily_record_id', input.ckDailyRecordId)
+      .eq('store_id', input.storeId)
+  }
+  revalidatePath('/manager/ck')
+  revalidatePath('/hq/ck')
+  return { success: true }
 }
 
 // 同步店面央廚叫貨金額 → ck_store_orders

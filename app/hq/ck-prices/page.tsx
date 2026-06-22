@@ -14,11 +14,14 @@ export default async function CKPricesPage() {
   const { data: profile } = await supabase
     .from('user_profiles').select('role').eq('user_id', user.id).single()
 
-  if (!profile || !['顧問', '經理', '總監', '老闆'].includes(profile.role ?? '')) {
+  // 可瀏覽：總公司各角色 + 央廚管理人員
+  const VIEW_ROLES = ['顧問', '經理', '總監', '老闆', '廠長', '副廠長']
+  if (!profile || !VIEW_ROLES.includes(profile.role ?? '')) {
     return <div className="p-6" style={{ color: '#be123c' }}>權限不足</div>
   }
 
-  const canEdit = ['經理', '總監', '老闆'].includes(profile.role ?? '')
+  // 可編輯：經理以上 + 央廚廠長/副廠長
+  const canEdit = ['經理', '總監', '老闆', '廠長', '副廠長'].includes(profile.role ?? '')
 
   const admin = createAdminClient()
   const { data: prices } = await admin
@@ -32,6 +35,19 @@ export default async function CKPricesPage() {
       .order('changed_at', { ascending: false })
       .limit(20)
     history = data ?? []
+
+    // 把 changed_by (user_id) 換成姓名
+    const userIds = [...new Set(history.map(h => h.changed_by).filter(Boolean))]
+    if (userIds.length > 0) {
+      const { data: users } = await admin
+        .from('user_profiles').select('user_id, name, role').in('user_id', userIds)
+      const nameMap = new Map((users ?? []).map((u: any) => [u.user_id, { name: u.name, role: u.role }]))
+      history = history.map(h => ({
+        ...h,
+        changed_by_name: nameMap.get(h.changed_by)?.name ?? '(未知)',
+        changed_by_role: nameMap.get(h.changed_by)?.role ?? '',
+      }))
+    }
   } catch { /* table may not exist yet */ }
 
   return (

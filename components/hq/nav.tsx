@@ -33,33 +33,39 @@ function useClock() {
 }
 
 const hqSections = [
+  // ── 每日工作 ─────────────
   {
     label: '帳目審核',
     items: [
-      { href: '/hq/closings', label: '店面', icon: BookOpen },
-      { href: '/hq/ck',       label: '央廚', icon: ChefHat },
+      { href: '/hq/closings', label: '店面帳目', icon: BookOpen },
+      { href: '/hq/ck',       label: '央廚帳目', icon: ChefHat },
     ],
   },
+  // ── 數據總覽 ─────────────
   {
-    label: '模板設定',
+    label: '數據分析',
     items: [
-      { href: '/hq/food-cost-preview',           label: '店面', icon: FileBarChart2 },
-      { href: '/hq/food-cost-preview?type=ck',   label: '央廚', icon: FileBarChart2 },
+      { href: '/hq/dashboard',         label: '即時儀表板', icon: LayoutDashboard },
+      { href: '/hq/food-cost-preview', label: '食耗成本',   icon: FileBarChart2 },
     ],
   },
+  // ── 結帳規則 ─────────────
   {
-    label: '其他',
+    label: '結帳設定',
     items: [
-      { href: '/hq/dashboard', label: '即時儀表板', icon: LayoutDashboard },
-      { href: '/hq/stores',    label: '店家管理',   icon: Store },
-      { href: '/hq/audit',     label: '操作軌跡',   icon: History },
+      { href: '/hq/system-config', label: '品項 / 分類', icon: Settings },
+      { href: '/hq/store-items',   label: '店家品項',    icon: Package },
+      { href: '/hq/ck-prices',     label: '央廚單價',    icon: Package },
+      { href: '/hq/native-export', label: 'Excel 匯出',  icon: FileBarChart2 },
     ],
   },
+  // ── 系統與權限 ─────────────
   {
-    label: '設定',
+    label: '系統管理',
     items: [
-      { href: '/hq/ck-prices', label: '央廚單價', icon: Package },
-      { href: '/hq/users',     label: '帳號管理', icon: Users },
+      { href: '/hq/stores', label: '店家管理', icon: Store },
+      { href: '/hq/users',  label: '帳號管理', icon: Users },
+      { href: '/hq/audit',  label: '操作軌跡', icon: History },
     ],
   },
 ]

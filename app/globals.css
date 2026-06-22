@@ -133,6 +133,14 @@
     touch-action: manipulation;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    /* 確保 input focus 時不會被 sticky photo 蓋住 — scroll-padding 留給 sticky 區域 */
+    scroll-padding-top: 320px;
+  }
+  /* 表單欄位點擊 focus 時，自動捲到 sticky 照片下方 */
+  .closing-form-input-area input,
+  .closing-form-input-area select,
+  .closing-form-input-area textarea {
+    scroll-margin-top: 320px;
   }
   /* iOS 快速點擊：cursor:pointer 是讓 iOS Safari 立即觸發 click 的關鍵 */
   button, a, [role="button"], [role="tab"],

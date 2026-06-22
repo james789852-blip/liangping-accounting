@@ -8,6 +8,7 @@ import { getBusinessDate } from '@/lib/business-date'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
+import { getStoreItemsResolved, toMappingColumns } from '@/lib/store-items-resolver'
 
 
 export default async function EditClosingPage({ params }: { params: Promise<{ id: string }> }) {
@@ -74,14 +75,16 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
   try { if (itemOrderText) itemOrder = JSON.parse(itemOrderText) } catch {}
   const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
 
-  // 不過濾：item-order.json 只用於排序，沒在裡面的品項排到最後。
-  const mappingColumns = (mappingRows ?? []).map((r: any) => ({
-    name: r.item_name,
-    category: r.item_category,
-    vendor_group: r.vendor_group ?? undefined,
-    excel_column: r.excel_column,
-  }))
-    .sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
+  // 優先用新 schema，沒設定才 fallback 舊 mapping
+  const newItems = await getStoreItemsResolved(storeId)
+  const mappingColumns = newItems.length > 0
+    ? toMappingColumns(newItems)
+    : (mappingRows ?? []).map((r: any) => ({
+        name: r.item_name,
+        category: r.item_category,
+        vendor_group: r.vendor_group ?? undefined,
+        excel_column: r.excel_column,
+      })).sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
 
   return (
     <>

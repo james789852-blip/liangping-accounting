@@ -4,12 +4,112 @@ import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn } from 'lucide-react'
-import { saveCKDailyRecord, addCKExternalStore, deleteCKExternalStore } from '@/app/actions/ck'
+import { saveCKDailyRecord, addCKExternalStore, deleteCKExternalStore, confirmCKOrder } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
-interface MemberOrder { store_id: string; store_name: string; amount: number; submitted: boolean }
+/**
+ * 央廚對帳列：顯示店家自報金額 + 央廚自輸入金額 + 比對狀態
+ * 不一致時紅色警告，相符顯示綠色 ✓
+ */
+function CrossCheckRow({ order, ckDailyRecordId, disabled }: {
+  order: MemberOrder; ckDailyRecordId: string | null; disabled: boolean
+}) {
+  const router = useRouter()
+  const [editValue, setEditValue] = useState<string>(
+    order.confirmed_amount != null ? String(order.confirmed_amount) : ''
+  )
+  const [saving, setSaving] = useState(false)
+
+  const storeAmount = order.amount || 0
+  const ckAmount = order.confirmed_amount
+  const isConfirmed = ckAmount != null
+  const matched = isConfirmed && ckAmount === storeAmount
+  const diff = isConfirmed ? (ckAmount - storeAmount) : 0
+
+  async function save() {
+    if (!ckDailyRecordId) { toast.error('請先儲存央廚日報'); return }
+    const num = parseInt(editValue) || 0
+    setSaving(true)
+    const r = await confirmCKOrder({
+      ckDailyRecordId,
+      storeId: order.store_id,
+      confirmedAmount: editValue === '' ? null : num,
+    })
+    setSaving(false)
+    if ('error' in r && r.error) toast.error(r.error)
+    else { toast.success('已對帳'); router.refresh() }
+  }
+
+  return (
+    <div className="px-4 py-3" style={{ borderBottom: '1px solid #f9f9f9' }}>
+      {/* 店家名稱 + 狀態 */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm font-semibold flex-1" style={{ color: '#18181b' }}>{order.store_name}</span>
+        {!order.submitted ? (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+            style={{ background: '#f4f4f5', color: '#a1a1aa' }}>店家未送出</span>
+        ) : matched ? (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex items-center gap-1"
+            style={{ background: '#d1fae5', color: '#047857' }}>
+            <CheckCircle2 className="h-3 w-3" />對帳完成
+          </span>
+        ) : isConfirmed ? (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+            style={{ background: '#ffe4e6', color: '#be123c' }}>⚠ 差 {diff > 0 ? '+' : ''}{fmt(diff)}</span>
+        ) : (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+            style={{ background: '#fef3c7', color: '#92400e' }}>待對帳</span>
+        )}
+      </div>
+
+      {/* 兩欄並列：店家自報 vs 央廚對帳 */}
+      <div className="grid grid-cols-2 gap-2 text-sm">
+        <div className="rounded-lg px-3 py-2" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
+          <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#a1a1aa' }}>店家自報</p>
+          <p className="font-bold tabular-nums" style={{ color: storeAmount > 0 ? '#18181b' : '#d4d4d8' }}>
+            {storeAmount > 0 ? `$${fmt(storeAmount)}` : '—'}
+          </p>
+        </div>
+        <div className="rounded-lg px-3 py-2" style={{ background: matched ? '#d1fae5' : isConfirmed ? '#ffe4e6' : '#fef3c7', border: '1px solid #f4f4f5' }}>
+          <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#a1a1aa' }}>央廚對帳</p>
+          <div className="flex items-center gap-1">
+            <span className="text-sm font-bold" style={{ color: '#52525b' }}>$</span>
+            <input
+              type="number" inputMode="numeric" placeholder="輸入"
+              value={editValue} onChange={e => setEditValue(e.target.value)}
+              disabled={disabled || saving}
+              style={{ width: '100%', padding: '2px 4px', border: 'none', background: 'transparent', fontSize: 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* 動作按鈕 */}
+      <div className="flex gap-2 mt-2">
+        <button onClick={save} disabled={disabled || saving || !ckDailyRecordId}
+          className="flex-1 py-2 rounded-lg text-xs font-semibold text-white"
+          style={{ background: 'linear-gradient(135deg,#10b981,#059669)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', opacity: (disabled || saving) ? 0.6 : 1 }}>
+          {saving ? '處理中…' : isConfirmed ? '更新對帳' : '確認對帳'}
+        </button>
+        {isConfirmed && !disabled && (
+          <button onClick={() => { setEditValue(''); save() }} disabled={saving}
+            className="px-3 py-2 rounded-lg text-xs font-semibold"
+            style={{ background: 'white', border: '1px solid #e4e4e7', color: '#71717a', cursor: 'pointer', fontFamily: 'inherit' }}>
+            取消
+          </button>
+        )}
+      </div>
+
+      {!ckDailyRecordId && (
+        <p className="text-[10px] mt-2" style={{ color: '#a1a1aa' }}>💡 請先在下方按「儲存草稿」建立日報，才能對帳</p>
+      )}
+    </div>
+  )
+}
+
+interface MemberOrder { store_id: string; store_name: string; amount: number; submitted: boolean; confirmed_amount?: number | null }
 interface ExternalStore { id: string; name: string }
 interface ExternalOrder { name: string; amount: number }
 interface Expense { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string }
@@ -188,19 +288,11 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
               <p className="px-4 py-4 text-sm text-center" style={{ color: '#a1a1aa' }}>尚未設定服務店家</p>
             ) : (
               memberOrders.map(o => (
-                <div key={o.store_id} className="flex items-center justify-between px-4 py-3"
-                  style={{ borderBottom: '1px solid #f9f9f9' }}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold" style={{ color: '#18181b' }}>{o.store_name}</span>
-                    {!o.submitted && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
-                        style={{ background: '#f4f4f5', color: '#a1a1aa' }}>未送出</span>
-                    )}
-                  </div>
-                  <span className="text-sm font-bold tabular-nums" style={{ color: o.amount > 0 ? '#18181b' : '#a1a1aa' }}>
-                    {o.amount > 0 ? `$${fmt(o.amount)}` : '—'}
-                  </span>
-                </div>
+                <CrossCheckRow key={o.store_id}
+                  order={o}
+                  ckDailyRecordId={existing?.id ?? null}
+                  disabled={isLocked}
+                />
               ))
             )}
             <div className="flex items-center justify-between px-4 py-3" style={{ background: '#fafafa', borderTop: '1px solid #f4f4f5' }}>

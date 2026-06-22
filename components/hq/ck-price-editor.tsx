@@ -127,8 +127,12 @@ export default function CKPriceEditor({ items, priceHistory = [], canEdit }: { i
                     <span className="text-xs" style={{ color: '#a1a1aa' }}>（{h.reason}）</span>
                   )}
                 </div>
-                {h.changed_by && (
-                  <span className="shrink-0 text-xs" style={{ color: '#d4d4d8' }}>{h.changed_by}</span>
+                {h.changed_by_name && (
+                  <span className="shrink-0 text-xs" style={{ color: '#71717a' }}>
+                    {h.changed_by_name}{h.changed_by_role && (
+                      <span style={{ color: '#a1a1aa', marginLeft: 4 }}>· {h.changed_by_role}</span>
+                    )}
+                  </span>
                 )}
               </div>
             )

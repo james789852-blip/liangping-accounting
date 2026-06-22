@@ -11,8 +11,10 @@ export async function updateCKPrice(id: string, newPrice: number, reason: string
   const { data: profile } = await supabase
     .from('user_profiles').select('role').eq('user_id', user.id).single()
 
-  if (!profile || !['經理', '總監', '老闆'].includes(profile.role)) {
-    return { error: '權限不足，僅限經理以上操作' }
+  // 開放給：總公司管理層（經理/總監/老闆）+ 央廚管理人員（廠長/副廠長）
+  const ALLOWED_ROLES = ['經理', '總監', '老闆', '廠長', '副廠長']
+  if (!profile || !ALLOWED_ROLES.includes(profile.role)) {
+    return { error: '權限不足，僅限總公司或央廚管理人員操作' }
   }
 
   // 取得目前單價

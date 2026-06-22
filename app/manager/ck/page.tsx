@@ -75,6 +75,7 @@ export default async function CKPage() {
 
   // 體系內叫貨 + 支出，從 ck_daily_record 載入
   let memberOrderMap: Record<string, number> = {}
+  let memberConfirmedMap: Record<string, number | null> = {}  // 央廚對帳金額
   let existing: {
     id: string
     payer_name?: string
@@ -91,7 +92,7 @@ export default async function CKPage() {
       { data: extOrders },
       { data: expenseItems },
     ] = await Promise.all([
-      admin.from('ck_store_orders').select('store_id, amount')
+      admin.from('ck_store_orders').select('store_id, amount, ck_confirmed_amount')
         .eq('ck_daily_record_id', ckRecord.id).not('store_id', 'is', null),
       admin.from('ck_store_orders').select('external_store_name, amount')
         .eq('ck_daily_record_id', ckRecord.id).is('store_id', null),
@@ -99,8 +100,11 @@ export default async function CKPage() {
         .eq('ck_daily_record_id', ckRecord.id).order('sort_order'),
     ])
 
-    for (const o of storeOrders ?? []) {
-      if (o.store_id) memberOrderMap[o.store_id] = o.amount
+    for (const o of (storeOrders ?? []) as any[]) {
+      if (o.store_id) {
+        memberOrderMap[o.store_id] = o.amount
+        memberConfirmedMap[o.store_id] = (o.ck_confirmed_amount as number | null) ?? null
+      }
     }
 
     existing = {
@@ -127,6 +131,7 @@ export default async function CKPage() {
     store_id: s.id as string,
     store_name: s.name as string,
     amount: memberOrderMap[s.id] ?? 0,
+    confirmed_amount: memberConfirmedMap[s.id] ?? null,
     submitted: submittedStores.has(s.id),
   }))
 

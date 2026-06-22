@@ -5,8 +5,9 @@ import { createClient } from '@/lib/supabase/client'
 import {
   CalendarRange, TrendingUp, TrendingDown, Minus,
   Store, Bike, Smartphone, AlertTriangle, Award,
-  Users, Download, FileText,
+  Users, Download, FileText, FileSpreadsheet, Loader2,
 } from 'lucide-react'
+import { toast } from 'sonner'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -61,12 +62,19 @@ function prevPeriod(start: string, end: string) {
   return { start: ps.toISOString().slice(0, 10), end: pe.toISOString().slice(0, 10) }
 }
 
-// 計算下一次雙週會議（以 2026-05-28 為基準，每 14 天一次）
-function getNextMeeting(today: string) {
-  const REF = new Date('2026-05-28T00:00:00+08:00')
+// 計算下一次會議（用該店設定）
+function getNextMeeting(today: string, anchorDate: string | null, frequencyDays: number) {
+  if (!anchorDate) return null
+  const REF = new Date(anchorDate + 'T00:00:00+08:00')
   const t = new Date(today + 'T00:00:00+08:00')
   let d = new Date(REF)
-  while (d <= t) d = new Date(d.getTime() + 14 * 86400000)
+  const freqMs = frequencyDays * 86400000
+  // 回溯：若 anchor 在未來，往後找最近一次未來的會議日
+  if (d > t) {
+    // 已經是未來，直接用
+  } else {
+    while (d <= t) d = new Date(d.getTime() + freqMs)
+  }
   const diff = Math.round((d.getTime() - t.getTime()) / 86400000)
   const dateStr = d.toISOString().slice(0, 10)
   const dow = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()]
@@ -172,9 +180,14 @@ function DailyTrendChart({ data }: { data: DayRev[] }) {
 
 // ── Main Component ──────────────────────────────────────────────────────────────
 
-export default function AnalyticsClient({ storeId, storeName }: { storeId: string; storeName: string }) {
+export default function AnalyticsClient({ storeId, storeName, meetingAnchorDate, meetingFrequencyDays }: {
+  storeId: string
+  storeName: string
+  meetingAnchorDate: string | null
+  meetingFrequencyDays: number
+}) {
   const today = getTodayTW()
-  const meeting = getNextMeeting(today)
+  const meeting = getNextMeeting(today, meetingAnchorDate, meetingFrequencyDays)
 
   const [preset, setPreset] = useState<PresetKey>('14d')
   const initRange = getPresetRange('14d', today)
@@ -188,6 +201,44 @@ export default function AnalyticsClient({ storeId, storeName }: { storeId: strin
   const [dailyRevs, setDailyRevs] = useState<DayRev[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [alerts, setAlerts] = useState<Alert[]>([])
+
+  // Excel 匯出狀態
+  const todayDate = new Date()
+  const [exportType, setExportType] = useState<'month' | 'year'>('month')
+  const [exportYear, setExportYear] = useState(todayDate.getFullYear())
+  const [exportMonth, setExportMonth] = useState(todayDate.getMonth() + 1)
+  const [exportLoading, setExportLoading] = useState(false)
+
+  async function handleExcelExport() {
+    setExportLoading(true)
+    try {
+      let url: string
+      if (exportType === 'year') {
+        url = `/api/export/closing-native?storeId=${storeId}&type=year&year=${exportYear}`
+      } else {
+        const month = `${exportYear}-${String(exportMonth).padStart(2, '0')}`
+        url = `/api/export/closing-native?storeId=${storeId}&month=${month}`
+      }
+      const res = await fetch(url)
+      if (!res.ok) { toast.error('匯出失敗：' + await res.text()); return }
+      const blob = await res.blob()
+      const disposition = res.headers.get('content-disposition') ?? ''
+      const filenameMatch = /filename\*=UTF-8''([^;]+)/.exec(disposition)
+      const filename = filenameMatch
+        ? decodeURIComponent(filenameMatch[1])
+        : `export-${exportYear}-${exportType}.xlsx`
+      const dl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = dl; a.download = filename
+      document.body.appendChild(a); a.click(); a.remove()
+      URL.revokeObjectURL(dl)
+      toast.success('匯出完成')
+    } catch (e) {
+      toast.error('匯出失敗：' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setExportLoading(false)
+    }
+  }
 
   const prev = prevPeriod(start, end)
 
@@ -361,7 +412,7 @@ export default function AnalyticsClient({ storeId, storeName }: { storeId: strin
       <div className="px-4 py-5 max-w-5xl mx-auto space-y-4">
 
         {/* Meeting Banner - show when meeting is within 7 days */}
-        {meeting.daysUntil <= 7 && (
+        {meeting && meeting.daysUntil <= 7 && (
           <div className="rounded-2xl p-4 flex gap-3 items-center flex-wrap" style={{ background: 'linear-gradient(135deg,#fef3c7,#fce7f3)' }}>
             <div className="h-11 w-11 bg-white rounded-xl flex items-center justify-center shrink-0" style={{ color: '#f97316' }}>
               <Users className="h-5 w-5" />
@@ -697,6 +748,85 @@ export default function AnalyticsClient({ storeId, storeName }: { storeId: strin
                 </div>
               </div>
             )}
+
+            {/* Excel 匯出 */}
+            <div className="bg-white rounded-2xl p-5 space-y-4" style={{ border: '1px solid #f4f4f5' }}>
+              <div className="flex items-center gap-2">
+                <div className="h-9 w-9 rounded-[10px] flex items-center justify-center"
+                  style={{ background: '#FEF3C7', color: '#B45309' }}>
+                  <FileSpreadsheet className="h-[18px] w-[18px]" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold" style={{ color: '#18181b' }}>下載我的店面報表</p>
+                  <p className="text-xs" style={{ color: '#a1a1aa' }}>{storeName} · 自動依資料庫即時生成最新版</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>報表類型</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setExportType('month')}
+                    className="rounded-xl text-sm transition-all"
+                    style={{
+                      height: 40,
+                      border: exportType === 'month' ? '1.5px solid #F59E0B' : '1.5px solid #e4e4e7',
+                      background: exportType === 'month' ? '#FEF3C7' : 'white',
+                      color: exportType === 'month' ? '#B45309' : '#52525b',
+                      fontWeight: exportType === 'month' ? 700 : 500,
+                    }}>
+                    單月報表
+                  </button>
+                  <button type="button" onClick={() => setExportType('year')}
+                    className="rounded-xl text-sm transition-all"
+                    style={{
+                      height: 40,
+                      border: exportType === 'year' ? '1.5px solid #F59E0B' : '1.5px solid #e4e4e7',
+                      background: exportType === 'year' ? '#FEF3C7' : 'white',
+                      color: exportType === 'year' ? '#B45309' : '#52525b',
+                      fontWeight: exportType === 'year' ? 700 : 500,
+                    }}>
+                    年度報表
+                  </button>
+                </div>
+              </div>
+
+              <div className={`grid gap-3 ${exportType === 'year' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>年份</label>
+                  <select value={exportYear} onChange={e => setExportYear(parseInt(e.target.value))}
+                    className="w-full rounded-xl text-sm outline-none"
+                    style={{ height: 40, padding: '0 12px', border: '1.5px solid #e4e4e7', background: 'white', fontFamily: 'inherit' }}>
+                    {Array.from({ length: 5 }, (_, i) => todayDate.getFullYear() - i).map(y => (
+                      <option key={y} value={y}>{y} 年</option>
+                    ))}
+                  </select>
+                </div>
+                {exportType === 'month' && (
+                  <div>
+                    <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>月份</label>
+                    <select value={exportMonth} onChange={e => setExportMonth(parseInt(e.target.value))}
+                      className="w-full rounded-xl text-sm outline-none"
+                      style={{ height: 40, padding: '0 12px', border: '1.5px solid #e4e4e7', background: 'white', fontFamily: 'inherit' }}>
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                        <option key={m} value={m}>{m} 月</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="text-xs px-3 py-2 rounded-xl" style={{ background: '#F4F4F5', color: '#52525b' }}>
+                {exportType === 'month'
+                  ? <>📄 將產出 <strong>2 個分頁</strong>：月度總覽 + {exportMonth} 月食耗成本</>
+                  : <>📄 將產出 <strong>13 個分頁</strong>：年度總覽 + 1~12 月食耗成本</>}
+              </div>
+
+              <button onClick={handleExcelExport} disabled={exportLoading}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white"
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', border: 'none', cursor: exportLoading ? 'not-allowed' : 'pointer', opacity: exportLoading ? 0.6 : 1 }}>
+                {exportLoading ? <><Loader2 className="h-4 w-4 animate-spin" />匯出中…</> : <><Download className="h-4 w-4" />下載 Excel</>}
+              </button>
+            </div>
 
             {/* Export Bar */}
             <div className="rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap"

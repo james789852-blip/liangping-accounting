@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, memo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
@@ -9,6 +9,7 @@ import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, 
 import { saveCashCounts, submitClosing, savePettyCounts } from '@/app/actions/closings'
 import { syncStoreCKOrder } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
+import { normalizeItemAmount } from '@/lib/negative-items'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
 
 interface RemittanceAdjustment {
@@ -347,6 +348,51 @@ function GradientTitle({ step, total, title, desc }: { step: number; total: numb
   )
 }
 
+/**
+ * 黏在頂部的照片卡：可在「展開大圖」與「縮成小條」之間切換。
+ * 使用者輸入品項時可保持小條看數字、需要時再展開比對。
+ */
+const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, onReupload }: {
+  src: string; alt: string; onLightbox?: () => void; onReupload?: () => void
+}) {
+  const [compact, setCompact] = useState(false)
+  return (
+    <div className="rounded-2xl overflow-hidden shadow-md"
+      style={{ border: '1px solid #f4f4f5', background: 'white' }}>
+      {/* 工具列 */}
+      <div className="flex items-center gap-2 px-3 py-1.5"
+        style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa' }}>
+        <span className="text-xs font-semibold" style={{ color: '#c2410c' }}>📷 {alt}</span>
+        <span className="text-[10px] ml-auto" style={{ color: '#a1a1aa' }}>{compact ? '縮小中' : '輸入時也看得到'}</span>
+        <button type="button" onClick={() => setCompact(c => !c)}
+          className="px-2 py-0.5 rounded-md text-[10px] font-semibold"
+          style={{ background: 'white', border: '1px solid #fed7aa', color: '#c2410c', cursor: 'pointer', fontFamily: 'inherit' }}>
+          {compact ? '展開' : '縮小'}
+        </button>
+        {onReupload && (
+          <button type="button" onClick={onReupload}
+            className="px-2 py-0.5 rounded-md text-[10px] font-semibold"
+            style={{ background: 'white', border: '1px solid #fed7aa', color: '#c2410c', cursor: 'pointer', fontFamily: 'inherit' }}>
+            重拍
+          </button>
+        )}
+      </div>
+      <button type="button" onClick={onLightbox}
+        style={{ width: '100%', display: 'block', border: 'none', padding: 0, cursor: 'zoom-in', background: '#f8fafc', overflow: 'hidden' }}>
+        <img src={src} alt={alt}
+          style={{
+            width: '100%',
+            maxHeight: compact ? '64px' : '280px',
+            objectFit: compact ? 'cover' : 'contain',
+            objectPosition: compact ? 'top' : 'center',
+            display: 'block',
+            transition: 'max-height 0.2s ease',
+          }} />
+      </button>
+    </div>
+  )
+})
+
 function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo, onPhotoClick, onViewPhoto, onClearPhoto, allowNegative, hidePhoto }: {
   channelKey: string; name: string; hint?: string; value: number
   onChange: (v: number) => void; disabled?: boolean
@@ -442,46 +488,37 @@ function CategoryPicker({ categories, value, onChange }: {
   value: string
   onChange: (v: string) => void
 }) {
+  // 把常用的（PINNED）排前面、其他按字典排
   const pinned = PINNED_CATEGORIES.map(name => categories.find(c => c.name === name)).filter(Boolean) as CategoryWithVendors[]
   const rest = categories.filter(c => !PINNED_CATEGORIES.includes(c.name))
-
-  if (value) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ padding: '6px 12px', borderRadius: '20px', background: '#F59E0B', color: 'white', fontSize: '13px', fontWeight: 600 }}>
-          {value}
-        </span>
-        <button type="button" onClick={() => onChange('')}
-          style={{ fontSize: '12px', color: '#71717a', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', fontFamily: 'inherit' }}>
-          ✕ 更換
-        </button>
-      </div>
-    )
-  }
+  const sortedAll = [...pinned, ...rest]
 
   return (
-    <div>
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{
+        width: '100%', minHeight: 44, padding: '8px 12px',
+        border: `1.5px solid ${value ? '#F59E0B' : '#e4e4e7'}`,
+        borderRadius: 10, fontSize: 15,
+        background: value ? '#FFFBEB' : 'white',
+        color: value ? '#92400E' : '#71717a',
+        fontWeight: value ? 600 : 400,
+        outline: 'none', fontFamily: 'inherit', cursor: 'pointer',
+        appearance: 'auto',
+      }}>
+      <option value="">— 選擇類別 —</option>
       {pinned.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '5px', marginBottom: '6px' }}>
-          {pinned.map(c => (
-            <button key={c.id} type="button" onClick={() => onChange(c.name)}
-              style={{ padding: '8px 4px', borderRadius: '8px', textAlign: 'center', border: '1.5px solid #F59E0B',
-                       background: '#FFFBEB', color: '#92400E', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-              {c.name}
-            </button>
-          ))}
-        </div>
+        <optgroup label="常用">
+          {pinned.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+        </optgroup>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '5px' }}>
-        {rest.map(c => (
-          <button key={c.id} type="button" onClick={() => onChange(c.name)}
-            style={{ padding: '8px 4px', borderRadius: '8px', textAlign: 'center', border: '1px solid #e4e4e7',
-                     background: '#fafafa', color: '#52525b', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
-            {c.name}
-          </button>
-        ))}
-      </div>
-    </div>
+      {rest.length > 0 && (
+        <optgroup label="其他">
+          {rest.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+        </optgroup>
+      )}
+    </select>
   )
 }
 
@@ -529,6 +566,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [photoLightbox, setPhotoLightbox] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [receiptForms, setReceiptForms] = useState<ReceiptForm[]>([])
+  /** 收據卡片內照片是否展開到大圖（每張卡片各自獨立） */
+  const [expandedReceiptPhotos, setExpandedReceiptPhotos] = useState<Set<string>>(new Set())
+  /** 展開狀態下的照片高度：S=60(小條) / M=200(中) / L=380(大) */
+  const [receiptPhotoSize, setReceiptPhotoSize] = useState<Record<string, 'S' | 'M' | 'L'>>({})
   const [verifyItems, setVerifyItems] = useState<VerifyItem[]>([])
   const [reviewIndex, setReviewIndex] = useState<number | null>(null)
   const [stepMounted, setStepMounted] = useState(false)
@@ -1082,7 +1123,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         receipt_type: editCategory || r.receipt_type,
         photo_url: newPhotoUrl,
         notes: editNotes.trim() || undefined,
-        receipt_items: validItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: i.amount })),
+        receipt_items: validItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: normalizeItemAmount(i.item_name, i.amount) })),
       } : r
     )
     setLocalReceipts(updatedReceipts)
@@ -1101,7 +1142,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     await supabase.from('receipt_items').delete().eq('receipt_id', editingReceiptId)
     if (validItems.length > 0) {
       await supabase.from('receipt_items').insert(
-        validItems.map(i => ({ receipt_id: editingReceiptId, item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: i.amount, item_category: '食材', excel_column: '' }))
+        validItems.map(i => ({ receipt_id: editingReceiptId, item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: normalizeItemAmount(i.item_name, i.amount), item_category: '食材', excel_column: '' }))
       )
     }
     setEditUploading(false)
@@ -1217,7 +1258,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           unit: i.unit,
           quantity: i.quantity,
           unit_price: i.unit_price ?? 0,
-          amount: i.amount,
+          amount: normalizeItemAmount(i.item_name, i.amount),
           item_category: '食材',
           excel_column: '',
         }))
@@ -1820,31 +1861,99 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: '#fff7ed', color: '#c2410c' }}>{receiptForms.length} 筆</span>
                 </div>
                 <div className="p-4 space-y-4">
-                  {receiptForms.map((form, idx) => (
+                  {receiptForms.map((form, idx) => {
+                    const photoSrc = form.previewUrl || form.uploadedPhotoUrl
+                    const isExpanded = expandedReceiptPhotos.has(form.id)
+                    const toggleExpand = () => setExpandedReceiptPhotos(prev => {
+                      const next = new Set(prev)
+                      if (next.has(form.id)) next.delete(form.id)
+                      else next.add(form.id)
+                      return next
+                    })
+                    return (
                     <div key={form.id} style={{
-                      display: 'grid', gridTemplateColumns: '80px 1fr', gap: '14px',
                       paddingBottom: idx < receiptForms.length - 1 ? '16px' : 0,
                       borderBottom: idx < receiptForms.length - 1 ? '1px solid #f4f4f5' : 'none',
                     }}>
-                      {/* 縮圖 */}
+                      {/* 展開時：照片黏在卡片頂端，S/M/L 三段可調 */}
+                      {photoSrc && isExpanded && (() => {
+                        const size = receiptPhotoSize[form.id] ?? 'M'
+                        const photoH = size === 'S' ? 60 : size === 'L' ? 380 : 200
+                        const setSize = (s: 'S' | 'M' | 'L') => setReceiptPhotoSize(p => ({ ...p, [form.id]: s }))
+                        return (
+                          <div style={{ position: 'sticky', top: 90, zIndex: 15, marginBottom: 10 }}>
+                            <div className="rounded-xl overflow-hidden shadow-md" style={{ border: '1px solid #f4f4f5', background: 'white' }}>
+                              <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', flexWrap: 'wrap' }}>
+                                <span className="text-xs font-semibold" style={{ color: '#c2410c' }}>📷 收據</span>
+                                {/* S/M/L 大小切換 */}
+                                <div className="flex gap-0.5 ml-auto rounded-lg p-0.5" style={{ background: 'white', border: '1px solid #fed7aa' }}>
+                                  {(['S', 'M', 'L'] as const).map(s => (
+                                    <button key={s} type="button" onClick={() => setSize(s)}
+                                      style={{
+                                        minWidth: 32, minHeight: 28, padding: '0 8px',
+                                        background: size === s ? '#fb923c' : 'transparent',
+                                        color: size === s ? 'white' : '#c2410c',
+                                        border: 'none', borderRadius: 6, cursor: 'pointer',
+                                        fontSize: 11, fontWeight: 700, fontFamily: 'inherit',
+                                      }}>
+                                      {s === 'S' ? '小' : s === 'M' ? '中' : '大'}
+                                    </button>
+                                  ))}
+                                </div>
+                                <button type="button" onClick={() => setPhotoLightbox(photoSrc)}
+                                  className="px-2.5 py-1 rounded-md text-[11px] font-semibold"
+                                  style={{ background: 'white', border: '1px solid #fed7aa', color: '#c2410c', cursor: 'pointer', fontFamily: 'inherit', minHeight: 28 }}>
+                                  全螢幕
+                                </button>
+                                <button type="button" onClick={toggleExpand}
+                                  className="px-2.5 py-1 rounded-md text-[11px] font-semibold"
+                                  style={{ background: 'white', border: '1px solid #fed7aa', color: '#c2410c', cursor: 'pointer', fontFamily: 'inherit', minHeight: 28 }}>
+                                  ✕ 收起
+                                </button>
+                              </div>
+                              <button type="button" onClick={() => setPhotoLightbox(photoSrc)}
+                                style={{ width: '100%', display: 'block', border: 'none', padding: 0, cursor: 'zoom-in', background: '#f8fafc' }}>
+                                <img src={photoSrc} alt="收據"
+                                  style={{
+                                    width: '100%',
+                                    maxHeight: photoH,
+                                    objectFit: size === 'S' ? 'cover' : 'contain',
+                                    objectPosition: size === 'S' ? 'top' : 'center',
+                                    display: 'block',
+                                    transition: 'max-height 0.2s ease',
+                                  }} />
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })()}
+
                       <div style={{
-                        width: '80px', height: '100px', borderRadius: '10px', overflow: 'hidden',
-                        background: 'linear-gradient(135deg,#f3f4f6,#e5e7eb)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        position: 'relative', flexShrink: 0,
+                        display: 'grid',
+                        gridTemplateColumns: isExpanded ? '1fr' : '80px 1fr',
+                        gap: '14px',
                       }}>
-                        {(form.previewUrl || form.uploadedPhotoUrl) ? (
-                          <button type="button" onClick={() => setPhotoLightbox((form.previewUrl || form.uploadedPhotoUrl)!)}
-                            style={{ width: '100%', height: '100%', border: 'none', padding: 0, cursor: 'zoom-in', background: 'none' }}>
-                            <img src={form.previewUrl || form.uploadedPhotoUrl} alt="receipt" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          </button>
-                        ) : (
-                          <FileText className="h-8 w-8" style={{ color: '#a1a1aa' }} />
+                        {/* 縮圖（展開後隱藏，讓表單佔滿寬度） */}
+                        {!isExpanded && (
+                          <button type="button" onClick={() => photoSrc && toggleExpand()}
+                            style={{
+                              width: '80px', height: '100px', borderRadius: '10px', overflow: 'hidden',
+                              background: 'linear-gradient(135deg,#f3f4f6,#e5e7eb)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              position: 'relative', flexShrink: 0,
+                              cursor: photoSrc ? 'pointer' : 'default',
+                              border: 'none', padding: 0,
+                            }}>
+                          {photoSrc ? (
+                            <img src={photoSrc} alt="receipt" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <FileText className="h-8 w-8" style={{ color: '#a1a1aa' }} />
+                          )}
+                          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.55)', color: 'white', fontSize: '9px', padding: '3px', textAlign: 'center', borderRadius: '0 0 10px 10px', pointerEvents: 'none' }}>
+                            {photoSrc ? '點圖放大' : '無照片'}
+                          </div>
+                        </button>
                         )}
-                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.55)', color: 'white', fontSize: '9px', padding: '3px', textAlign: 'center', borderRadius: '0 0 10px 10px', pointerEvents: 'none' }}>
-                          {(form.previewUrl || form.uploadedPhotoUrl) ? '有照片' : '無照片'}
-                        </div>
-                      </div>
 
                       {/* 表單 */}
                       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: '10px', minWidth: 0, overflow: 'hidden' }}>
@@ -2033,10 +2142,23 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                         value={item.item_name}
                                         onChange={e => updateItem(item.id, 'item_name', e.target.value)} />
                                     )}
-                                    <input type="number" placeholder="金額"
-                                      style={{ width: '80px', padding: '6px 8px', border: '1px solid #FDE68A', borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b', background: '#f5f5ff', flexShrink: 0, boxSizing: 'border-box' as const }}
-                                      value={item.amount === 0 ? '' : item.amount}
-                                      onChange={e => updateItem(item.id, 'amount', parseInt(e.target.value) || 0)} />
+                                    {(() => {
+                                      // 「折扣 / 退貨」類品項：使用者輸入正數，系統自動存負數
+                                      const neg = ['折扣', '退貨', '退款', '退費', '抵扣'].some(k => (item.item_name ?? '').includes(k))
+                                      const displayed = item.amount === 0 ? '' : Math.abs(item.amount)
+                                      return (
+                                        <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+                                          <input type="number" placeholder="金額" min="0"
+                                            style={{ width: '80px', padding: '6px 8px', border: `1px solid ${neg ? '#fca5a5' : '#FDE68A'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: neg ? '#dc2626' : '#18181b', background: neg ? '#fef2f2' : '#f5f5ff', flexShrink: 0, boxSizing: 'border-box' as const }}
+                                            value={displayed}
+                                            onChange={e => {
+                                              const v = parseInt(e.target.value) || 0
+                                              updateItem(item.id, 'amount', neg ? -Math.abs(v) : v)
+                                            }} />
+                                          {neg && <span style={{ fontSize: 9, color: '#dc2626', textAlign: 'right', marginTop: 1 }}>自動轉負</span>}
+                                        </div>
+                                      )
+                                    })()}
                                     <button type="button" onClick={() => removeItem(item.id)}
                                       style={{ padding: '4px 6px', background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', flexShrink: 0 }}>
                                       <X style={{ width: '14px', height: '14px' }} />
@@ -2067,8 +2189,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           </button>
                         </div>
                       </div>
+                      </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               </div>
             )}
@@ -2399,23 +2522,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="央廚配送"
               desc="填寫今日各品項配送數量，上傳配送單照片供總公司核對。" />}
 
-            {/* 照片上傳 */}
+            {/* 照片上傳 — sticky 黏在頂部，捲動輸入品項時也看得到 */}
             {!isLocked && (
-              <div>
+              <div style={{ position: 'sticky', top: 90, zIndex: 20, marginBottom: 8 }}>
                 {(ckPhotoPreview || ckPhotoUrl) ? (
-                  <div className="relative rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', background: '#f8fafc' }}>
-                    <button type="button" onClick={() => setPhotoLightbox((ckPhotoPreview || ckPhotoUrl)!)}
-                      style={{ width: '100%', border: 'none', padding: '8px 0', cursor: 'zoom-in', background: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '120px' }}>
-                      <img src={ckPhotoPreview || ckPhotoUrl} alt="配送單"
-                        style={{ maxWidth: '100%', maxHeight: '300px', width: 'auto', height: 'auto', display: 'block' }} />
-                    </button>
-                    <button onClick={() => ckPhotoInputRef.current?.click()}
-                      className="absolute bottom-2 right-2 flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-white"
-                      style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
-                      <Camera className="h-3.5 w-3.5" />
-                      重新上傳
-                    </button>
-                  </div>
+                  <StickyPhotoCard
+                    src={(ckPhotoPreview || ckPhotoUrl)!}
+                    alt="配送單"
+                    onLightbox={() => setPhotoLightbox((ckPhotoPreview || ckPhotoUrl)!)}
+                    onReupload={() => ckPhotoInputRef.current?.click()}
+                  />
                 ) : (
                   <button onClick={() => ckPhotoInputRef.current?.click()}
                     className="w-full rounded-2xl flex flex-col items-center justify-center gap-2 py-5"
@@ -2428,12 +2544,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </div>
             )}
             {isLocked && ckPhotoUrl && (
-              <button type="button" onClick={() => setPhotoLightbox(ckPhotoUrl!)}
-                className="w-full rounded-2xl overflow-hidden"
-                style={{ border: '1px solid #f4f4f5', cursor: 'zoom-in', padding: '8px 0', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '120px' }}>
-                <img src={ckPhotoUrl} alt="配送單"
-                  style={{ maxWidth: '100%', maxHeight: '300px', width: 'auto', height: 'auto', display: 'block' }} />
-              </button>
+              <div style={{ position: 'sticky', top: 90, zIndex: 20, marginBottom: 8 }}>
+                <StickyPhotoCard src={ckPhotoUrl} alt="配送單" onLightbox={() => setPhotoLightbox(ckPhotoUrl!)} />
+              </div>
             )}
 
             {/* 品項數量輸入 */}
@@ -2762,11 +2875,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <PlatformRow
                   channelKey="online_cash"
                   name="線上點餐（現金）"
-                  hint="輸入負數（已含在 POS 的部分）"
-                  value={data.online_cash_amount}
-                  onChange={v => set('online_cash_amount', v)}
+                  hint="輸入正數即可（系統會自動轉負）"
+                  /* 顯示時取絕對值，使用者輸入正數，存進 state 時自動轉負 */
+                  value={Math.abs(data.online_cash_amount || 0)}
+                  onChange={v => set('online_cash_amount', -Math.abs(v))}
                   disabled={isLocked}
-                  allowNegative
                   hidePhoto
                 />
               )}

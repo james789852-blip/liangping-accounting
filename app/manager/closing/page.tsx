@@ -6,6 +6,7 @@ import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
 import { getCachedUserProfile, getCachedStoreFull, getCachedActiveCKPrices, getCachedStoreMappings, getCachedItemOrder } from '@/lib/cached-queries'
+import { getStoreItemsResolved, toMappingColumns } from '@/lib/store-items-resolver'
 
 export const dynamic = 'force-dynamic'
 
@@ -92,15 +93,16 @@ export default async function ClosingPage({
 
   const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
 
-  // 不過濾任何 mapping 品項：item-order.json 僅用於排序，沒在裡面的品項排到最後。
-  // 之前 .filter 會把後來加的 mapping、或舊模板留下的品項擋掉。
-  const mappingColumns = (mappingRows ?? []).map((r: { item_name: string; item_category: string; vendor_group: string | null; excel_column: string }) => ({
-    name: r.item_name,
-    category: r.item_category,
-    vendor_group: r.vendor_group ?? undefined,
-    excel_column: r.excel_column,
-  }))
-    .sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
+  // 優先用新 schema (system_items + store_items)；沒設定才 fallback 舊 item_column_mappings
+  const newItems = await getStoreItemsResolved(storeId)
+  const mappingColumns = newItems.length > 0
+    ? toMappingColumns(newItems)
+    : (mappingRows ?? []).map((r: { item_name: string; item_category: string; vendor_group: string | null; excel_column: string }) => ({
+        name: r.item_name,
+        category: r.item_category,
+        vendor_group: r.vendor_group ?? undefined,
+        excel_column: r.excel_column,
+      })).sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
 
   return (
     <ClosingForm

@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { Zap, History, LineChart, LogOut, Settings, Download, ChefHat } from 'lucide-react'
+import { Zap, History, LineChart, LogOut, Settings, Download, ChefHat, Package, ClipboardList } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 function useClock() {
@@ -24,11 +24,13 @@ function useClock() {
 }
 
 const STORE_NAV_ITEMS = [
-  { href: '/manager/dashboard',  label: '今日結帳', icon: Zap },
-  { href: '/manager/history',    label: '歷史紀錄', icon: History },
-  { href: '/manager/analytics',  label: '營運洞察', icon: LineChart },
-  { href: '/manager/export',     label: '匯出報表', icon: Download },
-  { href: '/manager/settings',   label: '收據設定', icon: Settings },
+  { href: '/manager/dashboard',      label: '今日結帳', icon: Zap },
+  { href: '/manager/history',        label: '歷史紀錄', icon: History },
+  { href: '/manager/analytics',      label: '營運洞察', icon: LineChart },
+  { href: '/manager/meeting-report', label: '雙週會議', icon: ClipboardList },
+  { href: '/manager/export',         label: '匯出報表', icon: Download },
+  { href: '/manager/items',          label: '品項管理', icon: Package },
+  { href: '/manager/settings',       label: '收據設定', icon: Settings },
 ]
 
 const CK_NAV_ITEMS = [

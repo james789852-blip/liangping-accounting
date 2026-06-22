@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthContext } from '@/lib/permissions'
 
 // 允許上傳的 bucket 與最大檔案大小（位元組）
-const ALLOWED_BUCKETS = new Set(['receipts', 'menu-videos', 'excel-templates'])
+const ALLOWED_BUCKETS = new Set(['receipts', 'menu-videos', 'excel-templates', 'meeting-reports'])
 const MAX_FILE_BYTES = 50 * 1024 * 1024  // 50 MB
 
 function pathTraversalSafe(path: string): boolean {

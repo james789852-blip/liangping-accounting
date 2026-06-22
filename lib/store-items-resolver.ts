@@ -1,0 +1,89 @@
+// 從新 schema (system_items + store_items + system_vendor_groups) 取得店家「有效啟用品項列表」
+// 回傳跟舊 mappingColumns 一樣的格式 → 可直接餵給 closing-form 不用改 UI
+import { createAdminClient } from '@/lib/supabase/admin'
+
+export interface ResolvedStoreItem {
+  /** 品項唯一識別（store-side：可能是 system_item.id 或 store_item.id） */
+  id: string
+  /** 顯示名稱（內建用 system_items.name；自訂用 store_items.custom_name） */
+  name: string
+  /** 食材 / 耗材 / 雜項 */
+  category: '食材' | '耗材' | '雜項'
+  /** 廠商分類名稱（央廚配送 / 菜商 / ...） */
+  vendor_group: string
+  /** 廠商分類 ID */
+  vendor_group_id: string | null
+  /** 該分類對應的單據類型（發票/收據/估價單/公司開）— Excel row 2 用 */
+  doc_type: string | null
+  /** 是否系統品項（false = 店家自訂） */
+  is_system: boolean
+  /** 排序（store_items.sort_order 或 system_items.sort_order） */
+  sort_order: number
+}
+
+/** 撈出某店家「實際啟用的品項列表」(含系統 + 自訂) */
+export async function getStoreItemsResolved(storeId: string): Promise<ResolvedStoreItem[]> {
+  const admin = createAdminClient()
+  const [{ data: vgs }, { data: sysItems }, { data: storeItems }] = await Promise.all([
+    admin.from('system_vendor_groups').select('id, name, doc_type').eq('active', true),
+    admin.from('system_items').select('*').eq('active', true).order('sort_order'),
+    admin.from('store_items').select('*').eq('store_id', storeId).order('sort_order'),
+  ])
+
+  const vgMap = new Map((vgs ?? []).map((v: any) => [v.id, { name: v.name as string, doc_type: (v.doc_type ?? null) as string | null }]))
+  const vgName = (id: string | null | undefined) => id ? (vgMap.get(id)?.name ?? '未分類') : '未分類'
+  const vgDoc  = (id: string | null | undefined) => id ? (vgMap.get(id)?.doc_type ?? null) : null
+
+  // 1) 店家對系統品項的明確啟用/停用設定
+  const sysOverride = new Map<string, boolean>()  // system_item_id → enabled
+  // 2) 店家自訂品項
+  const customs: ResolvedStoreItem[] = []
+  for (const si of (storeItems ?? []) as any[]) {
+    if (si.system_item_id) {
+      sysOverride.set(si.system_item_id, si.enabled)
+    } else {
+      customs.push({
+        id: si.id,
+        name: si.custom_name ?? '(未命名)',
+        category: (si.custom_category ?? '雜項') as ResolvedStoreItem['category'],
+        vendor_group: vgName(si.custom_vendor_group_id),
+        vendor_group_id: si.custom_vendor_group_id,
+        doc_type: vgDoc(si.custom_vendor_group_id),
+        is_system: false,
+        sort_order: si.sort_order ?? 1000,
+      })
+    }
+  }
+
+  // 3) 系統品項：以 override 為主，沒設過則用 default_enabled
+  const enabledSys: ResolvedStoreItem[] = []
+  for (const it of (sysItems ?? []) as any[]) {
+    const overridden = sysOverride.get(it.id)
+    const enabled = overridden !== undefined ? overridden : it.default_enabled
+    if (!enabled) continue
+    enabledSys.push({
+      id: it.id,
+      name: it.name,
+      category: it.category as ResolvedStoreItem['category'],
+      vendor_group: vgName(it.vendor_group_id),
+      vendor_group_id: it.vendor_group_id,
+      doc_type: vgDoc(it.vendor_group_id),
+      is_system: true,
+      sort_order: it.sort_order ?? 1000,
+    })
+  }
+
+  // 合併 + 排序
+  return [...enabledSys, ...customs].sort((a, b) => a.sort_order - b.sort_order)
+}
+
+/** 把 ResolvedStoreItem[] 轉成 closing-form 期待的 mappingColumns 格式 */
+export function toMappingColumns(items: ResolvedStoreItem[]) {
+  return items.map(i => ({
+    name: i.name,
+    category: i.category,
+    vendor_group: i.vendor_group,
+    // excel_column 在新系統由匯出邏輯動態決定，這裡先填 name 作為過渡
+    excel_column: i.name,
+  }))
+}

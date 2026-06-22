@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
 import ReceiptsClient from '@/components/manager/receipts-client'
+import { getStoreItemsResolved } from '@/lib/store-items-resolver'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,14 +38,18 @@ export default async function ReceiptsPage() {
     .order('business_date', { ascending: false })
     .order('created_at', { ascending: false })
 
-  const [{ data: store }, { data: mappingRows }] = await Promise.all([
+  const [{ data: store }, { data: mappingRows }, newItems] = await Promise.all([
     supabase.from('stores').select('name').eq('id', storeId).single(),
     admin.from('item_column_mappings').select('item_name, excel_column, item_category, vendor_group').eq('store_id', storeId),
+    getStoreItemsResolved(storeId),
   ])
 
-  const mappings = Object.fromEntries(
-    (mappingRows ?? []).map(r => [r.item_name, { excel_column: r.excel_column, item_category: r.item_category, vendor_group: (r as any).vendor_group ?? null }])
-  )
+  // 優先用新 schema，沒設定才用舊 mapping
+  const mappings = newItems.length > 0
+    ? Object.fromEntries(newItems.map(i => [i.name, { excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group }]))
+    : Object.fromEntries(
+        (mappingRows ?? []).map(r => [r.item_name, { excel_column: r.excel_column, item_category: r.item_category, vendor_group: (r as any).vendor_group ?? null }])
+      )
 
   return (
     <ReceiptsClient

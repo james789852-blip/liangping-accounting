@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { getAuthContext, canAccessStore, getReceiptStoreId } from '@/lib/permissions'
 import { logAudit } from '@/lib/audit'
+import { normalizeItemAmount } from '@/lib/negative-items'
 
 interface ReceiptItemPayload {
   item_name: string
@@ -53,7 +54,7 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
 
   if (payload.items.length > 0) {
     await admin.from('receipt_items').insert(
-      payload.items.map(item => ({ ...item, receipt_id: receipt.id }))
+      payload.items.map(item => ({ ...item, amount: normalizeItemAmount(item.item_name, item.amount), receipt_id: receipt.id }))
     )
   }
 
@@ -127,7 +128,7 @@ export async function updateReceipt(
   await admin.from('receipt_items').delete().eq('receipt_id', receiptId)
   if (payload.items.length > 0) {
     await admin.from('receipt_items').insert(
-      payload.items.map(item => ({ ...item, receipt_id: receiptId }))
+      payload.items.map(item => ({ ...item, amount: normalizeItemAmount(item.item_name, item.amount), receipt_id: receiptId }))
     )
   }
 
