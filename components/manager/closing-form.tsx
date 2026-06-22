@@ -566,8 +566,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [photoLightbox, setPhotoLightbox] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [receiptForms, setReceiptForms] = useState<ReceiptForm[]>([])
-  /** 收據卡片內照片是否展開到大圖（每張卡片各自獨立） */
-  const [expandedReceiptPhotos, setExpandedReceiptPhotos] = useState<Set<string>>(new Set())
+  /** 收據卡片內照片預設展開（大圖）— 此 set 紀錄「使用者主動收起」的 receipt id */
+  const [collapsedReceiptPhotos, setCollapsedReceiptPhotos] = useState<Set<string>>(new Set())
   /** 展開狀態下的照片高度：S=60(小條) / M=200(中) / L=380(大) */
   const [receiptPhotoSize, setReceiptPhotoSize] = useState<Record<string, 'S' | 'M' | 'L'>>({})
   const [verifyItems, setVerifyItems] = useState<VerifyItem[]>([])
@@ -1860,8 +1860,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <div className="p-4 space-y-4">
                   {receiptForms.map((form, idx) => {
                     const photoSrc = form.previewUrl || form.uploadedPhotoUrl
-                    const isExpanded = expandedReceiptPhotos.has(form.id)
-                    const toggleExpand = () => setExpandedReceiptPhotos(prev => {
+                    // 預設展開（大圖）；user 主動點「收起」才縮成小縮圖
+                    const isExpanded = !collapsedReceiptPhotos.has(form.id)
+                    const toggleExpand = () => setCollapsedReceiptPhotos(prev => {
                       const next = new Set(prev)
                       if (next.has(form.id)) next.delete(form.id)
                       else next.add(form.id)
