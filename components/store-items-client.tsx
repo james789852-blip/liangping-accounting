@@ -46,7 +46,11 @@ export default function StoreItemsClient({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
-  // 把 store_items 轉成 Map：system_item_id → enabled
+  // 本地 enabledOverride（optimistic update — 點打勾 UI 立即反應，不等 server）
+  // 用 Map<system_item_id, boolean> 紀錄使用者點過的狀態（覆寫 initialStoreItems）
+  const [enabledOverride, setEnabledOverride] = useState<Map<string, boolean>>(new Map())
+
+  // 把 store_items 轉成 Map：system_item_id → enabled（讀 initial + override）
   const enabledMap = useMemo(() => {
     const map = new Map<string, { enabled: boolean }>()
     for (const si of initialStoreItems) {
@@ -67,8 +71,10 @@ export default function StoreItemsClient({
   })
   const getSort = (key: string, fallback: number) => sortMap.get(key) ?? fallback
 
-  // 取得某 system_item 在此店的狀態
+  // 取得某 system_item 在此店的狀態（優先用 local override，再 fallback 到 server 資料）
   function isEnabled(item: SI): boolean {
+    const override = enabledOverride.get(item.id)
+    if (override !== undefined) return override
     const explicit = enabledMap.get(item.id)
     if (explicit) return explicit.enabled
     return item.default_enabled  // 沒設定過時用 system 預設
@@ -155,10 +161,32 @@ export default function StoreItemsClient({
 
   function toggleItem(item: SI) {
     const now = isEnabled(item)
-    startTransition(async () => {
-      const r = now ? await disableSystemItem(storeId, item.id) : await enableSystemItem(storeId, item.id)
-      if ('error' in r && r.error) toast.error(r.error)
-      else { router.refresh() }
+    const next = !now
+    // optimistic：立即更新 local override，UI 馬上反應
+    setEnabledOverride(prev => {
+      const m = new Map(prev)
+      m.set(item.id, next)
+      return m
+    })
+    // 寫 server（fire-and-forget，失敗才回滾）
+    const fn = now ? disableSystemItem : enableSystemItem
+    fn(storeId, item.id).then(r => {
+      if ('error' in r && r.error) {
+        toast.error(r.error)
+        // 回滾
+        setEnabledOverride(prev => {
+          const m = new Map(prev)
+          m.set(item.id, now)
+          return m
+        })
+      }
+    }).catch(e => {
+      toast.error('儲存失敗：' + (e as Error).message)
+      setEnabledOverride(prev => {
+        const m = new Map(prev)
+        m.set(item.id, now)
+        return m
+      })
     })
   }
 

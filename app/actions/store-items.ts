@@ -32,8 +32,7 @@ export async function enableSystemItem(storeId: string, systemItemId: string) {
   } else {
     await admin.from('store_items').insert({ store_id: storeId, system_item_id: systemItemId, enabled: true })
   }
-  revalidatePath('/hq/store-items')
-  revalidatePath('/manager/items')
+  // 不再 revalidatePath（client 用 optimistic state，下次重整自然會抓最新）
   return { success: true }
 }
 
@@ -49,8 +48,6 @@ export async function disableSystemItem(storeId: string, systemItemId: string) {
   } else {
     await admin.from('store_items').insert({ store_id: storeId, system_item_id: systemItemId, enabled: false })
   }
-  revalidatePath('/hq/store-items')
-  revalidatePath('/manager/items')
   return { success: true }
 }
 
