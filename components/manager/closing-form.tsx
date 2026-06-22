@@ -355,8 +355,8 @@ function GradientTitle({ step, total, title, desc }: { step: number; total: numb
 const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, onReupload }: {
   src: string; alt: string; onLightbox?: () => void; onReupload?: () => void
 }) {
-  // 預設縮小：sticky 在頂部不佔太多螢幕，輸入品項時保留最大視窗給品項區
-  const [compact, setCompact] = useState(true)
+  // 預設展開 220px 看得清品項內容（手機螢幕約 30%），sticky 黏頂部捲動時不消失
+  const [compact, setCompact] = useState(false)
   return (
     <div className="rounded-2xl overflow-hidden shadow-md"
       style={{ border: '1px solid #f4f4f5', background: 'white' }}>
@@ -364,7 +364,7 @@ const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, on
       <div className="flex items-center gap-2 px-3 py-1.5"
         style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa' }}>
         <span className="text-xs font-semibold" style={{ color: '#c2410c' }}>📷 {alt}</span>
-        <span className="text-[10px] ml-auto" style={{ color: '#a1a1aa' }}>{compact ? '點圖看大圖 / 展開' : '輸入時也看得到'}</span>
+        <span className="text-[10px] ml-auto" style={{ color: '#a1a1aa' }}>{compact ? '已縮小' : '邊輸入邊看'}</span>
         <button type="button" onClick={() => setCompact(c => !c)}
           className="px-2 py-0.5 rounded-md text-[10px] font-semibold"
           style={{ background: 'white', border: '1px solid #fed7aa', color: '#c2410c', cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -383,9 +383,8 @@ const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, on
         <img src={src} alt={alt}
           style={{
             width: '100%',
-            maxHeight: compact ? '72px' : '280px',
+            maxHeight: compact ? '80px' : '220px',
             objectFit: compact ? 'cover' : 'contain',
-            objectPosition: compact ? 'center' : 'center',
             display: 'block',
             transition: 'max-height 0.2s ease',
           }} />
@@ -2523,31 +2522,56 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="央廚配送"
               desc="填寫今日各品項配送數量，上傳配送單照片供總公司核對。" />}
 
-            {/* 照片上傳 — sticky 黏在頂部，捲動輸入品項時也看得到 */}
+            {/* 照片真正固定在螢幕上方（fixed，PWA 比 sticky 可靠）— 品項區捲動時照片完全不移動 */}
             {!isLocked && (
-              <div style={{ position: 'sticky', top: 90, zIndex: 20, marginBottom: 8 }}>
-                {(ckPhotoPreview || ckPhotoUrl) ? (
-                  <StickyPhotoCard
-                    src={(ckPhotoPreview || ckPhotoUrl)!}
-                    alt="配送單"
-                    onLightbox={() => setPhotoLightbox((ckPhotoPreview || ckPhotoUrl)!)}
-                    onReupload={() => ckPhotoInputRef.current?.click()}
-                  />
-                ) : (
-                  <button onClick={() => ckPhotoInputRef.current?.click()}
-                    className="w-full rounded-2xl flex flex-col items-center justify-center gap-2 py-5"
-                    style={{ border: '2px dashed #fed7aa', background: '#fff7ed', color: '#f97316' }}>
-                    <Camera className="h-7 w-7" />
-                    <p className="text-sm font-semibold">上傳配送單照片</p>
-                    <p className="text-xs" style={{ color: '#fdba74' }}>供總公司核對品項與數量</p>
-                  </button>
-                )}
-              </div>
+              <>
+                <div style={{
+                  position: 'fixed',
+                  top: 96,
+                  left: 0, right: 0,
+                  zIndex: 30,
+                  paddingLeft: 16, paddingRight: 16,
+                  pointerEvents: 'none',
+                }}>
+                  <div className="max-w-xl mx-auto" style={{ pointerEvents: 'auto' }}>
+                    {(ckPhotoPreview || ckPhotoUrl) ? (
+                      <StickyPhotoCard
+                        src={(ckPhotoPreview || ckPhotoUrl)!}
+                        alt="配送單"
+                        onLightbox={() => setPhotoLightbox((ckPhotoPreview || ckPhotoUrl)!)}
+                        onReupload={() => ckPhotoInputRef.current?.click()}
+                      />
+                    ) : (
+                      <button onClick={() => ckPhotoInputRef.current?.click()}
+                        className="w-full rounded-2xl flex flex-col items-center justify-center gap-2 py-5"
+                        style={{ border: '2px dashed #fed7aa', background: '#fff7ed', color: '#f97316' }}>
+                        <Camera className="h-7 w-7" />
+                        <p className="text-sm font-semibold">上傳配送單照片</p>
+                        <p className="text-xs" style={{ color: '#fdba74' }}>供總公司核對品項與數量</p>
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {/* spacer：補位避免品項區被 fixed 照片擋住 */}
+                <div style={{ height: (ckPhotoPreview || ckPhotoUrl) ? 270 : 130 }} />
+              </>
             )}
             {isLocked && ckPhotoUrl && (
-              <div style={{ position: 'sticky', top: 90, zIndex: 20, marginBottom: 8 }}>
-                <StickyPhotoCard src={ckPhotoUrl} alt="配送單" onLightbox={() => setPhotoLightbox(ckPhotoUrl!)} />
-              </div>
+              <>
+                <div style={{
+                  position: 'fixed',
+                  top: 96,
+                  left: 0, right: 0,
+                  zIndex: 30,
+                  paddingLeft: 16, paddingRight: 16,
+                  pointerEvents: 'none',
+                }}>
+                  <div className="max-w-xl mx-auto" style={{ pointerEvents: 'auto' }}>
+                    <StickyPhotoCard src={ckPhotoUrl} alt="配送單" onLightbox={() => setPhotoLightbox(ckPhotoUrl!)} />
+                  </div>
+                </div>
+                <div style={{ height: 270 }} />
+              </>
             )}
 
             {/* 品項數量輸入 */}
