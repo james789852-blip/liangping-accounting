@@ -91,9 +91,11 @@ async function fetchRangeData(
       itemsSum += it.amount ?? 0
     }
     // 退稅：receipt.total_amount > items 加總 → 差額視為退稅金額
-    // 用第一筆 receipt_item 對應的 system_item meta（category + vendor_group）來推
+    // 條件：receipt_items 必須有資料（itemsSum > 0），否則代表使用者還沒拆品項，
+    //       整筆 total 不該被當成退稅算進「梁平退稅」欄
+    const receiptItemsCount = (r.receipt_items ?? []).filter((it: any) => it.item_name && (it.amount ?? 0) > 0).length
     const taxAmount = (r.total_amount ?? 0) - itemsSum
-    if (taxAmount > 0) {
+    if (taxAmount > 0 && receiptItemsCount > 0) {
       let cat: '食材' | '耗材' | '雜項' = '雜項'
       let vg = ''
       if (itemMetaMap) {
