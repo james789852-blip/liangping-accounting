@@ -34,13 +34,13 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
   const vgName = (id: string | null | undefined) => id ? (vgMap.get(id)?.name ?? '未分類') : '未分類'
   const vgDoc  = (id: string | null | undefined) => id ? (vgMap.get(id)?.doc_type ?? null) : null
 
-  // 1) 店家對系統品項的明確啟用/停用設定
-  const sysOverride = new Map<string, boolean>()  // system_item_id → enabled
+  // 1) 店家對系統品項的明確啟用/停用設定 + 店家自訂的 sort_order（覆寫 system 預設順序）
+  const sysOverride = new Map<string, { enabled: boolean; sort_order: number | null }>()
   // 2) 店家自訂品項
   const customs: ResolvedStoreItem[] = []
   for (const si of (storeItems ?? []) as any[]) {
     if (si.system_item_id) {
-      sysOverride.set(si.system_item_id, si.enabled)
+      sysOverride.set(si.system_item_id, { enabled: si.enabled, sort_order: si.sort_order ?? null })
     } else {
       customs.push({
         id: si.id,
@@ -56,10 +56,11 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
   }
 
   // 3) 系統品項：以 override 為主，沒設過則用 default_enabled
+  //    排序優先用 store_items.sort_order（店家自訂順序），沒設過才用 system_items.sort_order
   const enabledSys: ResolvedStoreItem[] = []
   for (const it of (sysItems ?? []) as any[]) {
     const overridden = sysOverride.get(it.id)
-    const enabled = overridden !== undefined ? overridden : it.default_enabled
+    const enabled = overridden?.enabled !== undefined ? overridden.enabled : it.default_enabled
     if (!enabled) continue
     enabledSys.push({
       id: it.id,
@@ -69,7 +70,7 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
       vendor_group_id: it.vendor_group_id,
       doc_type: vgDoc(it.vendor_group_id),
       is_system: true,
-      sort_order: it.sort_order ?? 1000,
+      sort_order: overridden?.sort_order ?? it.sort_order ?? 1000,
     })
   }
 
