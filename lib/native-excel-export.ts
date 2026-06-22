@@ -191,7 +191,7 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
   const ws = wb.addWorksheet('月度總覽', { properties: { defaultRowHeight: 22 } })
   ws.views = [{ showGridLines: true, state: 'normal' }]
 
-  for (let i = 1; i <= 8; i++) ws.getColumn(i).width = 17
+  for (let i = 1; i <= 8; i++) ws.getColumn(i).width = 27
 
   // ─ 標題列 ─
   ws.mergeCells('A1:H1')
@@ -228,7 +228,7 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
   for (let i = 0; i < kpiHeaders.length; i++) {
     const c = ws.getCell(3, i + 1)
     c.value = kpiHeaders[i].name
-    c.font = { name: FONT, bold: true, size: 12, color: { argb: C.ink } }
+    c.font = { name: FONT, bold: true, size: 14, color: { argb: C.ink } }
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: kpiHeaders[i].bg } }
     c.alignment = { horizontal: 'center', vertical: 'middle' }
     c.border = {
@@ -245,7 +245,7 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
   for (let i = 0; i < kpiValues.length; i++) {
     const c = ws.getCell(4, i + 1)
     c.value = kpiValues[i]
-    c.font = { name: FONT, bold: true, size: 15, color: { argb: i === 0 || i === 6 ? C.red : C.ink } }
+    c.font = { name: FONT, bold: true, size: 17, color: { argb: i === 0 || i === 6 ? C.red : C.ink } }
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i === 0 || i === 6 ? C.yellowSoft : C.yellowSofter } }
     c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
     c.numFmt = '$#,##0'
@@ -263,7 +263,7 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
   for (let i = 0; i < ratioValues.length; i++) {
     const c = ws.getCell(5, i + 1)
     c.value = i === 0 ? '占營業額' : ratioValues[i]
-    c.font = { name: FONT, bold: true, size: 11, color: { argb: C.muted } }
+    c.font = { name: FONT, bold: true, size: 17, color: { argb: C.muted } }
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.greySoft } }
     c.alignment = { horizontal: i === 0 ? 'center' : 'right', vertical: 'middle', indent: i === 0 ? 0 : 1 }
     c.border = {
@@ -281,7 +281,7 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
   ws.mergeCells('A7:H7')
   const sec = ws.getCell('A7')
   sec.value = '各廠商當月小計'
-  sec.font = { name: FONT, bold: true, size: 13, color: { argb: C.ink } }
+  sec.font = { name: FONT, bold: true, size: 17, color: { argb: C.ink } }
   sec.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 }
   sec.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.grey } }
   sec.border = {
@@ -297,7 +297,7 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
   for (let i = 0; i < tHeaders.length; i++) {
     const c = ws.getCell(8, i + 1)
     c.value = tHeaders[i]
-    c.font = { name: FONT, bold: true, size: 11, color: { argb: C.ink } }
+    c.font = { name: FONT, bold: true, size: 17, color: { argb: C.ink } }
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.grey } }
     c.alignment = { horizontal: 'center', vertical: 'middle' }
     c.border = {
@@ -336,22 +336,22 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
         right:  { style: 'thin', color: { argb: C.greyLine } },
       }
       if (j <= 1) {
-        c.font = { name: FONT, bold: j === 0, size: 11, color: { argb: isTax ? C.red : C.ink } }
+        c.font = { name: FONT, bold: j === 0, size: 17, color: { argb: isTax ? C.red : C.ink } }
         c.alignment = { horizontal: 'center', vertical: 'middle' }
       } else if (j === 5) {
-        c.font = { name: FONT, bold: true, size: 12, color: { argb: isTax ? C.red : C.ink } }
+        c.font = { name: FONT, bold: true, size: 14, color: { argb: isTax ? C.red : C.ink } }
         c.numFmt = '#,##0'
         c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
         c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.yellowSoft } }
       } else if (j === 6) {
-        c.font = { name: FONT, size: 11, color: { argb: C.muted } }
+        c.font = { name: FONT, size: 17, color: { argb: C.muted } }
         c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
       } else if (j === 7) {
-        c.font = { name: FONT, size: 11, color: { argb: C.muted } }
+        c.font = { name: FONT, size: 17, color: { argb: C.muted } }
         c.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 }
       } else {
         const v = values[j] as number
-        c.font = { name: FONT, size: 11, color: { argb: v === 0 ? C.faint : (isTax ? C.red : C.ink) } }
+        c.font = { name: FONT, size: 17, color: { argb: v === 0 ? C.faint : (isTax ? C.red : C.ink) } }
         c.numFmt = '#,##0'
         c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
       }
@@ -367,7 +367,7 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
     const c = ws.getCell(totalR, j + 1)
     c.value = totalRow[j]
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.yellow } }
-    c.font = { name: FONT, bold: true, size: 13, color: { argb: j === 5 ? C.red : C.ink } }
+    c.font = { name: FONT, bold: true, size: 17, color: { argb: j === 5 ? C.red : C.ink } }
     c.border = {
       top:    { style: 'medium', color: { argb: C.black } },
       bottom: { style: 'medium', color: { argb: C.black } },
@@ -384,14 +384,14 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
     }
   }
 
-  ws.getColumn(1).width = 16
-  ws.getColumn(2).width = 14
-  ws.getColumn(3).width = 15
-  ws.getColumn(4).width = 15
-  ws.getColumn(5).width = 15
-  ws.getColumn(6).width = 16
-  ws.getColumn(7).width = 13
-  ws.getColumn(8).width = 20
+  ws.getColumn(1).width = 21
+  ws.getColumn(2).width = 19
+  ws.getColumn(3).width = 20
+  ws.getColumn(4).width = 20
+  ws.getColumn(5).width = 20
+  ws.getColumn(6).width = 21
+  ws.getColumn(7).width = 18
+  ws.getColumn(8).width = 25
 }
 
 // ────────────────────────────────────────────────
@@ -429,7 +429,7 @@ function addAnnualOverviewSheet(wb: ExcelJS.Workbook, opts: {
   for (let i = 0; i < hdrs.length; i++) {
     const c = ws.getCell(3, i + 1)
     c.value = hdrs[i]
-    c.font = { name: FONT, bold: true, size: 12, color: { argb: C.ink } }
+    c.font = { name: FONT, bold: true, size: 14, color: { argb: C.ink } }
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: hdrBgs[i] } }
     c.alignment = { horizontal: 'center', vertical: 'middle' }
     c.border = {
@@ -462,19 +462,19 @@ function addAnnualOverviewSheet(wb: ExcelJS.Workbook, opts: {
         right:  { style: 'thin', color: { argb: C.greyLine } },
       }
       if (j === 0) {
-        c.font = { name: FONT, bold: true, size: 12, color: { argb: C.ink } }
+        c.font = { name: FONT, bold: true, size: 14, color: { argb: C.ink } }
         c.alignment = { horizontal: 'center', vertical: 'middle' }
       } else if (j === 7) {
-        c.font = { name: FONT, bold: true, size: 12, color: { argb: C.red } }
+        c.font = { name: FONT, bold: true, size: 14, color: { argb: C.red } }
         c.numFmt = '#,##0'
         c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
         c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.yellowSoft } }
       } else if (j === 8) {
-        c.font = { name: FONT, bold: true, size: 11, color: { argb: C.muted } }
+        c.font = { name: FONT, bold: true, size: 17, color: { argb: C.muted } }
         c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
       } else {
         const v = values[j] as number
-        c.font = { name: FONT, size: 11, color: { argb: v === 0 ? C.faint : C.ink } }
+        c.font = { name: FONT, size: 17, color: { argb: v === 0 ? C.faint : C.ink } }
         c.numFmt = '#,##0'
         c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
       }
@@ -498,7 +498,7 @@ function addAnnualOverviewSheet(wb: ExcelJS.Workbook, opts: {
   for (let j = 0; j < totalRow.length; j++) {
     const c = ws.getCell(totalR, j + 1)
     c.value = totalRow[j]
-    c.font = { name: FONT, bold: true, size: 13, color: { argb: j === 7 ? C.red : C.ink } }
+    c.font = { name: FONT, bold: true, size: 17, color: { argb: j === 7 ? C.red : C.ink } }
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.yellow } }
     c.border = {
       top:    { style: 'medium', color: { argb: C.black } },
@@ -514,9 +514,9 @@ function addAnnualOverviewSheet(wb: ExcelJS.Workbook, opts: {
   }
 
   // 欄寬
-  ws.getColumn(1).width = 12
-  for (let i = 2; i <= 8; i++) ws.getColumn(i).width = 17
-  ws.getColumn(9).width = 11
+  ws.getColumn(1).width = 17
+  for (let i = 2; i <= 8; i++) ws.getColumn(i).width = 22
+  ws.getColumn(9).width = 16
 }
 
 // ────────────────────────────────────────────────
@@ -661,12 +661,12 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
   setR3(colOfKey['date'], '日　期', { bg: C.greyHeader, font: 'data' })
   setR3(colOfKey['weekday'], '', { bg: C.greyHeader, font: 'data' })
   // 計算欄表頭：12pt 比 18pt 容易擺得下且仍清楚
-  setR3(colOfKey['pos'], '(手動)POS', { bg: C.orange, font: 'calc', size: 12, color: C.red })
-  for (const p of platformCols) setR3(colOfKey[p.key], p.label, { bg: p.bg, font: 'calc', size: 12, color: p.bg === C.platformRed ? C.red : C.ink })
+  setR3(colOfKey['pos'], '(手動)POS', { bg: C.orange, font: 'calc', size: 14, color: C.red })
+  for (const p of platformCols) setR3(colOfKey[p.key], p.label, { bg: p.bg, font: 'calc', size: 14, color: p.bg === C.platformRed ? C.red : C.ink })
   setR3(colOfKey['deducted'], '扣除後的$', { bg: C.orange, font: 'calc', size: 12 })
   setR3(colOfKey['onsite'], '現場', { bg: C.orange, font: 'calc', size: 12 })
-  setR3(colOfKey['actual'], '(手動)實際$', { bg: C.orange, font: 'calc', size: 12, color: C.red })
-  setR3(colOfKey['ck'], '配送(月底結)', { bg: C.yellow, font: 'calc', size: 12, color: C.red })
+  setR3(colOfKey['actual'], '(手動)實際$', { bg: C.orange, font: 'calc', size: 14, color: C.red })
+  setR3(colOfKey['ck'], '配送(月底結)', { bg: C.yellow, font: 'calc', size: 14, color: C.red })
   setR3(colOfKey['result'], '結果', { bg: C.orange, font: 'calc', size: 12 })
   setR3(colOfKey['revenue'], '營業額', { bg: C.orange, font: 'calc', size: 12 })
   // spacer: empty no fill
@@ -692,14 +692,14 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
     if (!vg.name || vg.name === '未分類') continue
     const cell = ws.getRow(1).getCell(vg.start)
     cell.value = vg.name
-    cell.font = { name: FONT_DATA, bold: true, size: 12, color: { argb: vg.isTax ? C.red : C.ink } }
+    cell.font = { name: FONT_DATA, bold: true, size: 14, color: { argb: vg.isTax ? C.red : C.ink } }
     cell.alignment = { horizontal: 'center', vertical: 'middle' }
     cell.border = thinBlack
     if (vg.end > vg.start) ws.mergeCells(1, vg.start, 1, vg.end)
     if (vg.doc) {
       const dcell = ws.getRow(2).getCell(vg.start)
       dcell.value = vg.doc
-      dcell.font = { name: FONT_DATA, bold: true, size: 12, color: { argb: vg.isTax ? C.red : C.ink } }
+      dcell.font = { name: FONT_DATA, bold: true, size: 14, color: { argb: vg.isTax ? C.red : C.ink } }
       dcell.alignment = { horizontal: 'center', vertical: 'middle' }
       dcell.border = thinBlack
       if (vg.end > vg.start) ws.mergeCells(2, vg.start, 2, vg.end)
@@ -713,7 +713,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
       if (!cell.fill || (cell.fill as any).type !== 'pattern') {
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.cream } }
       }
-      cell.font = { name: FONT_DATA, bold: true, size: 12, color: { argb: C.ink } }
+      cell.font = { name: FONT_DATA, bold: true, size: 14, color: { argb: C.ink } }
       cell.border = thinBlack
     }
   }
@@ -740,7 +740,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
     const setSummary = (addr: string, val: string | { formula: string }, opts: { bg: string; color?: string; align?: 'left' | 'right' | 'center' } = { bg: C.cream }) => {
       const cell = ws.getCell(addr)
       cell.value = typeof val === 'string' ? val : { formula: val.formula } as any
-      cell.font = { name: FONT_DATA, bold: true, size: 12, color: { argb: opts.color ?? C.ink } }
+      cell.font = { name: FONT_DATA, bold: true, size: 14, color: { argb: opts.color ?? C.ink } }
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: opts.bg } }
       cell.alignment = { horizontal: opts.align ?? (typeof val === 'string' ? 'center' : 'right'), vertical: 'middle', indent: opts.align === 'right' || typeof val !== 'string' ? 1 : 0 }
       cell.border = thinBlack
@@ -760,7 +760,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
   // ────────────────────────────────────────────────
   const r4 = ws.getRow(4)
   r4.getCell(1).value = `${monthNum}月`
-  r4.getCell(1).font = { name: FONT_DATA, bold: true, size: 12, color: { argb: C.ink } }
+  r4.getCell(1).font = { name: FONT_DATA, bold: true, size: 14, color: { argb: C.ink } }
   r4.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.yellow } }
   r4.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' }
   r4.getCell(1).border = thinBlack
@@ -779,7 +779,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
     const letter = colLetter(c)
     const cell = r4.getCell(c)
     cell.value = { formula: `SUM(${letter}5:${letter}35)` } as any
-    cell.font = { name: FONT_DATA, bold: true, size: 12, color: { argb: C.ink } }
+    cell.font = { name: FONT_DATA, bold: true, size: 14, color: { argb: C.ink } }
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.yellow } }
     cell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
     cell.numFmt = '#,##0'
@@ -824,7 +824,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
     aCell.value = dt
     aCell.numFmt = 'm"月"d"日"'
     aCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.cream } }
-    aCell.font = { name: FONT_DATA, size: 12, color: { argb: C.ink } }
+    aCell.font = { name: FONT_DATA, size: 14, color: { argb: C.ink } }
     aCell.alignment = { horizontal: 'center', vertical: 'middle' }
     aCell.border = thinBlack
 
@@ -833,7 +833,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
     bCell.value = { formula: `CHOOSE(WEEKDAY(A${row},1),"星期日","星期一","星期二","星期三","星期四","星期五","星期六")` } as any
     bCell.numFmt = '[$-404]aaaa'
     bCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.cream } }
-    bCell.font = { name: FONT_DATA, size: 12, color: { argb: isWeekend ? C.red : C.ink }, bold: isWeekend }
+    bCell.font = { name: FONT_DATA, size: 14, color: { argb: isWeekend ? C.red : C.ink }, bold: isWeekend }
     bCell.alignment = { horizontal: 'center', vertical: 'middle' }
     bCell.border = thinBlack
 
@@ -994,7 +994,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
     for (const c of [posCol, deductedCol, onsiteCol, actualCol, ckCol, resultCol, revenueCol, ...platformCols.map(p => colOfKey[p.key])]) {
       const cell = ws.getRow(r).getCell(c)
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.cream } }
-      cell.font = { name: FONT_DATA, size: 12, color: { argb: C.ink } }
+      cell.font = { name: FONT_DATA, size: 14, color: { argb: C.ink } }
       cell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
       cell.numFmt = '#,##0'
       cell.border = thinBlack
@@ -1003,7 +1003,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
     for (const k of ['sub_all', 'sub_food', 'sub_pack', 'sub_misc']) {
       const cell = ws.getRow(r).getCell(colOfKey[k])
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.cream } }
-      cell.font = { name: FONT_DATA, size: 12, color: { argb: C.ink } }
+      cell.font = { name: FONT_DATA, size: 14, color: { argb: C.ink } }
       cell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
       cell.numFmt = '#,##0'
       cell.border = thinBlack
@@ -1012,7 +1012,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
     for (const c of allItemCols) {
       const cell = ws.getRow(r).getCell(c)
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.white } }
-      cell.font = { name: FONT_DATA, size: 12, color: { argb: C.ink } }
+      cell.font = { name: FONT_DATA, size: 14, color: { argb: C.ink } }
       cell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
       cell.numFmt = '#,##0'
       cell.border = thinBlack
@@ -1022,24 +1022,24 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
   // ────────────────────────────────────────────────
   // 欄寬 & 凍結
   // ────────────────────────────────────────────────
-  ws.getColumn(colOfKey['date']).width = 11
-  ws.getColumn(colOfKey['weekday']).width = 9
-  ws.getColumn(colOfKey['pos']).width = 14
-  for (const p of platformCols) ws.getColumn(colOfKey[p.key]).width = 13
-  ws.getColumn(colOfKey['deducted']).width = 14
-  ws.getColumn(colOfKey['onsite']).width = 13
-  ws.getColumn(colOfKey['actual']).width = 14
-  ws.getColumn(colOfKey['ck']).width = 16
-  ws.getColumn(colOfKey['result']).width = 13
-  ws.getColumn(colOfKey['revenue']).width = 13
+  ws.getColumn(colOfKey['date']).width = 16
+  ws.getColumn(colOfKey['weekday']).width = 14
+  ws.getColumn(colOfKey['pos']).width = 19
+  for (const p of platformCols) ws.getColumn(colOfKey[p.key]).width = 18
+  ws.getColumn(colOfKey['deducted']).width = 19
+  ws.getColumn(colOfKey['onsite']).width = 18
+  ws.getColumn(colOfKey['actual']).width = 19
+  ws.getColumn(colOfKey['ck']).width = 21
+  ws.getColumn(colOfKey['result']).width = 18
+  ws.getColumn(colOfKey['revenue']).width = 18
   ws.getColumn(colOfKey['spacer']).width = 3
   // 小計欄要裝得下月份合計（可能 5-7 位數含千分位逗號）
-  ws.getColumn(colOfKey['sub_all']).width = 14
-  ws.getColumn(colOfKey['sub_food']).width = 13
-  ws.getColumn(colOfKey['sub_pack']).width = 13
-  ws.getColumn(colOfKey['sub_misc']).width = 13
+  ws.getColumn(colOfKey['sub_all']).width = 19
+  ws.getColumn(colOfKey['sub_food']).width = 18
+  ws.getColumn(colOfKey['sub_pack']).width = 18
+  ws.getColumn(colOfKey['sub_misc']).width = 18
   // 品項欄要裝得下月份合計（單品項月合計可能 4-6 位數）
-  for (const c of allItemCols) ws.getColumn(c).width = 10
+  for (const c of allItemCols) ws.getColumn(c).width = 15
 
   ws.getRow(1).height = 26
   ws.getRow(2).height = 24
