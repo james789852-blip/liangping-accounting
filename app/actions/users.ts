@@ -48,7 +48,7 @@ export async function createUser(formData: {
   if (authError) return { error: authError.message }
 
   const isOwner = formData.role === '老闆'
-  const storeIds = isOwner ? [] : formData.store_ids
+  const storeIds = isOwner ? [] : [...new Set(formData.store_ids)]
   // 確保 primary_store_id 若有設定則必須在 store_ids 內
   const primary = formData.primary_store_id && storeIds.includes(formData.primary_store_id)
     ? formData.primary_store_id
@@ -102,7 +102,7 @@ export async function updateUser(userId: string, formData: {
   if (formData.role !== undefined) patch.role = formData.role
   if (formData.title !== undefined) patch.title = formData.title
   if (formData.employee_id !== undefined) patch.employee_id = formData.employee_id
-  if (formData.store_ids !== undefined) patch.store_ids = formData.store_ids
+  if (formData.store_ids !== undefined) patch.store_ids = [...new Set(formData.store_ids)]
   if (formData.is_hq !== undefined) patch.is_hq = formData.is_hq
   if (formData.active !== undefined) patch.active = formData.active
 

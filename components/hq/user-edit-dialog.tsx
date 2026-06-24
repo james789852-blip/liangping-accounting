@@ -44,7 +44,9 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
     is_hq: user.is_hq ?? false,
     active: user.active ?? true,
   })
-  const [selectedStores, setSelectedStores] = useState<string[]>(user.store_ids ?? [])
+  const [selectedStores, setSelectedStores] = useState<string[]>(
+    [...new Set(user.store_ids ?? [])]
+  )
   const [primaryStoreId, setPrimaryStoreId] = useState<string | null>(user.primary_store_id ?? null)
 
   const isOwner = form.role === '老闆'
