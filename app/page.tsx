@@ -13,7 +13,9 @@ export default async function Home() {
     .eq('user_id', user.id)
     .single()
 
-  // 判定一致：is_hq 旗標為主，老闆也算總公司
-  const isHQ = !!profile?.is_hq || profile?.role === '老闆'
+  // 店家角色（店長/副店長/廠長/副廠長）一律進 manager dashboard，不論 is_hq
+  const STORE_ROLES = ['店長', '副店長', '廠長', '副廠長']
+  const isStoreRole = STORE_ROLES.includes(profile?.role ?? '')
+  const isHQ = !isStoreRole && (!!profile?.is_hq || profile?.role === '老闆')
   redirect(isHQ ? '/hq/dashboard' : '/manager/dashboard')
 }

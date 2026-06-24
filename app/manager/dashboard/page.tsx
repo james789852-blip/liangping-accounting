@@ -43,8 +43,11 @@ export default async function ManagerDashboard({
   const profile = await getCachedUserProfile(user.id)
 
   // HQ user 預設導向總公司儀表板（除非帶 ?as=manager 想以店家視角檢視）
+  // 店家角色（店長/副店長/廠長/副廠長）一律留在 manager dashboard，不論 is_hq
   const sp = (await searchParams) ?? {}
-  const isHQ = !!profile?.is_hq || profile?.role === '老闆'
+  const STORE_ROLES = ['店長', '副店長', '廠長', '副廠長']
+  const isStoreRole = STORE_ROLES.includes(profile?.role ?? '')
+  const isHQ = !isStoreRole && (!!profile?.is_hq || profile?.role === '老闆')
   if (isHQ && sp.as !== 'manager') redirect('/hq/dashboard')
 
   const storeId = await getEffectiveStoreId(profile)
