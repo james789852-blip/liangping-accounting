@@ -31,25 +31,13 @@ const HIST_STATUS: Record<string, string> = {
   disputed:  '異議中',
 }
 
-export default async function ManagerDashboard({
-  searchParams,
-}: {
-  searchParams?: Promise<{ as?: string }>
-}) {
+export default async function ManagerDashboard() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
   const profile = await getCachedUserProfile(user.id)
-
-  // HQ user 預設導向總公司儀表板（除非帶 ?as=manager 想以店家視角檢視）
-  // 店家角色（店長/副店長/廠長/副廠長）一律留在 manager dashboard，不論 is_hq
-  const sp = (await searchParams) ?? {}
-  const STORE_ROLES = ['店長', '副店長', '廠長', '副廠長']
-  const isStoreRole = STORE_ROLES.includes(profile?.role ?? '')
-  const isHQ = !isStoreRole && (!!profile?.is_hq || profile?.role === '老闆')
-  if (isHQ && sp.as !== 'manager') redirect('/hq/dashboard')
-
+  // manager/layout 已擋下非店家角色；此處只需處理店家角色的流程
   const storeId = await getEffectiveStoreId(profile)
   const today = getBusinessDate()
   const todayDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
