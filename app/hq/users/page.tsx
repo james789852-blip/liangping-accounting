@@ -32,7 +32,7 @@ export default async function UsersPage() {
 
   const { data: users } = await supabase
     .from('user_profiles')
-    .select('user_id, name, role, title, employee_id, store_ids, is_hq, active, created_at')
+    .select('user_id, name, role, title, employee_id, store_ids, primary_store_id, is_hq, active, created_at')
     .order('created_at', { ascending: false })
 
   const { data: storesRaw } = await supabase
@@ -123,6 +123,11 @@ export default async function UsersPage() {
                       : [...new Set((u.store_ids ?? []) as string[])].map(id => storeMap[id]).filter(Boolean).join('、') || '未指派店家'
                     }
                   </p>
+                  {u.primary_store_id && storeMap[u.primary_store_id] && !isOwner && (
+                    <p className="text-[11px] mt-0.5" style={{ color: '#0369a1' }}>
+                      主店：<span className="font-semibold">{storeMap[u.primary_store_id]}</span>
+                    </p>
+                  )}
                 </div>
 
                 <UserEditDialog user={{ ...u, account: accountMap[u.user_id] ?? '' }} stores={stores} />

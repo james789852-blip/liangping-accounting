@@ -9,27 +9,36 @@ export async function getEffectiveStoreId(profile: {
   role: string
   store_ids: string[]
   is_hq?: boolean
+  primary_store_id?: string | null
 } | null): Promise<string | null> {
   if (!profile) return null
 
   const cookieStore = await cookies()
   const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
 
+  // 優先順序：cookie（明確切換過） > primary_store_id（個人主店） > 後備
+
   // 老闆 / is_hq：可查看所有 active 店家
-  // 沒 cookie 時 fallback 第一家，保持與 manager/layout 一致
   if (BOSS_ROLES.includes(profile.role) || profile.is_hq) {
     if (cookieStoreId) return cookieStoreId
+    if (profile.primary_store_id) return profile.primary_store_id
     const all = await getCachedAllStores()
     return (all as any[])[0]?.id ?? null
   }
 
-  // 其他 HQ 角色（經理、總監等）：只能查看被指派的店
+  // 其他 HQ 角色（經理、總監、顧問）：只能查看被指派的店
   if (HQ_ROLES.includes(profile.role)) {
     const allIds: string[] = profile.store_ids ?? []
-    return (cookieStoreId && allIds.includes(cookieStoreId))
-      ? cookieStoreId
-      : allIds[0] ?? null
+    if (cookieStoreId && allIds.includes(cookieStoreId)) return cookieStoreId
+    if (profile.primary_store_id && allIds.includes(profile.primary_store_id)) {
+      return profile.primary_store_id
+    }
+    return allIds[0] ?? null
   }
 
+  // 店家角色（店長/副店長/廠長/副廠長）：主店優先
+  if (profile.primary_store_id && (profile.store_ids ?? []).includes(profile.primary_store_id)) {
+    return profile.primary_store_id
+  }
   return profile.store_ids?.[0] ?? null
 }

@@ -33,9 +33,12 @@ export default async function ManagerLayout({ children }: { children: React.Reac
     }
 
     if (allStores.length) {
+      const primary = (profile as any)?.primary_store_id as string | undefined
       storeId = (cookieStoreId && allStores.some(s => s.id === cookieStoreId))
         ? cookieStoreId
-        : allStores[0].id
+        : (primary && allStores.some(s => s.id === primary))
+          ? primary
+          : allStores[0].id
       const currentStore = allStores.find(s => s.id === storeId)
       storeName = currentStore?.name ?? ''
       storeType = (currentStore as any)?.type ?? '店面'

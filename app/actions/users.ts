@@ -32,6 +32,7 @@ export async function createUser(formData: {
   employee_id?: string
   store_ids: string[]
   is_hq?: boolean
+  primary_store_id?: string | null
 }) {
   const caller = await getCallerProfile()
   if (!caller || !MANAGE_ROLES.includes(caller.role)) return { error: '權限不足' }
@@ -47,13 +48,20 @@ export async function createUser(formData: {
   if (authError) return { error: authError.message }
 
   const isOwner = formData.role === '老闆'
+  const storeIds = isOwner ? [] : formData.store_ids
+  // 確保 primary_store_id 若有設定則必須在 store_ids 內
+  const primary = formData.primary_store_id && storeIds.includes(formData.primary_store_id)
+    ? formData.primary_store_id
+    : (storeIds.length > 0 ? storeIds[0] : null)
+
   const { error: profileError } = await admin.from('user_profiles').insert({
     user_id: authUser.user.id,
     name: formData.name,
     role: formData.role,
     title: formData.title ?? null,
     employee_id: formData.employee_id ?? null,
-    store_ids: isOwner ? [] : formData.store_ids,
+    store_ids: storeIds,
+    primary_store_id: primary,
     is_hq: isOwner ? true : (formData.is_hq ?? false),
     active: true,
   })
@@ -75,6 +83,7 @@ export async function updateUser(userId: string, formData: {
   store_ids?: string[]
   is_hq?: boolean
   active?: boolean
+  primary_store_id?: string | null
 }) {
   const caller = await getCallerProfile()
   if (!caller || !MANAGE_ROLES.includes(caller.role)) return { error: '權限不足' }
@@ -96,6 +105,19 @@ export async function updateUser(userId: string, formData: {
   if (formData.store_ids !== undefined) patch.store_ids = formData.store_ids
   if (formData.is_hq !== undefined) patch.is_hq = formData.is_hq
   if (formData.active !== undefined) patch.active = formData.active
+
+  // primary_store_id：若 store_ids 一起更新，要確保 primary 在 store_ids 內
+  if (formData.primary_store_id !== undefined) {
+    const sids = formData.store_ids
+    if (formData.primary_store_id === null) {
+      patch.primary_store_id = null
+    } else if (!sids || sids.includes(formData.primary_store_id)) {
+      patch.primary_store_id = formData.primary_store_id
+    } else {
+      // 不一致時，自動修為 store_ids 第一家或 null
+      patch.primary_store_id = sids[0] ?? null
+    }
+  }
 
   const { error } = await admin
     .from('user_profiles')

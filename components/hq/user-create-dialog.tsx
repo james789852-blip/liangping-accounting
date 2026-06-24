@@ -22,11 +22,16 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
   })
   const [isHQ, setIsHQ] = useState(false)
   const [selectedStores, setSelectedStores] = useState<string[]>([])
+  const [primaryStoreId, setPrimaryStoreId] = useState<string | null>(null)
 
   const isOwner = form.role === '老闆'
 
   function toggleStore(id: string) {
-    setSelectedStores(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id])
+    setSelectedStores(prev => {
+      const next = prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
+      if (primaryStoreId && !next.includes(primaryStoreId)) setPrimaryStoreId(null)
+      return next
+    })
   }
 
   function handleClose() {
@@ -34,6 +39,7 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
     setForm({ name: '', account: '', password: '', role: '店長', title: '', employee_id: '' })
     setIsHQ(false)
     setSelectedStores([])
+    setPrimaryStoreId(null)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -50,6 +56,7 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
       employee_id: form.employee_id || undefined,
       is_hq: isOwner ? true : isHQ,
       store_ids: isOwner ? [] : selectedStores,
+      primary_store_id: isOwner ? null : primaryStoreId,
     })
     if (result.error) { toast.error('建立失敗：' + result.error) }
     else { toast.success('帳號建立成功！'); handleClose() }
@@ -189,6 +196,29 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
                           </span>
                         )
                       })}
+                    </div>
+                  )}
+
+                  {/* 主店（所屬店面）— 限定從已勾選店家中選 */}
+                  {selectedStores.length > 0 && (
+                    <div className="mt-3 rounded-xl px-3 py-2.5" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                      <label className="block text-xs font-semibold mb-1.5" style={{ color: '#1e40af' }}>
+                        主要所屬店面（登入時預設）
+                      </label>
+                      <select
+                        value={primaryStoreId ?? ''}
+                        onChange={e => setPrimaryStoreId(e.target.value || null)}
+                        style={{ ...INPUT_STYLE, cursor: 'pointer', background: 'white' }}>
+                        <option value="">— 未指定（使用第一家） —</option>
+                        {selectedStores.map(id => {
+                          const s = stores.find(x => x.id === id)
+                          if (!s) return null
+                          return <option key={id} value={id}>{s.name}</option>
+                        })}
+                      </select>
+                      <p className="text-[10px] mt-1.5" style={{ color: '#1e40af' }}>
+                        多店管理人員登入時會先進到此店；其他店仍可切換。
+                      </p>
                     </div>
                   )}
                 </div>

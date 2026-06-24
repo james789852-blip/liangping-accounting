@@ -14,6 +14,7 @@ interface UserData {
   employee_id?: string | null
   account?: string        // 身分證字號（從 auth email 提取）
   store_ids?: string[]
+  primary_store_id?: string | null
   is_hq?: boolean
   active?: boolean
 }
@@ -44,17 +45,27 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
     active: user.active ?? true,
   })
   const [selectedStores, setSelectedStores] = useState<string[]>(user.store_ids ?? [])
+  const [primaryStoreId, setPrimaryStoreId] = useState<string | null>(user.primary_store_id ?? null)
 
   const isOwner = form.role === '老闆'
   const allSelected = stores.length > 0 && stores.every(s => selectedStores.includes(s.id))
 
   function toggleStore(id: string) {
-    setSelectedStores(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id])
+    setSelectedStores(prev => {
+      const next = prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
+      // 取消勾選的店若是主店，主店清空
+      if (primaryStoreId && !next.includes(primaryStoreId)) setPrimaryStoreId(null)
+      return next
+    })
   }
 
   function toggleAllStores() {
-    if (allSelected) setSelectedStores([])
-    else setSelectedStores(stores.map(s => s.id))
+    if (allSelected) {
+      setSelectedStores([])
+      setPrimaryStoreId(null)
+    } else {
+      setSelectedStores(stores.map(s => s.id))
+    }
   }
 
   function handleClose() {
@@ -77,6 +88,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
       title: form.title || undefined,
       employee_id: form.employee_id || undefined,
       store_ids: isOwner ? [] : selectedStores,
+      primary_store_id: isOwner ? null : primaryStoreId,
       is_hq: isOwner ? true : form.is_hq,
       active: form.active,
     })
@@ -250,6 +262,29 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                     <p className="text-xs mt-1.5" style={{ color: '#a1a1aa' }}>
                       已選 {selectedStores.length} 間
                     </p>
+                  )}
+
+                  {/* 主店（所屬店面）— 限定從已勾選店家中選 */}
+                  {selectedStores.length > 0 && (
+                    <div className="mt-3 rounded-xl px-3 py-2.5" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                      <label className="block text-xs font-semibold mb-1.5" style={{ color: '#1e40af' }}>
+                        主要所屬店面（登入時預設）
+                      </label>
+                      <select
+                        value={primaryStoreId ?? ''}
+                        onChange={e => setPrimaryStoreId(e.target.value || null)}
+                        style={{ ...INPUT_STYLE, cursor: 'pointer', background: 'white' }}>
+                        <option value="">— 未指定（使用第一家） —</option>
+                        {selectedStores.map(id => {
+                          const s = stores.find(x => x.id === id)
+                          if (!s) return null
+                          return <option key={id} value={id}>{s.name}</option>
+                        })}
+                      </select>
+                      <p className="text-[10px] mt-1.5" style={{ color: '#1e40af' }}>
+                        多店管理人員登入時會先進到此店；其他店仍可從上方下拉切換。
+                      </p>
+                    </div>
                   )}
                 </div>
               )}

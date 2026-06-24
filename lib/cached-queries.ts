@@ -11,7 +11,7 @@ export async function getCachedUserProfile(userId: string) {
       const admin = createAdminClient()
       const { data } = await admin
         .from('user_profiles')
-        .select('name, role, store_ids, is_hq')
+        .select('name, role, store_ids, primary_store_id, is_hq')
         .eq('user_id', userId)
         .single()
       return data
