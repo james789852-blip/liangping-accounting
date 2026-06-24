@@ -8,9 +8,10 @@ import { CheckCircle, RotateCcw, Loader2, X, Trash2 } from 'lucide-react'
 interface Props {
   closingId: string
   currentStatus: string
+  onProcessed?: () => void
 }
 
-export default function ReviewActions({ closingId, currentStatus }: Props) {
+export default function ReviewActions({ closingId, currentStatus, onProcessed }: Props) {
   const [loading, setLoading] = useState(false)
   const [showDisputeForm, setShowDisputeForm] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -23,7 +24,7 @@ export default function ReviewActions({ closingId, currentStatus }: Props) {
     setLoading(true)
     const result = await verifyClosing(closingId)
     if (result.error) { toast.error(result.error) }
-    else { toast.success('已核准'); setDone(true) }
+    else { toast.success('已核准'); setDone(true); onProcessed?.() }
     setLoading(false)
   }
 
@@ -31,7 +32,7 @@ export default function ReviewActions({ closingId, currentStatus }: Props) {
     setLoading(true)
     const result = await deleteClosing(closingId)
     if (result.error) { toast.error(result.error) }
-    else { toast.success('帳目已刪除，店長可重新填寫'); setDone(true) }
+    else { toast.success('帳目已刪除，店長可重新填寫'); setDone(true); onProcessed?.() }
     setLoading(false)
   }
 
@@ -40,7 +41,7 @@ export default function ReviewActions({ closingId, currentStatus }: Props) {
     setLoading(true)
     const result = await disputeClosing(closingId, note)
     if (result.error) { toast.error(result.error) }
-    else { toast.success('已退回修改'); setDone(true) }
+    else { toast.success('已退回修改'); setDone(true); onProcessed?.() }
     setLoading(false)
   }
 

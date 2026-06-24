@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronDown, ChevronUp, Image, FileText, AlertTriangle } from 'lucide-react'
+import { ChevronDown, ChevronUp, Image, FileText, AlertTriangle, Check } from 'lucide-react'
 import ReviewActions from './review-actions'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -23,7 +23,10 @@ interface Closing {
   revenue_items: RevenueItem[]; expense_items: ExpenseItem[]; order_items: OrderItem[]
   remittance_adjustments?: any[]; reserve_items?: ReserveItem[]
 }
-interface Props { closing: Closing; receipts: Receipt[]; canReview: boolean; canDispute: boolean }
+interface Props {
+  closing: Closing; receipts: Receipt[]; canReview: boolean; canDispute: boolean
+  selected?: boolean; onToggleSelect?: () => void; onProcessed?: () => void
+}
 
 const TYPE_LABEL: Record<string, string> = { invoice: '發票', receipt: '收據', delivery_note: '估價單' }
 const CHANNEL_LABEL: Record<string, string> = {
@@ -51,9 +54,10 @@ function InfoRow({ label, value, muted, accent }: { label: string; value: string
   )
 }
 
-export default function ReviewCard({ closing, receipts, canReview, canDispute }: Props) {
-  const [expanded, setExpanded] = useState(false)
+export default function ReviewCard({ closing, receipts, canReview, canDispute, selected, onToggleSelect, onProcessed }: Props) {
+  const [expanded, setExpanded] = useState(closing.variance !== 0 || closing.status === 'disputed')
   const [photoId, setPhotoId] = useState<string | null>(null)
+  const showCheckbox = canReview && closing.status === 'submitted' && !!onToggleSelect
 
   const absVar = Math.abs(closing.variance)
   const varColor = absVar === 0 ? '#047857' : absVar <= 200 ? '#b45309' : '#be123c'
@@ -67,13 +71,27 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute }:
   const st = STATUS_STYLE[closing.status] ?? STATUS_STYLE.submitted
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden"
-      style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+    <div className="bg-white rounded-2xl overflow-hidden transition-colors"
+      style={{
+        border: selected ? '1.5px solid #10b981' : '1px solid #f4f4f5',
+        boxShadow: selected ? '0 4px 14px rgba(16,185,129,0.18)' : '0 2px 8px rgba(0,0,0,0.05)',
+      }}>
       <div className="px-4 py-4 space-y-3">
 
         {/* 標題列 */}
         <div className="flex items-start justify-between gap-2">
-          <div>
+          {showCheckbox && (
+            <button type="button" onClick={onToggleSelect}
+              className="shrink-0 mt-0.5 w-6 h-6 rounded-md flex items-center justify-center transition-colors"
+              style={{
+                background: selected ? '#10b981' : 'white',
+                border: selected ? '1.5px solid #10b981' : '1.5px solid #d4d4d8',
+              }}
+              aria-label={selected ? '取消勾選' : '勾選此筆'}>
+              {selected && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
+            </button>
+          )}
+          <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-sm" style={{ color: '#18181b' }}>{closing.stores?.name}</span>
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: st.bg, color: st.color }}>
@@ -272,7 +290,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute }:
 
         {/* 操作按鈕 */}
         {(canReview && closing.status === 'submitted') || (canDispute && closing.status === 'verified') ? (
-          <ReviewActions closingId={closing.id} currentStatus={closing.status} />
+          <ReviewActions closingId={closing.id} currentStatus={closing.status} onProcessed={onProcessed} />
         ) : null}
       </div>
     </div>

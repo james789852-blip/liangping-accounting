@@ -84,6 +84,52 @@ export async function verifyClosing(closingId: string) {
   return { success: true }
 }
 
+export async function verifyClosingsBatch(closingIds: string[]) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+
+  const { data: profile } = await supabase
+    .from('user_profiles').select('role, is_hq, name').eq('user_id', user.id).single()
+  if (!profile || (!profile.is_hq && profile.role !== '老闆')) return { error: '權限不足' }
+
+  if (!Array.isArray(closingIds) || closingIds.length === 0) return { error: '未選擇帳目' }
+
+  const admin = createAdminClient()
+  const { data: closings } = await admin
+    .from('daily_closings').select('id, store_id, business_date, status')
+    .in('id', closingIds)
+
+  if (!closings || closings.length === 0) return { error: '找不到帳目' }
+
+  const okIds = closings.filter((c: any) => c.status === 'submitted').map((c: any) => c.id)
+  const skipped = closings.length - okIds.length
+  if (okIds.length === 0) return { error: '無可核准帳目（皆非待審狀態）' }
+
+  const { error: updateErr } = await admin
+    .from('daily_closings')
+    .update({ status: 'verified', updated_at: new Date().toISOString() })
+    .in('id', okIds)
+  if (updateErr) return { error: updateErr.message }
+
+  await Promise.all(okIds.map(async (id: string) => {
+    const c = closings.find((x: any) => x.id === id)!
+    await logAudit({
+      eventType: 'closing_verify',
+      storeId: c.store_id, userId: user.id, closingId: id,
+      description: `${profile.name ?? user.email ?? '未知'} 批次審核 ${c.business_date} 帳目`,
+    })
+    try { await syncClosingToSheets(id) } catch (e) {
+      console.error('[verifyClosingsBatch] Sheets sync failed:', e)
+    }
+  }))
+
+  revalidatePath('/hq/reviews')
+  revalidatePath('/hq/closings')
+  revalidatePath('/hq/audit')
+  return { success: true, verified: okIds.length, skipped }
+}
+
 export async function deleteClosingDraft(closingId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

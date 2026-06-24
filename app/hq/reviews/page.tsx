@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { CheckSquare, AlertTriangle, ClipboardCheck } from 'lucide-react'
 import ReviewActions from '@/components/hq/review-actions'
-import ReviewCard from '@/components/hq/review-card'
+import ReviewsList from '@/components/hq/reviews-list'
 
 export const dynamic = 'force-dynamic'
 
@@ -101,17 +101,12 @@ export default async function ReviewsPage() {
               <p className="text-sm">目前無待審核帳目</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {pending.map(c => (
-                <ReviewCard
-                  key={c.id}
-                  closing={c as any}
-                  receipts={receiptsByClosing[c.id] ?? []}
-                  canReview={canReview}
-                  canDispute={canDispute}
-                />
-              ))}
-            </div>
+            <ReviewsList
+              pending={pending as any}
+              receiptsByClosing={receiptsByClosing}
+              canReview={canReview}
+              canDispute={canDispute}
+            />
           )}
         </div>
 
