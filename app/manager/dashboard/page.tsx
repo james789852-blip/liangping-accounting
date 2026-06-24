@@ -31,12 +31,21 @@ const HIST_STATUS: Record<string, string> = {
   disputed:  '異議中',
 }
 
-export default async function ManagerDashboard() {
+export default async function ManagerDashboard({
+  searchParams,
+}: {
+  searchParams?: Promise<{ as?: string }>
+}) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
   const profile = await getCachedUserProfile(user.id)
+
+  // HQ user 預設導向總公司儀表板（除非帶 ?as=manager 想以店家視角檢視）
+  const sp = (await searchParams) ?? {}
+  const isHQ = !!profile?.is_hq || profile?.role === '老闆'
+  if (isHQ && sp.as !== 'manager') redirect('/hq/dashboard')
 
   const storeId = await getEffectiveStoreId(profile)
   const today = getBusinessDate()
