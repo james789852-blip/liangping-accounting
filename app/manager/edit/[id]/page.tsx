@@ -31,10 +31,9 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     .single()
 
   if (!closing) {
-    // HQ user 通常是從書籤/瀏覽器歷史殘留進到別家店的帳目連結，
-    // 直接導回 manager dashboard 比顯示錯誤畫面更友善
+    // HQ user 多半是從書籤/瀏覽器歷史殘留進到別家店的帳目連結 → 導回總公司儀表板
     const isHQ = !!profile?.is_hq || profile?.role === '老闆'
-    if (isHQ) redirect('/manager/dashboard')
+    if (isHQ) redirect('/hq/dashboard')
     return <div className="p-6 text-slate-500">找不到此帳目或無權限</div>
   }
 
