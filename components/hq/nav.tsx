@@ -198,6 +198,19 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           </div>
         )}
 
+        {/* 切換店家（有多店時顯示，緊接在切換按鈕下，方便先選店再切端） */}
+        {hasStores && allStores.length > 1 && (
+          <div className="px-4 pb-3">
+            <p className="text-[11px] font-semibold uppercase mb-1.5" style={{ color: '#a1a1aa', letterSpacing: '0.05em' }}>切換店家</p>
+            <StoreSwitcher
+              stores={allStores}
+              currentStoreId={currentStoreId}
+              className="w-full text-sm rounded-[10px] px-3 py-2 border font-medium focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              style={{ borderColor: '#e4e4e7', color: '#18181b', backgroundColor: '#fafafa' }}
+            />
+          </div>
+        )}
+
         <div style={{ borderTop: '1px solid #f4f4f5', margin: '0 16px' }} />
 
         {/* 導覽 */}
@@ -220,19 +233,6 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               })}
             </div>
           ))}
-
-          {/* 切換店家（有多店時顯示） */}
-          {hasStores && allStores.length > 1 && (
-            <div className="mt-3 px-3">
-              <p className="text-[11px] font-semibold uppercase mb-2" style={{ color: '#a1a1aa', letterSpacing: '0.05em' }}>切換店家</p>
-              <StoreSwitcher
-                stores={allStores}
-                currentStoreId={currentStoreId}
-                className="w-full text-sm rounded-[10px] px-3 py-2 border font-medium focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                style={{ borderColor: '#e4e4e7', color: '#18181b', backgroundColor: '#fafafa' }}
-              />
-            </div>
-          )}
 
           <div style={{ borderTop: '1px solid #f4f4f5', margin: '12px 0 4px' }} />
           <button onClick={handleLogout}
