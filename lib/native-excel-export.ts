@@ -848,21 +848,22 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
       const platformTotal = (d.online || 0) + (d.online_cash || 0) + (d.panda || 0) + (d.twpay || 0) + (d.nft || 0)
         + Object.values(d.uber ?? {}).reduce((s, v) => s + (v || 0), 0)
       const posOnlyValue = store.ichef_uber_linked ? d.pos : d.pos + platformTotal
-      if (posOnlyValue) ws.getRow(row).getCell(posCol).value = posOnlyValue
+      // 該日有結帳資料 → 一律寫入（0 也寫，不留空白）；只有「該日完全沒結帳」(d===undefined) 才整列空白
+      ws.getRow(row).getCell(posCol).value = posOnlyValue ?? 0
       // 平台
       for (const p of platformCols) {
         const key = p.key
-        let val: number | undefined
-        if (key === 'online') val = d.online
-        else if (key === 'online_cash') val = d.online_cash
-        else if (key === 'panda') val = d.panda
-        else if (key === 'twpay') val = d.twpay
-        else if (key === 'nft') val = d.nft
-        else if (key.startsWith('uber:')) val = d.uber[key.slice(5)]
-        if (val) ws.getRow(row).getCell(colOfKey[key]).value = val
+        let val = 0
+        if (key === 'online') val = d.online || 0
+        else if (key === 'online_cash') val = d.online_cash || 0
+        else if (key === 'panda') val = d.panda || 0
+        else if (key === 'twpay') val = d.twpay || 0
+        else if (key === 'nft') val = d.nft || 0
+        else if (key.startsWith('uber:')) val = d.uber[key.slice(5)] || 0
+        ws.getRow(row).getCell(colOfKey[key]).value = val
       }
       // 實際$
-      if (d.actual) ws.getRow(row).getCell(actualCol).value = d.actual
+      ws.getRow(row).getCell(actualCol).value = d.actual ?? 0
       // 配送（K 欄）：對齊原版改為 SUM(央廚分組)，公式在下方統一寫
       // 品項
       //   Phase 1: 精確 match — d.items[item.name] 對到 colOfItem[(vg,name)]
