@@ -11,14 +11,6 @@ export default async function ManagerLayout({ children }: { children: React.Reac
   if (!user) redirect('/login')
 
   const profile = await getCachedUserProfile(user.id)
-
-  // 僅店家角色（店長/副店長/廠長/副廠長）可進 manager 介面，
-  // 其他角色（含 HQ 員工、老闆）一律導向 /hq/dashboard，
-  // 避免從書籤/歷史紀錄殘留進到「找不到此帳目」等錯誤畫面。
-  const STORE_ROLES = ['店長', '副店長', '廠長', '副廠長']
-  const isStoreRole = STORE_ROLES.includes(profile?.role ?? '')
-  if (!isStoreRole) redirect('/hq/dashboard')
-
   const isHQ = profile && (profile.is_hq || profile.role === '老闆')
 
   let storeId: string | null = null
