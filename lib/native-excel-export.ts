@@ -541,37 +541,33 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
 
   const ws = wb.addWorksheet(`${monthNum}月食耗成本`)
 
-  // ─ 平台欄位 — 永遠固定 4 個（對齊原本模板的 D/E/F/G 結構）─
-  // 順序：Uber → 熊貓 → 店家自有平台(店名) → 線上(現金)/NFT/Taiwan Pay
-  const PLATFORM_BGS = [C.platformRed, C.platformPink, C.platformGreen, C.platformGreen] as const
-  const platformCols: { key: string; label: string; bg: string }[] = []
-  // 先收集已啟用的平台
-  // 注意：Uber 不分版型都可能存在（手寫店也可能跑 Uber Eats）
-  const enabledPlatforms: { key: string; label: string }[] = []
-  if (layout === 'ichef') {
-    for (const acc of store.uber_accounts ?? []) enabledPlatforms.push({ key: `uber:${acc}`, label: acc })
-    if (store.panda_enabled) enabledPlatforms.push({ key: 'panda', label: '熊貓' })
-    if (store.twpay_enabled) enabledPlatforms.push({ key: 'twpay', label: 'Taiwan Pay' })
-    if (store.nft_enabled)   enabledPlatforms.push({ key: 'nft', label: 'NFT' })
-  } else {
-    // 手寫版型也要列 Uber（如店家有設 uber_accounts）
-    for (const acc of store.uber_accounts ?? []) enabledPlatforms.push({ key: `uber:${acc}`, label: acc })
-    if (store.online_enabled) {
-      enabledPlatforms.push({ key: 'online', label: store.name })
-      if (store.online_cash_enabled) enabledPlatforms.push({ key: 'online_cash', label: '線上(現金)' })
-    }
-    if (store.panda_enabled) enabledPlatforms.push({ key: 'panda', label: '熊貓' })
-    if (store.twpay_enabled) enabledPlatforms.push({ key: 'twpay', label: 'Taiwan Pay' })
-    if (store.nft_enabled)   enabledPlatforms.push({ key: 'nft', label: 'NFT' })
+  // ─ 平台欄位 ─
+  // 動態長度：只列出該店實際啟用的平台，沒啟用的不出欄。
+  // 顏色依平台種類：
+  //   TWPAY            → 粉紅底 + 紅字
+  //   所有 Uber 帳號   → 綠底  + 黑字（鑫營 / 五分舖 等統一）
+  //   熊貓             → 紅底  + 紅字
+  //   線上自家/線上(現金) → 淺藍底 + 黑字（兩者一致以標示自家通路）
+  // 注意：NFT 目前不使用，不列入匯出。
+  // 順序：TWPAY → Uber 帳號 → 熊貓 → 線上自家 → 線上(現金)
+  const platformStyle = (key: string): { bg: string; color: string } => {
+    if (key === 'twpay') return { bg: C.platformPink, color: C.red }
+    if (key === 'panda') return { bg: C.platformRed, color: C.red }
+    if (key === 'online' || key === 'online_cash') return { bg: C.blueLight, color: C.ink }
+    return { bg: C.platformGreen, color: C.ink }
   }
-  // 固定 4 格：用啟用的填入，剩下用 placeholder
-  for (let i = 0; i < 4; i++) {
-    const e = enabledPlatforms[i]
-    if (e) {
-      platformCols.push({ key: e.key, label: e.label, bg: PLATFORM_BGS[i] })
-    } else {
-      platformCols.push({ key: `__placeholder_${i}`, label: '', bg: PLATFORM_BGS[i] })
-    }
+  const platformCols: { key: string; label: string; bg: string; color: string }[] = []
+  const enabled: { key: string; label: string }[] = []
+  if (store.twpay_enabled) enabled.push({ key: 'twpay', label: 'TWPAY' })
+  for (const acc of store.uber_accounts ?? []) enabled.push({ key: `uber:${acc}`, label: acc })
+  if (store.panda_enabled) enabled.push({ key: 'panda', label: '熊貓' })
+  if (layout === 'handwrite' && store.online_enabled) {
+    enabled.push({ key: 'online', label: store.name })
+    if (store.online_cash_enabled) enabled.push({ key: 'online_cash', label: '線上(現金)' })
+  }
+  for (const e of enabled) {
+    const st = platformStyle(e.key)
+    platformCols.push({ key: e.key, label: e.label, bg: st.bg, color: st.color })
   }
 
   // 排除與計算欄同名的「配送(月底結)」、「央廚配送」等系統項目
@@ -662,7 +658,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
   setR3(colOfKey['weekday'], '', { bg: C.greyHeader, font: 'data' })
   // 計算欄表頭：12pt 比 18pt 容易擺得下且仍清楚
   setR3(colOfKey['pos'], '(手動)POS', { bg: C.orange, font: 'calc', size: 14, color: C.red })
-  for (const p of platformCols) setR3(colOfKey[p.key], p.label, { bg: p.bg, font: 'calc', size: 14, color: p.bg === C.platformRed ? C.red : C.ink })
+  for (const p of platformCols) setR3(colOfKey[p.key], p.label, { bg: p.bg, font: 'calc', size: 14, color: p.color })
   setR3(colOfKey['deducted'], '扣除後的$', { bg: C.orange, font: 'calc', size: 12 })
   setR3(colOfKey['onsite'], '現場', { bg: C.orange, font: 'calc', size: 12 })
   setR3(colOfKey['actual'], '(手動)實際$', { bg: C.orange, font: 'calc', size: 14, color: C.red })
