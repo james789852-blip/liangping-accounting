@@ -92,26 +92,18 @@ export default async function ClosingsPage({
   // 收據與菜單影片：一次撈完，JS 端 group by (store_id, business_date)
   // 避免每筆 closing 都各發一次 query（10 店 × 30 天 = 600+ roundtrip）
   const receiptsByClosing: Record<string, any[]> = {}
-  const videosByClosing: Record<string, any> = {}
   if (closings && closings.length > 0) {
     const storeIds = [...new Set(closings.map((c: any) => (c.stores as any)?.id).filter(Boolean))]
     const dates = [...new Set(closings.map((c: any) => c.business_date as string))]
     if (storeIds.length > 0 && dates.length > 0) {
-      const [receiptsBulk, videosBulk] = await Promise.all([
-        admin.from('receipts')
-          .select('id, store_id, business_date, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
-          .in('store_id', storeIds).in('business_date', dates)
-          .order('created_at'),
-        admin.from('menu_videos')
-          .select('id, store_id, business_date, file_path, file_name')
-          .in('store_id', storeIds).in('business_date', dates)
-          .then(r => r, () => ({ data: [] as any[] })),
-      ])
+      const { data: receiptsBulk } = await admin.from('receipts')
+        .select('id, store_id, business_date, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
+        .in('store_id', storeIds).in('business_date', dates)
+        .order('created_at')
 
-      // group receipts by (store_id|date) → receiptsByClosing[closing.id]
       const recKey = (sId: string, d: string) => `${sId}|${d}`
       const recMap: Record<string, any[]> = {}
-      for (const r of (receiptsBulk.data ?? []) as any[]) {
+      for (const r of (receiptsBulk ?? []) as any[]) {
         const k = recKey(r.store_id, r.business_date)
         if (!recMap[k]) recMap[k] = []
         recMap[k].push(r)
@@ -120,27 +112,6 @@ export default async function ClosingsPage({
         const sId = (c.stores as any)?.id
         if (!sId) { receiptsByClosing[c.id] = []; continue }
         receiptsByClosing[c.id] = recMap[recKey(sId, c.business_date)] ?? []
-      }
-
-      // group videos + 批次 signed URL
-      const vidMap: Record<string, any> = {}
-      const videos = ((videosBulk as any)?.data ?? []) as any[]
-      const signedResults = await Promise.all(
-        videos.map(v =>
-          admin.storage.from('menu-videos').createSignedUrl(v.file_path, 3600)
-            .then(r => ({ v, signedUrl: r.data?.signedUrl }))
-            .catch(() => ({ v, signedUrl: null }))
-        )
-      )
-      for (const { v, signedUrl } of signedResults) {
-        if (!signedUrl) continue
-        vidMap[recKey(v.store_id, v.business_date)] = { closing_id: '', signed_url: signedUrl, file_name: v.file_name }
-      }
-      for (const c of closings) {
-        const sId = (c.stores as any)?.id
-        if (!sId) continue
-        const entry = vidMap[recKey(sId, c.business_date)]
-        if (entry) videosByClosing[c.id] = { ...entry, closing_id: c.id }
       }
     }
   }
@@ -158,7 +129,6 @@ export default async function ClosingsPage({
         <ClosingsBrowser
           closings={(closings ?? []) as any[]}
           receiptsByClosing={receiptsByClosing}
-          videosByClosing={videosByClosing}
           stores={stores}
           currentDate={currentDate}
           currentMonth={currentMonth}

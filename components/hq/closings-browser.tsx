@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Camera, Package, Video, FileText, Search, CheckCircle, RotateCcw, Trash2, Loader2, BarChart2 as BarChart, Banknote, Wallet, ArrowLeftRight, Download, Sheet } from 'lucide-react'
+import { X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Camera, Package, FileText, Search, CheckCircle, RotateCcw, Trash2, Loader2, BarChart2 as BarChart, Banknote, Wallet, ArrowLeftRight, Download, Sheet } from 'lucide-react'
 import { toast } from 'sonner'
 import { verifyClosing, disputeClosing, deleteClosing, reSyncMonthToSheets } from '@/app/actions/closings'
 
@@ -30,12 +30,9 @@ interface ReceiptRow {
   id: string; vendor_name: string; receipt_type?: string; total_amount: number
   photo_url?: string; receipt_items?: { item_name: string; quantity: number; unit: string; unit_price: number; amount: number }[]
 }
-interface VideoRow { closing_id: string; signed_url: string; file_name: string }
-
 interface Props {
   closings: Closing[]
   receiptsByClosing: Record<string, ReceiptRow[]>
-  videosByClosing: Record<string, VideoRow>
   stores: Store[]
   currentDate: string
   currentMonth: string
@@ -260,9 +257,9 @@ function ReviewPanel({ closingId, status, canReview }: { closingId: string; stat
 }
 
 function ClosingCard({
-  closing, receipts, video, canReview, submitterName,
+  closing, receipts, canReview, submitterName,
 }: {
-  closing: Closing; receipts: ReceiptRow[]; video?: VideoRow; canReview: boolean; submitterName?: string
+  closing: Closing; receipts: ReceiptRow[]; canReview: boolean; submitterName?: string
 }) {
   const [expanded, setExpanded] = useState(closing.status === 'submitted' || closing.status === 'disputed')
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
@@ -602,20 +599,7 @@ function ClosingCard({
             </details>
           )}
 
-          {/* ── 9. 影片 ──────────────────────────────────── */}
-          {video && (
-            <div>
-              <div className="flex items-center gap-1.5 mb-2">
-                <Video className="h-3.5 w-3.5" style={{ color: '#3b82f6' }} />
-                <p className="text-xs font-semibold" style={{ color: '#52525b' }}>手寫菜單影片</p>
-              </div>
-              <video src={video.signed_url} controls playsInline className="w-full rounded-xl bg-black"
-                style={{ maxHeight: '200px' }} />
-              <p className="text-[11px] mt-1 truncate" style={{ color: '#a1a1aa' }}>{video.file_name}</p>
-            </div>
-          )}
-
-          {/* ── 10. 備註 ─────────────────────────────────── */}
+          {/* ── 9. 備註 ─────────────────────────────────── */}
           {closing.note && (
             <p className="text-xs px-3 py-2 rounded-xl" style={{ background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a' }}>
               備註：{closing.note}
@@ -631,7 +615,7 @@ function ClosingCard({
   )
 }
 
-export default function ClosingsBrowser({ closings, receiptsByClosing, videosByClosing, stores, currentDate, currentMonth, todayStr, storeId, canReview, submitterNames }: Props) {
+export default function ClosingsBrowser({ closings, receiptsByClosing, stores, currentDate, currentMonth, todayStr, storeId, canReview, submitterNames }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [statusFilter, setStatusFilter] = useState('all')
@@ -838,7 +822,6 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, videosByC
               key={c.id}
               closing={c}
               receipts={receiptsByClosing[c.id] ?? []}
-              video={videosByClosing[c.id]}
               canReview={canReview}
               submitterName={c.submitted_by ? submitterNames[c.submitted_by] : undefined}
             />

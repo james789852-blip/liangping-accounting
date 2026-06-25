@@ -5,7 +5,7 @@ import { getBusinessDate } from '@/lib/business-date'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import {
   CheckCircle2, AlertTriangle, Package, Banknote,
-  Calculator, BarChart3, Video, ChevronRight,
+  Calculator, BarChart3, ChevronRight,
 } from 'lucide-react'
 import Link from 'next/link'
 import HandwriteOrdersList from '@/components/manager/handwrite-orders-list'
@@ -72,18 +72,6 @@ export default async function SummaryPage() {
       </div>
     )
   }
-
-  let videoUrl: string | null = null
-  let videoName: string | null = null
-  try {
-    const { data: mv } = await supabase.from('menu_videos').select('id, file_path, file_name')
-      .eq('store_id', storeId).eq('business_date', today).maybeSingle()
-    if (mv) {
-      const { data: signed } = await supabase.storage.from('menu-videos').createSignedUrl(mv.file_path, 3600)
-      videoUrl = signed?.signedUrl ?? null
-      videoName = mv.file_name
-    }
-  } catch { /* menu_videos table may not exist yet */ }
 
   const rev = closing.revenue_items ?? []
   const cash = (closing as any).cash_counts?.[0]
@@ -298,20 +286,6 @@ export default async function SummaryPage() {
         {/* 手寫訂單 */}
         {handwriteOrders.length > 0 && (
           <HandwriteOrdersList orders={handwriteOrders} />
-        )}
-
-        {/* 菜單影片 */}
-        {videoUrl && (
-          <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <div className="flex items-center gap-2.5 mb-3">
-              <span className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#FFFBEB' }}>
-                <Video className="h-[18px] w-[18px]" style={{ color: '#92400E' }} />
-              </span>
-              <h3 className="text-sm font-semibold" style={{ color: '#18181b' }}>今日菜單影片</h3>
-            </div>
-            <video src={videoUrl} controls playsInline className="w-full rounded-xl bg-black" style={{ maxHeight: '220px' }} />
-            {videoName && <p className="text-xs mt-1.5" style={{ color: '#a1a1aa' }}>{videoName}</p>}
-          </div>
         )}
 
         {/* 央廚配送 */}

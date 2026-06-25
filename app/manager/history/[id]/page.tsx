@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { Banknote, Package, Calculator, BarChart3, AlertTriangle, ArrowLeft, Video, Camera, PiggyBank } from 'lucide-react'
+import { Banknote, Package, Calculator, BarChart3, AlertTriangle, ArrowLeft, Camera, PiggyBank } from 'lucide-react'
 import Link from 'next/link'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import DeleteDraftButton from '@/components/manager/delete-draft-button'
@@ -66,23 +66,6 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
     .eq('store_id', storeId)
     .eq('business_date', closing.business_date)
     .order('created_at')
-
-  // 菜單影片
-  let videoUrl: string | null = null
-  let videoName: string | null = null
-  try {
-    const { data: mv } = await supabase
-      .from('menu_videos')
-      .select('id, file_path, file_name')
-      .eq('store_id', storeId)
-      .eq('business_date', closing.business_date)
-      .maybeSingle()
-    if (mv) {
-      const { data: signed } = await supabase.storage.from('menu-videos').createSignedUrl(mv.file_path, 3600)
-      videoUrl = signed?.signedUrl ?? null
-      videoName = mv.file_name
-    }
-  } catch { /* menu_videos table may not exist yet */ }
 
   const store = closing.stores as any
   const rev = closing.revenue_items ?? []
@@ -306,21 +289,6 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
       {/* 手寫訂單 */}
       {handwriteOrders.length > 0 && (
         <HandwriteOrdersList orders={handwriteOrders} />
-      )}
-
-      {/* 菜單影片 */}
-      {videoUrl && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
-              <Video className="h-4 w-4 text-blue-500" /> 今日菜單影片
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            <video src={videoUrl} controls playsInline className="w-full rounded-lg bg-black" style={{ maxHeight: '220px' }} />
-            {videoName && <p className="text-xs text-slate-400">{videoName}</p>}
-          </CardContent>
-        </Card>
       )}
 
       {/* 央廚配送 */}

@@ -4,9 +4,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthContext } from '@/lib/permissions'
 
 // 允許上傳的 bucket 與最大檔案大小（位元組）
-const ALLOWED_BUCKETS = new Set(['receipts', 'menu-videos', 'excel-templates', 'meeting-reports'])
+// 不再允許 menu-videos 上傳；歷史影片仍可從顯示頁面查看
+const ALLOWED_BUCKETS = new Set(['receipts', 'excel-templates', 'meeting-reports'])
 // 圖片：壓縮後通常 < 500KB，5 MB 已是寬鬆上限
-// 影片：menu-videos 走 signed URL，繞過這個限制
 const MAX_FILE_BYTES = 5 * 1024 * 1024  // 5 MB
 
 function pathTraversalSafe(path: string): boolean {

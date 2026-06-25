@@ -1896,8 +1896,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     }}>
                       {/* 展開時：照片黏在卡片頂端，S/M/L 三段可調 */}
                       {photoSrc && isExpanded && (() => {
-                        const size = receiptPhotoSize[form.id] ?? 'M'
-                        const photoH = size === 'S' ? 60 : size === 'L' ? 380 : 200
+                        // 預設 L（大），手機上更容易看清收據文字
+                        const size = receiptPhotoSize[form.id] ?? 'L'
+                        // L 改用視窗高度自適應，最高 700px；M/S 也跟著放大
+                        const photoH: number | string =
+                          size === 'S' ? 100 :
+                          size === 'L' ? 'min(75vh, 700px)' :
+                          360
                         const setSize = (s: 'S' | 'M' | 'L') => setReceiptPhotoSize(p => ({ ...p, [form.id]: s }))
                         return (
                           <div style={{ position: 'sticky', top: 90, zIndex: 15, marginBottom: 10 }}>
