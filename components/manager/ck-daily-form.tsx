@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn } from 'lucide-react'
 import { saveCKDailyRecord, addCKExternalStore, deleteCKExternalStore, confirmCKOrder } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
+import { compressImage } from '@/lib/compress-image'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -212,7 +213,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
   async function handlePhotoUpload(files: FileList | null) {
     if (!files || files.length === 0) return
     setPhotoUploading(true)
-    for (const file of Array.from(files)) {
+    for (const rawFile of Array.from(files)) {
+      const file = await compressImage(rawFile)
       const fd = new FormData()
       fd.append('file', file)
       const path = `ck/${ckStoreId}/${date}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`

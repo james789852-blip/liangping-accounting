@@ -5,7 +5,9 @@ import { getAuthContext } from '@/lib/permissions'
 
 // 允許上傳的 bucket 與最大檔案大小（位元組）
 const ALLOWED_BUCKETS = new Set(['receipts', 'menu-videos', 'excel-templates', 'meeting-reports'])
-const MAX_FILE_BYTES = 50 * 1024 * 1024  // 50 MB
+// 圖片：壓縮後通常 < 500KB，5 MB 已是寬鬆上限
+// 影片：menu-videos 走 signed URL，繞過這個限制
+const MAX_FILE_BYTES = 5 * 1024 * 1024  // 5 MB
 
 function pathTraversalSafe(path: string): boolean {
   if (!path) return false

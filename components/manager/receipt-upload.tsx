@@ -3,6 +3,7 @@
 import { useState, useRef, useTransition } from 'react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import { compressImage } from '@/lib/compress-image'
 import { saveReceipt } from '@/app/actions/receipts'
 import { saveItemMappingsBatch } from '@/app/actions/item-mappings'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
@@ -73,9 +74,11 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const rawFile = e.target.files?.[0]
+    if (!rawFile) return
     setError('')
+
+    const file = await compressImage(rawFile)
 
     const reader = new FileReader()
     reader.onload = ev => setPhotoPreview(ev.target?.result as string)

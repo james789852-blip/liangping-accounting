@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { compressImage } from '@/lib/compress-image'
 import { Camera, Loader2, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -27,11 +28,12 @@ export default function SectionPhotoGrid({ storeId, photos, onChange, maxPhotos 
     try {
       const supabase = createClient()
       const newUrls: string[] = []
-      for (const file of Array.from(files)) {
-        if (file.size > 10 * 1024 * 1024) {
-          toast.error(`${file.name} 過大（上限 10MB）`)
+      for (const rawFile of Array.from(files)) {
+        if (rawFile.size > 30 * 1024 * 1024) {
+          toast.error(`${rawFile.name} 過大（上限 30MB）`)
           continue
         }
+        const file = await compressImage(rawFile)
         const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
         const path = `${storeId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
         const { error } = await supabase.storage.from('meeting-reports').upload(path, file, { upsert: false })

@@ -9,6 +9,7 @@ import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, 
 import { saveCashCounts, submitClosing, savePettyCounts } from '@/app/actions/closings'
 import { syncStoreCKOrder } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
+import { compressImage } from '@/lib/compress-image'
 import { normalizeItemAmount } from '@/lib/negative-items'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
 
@@ -991,7 +992,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setCkPhotoPreview(URL.createObjectURL(file))
     const ext = file.name.split('.').pop() || 'jpg'
     const path = `receipts/${store.id}/${today}/ck-delivery.${ext}`
-    const fd = new FormData(); fd.append('file', file)
+    const fd = new FormData(); fd.append('file', await compressImage(file))
     const result = await uploadToStorage(fd, 'receipts', path)
     if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
     setCkPhotoUrl(result.publicUrl)
@@ -1006,7 +1007,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setEnvelopePhotoPreview(URL.createObjectURL(file))
     const ext = file.name.split('.').pop() || 'jpg'
     const path = `receipts/${store.id}/${today}/envelope.${ext}`
-    const fd = new FormData(); fd.append('file', file)
+    const fd = new FormData(); fd.append('file', await compressImage(file))
     const result = await uploadToStorage(fd, 'receipts', path)
     if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
     setEnvelopePhotoUrl(result.publicUrl)
@@ -1025,7 +1026,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const path = `receipts/${store.id}/${today}/extra-${uniqueId}.${ext}`
-    const fd = new FormData(); fd.append('file', file)
+    const fd = new FormData(); fd.append('file', await compressImage(file))
     const result = await uploadToStorage(fd, 'receipts', path)
     setExtraPhotoUploading(false)
     if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
@@ -1041,7 +1042,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const ext = file.name.split('.').pop() || 'jpg'
     const idx = voidInvoicePhotos.length
     const path = `receipts/${store.id}/${today}/void-invoice-${idx}.${ext}`
-    const fd = new FormData(); fd.append('file', file)
+    const fd = new FormData(); fd.append('file', await compressImage(file))
     const result = await uploadToStorage(fd, 'receipts', path)
     setVoidInvoiceUploading(false)
     if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
@@ -1056,7 +1057,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setNotePhotoPreview(URL.createObjectURL(file))
     const ext = file.name.split('.').pop() || 'jpg'
     const path = `receipts/${store.id}/${today}/note.${ext}`
-    const fd = new FormData(); fd.append('file', file)
+    const fd = new FormData(); fd.append('file', await compressImage(file))
     const result = await uploadToStorage(fd, 'receipts', path)
     if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
     setNotePhotoUrl(result.publicUrl)
@@ -1104,7 +1105,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (editPhotoFile) {
       const ext = editPhotoFile.name.split('.').pop()?.toLowerCase() || 'jpg'
       const path = `receipts/${store.id}/${today}/${editingReceiptId}.${ext}`
-      const fd = new FormData(); fd.append('file', editPhotoFile)
+      const fd = new FormData(); fd.append('file', await compressImage(editPhotoFile))
       const uploadResult = await uploadToStorage(fd, 'receipts', path)
       if (!('error' in uploadResult)) newPhotoUrl = uploadResult.publicUrl
     }
@@ -1173,7 +1174,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (!form.file) return
       const ext = form.file.name.split('.').pop()?.toLowerCase() || 'jpg'
       const path = `receipts/${store.id}/${today}/${form.id}.${ext}`
-      const fd = new FormData(); fd.append('file', form.file)
+      const fd = new FormData(); fd.append('file', await compressImage(form.file))
       const result = await uploadToStorage(fd, 'receipts', path)
       if (!('error' in result)) {
         setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploadedPhotoUrl: result.publicUrl } : f))
@@ -1225,7 +1226,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (!photo_url && form.file) {
       const ext = form.file.name.split('.').pop()?.toLowerCase() || 'jpg'
       const path = `receipts/${store.id}/${today}/${form.id}.${ext}`
-      const fd = new FormData(); fd.append('file', form.file)
+      const fd = new FormData(); fd.append('file', await compressImage(form.file))
       const uploadResult = await uploadToStorage(fd, 'receipts', path)
       if (!('error' in uploadResult)) photo_url = uploadResult.publicUrl
     }
@@ -1352,7 +1353,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
     const safeKey = [...key].map(c => /[\w-]/.test(c) ? c : c.codePointAt(0)!.toString()).join('')
     const path = `receipts/${store.id}/${today}/rev-${safeKey}.${ext}`
-    const fd = new FormData(); fd.append('file', file)
+    const fd = new FormData(); fd.append('file', await compressImage(file))
     const uploadResult = await uploadToStorage(fd, 'receipts', path)
     if ('error' in uploadResult) {
       toast.error(`照片上傳失敗：${uploadResult.error}`)
