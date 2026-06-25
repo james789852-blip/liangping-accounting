@@ -544,14 +544,14 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
   // ─ 平台欄位 ─
   // 動態長度：只列出該店實際啟用的平台，沒啟用的不出欄。
   // 顏色依平台種類：
-  //   TWPAY            → 粉紅底 + 紅字
+  //   TWPAY            → 桃粉底 + 紅字（DA9694 對比清晰）
   //   所有 Uber 帳號   → 綠底  + 黑字（鑫營 / 五分舖 等統一）
-  //   熊貓             → 紅底  + 紅字
+  //   熊貓             → 桃粉底 + 紅字（同類型支付/外送色系，實務上同店少同時出現）
   //   線上自家/線上(現金) → 淺藍底 + 黑字（兩者一致以標示自家通路）
   // 注意：NFT 目前不使用，不列入匯出。
   // 順序：TWPAY → Uber 帳號 → 熊貓 → 線上自家 → 線上(現金)
   const platformStyle = (key: string): { bg: string; color: string } => {
-    if (key === 'twpay') return { bg: C.platformPink, color: C.red }
+    if (key === 'twpay') return { bg: C.platformRed, color: C.red }
     if (key === 'panda') return { bg: C.platformRed, color: C.red }
     if (key === 'online' || key === 'online_cash') return { bg: C.blueLight, color: C.ink }
     return { bg: C.platformGreen, color: C.ink }
