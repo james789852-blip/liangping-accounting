@@ -49,7 +49,12 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
     .eq('store_id', storeId)
     .single()
 
-  if (!closing) return <div className="p-6 text-slate-500">找不到此帳目</div>
+  if (!closing) {
+    // HQ user 多半是從書籤殘留進到別家店的帳目連結 → 導回 manager dashboard
+    const isHQ = !!profile?.is_hq || profile?.role === '老闆'
+    if (isHQ) redirect('/manager/dashboard')
+    return <div className="p-6 text-slate-500">找不到此帳目</div>
+  }
 
   const admin = createAdminClient()
   const { data: cashCounts } = await admin.from('cash_counts').select('*').eq('closing_id', closing.id)

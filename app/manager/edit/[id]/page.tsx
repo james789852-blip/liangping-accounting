@@ -30,7 +30,13 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     .eq('store_id', storeId)
     .single()
 
-  if (!closing) return <div className="p-6 text-slate-500">找不到此帳目或無權限</div>
+  if (!closing) {
+    // HQ user 通常是從書籤/瀏覽器歷史殘留進到別家店的帳目連結，
+    // 直接導回 manager dashboard 比顯示錯誤畫面更友善
+    const isHQ = !!profile?.is_hq || profile?.role === '老闆'
+    if (isHQ) redirect('/manager/dashboard')
+    return <div className="p-6 text-slate-500">找不到此帳目或無權限</div>
+  }
 
   // 已送出/已審核的帳目：若是今日帳目 → 轉去 /manager/closing 走零用金核對流程
   // （/manager/closing 已能處理 submitted/verified 並顯示零用金步驟）
