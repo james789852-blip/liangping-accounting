@@ -2138,19 +2138,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           // 依類別過濾：vendor_group / category / name 三個條件取聯集
                                           // 央廚配送品項不在收據錄入內
                                           const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送' && c.vendor_group !== '退稅')
+                                          // 防呆：baseAll 空（店家設定異常）→ 退讓給整個 mappingColumns 不含退稅
+                                          const safeBaseAll = baseAll.length > 0 ? baseAll : mappingColumns.filter(c => c.vendor_group !== '退稅')
                                           const base = form.category
                                             ? (() => {
                                                 const merged = new Map<string, typeof mappingColumns[0]>()
-                                                for (const c of baseAll) {
+                                                for (const c of safeBaseAll) {
                                                   if (c.vendor_group === form.category
                                                       || c.category === form.category
                                                       || c.name === form.category) {
                                                     if (!merged.has(c.name)) merged.set(c.name, c)
                                                   }
                                                 }
-                                                return merged.size > 0 ? Array.from(merged.values()) : baseAll
+                                                return merged.size > 0 ? Array.from(merged.values()) : safeBaseAll
                                               })()
-                                            : baseAll
+                                            : safeBaseAll
                                           const groups: { group: string; items: typeof mappingColumns }[] = []
                                           for (const col of base) {
                                             const g = col.vendor_group ?? col.category
@@ -2170,11 +2172,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           const nameCount = new Map<string, number>()
                                           for (const c of base) nameCount.set(c.name, (nameCount.get(c.name) ?? 0) + 1)
                                           if (groups.length === 0) {
+                                            // 診斷訊息：顯示實際數字，方便回報問題
+                                            const dbg = `mc=${mappingColumns.length} all=${baseAll.length} safe=${safeBaseAll.length} cat=${form.category || '∅'}`
                                             return (
                                               <option value="" disabled>
-                                                {mappingColumns.length === 0
-                                                  ? '（店家未設定品項，請至「品項管理」啟用）'
-                                                  : `（${form.category || '此分類'} 無可選品項，請至「品項管理」啟用）`}
+                                                {`（無品項 ${dbg}）`}
                                               </option>
                                             )
                                           }
