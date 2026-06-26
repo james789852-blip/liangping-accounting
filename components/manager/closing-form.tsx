@@ -2169,6 +2169,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           // 偵測「同名品項出現在多個分組」— 若有，value 用「{vg}|{name}」確保唯一
                                           const nameCount = new Map<string, number>()
                                           for (const c of base) nameCount.set(c.name, (nameCount.get(c.name) ?? 0) + 1)
+                                          if (groups.length === 0) {
+                                            return (
+                                              <option value="" disabled>
+                                                {mappingColumns.length === 0
+                                                  ? '（店家未設定品項，請至「品項管理」啟用）'
+                                                  : `（${form.category || '此分類'} 無可選品項，請至「品項管理」啟用）`}
+                                              </option>
+                                            )
+                                          }
                                           return groups.map(({ group, items }) => (
                                             <optgroup key={group} label={group}>
                                               {items.map(c => {
