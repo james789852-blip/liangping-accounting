@@ -2135,16 +2135,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                         onChange={e => {
                                           const raw = e.target.value
                                           const sepIdx = raw.indexOf('|')
-                                          if (sepIdx > 0) {
-                                            // value 為「{vg}|{name}」格式（多個同名品項需要 vg 區分）
-                                            const vg = raw.slice(0, sepIdx)
-                                            const name = raw.slice(sepIdx + 1)
-                                            updateItem(item.id, 'item_name', name)
-                                            updateItem(item.id, 'vendor_group_hint', vg)
-                                          } else {
-                                            updateItem(item.id, 'item_name', raw)
-                                            updateItem(item.id, 'vendor_group_hint', '')
-                                          }
+                                          // 「{vg}|{name}」格式（多個同名品項需要 vg 區分）；無 | 則整字串視為 name
+                                          const vg = sepIdx > 0 ? raw.slice(0, sepIdx) : ''
+                                          const name = sepIdx > 0 ? raw.slice(sepIdx + 1) : raw
+                                          // 一次 syncItems 同時更新兩欄位，避免兩個連續 setState 因 closure 看到舊 state 互相覆蓋
+                                          syncItems((form.items ?? []).map(i =>
+                                            i.id !== item.id ? i : { ...i, item_name: name, vendor_group_hint: vg } as any
+                                          ))
                                         }}
                                         style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
                                         <option value="">— 選擇品項 —</option>
