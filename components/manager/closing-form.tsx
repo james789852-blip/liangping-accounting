@@ -1445,6 +1445,20 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         extra_photo_urls: extraPhotos,
       }
       if (!cid) {
+        // 防呆：當日可能已有 closing 但 state 沒同步（page race / refresh / multi-tab），
+        // 先查 DB 看 (store_id, business_date) 是否已存在，避免硬 INSERT 撞 unique constraint
+        const { data: existing } = await supabase
+          .from('daily_closings').select('id, status')
+          .eq('store_id', store.id).eq('business_date', today).maybeSingle()
+        if (existing) {
+          if (['submitted', 'verified'].includes(existing.status)) {
+            throw new Error('該日帳目已送出，請重新整理頁面')
+          }
+          cid = existing.id
+          setClosingId(cid)
+        }
+      }
+      if (!cid) {
         const { data: nc, error } = await supabase.from('daily_closings').insert(payload).select('id').single()
         if (error) throw error
         cid = nc.id
