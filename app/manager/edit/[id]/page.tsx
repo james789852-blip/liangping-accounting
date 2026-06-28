@@ -52,17 +52,23 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     )
   }
 
-  const { data: store } = await supabase
-    .from('stores').select('*').eq('id', storeId).single()
-
-  const { data: ckPrices } = await supabase
-    .from('central_kitchen_prices')
-    .select('id, item_name, unit_price, unit, excel_column')
-    .eq('active', true)
-    .order('sort_order').order('item_name')
-
   const admin2 = createAdminClient()
-  const [{ data: todayReceipts }, receiptCategories, { data: mappingRows }, itemOrderText] = await Promise.all([
+  // 全部平行撈，省 3 個 round trip
+  const [
+    { data: store },
+    { data: ckPrices },
+    { data: todayReceipts },
+    receiptCategories,
+    { data: mappingRows },
+    itemOrderText,
+    newItems,
+  ] = await Promise.all([
+    supabase.from('stores').select('*').eq('id', storeId).single(),
+    supabase
+      .from('central_kitchen_prices')
+      .select('id, item_name, unit_price, unit, excel_column')
+      .eq('active', true)
+      .order('sort_order').order('item_name'),
     supabase
       .from('receipts')
       .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount)')
@@ -74,6 +80,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     admin2.storage.from('excel-templates').download(`${storeId}-item-order.json`)
       .then(async ({ data }) => (data ? data.text() : null))
       .catch((): null => null),
+    getStoreItemsResolved(storeId),
   ])
 
   let itemOrder: string[] = []
@@ -81,7 +88,6 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
   const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
 
   // 優先用新 schema，沒設定才 fallback 舊 mapping
-  const newItems = await getStoreItemsResolved(storeId)
   const mappingColumns = newItems.length > 0
     ? toMappingColumns(newItems)
     : (mappingRows ?? []).map((r: any) => ({

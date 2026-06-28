@@ -40,7 +40,7 @@ export default async function ClosingPage({
     : realToday
   const isBackfill = today !== realToday
 
-  // 一次平行撈完所有依賴 storeId/today 的資料
+  // 一次平行撈完所有依賴 storeId/today 的資料（含 store_items_resolved）
   const [
     store,
     ckPrices,
@@ -50,6 +50,7 @@ export default async function ClosingPage({
     mappingRows,
     { data: prevClosing },
     itemOrder,
+    newItems,
   ] = await Promise.all([
     getCachedStoreFull(storeId),
     getCachedActiveCKPrices(),
@@ -77,6 +78,7 @@ export default async function ClosingPage({
       .limit(1)
       .maybeSingle(),
     getCachedItemOrder(storeId),
+    getStoreItemsResolved(storeId),
   ])
 
   // 央廚店家使用專屬流程
@@ -94,7 +96,6 @@ export default async function ClosingPage({
   const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
 
   // 優先用新 schema (system_items + store_items)；沒設定才 fallback 舊 item_column_mappings
-  const newItems = await getStoreItemsResolved(storeId)
   const mappingColumns = newItems.length > 0
     ? toMappingColumns(newItems)
     : (mappingRows ?? []).map((r: { item_name: string; item_category: string; vendor_group: string | null; excel_column: string }) => ({

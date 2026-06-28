@@ -57,15 +57,17 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
   }
 
   const admin = createAdminClient()
-  const { data: cashCounts } = await admin.from('cash_counts').select('*').eq('closing_id', closing.id)
+  // 平行撈，省 1 個 round trip
+  const [{ data: cashCounts }, { data: receipts }] = await Promise.all([
+    admin.from('cash_counts').select('*').eq('closing_id', closing.id),
+    admin
+      .from('receipts')
+      .select('id, vendor_name, total_amount, receipt_type, photo_url, tax_amount, receipt_items(item_name, amount)')
+      .eq('store_id', storeId)
+      .eq('business_date', closing.business_date)
+      .order('created_at'),
+  ])
   ;(closing as any).cash_counts = cashCounts ?? []
-
-  const { data: receipts } = await admin
-    .from('receipts')
-    .select('id, vendor_name, total_amount, receipt_type, photo_url, tax_amount, receipt_items(item_name, amount)')
-    .eq('store_id', storeId)
-    .eq('business_date', closing.business_date)
-    .order('created_at')
 
   const store = closing.stores as any
   const rev = closing.revenue_items ?? []
