@@ -98,6 +98,8 @@ export interface ItemDef {
   category: '食材' | '耗材' | '雜項'
   vendor_group: string
   vendor_group_id: string | null
+  /** 廠商分類在 system_vendor_groups 的 sort_order（決定匯出時類別欄位順序） */
+  vendor_group_sort_order?: number
   doc_type: string | null
   is_system: boolean
 }
@@ -619,12 +621,19 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
 
   for (const sec of itemSections) {
     const byVG: Record<string, ItemDef[]> = {}
-    const vgOrder: string[] = []
+    const vgSort: Record<string, number> = {}
     for (const it of sec.items) {
       const vg = it.vendor_group || '未分類'
-      if (!byVG[vg]) { byVG[vg] = []; vgOrder.push(vg) }
+      if (!byVG[vg]) byVG[vg] = []
       byVG[vg].push(it)
+      // 取每組品項中最小（最前）的 vendor_group_sort_order 作為該 vg 的排序基準
+      const cur = it.vendor_group_sort_order ?? 9999
+      if (vgSort[vg] === undefined || cur < vgSort[vg]) vgSort[vg] = cur
     }
+    // 依 system_vendor_groups.sort_order 排序，總公司可在系統設定調整
+    const vgOrder = Object.keys(byVG).sort((a, b) =>
+      (vgSort[a] ?? 9999) - (vgSort[b] ?? 9999) || a.localeCompare(b, 'zh-Hant'),
+    )
     for (const vg of vgOrder) {
       const groupItems = byVG[vg]
       const startCol = col

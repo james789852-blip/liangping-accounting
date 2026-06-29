@@ -15,6 +15,8 @@ export interface ResolvedStoreItem {
   vendor_group_id: string | null
   /** 該分類對應的單據類型（發票/收據/估價單/公司開）— Excel row 2 用 */
   doc_type: string | null
+  /** 該分類在 system_vendor_groups 的 sort_order（給 Excel 匯出排類別用） */
+  vendor_group_sort_order: number
   /** 是否系統品項（false = 店家自訂） */
   is_system: boolean
   /** 排序（store_items.sort_order 或 system_items.sort_order） */
@@ -25,14 +27,19 @@ export interface ResolvedStoreItem {
 export async function getStoreItemsResolved(storeId: string): Promise<ResolvedStoreItem[]> {
   const admin = createAdminClient()
   const [{ data: vgs }, { data: sysItems }, { data: storeItems }] = await Promise.all([
-    admin.from('system_vendor_groups').select('id, name, doc_type').eq('active', true),
+    admin.from('system_vendor_groups').select('id, name, doc_type, sort_order').eq('active', true),
     admin.from('system_items').select('*').eq('active', true).order('sort_order'),
     admin.from('store_items').select('*').eq('store_id', storeId).order('sort_order'),
   ])
 
-  const vgMap = new Map((vgs ?? []).map((v: any) => [v.id, { name: v.name as string, doc_type: (v.doc_type ?? null) as string | null }]))
+  const vgMap = new Map((vgs ?? []).map((v: any) => [v.id, {
+    name: v.name as string,
+    doc_type: (v.doc_type ?? null) as string | null,
+    sort_order: (v.sort_order ?? 9999) as number,
+  }]))
   const vgName = (id: string | null | undefined) => id ? (vgMap.get(id)?.name ?? '未分類') : '未分類'
   const vgDoc  = (id: string | null | undefined) => id ? (vgMap.get(id)?.doc_type ?? null) : null
+  const vgSort = (id: string | null | undefined) => id ? (vgMap.get(id)?.sort_order ?? 9999) : 9999
 
   // 1) 店家對系統品項的明確啟用/停用設定 + 店家自訂的 sort_order（覆寫 system 預設順序）
   const sysOverride = new Map<string, { enabled: boolean; sort_order: number | null }>()
@@ -49,6 +56,7 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
         vendor_group: vgName(si.custom_vendor_group_id),
         vendor_group_id: si.custom_vendor_group_id,
         doc_type: vgDoc(si.custom_vendor_group_id),
+        vendor_group_sort_order: vgSort(si.custom_vendor_group_id),
         is_system: false,
         sort_order: si.sort_order ?? 1000,
       })
@@ -69,6 +77,7 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
       vendor_group: vgName(it.vendor_group_id),
       vendor_group_id: it.vendor_group_id,
       doc_type: vgDoc(it.vendor_group_id),
+      vendor_group_sort_order: vgSort(it.vendor_group_id),
       is_system: true,
       sort_order: overridden?.sort_order ?? it.sort_order ?? 1000,
     })
