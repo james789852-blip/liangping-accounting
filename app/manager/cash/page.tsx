@@ -7,7 +7,11 @@ import CashCountForm from '@/components/manager/cash-count-form'
 
 export const dynamic = 'force-dynamic'
 
-export default async function CashPage() {
+export default async function CashPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ date?: string }>
+}) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -24,7 +28,12 @@ export default async function CashPage() {
     )
   }
 
-  const today = getBusinessDate()
+  const realToday = getBusinessDate()
+  // ?date 允許查歷史某日（給已 submitted 帳目補做零用金核對用），但不能晚於今日
+  const sp = (await searchParams) ?? {}
+  const today = (sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) && sp.date <= realToday)
+    ? sp.date
+    : realToday
   const sevenDaysAgo = new Date(new Date(today + 'T00:00:00+08:00').getTime() - 7 * 86400000).toISOString().slice(0, 10)
 
   const admin = createAdminClient()

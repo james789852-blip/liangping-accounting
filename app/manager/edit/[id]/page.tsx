@@ -46,8 +46,16 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     }
     return (
       <div className="p-6 max-w-md mx-auto text-center space-y-3">
-        <p className="text-slate-600">此帳目狀態為「{closing.status}」，無法編輯</p>
-        <a href="/manager/history" className="text-blue-600 text-sm underline">返回歷史紀錄</a>
+        <p className="text-slate-600">此帳目狀態為「{closing.status}」，無法編輯內容</p>
+        <p className="text-xs" style={{ color: '#a1a1aa' }}>但你仍可補做零用金核對</p>
+        <div className="flex flex-col gap-2 items-center pt-1">
+          <a href={`/manager/cash?date=${closing.business_date}`}
+            className="inline-block px-4 py-2 rounded-xl text-sm font-semibold text-white"
+            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
+            核對零用金
+          </a>
+          <a href="/manager/history" className="text-blue-600 text-sm underline">返回歷史紀錄</a>
+        </div>
       </div>
     )
   }
