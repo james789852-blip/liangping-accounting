@@ -239,6 +239,9 @@ export default function StoreItemsClient({
         </button>
       </div>
 
+      {/* 新增自訂品項（搬到上方，方便快速操作） */}
+      <AddCustomItemCard storeId={storeId} vendorGroups={vendorGroups} onCreated={() => router.refresh()} />
+
       {/* 系統品項（依分類） — 系統 + 自訂混合排序 */}
       {vendorGroups.filter(v => v.active).sort((a, b) => a.sort_order - b.sort_order).map(vg => {
         const list = unifiedByVG[vg.id] ?? []
@@ -322,8 +325,6 @@ export default function StoreItemsClient({
         )
       })}
 
-      {/* 新增自訂品項 */}
-      <AddCustomItemCard storeId={storeId} vendorGroups={vendorGroups} onCreated={() => router.refresh()} />
     </div>
   )
 }
