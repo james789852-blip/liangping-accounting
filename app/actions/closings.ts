@@ -25,12 +25,16 @@ export async function saveCashCounts(closingId: string, counts: CashCountsPayloa
     .from('daily_closings').select('id').eq('id', closingId).single()
   if (!closing) return { error: '無法存取此帳目' }
 
-  // 用 service role 繞過 RLS，確保 INSERT 一定成功
+  // 用 upsert 避免「先 delete 再 insert」非 atomic：
+  // 若 insert 失敗（race / network），原本的 cash_counts 會整筆消失。
+  // cash_counts.closing_id 有 unique 約束，可直接以此為 conflict key 做 upsert。
   const admin = createAdminClient()
-  await admin.from('cash_counts').delete().eq('closing_id', closingId)
   const { error } = await admin
     .from('cash_counts')
-    .insert({ closing_id: closingId, ...counts })
+    .upsert(
+      { closing_id: closingId, ...counts, updated_at: new Date().toISOString() },
+      { onConflict: 'closing_id' },
+    )
 
   if (error) return { error: error.message }
   return { success: true }
