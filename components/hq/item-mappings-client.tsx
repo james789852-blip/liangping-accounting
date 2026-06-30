@@ -79,11 +79,11 @@ export default function ItemMappingsClient({
   function startEdit(m: Mapping) { setEditId(m.id); setEditCol(m.excel_column); setEditCat(m.item_category); setEditVendorGroup(m.vendor_group ?? '') }
 
   function handleUpdate(id: string) {
-    startTransition(async () => {
-      await updateItemMapping(id, editCol, editCat, editVendorGroup || null)
-      setMappings(prev => prev.map(m => m.id === id ? { ...m, excel_column: editCol, item_category: editCat } : m))
-      setEditId(null)
-      router.refresh()
+    // optimistic：UI 立刻關閉編輯態並更新顯示
+    setMappings(prev => prev.map(m => m.id === id ? { ...m, excel_column: editCol, item_category: editCat, vendor_group: editVendorGroup || null } : m))
+    setEditId(null)
+    updateItemMapping(id, editCol, editCat, editVendorGroup || null).catch(e => {
+      toast.error('儲存失敗：' + (e instanceof Error ? e.message : String(e)))
     })
   }
 
@@ -118,15 +118,7 @@ export default function ItemMappingsClient({
     if (!items) return
     const newIdx = direction === 'up' ? idx - 1 : idx + 1
     if (newIdx < 0 || newIdx >= items.length) return
-    const reordered = [...items]
-    ;[reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]]
-    // 找出該 vg 內的 ids 新順序，呼叫 server update sort_order
-    startTransition(async () => {
-      await reorderItemMappings(reordered.map(i => i.id))
-      // 重新 fetch
-      router.refresh()
-    })
-    // optimistic update: 把 mappings 內這 vg 對應的兩筆順序 swap
+    // optimistic update — UI 立即反應
     setMappings(prev => {
       const next = [...prev]
       const idxA = next.findIndex(m => m.id === items[idx].id)
@@ -135,6 +127,12 @@ export default function ItemMappingsClient({
         [next[idxA], next[idxB]] = [next[idxB], next[idxA]]
       }
       return next
+    })
+    // fire-and-forget server update（不 refresh，避免重 fetch 整頁拖慢）
+    const reorderedIds = [...items]
+    ;[reorderedIds[idx], reorderedIds[newIdx]] = [reorderedIds[newIdx], reorderedIds[idx]]
+    reorderItemMappings(reorderedIds.map(i => i.id)).catch(e => {
+      toast.error('排序儲存失敗：' + (e instanceof Error ? e.message : String(e)))
     })
   }
 
@@ -196,21 +194,28 @@ export default function ItemMappingsClient({
     })
   }
 
-  async function moveVendorGroup(vgName: string, direction: 'up' | 'down') {
+  function moveVendorGroup(vgName: string, direction: 'up' | 'down') {
     const idx = groupOrder.indexOf(vgName)
     if (idx < 0) return
     const newIdx = direction === 'up' ? idx - 1 : idx + 1
     if (newIdx < 0 || newIdx >= groupOrder.length) return
     const reordered = [...groupOrder]
     ;[reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]]
-    // 對應到 vendorGroups 的 id 順序
     const ids = reordered.map(name => vendorGroups.find(v => v.name === name)?.id).filter((x): x is string => !!x)
     if (ids.length === 0) return
-    const { reorderVendorGroups } = await import('@/app/actions/system-config')
-    startTransition(async () => {
-      await reorderVendorGroups(ids)
-      router.refresh()
+    // optimistic：更新 local vgSortMap
+    ids.forEach((id, i) => {
+      const vg = vendorGroups.find(v => v.id === id)
+      if (vg) vg.sort_order = (i + 1) * 10
     })
+    // fire-and-forget server update
+    import('@/app/actions/system-config').then(({ reorderVendorGroups }) => {
+      reorderVendorGroups(ids).catch(e => {
+        toast.error('分類排序失敗：' + (e instanceof Error ? e.message : String(e)))
+      })
+    })
+    // 強制 re-render（vendorGroups 是 prop 修改但 React 不會察覺，所以手動觸發）
+    setMappings(prev => [...prev])
   }
 
   return (
