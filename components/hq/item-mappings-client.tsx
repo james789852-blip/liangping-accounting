@@ -56,6 +56,7 @@ export default function ItemMappingsClient({
   const [newName, setNewName] = useState('')
   const [newCol, setNewCol] = useState('')
   const [newCat, setNewCat] = useState('食材')
+  const [newVendorGroup, setNewVendorGroup] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
@@ -93,15 +94,16 @@ export default function ItemMappingsClient({
     if (!newName.trim() || !newCol) return
     const storeIdParam = activeStoreId || undefined
     startTransition(async () => {
-      await saveItemMapping(newName.trim(), newCol, newCat, storeIdParam)
+      await saveItemMapping(newName.trim(), newCol, newCat, storeIdParam, newVendorGroup.trim() || undefined)
       setMappings(prev => [...prev, {
         id: `tmp-${Date.now()}`,
         item_name: newName.trim(),
         excel_column: newCol,
         item_category: newCat,
+        vendor_group: newVendorGroup.trim() || null,
         store_id: storeIdParam ?? null,
       }])
-      setShowAdd(false); setNewName(''); setNewCol(''); setNewCat('食材')
+      setShowAdd(false); setNewName(''); setNewCol(''); setNewCat('食材'); setNewVendorGroup('')
       router.refresh()
     })
   }
@@ -241,10 +243,20 @@ export default function ItemMappingsClient({
             <p className="text-sm font-semibold" style={{ color: '#92400E' }}>
               新增品項對應{isStorePage ? `（${stores.find(s => s.id === activeStoreId)?.name ?? '此店'} 專屬）` : '（全域）'}
             </p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#52525b' }}>品項名稱</label>
                 <input style={INPUT_STYLE} value={newName} onChange={e => setNewName(e.target.value)} placeholder="例：高麗菜" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: '#52525b' }}>廠商分類</label>
+                <input style={INPUT_STYLE} value={newVendorGroup} onChange={e => setNewVendorGroup(e.target.value)}
+                  list="vg-list" placeholder="例：菜商 / 雜貨 / 免洗 / 小雲" />
+                <datalist id="vg-list">
+                  {[...new Set(mappings.map(m => m.vendor_group).filter(Boolean) as string[])].sort().map(v => (
+                    <option key={v} value={v} />
+                  ))}
+                </datalist>
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#52525b' }}>Excel 欄位</label>
