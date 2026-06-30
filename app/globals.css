@@ -180,3 +180,23 @@
     bottom: 0;
   }
 }
+
+/* 央廚配送單照片固定在頂端 — 手機相對 viewport 置中；desktop 加上 sidebar 240px 一半的偏移以對齊主 container */
+.ck-photo-fixed {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 576px;
+  padding-left: 16px;
+  padding-right: 16px;
+  box-sizing: border-box;
+  z-index: 30;
+  pointer-events: none;
+}
+@media (min-width: 1024px) {
+  .ck-photo-fixed {
+    left: calc(50% + 120px);
+  }
+}

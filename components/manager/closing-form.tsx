@@ -2578,32 +2578,42 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="央廚配送"
               desc="填寫今日各品項配送數量，上傳配送單照片供總公司核對。" />}
 
-            {/* 照片用 sticky 黏在主 container 內，自動跟下方品項 max-w-xl 同寬同對齊
-                （fixed 相對 viewport 置中會在 desktop 有 sidebar 時往左偏） */}
+            {/* 照片用 fixed 黏在螢幕頂端，捲動下方輸入時照片仍可見。
+                .ck-photo-fixed 在 desktop 加 sidebar 偏移，跟下方主 container 對齊。 */}
             {!isLocked && (
-              <div style={{ position: 'sticky', top: 80, zIndex: 30, marginBottom: 10 }}>
-                {(ckPhotoPreview || ckPhotoUrl) ? (
-                  <StickyPhotoCard
-                    src={(ckPhotoPreview || ckPhotoUrl)!}
-                    alt="配送單"
-                    onLightbox={() => setPhotoLightbox((ckPhotoPreview || ckPhotoUrl)!)}
-                    onReupload={() => ckPhotoInputRef.current?.click()}
-                  />
-                ) : (
-                  <button onClick={() => ckPhotoInputRef.current?.click()}
-                    className="w-full rounded-2xl flex flex-col items-center justify-center gap-2 py-5"
-                    style={{ border: '2px dashed #fed7aa', background: '#fff7ed', color: '#f97316' }}>
-                    <Camera className="h-7 w-7" />
-                    <p className="text-sm font-semibold">上傳配送單照片</p>
-                    <p className="text-xs" style={{ color: '#fdba74' }}>供總公司核對品項與數量</p>
-                  </button>
-                )}
-              </div>
+              <>
+                <div className="ck-photo-fixed">
+                  <div style={{ pointerEvents: 'auto' }}>
+                    {(ckPhotoPreview || ckPhotoUrl) ? (
+                      <StickyPhotoCard
+                        src={(ckPhotoPreview || ckPhotoUrl)!}
+                        alt="配送單"
+                        onLightbox={() => setPhotoLightbox((ckPhotoPreview || ckPhotoUrl)!)}
+                        onReupload={() => ckPhotoInputRef.current?.click()}
+                      />
+                    ) : (
+                      <button onClick={() => ckPhotoInputRef.current?.click()}
+                        className="w-full rounded-2xl flex flex-col items-center justify-center gap-2 py-5"
+                        style={{ border: '2px dashed #fed7aa', background: '#fff7ed', color: '#f97316' }}>
+                        <Camera className="h-7 w-7" />
+                        <p className="text-sm font-semibold">上傳配送單照片</p>
+                        <p className="text-xs" style={{ color: '#fdba74' }}>供總公司核對品項與數量</p>
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div style={{ height: (ckPhotoPreview || ckPhotoUrl) ? 270 : 130 }} />
+              </>
             )}
             {isLocked && ckPhotoUrl && (
-              <div style={{ position: 'sticky', top: 80, zIndex: 30, marginBottom: 10 }}>
-                <StickyPhotoCard src={ckPhotoUrl} alt="配送單" onLightbox={() => setPhotoLightbox(ckPhotoUrl!)} />
-              </div>
+              <>
+                <div className="ck-photo-fixed">
+                  <div style={{ pointerEvents: 'auto' }}>
+                    <StickyPhotoCard src={ckPhotoUrl} alt="配送單" onLightbox={() => setPhotoLightbox(ckPhotoUrl!)} />
+                  </div>
+                </div>
+                <div style={{ height: 270 }} />
+              </>
             )}
 
             {/* 品項數量輸入 */}
