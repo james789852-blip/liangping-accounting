@@ -99,7 +99,7 @@ export async function createSystemItem(input: { name: string; category: string; 
   return { success: true, id: data.id }
 }
 
-export async function updateSystemItem(id: string, patch: { name?: string; category?: string; vendor_group_id?: string | null; default_enabled?: boolean; sort_order?: number; active?: boolean }) {
+export async function updateSystemItem(id: string, patch: { name?: string; category?: string; vendor_group_id?: string | null; default_enabled?: boolean; sort_order?: number; active?: boolean; doc_type_override?: string | null }) {
   const { error: authErr } = await requireHQManager()
   if (authErr) return { error: authErr }
   const admin = createAdminClient()
@@ -110,6 +110,7 @@ export async function updateSystemItem(id: string, patch: { name?: string; categ
   if (patch.default_enabled !== undefined) cleanPatch.default_enabled = patch.default_enabled
   if (patch.sort_order !== undefined) cleanPatch.sort_order = patch.sort_order
   if (patch.active !== undefined) cleanPatch.active = patch.active
+  if (patch.doc_type_override !== undefined) cleanPatch.doc_type_override = patch.doc_type_override
   const { error } = await admin.from('system_items').update(cleanPatch).eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/hq/system-config')

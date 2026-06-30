@@ -21,6 +21,7 @@ interface VG {
 interface SI {
   id: string; name: string; category: '食材' | '耗材' | '雜項'
   vendor_group_id: string | null; default_enabled: boolean; sort_order: number; active: boolean
+  doc_type_override?: string | null
 }
 
 // ────────── 樣式常數 ──────────
@@ -348,11 +349,15 @@ function ItemRow({
   const [name, setName] = useState(item.name)
   const [category, setCategory] = useState(item.category)
   const [vgId, setVgId] = useState(item.vendor_group_id ?? '')
+  const [docTypeOverride, setDocTypeOverride] = useState(item.doc_type_override ?? '')
   const [isPending, startTransition] = useTransition()
 
   function save() {
     startTransition(async () => {
-      const r = await updateSystemItem(item.id, { name, category, vendor_group_id: vgId || null })
+      const r = await updateSystemItem(item.id, {
+        name, category, vendor_group_id: vgId || null,
+        doc_type_override: docTypeOverride || null,
+      })
       if ('error' in r && r.error) toast.error(r.error)
       else { setEditing(false); toast.success('已更新'); onUpdated() }
     })
@@ -373,11 +378,19 @@ function ItemRow({
             ))}
           </select>
         </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-semibold whitespace-nowrap" style={{ color: '#52525b' }}>
+            單據類型覆寫
+          </label>
+          <input value={docTypeOverride} onChange={e => setDocTypeOverride(e.target.value)}
+            placeholder="留空 = 繼承分類預設；可填「梁鑫開」「府中開」「公司開」「發票」等"
+            style={{ ...inputStyle, flex: 1 }} />
+        </div>
         <div className="flex gap-2">
           <button onClick={save} disabled={isPending}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
             style={{ background: '#10b981', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>儲存</button>
-          <button onClick={() => { setEditing(false); setName(item.name); setCategory(item.category); setVgId(item.vendor_group_id ?? '') }}
+          <button onClick={() => { setEditing(false); setName(item.name); setCategory(item.category); setVgId(item.vendor_group_id ?? ''); setDocTypeOverride(item.doc_type_override ?? '') }}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold"
             style={{ background: 'white', border: '1px solid #e4e4e7', cursor: 'pointer', fontFamily: 'inherit' }}>取消</button>
         </div>
