@@ -2147,22 +2147,27 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                         style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
                                         <option value="">— 選擇品項 —</option>
                                         {(() => {
-                                          // 依類別過濾：vendor_group / category / name 三個條件取聯集
                                           // 央廚配送品項不在收據錄入內
                                           const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送' && c.vendor_group !== '退稅')
-                                          const base = form.category
-                                            ? (() => {
-                                                const merged = new Map<string, typeof mappingColumns[0]>()
-                                                for (const c of baseAll) {
-                                                  if (c.vendor_group === form.category
-                                                      || c.category === form.category
-                                                      || c.name === form.category) {
-                                                    if (!merged.has(c.name)) merged.set(c.name, c)
-                                                  }
-                                                }
-                                                return merged.size > 0 ? Array.from(merged.values()) : baseAll
-                                              })()
-                                            : baseAll
+                                          // 過濾優先序：
+                                          //   1. form.vendor_name（如「菜商」「雜貨」「Duskin」）→ 直接 match vendor_group
+                                          //   2. form.category（如「叫貨廠商」「固定成本」）→ fallback 寬鬆匹配
+                                          //   3. 都沒選 → 顯示全部
+                                          let base = baseAll
+                                          if (form.vendor_name) {
+                                            const filtered = baseAll.filter(c => c.vendor_group === form.vendor_name)
+                                            if (filtered.length > 0) base = filtered
+                                          } else if (form.category) {
+                                            const merged = new Map<string, typeof mappingColumns[0]>()
+                                            for (const c of baseAll) {
+                                              if (c.vendor_group === form.category
+                                                  || c.category === form.category
+                                                  || c.name === form.category) {
+                                                if (!merged.has(c.name)) merged.set(c.name, c)
+                                              }
+                                            }
+                                            if (merged.size > 0) base = Array.from(merged.values())
+                                          }
                                           const groups: { group: string; items: typeof mappingColumns }[] = []
                                           for (const col of base) {
                                             const g = col.vendor_group ?? col.category
