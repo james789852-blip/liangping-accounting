@@ -16,6 +16,7 @@ import {
 interface VG {
   id: string; name: string; kind: 'vendor' | 'doc_type' | 'tax' | 'ck' | 'uncategorized'
   sort_order: number; active: boolean; description?: string
+  doc_type?: string | null; tax_mode?: 'inclusive' | 'free'
 }
 interface SI {
   id: string; name: string; category: '食材' | '耗材' | '雜項'
