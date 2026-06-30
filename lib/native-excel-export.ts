@@ -1095,7 +1095,7 @@ const thinBlack = {
 // 對外 API
 // ────────────────────────────────────────────────
 
-/** 單月匯出（2 分頁：月度總覽 + N月食耗成本） */
+/** 單月匯出 — 只產「月度總覽」一個分頁（明細用其他方式匯出，避免欄位對不上） */
 export async function buildNativeWorkbook(opts: {
   year: number
   monthNum: number
@@ -1109,13 +1109,12 @@ export async function buildNativeWorkbook(opts: {
 
   const stats = aggregateMonthStats(opts.items, opts.dataByDate, opts.store)
   addMonthlyOverviewSheet(wb, { year: opts.year, monthNum: opts.monthNum, store: opts.store, stats })
-  addDetailSheet(wb, opts)
 
   const buffer = await wb.xlsx.writeBuffer()
   return Buffer.from(buffer)
 }
 
-/** 年度匯出（13 分頁：年度總覽 + 1月~12月） */
+/** 年度匯出 — 只產「年度總覽」+ 12 個「月度總覽」分頁（不再產日明細） */
 export async function buildAnnualWorkbook(opts: {
   year: number
   store: StoreInfo
@@ -1133,13 +1132,13 @@ export async function buildAnnualWorkbook(opts: {
   }
   addAnnualOverviewSheet(wb, { year: opts.year, store: opts.store, monthlyStats })
 
+  // 每月加上「月度總覽」分頁（取代之前的「日明細」分頁）
   for (let m = 1; m <= 12; m++) {
-    addDetailSheet(wb, {
+    addMonthlyOverviewSheet(wb, {
       year: opts.year,
       monthNum: m,
       store: opts.store,
-      items: opts.items,
-      dataByDate: opts.dataByMonth[m] ?? {},
+      stats: monthlyStats[m - 1],
     })
   }
 
