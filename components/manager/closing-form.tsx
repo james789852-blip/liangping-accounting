@@ -2579,17 +2579,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               desc="填寫今日各品項配送數量，上傳配送單照片供總公司核對。" />}
 
             {/* 照片真正固定在螢幕上方（fixed，PWA 比 sticky 可靠）— 品項區捲動時照片完全不移動 */}
-            {/* 用「max-w-xl mx-auto px-4」與下方品項 container 結構一致，確保左右對齊 */}
+            {/* 用 inline style 寫死寬度算法，與下方品項 max-w-xl mx-auto px-4 完全對齊（含 padding 也一樣 576px） */}
             {!isLocked && (
               <>
                 <div style={{
                   position: 'fixed',
                   top: 96,
-                  left: 0, right: 0,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: '100%',
+                  maxWidth: 576, // 等同 max-w-xl
+                  paddingLeft: 16, // 等同 px-4
+                  paddingRight: 16,
                   zIndex: 30,
                   pointerEvents: 'none',
                 }}>
-                  <div className="max-w-xl mx-auto px-4" style={{ pointerEvents: 'auto' }}>
+                  <div style={{ pointerEvents: 'auto' }}>
                     {(ckPhotoPreview || ckPhotoUrl) ? (
                       <StickyPhotoCard
                         src={(ckPhotoPreview || ckPhotoUrl)!}
@@ -2617,11 +2622,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <div style={{
                   position: 'fixed',
                   top: 96,
-                  left: 0, right: 0,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: '100%',
+                  maxWidth: 576,
+                  paddingLeft: 16,
+                  paddingRight: 16,
                   zIndex: 30,
                   pointerEvents: 'none',
                 }}>
-                  <div className="max-w-xl mx-auto px-4" style={{ pointerEvents: 'auto' }}>
+                  <div style={{ pointerEvents: 'auto' }}>
                     <StickyPhotoCard src={ckPhotoUrl} alt="配送單" onLightbox={() => setPhotoLightbox(ckPhotoUrl!)} />
                   </div>
                 </div>
