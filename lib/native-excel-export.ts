@@ -701,14 +701,41 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
     cell.alignment = { horizontal: 'center', vertical: 'middle' }
     cell.border = thinBlack
     if (vg.end > vg.start) ws.mergeCells(1, vg.start, 1, vg.end)
-    if (vg.doc) {
-      const dcell = ws.getRow(2).getCell(vg.start)
-      dcell.value = vg.doc
-      dcell.font = { name: FONT_DATA, bold: true, size: 14, color: { argb: vg.isTax ? C.red : C.ink } }
-      dcell.alignment = { horizontal: 'center', vertical: 'middle' }
-      dcell.border = thinBlack
-      if (vg.end > vg.start) ws.mergeCells(2, vg.start, 2, vg.end)
+  }
+  // Row 2 改成 per-item 寫 doc_type，並依連續相同值自動 merge（讓「梁鑫開」「公司開」混在同 vg 內也能正確顯示）
+  const allItems = [...foodItems, ...packItems, ...miscItems]
+  let row2MergeStart = -1
+  let row2MergeDoc: string | null = null
+  let row2MergeIsTax = false
+  const flushRow2Merge = (endCol: number) => {
+    if (row2MergeStart < 0 || !row2MergeDoc) return
+    const dcell = ws.getRow(2).getCell(row2MergeStart)
+    dcell.value = row2MergeDoc
+    dcell.font = { name: FONT_DATA, bold: true, size: 14, color: { argb: row2MergeIsTax ? C.red : C.ink } }
+    dcell.alignment = { horizontal: 'center', vertical: 'middle' }
+    dcell.border = thinBlack
+    if (endCol > row2MergeStart) {
+      try { ws.mergeCells(2, row2MergeStart, 2, endCol) } catch {}
     }
+    row2MergeStart = -1
+    row2MergeDoc = null
+    row2MergeIsTax = false
+  }
+  for (const it of allItems) {
+    const c = colOfItem[itemKey(it)]
+    if (!c) continue
+    const docType = it.doc_type ?? null
+    const isTax = /退稅|稅金|感熱稅/.test(it.vendor_group ?? '')
+    if (docType !== row2MergeDoc || isTax !== row2MergeIsTax) {
+      flushRow2Merge(c - 1)
+      row2MergeStart = c
+      row2MergeDoc = docType
+      row2MergeIsTax = isTax
+    }
+  }
+  if (row2MergeStart > 0) {
+    const lastCol = Math.max(...Object.values(colOfItem))
+    flushRow2Merge(lastCol)
   }
 
   // Row 1/2 左半（日期~營業額）淡黃底 + PMingLiU 12pt
