@@ -2668,7 +2668,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         <span className="text-xs" style={{ color: '#71717a' }}>$</span>
                         <input
                           type="number" min="0" step="0.01"
-                          placeholder={String(p.unit_price)}
+                          placeholder=""
                           value={ckPriceOverrides[p.id] ?? ''}
                           onChange={e => {
                             const v = e.target.value
