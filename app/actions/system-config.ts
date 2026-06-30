@@ -36,7 +36,7 @@ export async function createVendorGroup(input: { name: string; kind: string; sor
   return { success: true, id: data.id }
 }
 
-export async function updateVendorGroup(id: string, patch: { name?: string; kind?: string; sort_order?: number; active?: boolean; description?: string }) {
+export async function updateVendorGroup(id: string, patch: { name?: string; kind?: string; sort_order?: number; active?: boolean; description?: string; doc_type?: string | null; tax_mode?: 'inclusive' | 'free' }) {
   const { error: authErr } = await requireHQManager()
   if (authErr) return { error: authErr }
   const admin = createAdminClient()
@@ -46,6 +46,8 @@ export async function updateVendorGroup(id: string, patch: { name?: string; kind
   if (patch.sort_order !== undefined) cleanPatch.sort_order = patch.sort_order
   if (patch.active !== undefined) cleanPatch.active = patch.active
   if (patch.description !== undefined) cleanPatch.description = patch.description
+  if (patch.doc_type !== undefined) cleanPatch.doc_type = patch.doc_type
+  if (patch.tax_mode !== undefined) cleanPatch.tax_mode = patch.tax_mode
   const { error } = await admin.from('system_vendor_groups').update(cleanPatch).eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/hq/system-config')

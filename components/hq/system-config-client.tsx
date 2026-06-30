@@ -497,11 +497,12 @@ function VGRow({
 }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(vg.name)
+  const [docType, setDocType] = useState(vg.doc_type ?? '')
   const [isPending, startTransition] = useTransition()
 
   function save() {
     startTransition(async () => {
-      const r = await updateVendorGroup(vg.id, { name })
+      const r = await updateVendorGroup(vg.id, { name, doc_type: docType || null })
       if ('error' in r && r.error) toast.error(r.error)
       else { setEditing(false); toast.success('已更新'); onUpdated() }
     })
@@ -516,14 +517,25 @@ function VGRow({
 
   if (editing) {
     return (
-      <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: '1px solid #f4f4f5', background: '#fffbeb' }}>
-        <input value={name} onChange={e => setName(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-        <button onClick={save} disabled={isPending}
-          className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
-          style={{ background: '#10b981', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>儲存</button>
-        <button onClick={() => { setEditing(false); setName(vg.name) }}
-          className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-          style={{ background: 'white', border: '1px solid #e4e4e7', cursor: 'pointer', fontFamily: 'inherit' }}>取消</button>
+      <div className="px-4 py-3 flex flex-col gap-2" style={{ borderBottom: '1px solid #f4f4f5', background: '#fffbeb' }}>
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-semibold" style={{ color: '#52525b', width: 60 }}>名稱</label>
+          <input value={name} onChange={e => setName(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-semibold" style={{ color: '#52525b', width: 60 }}>單據類型</label>
+          <input value={docType} onChange={e => setDocType(e.target.value)}
+            placeholder="公司開 / 發票 / 收據 / 估價單 / 梁鑫開"
+            style={{ ...inputStyle, flex: 1 }} />
+        </div>
+        <div className="flex justify-end gap-2">
+          <button onClick={save} disabled={isPending}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+            style={{ background: '#10b981', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>儲存</button>
+          <button onClick={() => { setEditing(false); setName(vg.name); setDocType(vg.doc_type ?? '') }}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+            style={{ background: 'white', border: '1px solid #e4e4e7', cursor: 'pointer', fontFamily: 'inherit' }}>取消</button>
+        </div>
       </div>
     )
   }
@@ -541,7 +553,9 @@ function VGRow({
         </button>
       </div>
       <span className="text-sm font-semibold flex-1" style={{ color: vg.active ? '#18181b' : '#a1a1aa' }}>
-        {vg.name}{!vg.active && <span className="text-xs ml-1" style={{ color: '#be123c' }}>(停用)</span>}
+        {vg.name}
+        {vg.doc_type && <span className="text-[10px] font-normal ml-1.5 px-1.5 py-0.5 rounded" style={{ background: '#f3e8ff', color: '#7c3aed' }}>{vg.doc_type}</span>}
+        {!vg.active && <span className="text-xs ml-1" style={{ color: '#be123c' }}>(停用)</span>}
       </span>
       <span className="text-xs" style={{ color: '#a1a1aa' }}>{itemCount} 項</span>
       <button onClick={toggleActive} disabled={disabled}
