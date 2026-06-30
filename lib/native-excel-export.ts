@@ -141,7 +141,7 @@ export interface MonthStats {
   }>
 }
 
-function aggregateMonthStats(items: ItemDef[], dataByDate: Record<string, DayData>, store?: StoreInfo): MonthStats {
+export function aggregateMonthStats(items: ItemDef[], dataByDate: Record<string, DayData>, store?: StoreInfo): MonthStats {
   let posTotal = 0, online = 0, onlineCash = 0, uber = 0, panda = 0, twpay = 0, nft = 0
   let actual = 0
   for (const d of Object.values(dataByDate)) {
