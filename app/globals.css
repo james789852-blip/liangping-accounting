@@ -200,3 +200,15 @@
     left: calc(50% + 120px);
   }
 }
+
+/* 隱藏所有 <input type="number"> 的上下調整箭頭（spinner） */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
