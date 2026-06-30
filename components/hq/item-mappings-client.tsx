@@ -7,6 +7,7 @@ import {
 } from '@/app/actions/item-mappings'
 import { useRouter } from 'next/navigation'
 import { Trash2, Edit2, Check, X, Plus, Tag, Copy, ChevronLeft, ChevronUp, ChevronDown } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface Mapping {
   id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null
@@ -60,6 +61,8 @@ export default function ItemMappingsClient({
   const [newCat, setNewCat] = useState('食材')
   const [newVendorGroup, setNewVendorGroup] = useState('')
   const [showAdd, setShowAdd] = useState(false)
+  const [showAddVg, setShowAddVg] = useState(false)
+  const [newVgName, setNewVgName] = useState('')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -176,6 +179,23 @@ export default function ItemMappingsClient({
     return a.localeCompare(b, 'zh-Hant')
   })
 
+  function handleAddVendorGroup() {
+    const name = newVgName.trim()
+    if (!name) return
+    startTransition(async () => {
+      const { createVendorGroup } = await import('@/app/actions/system-config')
+      const r = await createVendorGroup({ name, kind: 'vendor', sort_order: 100 })
+      if ('error' in r && r.error) {
+        toast.error(r.error)
+        return
+      }
+      toast.success(`已新增分類「${name}」`)
+      setShowAddVg(false)
+      setNewVgName('')
+      router.refresh()
+    })
+  }
+
   async function moveVendorGroup(vgName: string, direction: 'up' | 'down') {
     const idx = groupOrder.indexOf(vgName)
     if (idx < 0) return
@@ -195,6 +215,44 @@ export default function ItemMappingsClient({
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
+
+      {/* 新增分類 modal */}
+      {showAddVg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowAddVg(false) }}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 space-y-3"
+            style={{ boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold" style={{ color: '#18181b' }}>新增廠商分類</h2>
+              <button onClick={() => setShowAddVg(false)} className="p-1.5 rounded-lg"
+                style={{ color: '#a1a1aa', background: '#f4f4f5', border: 'none', cursor: 'pointer' }}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>分類名稱</label>
+              <input value={newVgName} onChange={e => setNewVgName(e.target.value)} autoFocus
+                placeholder="例：豆腐商 / 滷肉廠商 / 蛋商"
+                style={INPUT_STYLE}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddVendorGroup() }} />
+              <p className="text-[11px] mt-1.5" style={{ color: '#a1a1aa' }}>新增後可在分類列表用上下箭頭調整位置（影響 Excel 匯出順序）</p>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setShowAddVg(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b' }}>
+                取消
+              </button>
+              <button onClick={handleAddVendorGroup} disabled={!newVgName.trim() || isPending}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white"
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', opacity: (!newVgName.trim() || isPending) ? 0.5 : 1 }}>
+                新增
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
@@ -223,10 +281,15 @@ export default function ItemMappingsClient({
                   <Copy className="h-3.5 w-3.5" /> 複製全域
                 </button>
               )}
+              <button onClick={() => setShowAddVg(true)}
+                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: 'white', border: '1.5px solid #E0F2FE', color: '#0369A1' }}>
+                <Tag className="h-3.5 w-3.5" /> 新增分類
+              </button>
               <button onClick={() => { setShowAdd(!showAdd); setNewName(''); setNewCol(''); setNewCat('食材') }}
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-white text-sm font-semibold"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
-                <Plus className="h-4 w-4" /> 新增
+                <Plus className="h-4 w-4" /> 新增品項
               </button>
             </div>
           </div>
