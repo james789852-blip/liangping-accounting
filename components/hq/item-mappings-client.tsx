@@ -3,10 +3,10 @@
 import { useState, useTransition, useEffect } from 'react'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import {
-  deleteItemMapping, updateItemMapping, saveItemMapping, copyGlobalMappingsToStore,
+  deleteItemMapping, updateItemMapping, saveItemMapping, copyGlobalMappingsToStore, reorderItemMappings,
 } from '@/app/actions/item-mappings'
 import { useRouter } from 'next/navigation'
-import { Trash2, Edit2, Check, X, Plus, Tag, Copy, ChevronLeft } from 'lucide-react'
+import { Trash2, Edit2, Check, X, Plus, Tag, Copy, ChevronLeft, ChevronUp, ChevronDown } from 'lucide-react'
 
 interface Mapping {
   id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null
@@ -103,6 +103,31 @@ export default function ItemMappingsClient({
       }])
       setShowAdd(false); setNewName(''); setNewCol(''); setNewCat('食材')
       router.refresh()
+    })
+  }
+
+  function moveItem(vg: string, idx: number, direction: 'up' | 'down') {
+    const items = grouped[vg]
+    if (!items) return
+    const newIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (newIdx < 0 || newIdx >= items.length) return
+    const reordered = [...items]
+    ;[reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]]
+    // 找出該 vg 內的 ids 新順序，呼叫 server update sort_order
+    startTransition(async () => {
+      await reorderItemMappings(reordered.map(i => i.id))
+      // 重新 fetch
+      router.refresh()
+    })
+    // optimistic update: 把 mappings 內這 vg 對應的兩筆順序 swap
+    setMappings(prev => {
+      const next = [...prev]
+      const idxA = next.findIndex(m => m.id === items[idx].id)
+      const idxB = next.findIndex(m => m.id === items[newIdx].id)
+      if (idxA >= 0 && idxB >= 0) {
+        [next[idxA], next[idxB]] = [next[idxB], next[idxA]]
+      }
+      return next
     })
   }
 
@@ -285,9 +310,21 @@ export default function ItemMappingsClient({
               <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                 {items.map((m, idx) => {
                   const catSt = CAT_STYLE[m.item_category] ?? CAT_STYLE['雜項']
+                  const isFirst = idx === 0
+                  const isLast = idx === items.length - 1
                   return (
                     <div key={m.id} className="flex items-center gap-3 px-4 py-2.5"
                       style={{ borderBottom: idx !== items.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
+                      <div className="flex flex-col shrink-0" style={{ width: 20 }}>
+                        <button onClick={() => moveItem(vg, idx, 'up')} disabled={isFirst || isPending}
+                          style={{ background: 'none', border: 'none', cursor: isFirst ? 'default' : 'pointer', color: isFirst ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.8 }}>
+                          <ChevronUp className="h-3 w-3" />
+                        </button>
+                        <button onClick={() => moveItem(vg, idx, 'down')} disabled={isLast || isPending}
+                          style={{ background: 'none', border: 'none', cursor: isLast ? 'default' : 'pointer', color: isLast ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.8 }}>
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
+                      </div>
                       <span className="flex-1 text-sm font-semibold" style={{ color: '#18181b' }}>{displayName(m)}</span>
 
                       {editId === m.id ? (

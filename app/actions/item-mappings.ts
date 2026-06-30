@@ -78,6 +78,18 @@ export async function setItemMapping(
   return { success: true }
 }
 
+export async function reorderItemMappings(ids: string[]) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+  const admin = createAdminClient()
+  await Promise.all(
+    ids.map((id, i) => admin.from('item_column_mappings').update({ sort_order: (i + 1) * 10 }).eq('id', id))
+  )
+  revalidate()
+  return { success: true }
+}
+
 export async function copyGlobalMappingsToStore(storeId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
