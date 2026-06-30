@@ -20,10 +20,10 @@ export default async function ItemMappingsPage({
   if (!profile?.is_hq && profile?.role !== '老闆') redirect('/manager/dashboard')
 
   const admin = createAdminClient()
-  const [{ data: stores }, { data: mappings }] = await Promise.all([
+  const [{ data: stores }, { data: mappings }, { data: vgs }] = await Promise.all([
     admin.from('stores').select('id, name').eq('active', true).order('name'),
-    // Supabase 預設 limit 1000；mappings 已累積超過此數，明確 limit 防止再次溢出
     admin.from('item_column_mappings').select('*').order('sort_order').order('item_category').order('item_name').limit(10000),
+    admin.from('system_vendor_groups').select('id, name, sort_order').eq('active', true).order('sort_order'),
   ])
 
   const params = await searchParams
@@ -33,6 +33,7 @@ export default async function ItemMappingsPage({
     <ItemMappingsClient
       mappings={mappings ?? []}
       stores={sortStores(stores ?? [])}
+      vendorGroups={vgs ?? []}
       selectedStoreId={storeId}
     />
   )

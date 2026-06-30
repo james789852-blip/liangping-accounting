@@ -41,10 +41,12 @@ const SELECT_ADD_STYLE: React.CSSProperties = {
 export default function ItemMappingsClient({
   mappings: initial,
   stores,
+  vendorGroups = [],
   selectedStoreId: initStoreId,
 }: {
   mappings: Mapping[]
   stores: { id: string; name: string }[]
+  vendorGroups?: { id: string; name: string; sort_order: number }[]
   selectedStoreId: string
 }) {
   const [mappings, setMappings] = useState(initial)
@@ -160,13 +162,36 @@ export default function ItemMappingsClient({
     return acc
   }, {})
 
-  // 排序：文件類型分類（發票/收據/估價單/公司開）放在 vendor 後、未分類最後
+  // 排序：優先用 system_vendor_groups.sort_order（對齊各店 Excel 順序），
+  //       不在 system_vendor_groups 內的分類往後排
+  const vgSortMap = new Map(vendorGroups.map(v => [v.name, v.sort_order] as const))
   const groupOrder = Object.keys(grouped).sort((a, b) => {
+    const sa = vgSortMap.has(a) ? vgSortMap.get(a)! : 99999
+    const sb = vgSortMap.has(b) ? vgSortMap.get(b)! : 99999
+    if (sa !== sb) return sa - sb
+    // 同 sort_order：未分類最後 / 文件類型次後
     const rank = (g: string) => g === '未分類' ? 2 : DOC_TYPES.has(g) ? 1 : 0
     const ra = rank(a), rb = rank(b)
     if (ra !== rb) return ra - rb
     return a.localeCompare(b, 'zh-Hant')
   })
+
+  async function moveVendorGroup(vgName: string, direction: 'up' | 'down') {
+    const idx = groupOrder.indexOf(vgName)
+    if (idx < 0) return
+    const newIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (newIdx < 0 || newIdx >= groupOrder.length) return
+    const reordered = [...groupOrder]
+    ;[reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]]
+    // 對應到 vendorGroups 的 id 順序
+    const ids = reordered.map(name => vendorGroups.find(v => v.name === name)?.id).filter((x): x is string => !!x)
+    if (ids.length === 0) return
+    const { reorderVendorGroups } = await import('@/app/actions/system-config')
+    startTransition(async () => {
+      await reorderVendorGroups(ids)
+      router.refresh()
+    })
+  }
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -307,12 +332,27 @@ export default function ItemMappingsClient({
         ) : null}
 
         {/* Mapping list — 以 vendor_group 為主分類 */}
-        {groupOrder.map(vg => {
+        {groupOrder.map((vg, vgIdx) => {
           const items = grouped[vg]
           const vgSt = vg === '未分類' ? VG_STYLE_UNCAT : DOC_TYPES.has(vg) ? VG_STYLE_DOC : VG_STYLE
+          const isVgFirst = vgIdx === 0
+          const isVgLast = vgIdx === groupOrder.length - 1
+          const hasVgRecord = vgSortMap.has(vg)
           return (
             <div key={vg}>
               <div className="flex items-center gap-2 mb-2 px-1">
+                {hasVgRecord && (
+                  <div className="flex flex-col" style={{ width: 18 }}>
+                    <button onClick={() => moveVendorGroup(vg, 'up')} disabled={isVgFirst || isPending}
+                      style={{ background: 'none', border: 'none', cursor: isVgFirst ? 'default' : 'pointer', color: isVgFirst ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.7 }}>
+                      <ChevronUp className="h-3 w-3" />
+                    </button>
+                    <button onClick={() => moveVendorGroup(vg, 'down')} disabled={isVgLast || isPending}
+                      style={{ background: 'none', border: 'none', cursor: isVgLast ? 'default' : 'pointer', color: isVgLast ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.7 }}>
+                      <ChevronDown className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                   style={{ background: vgSt.bg, color: vgSt.color }}>
                   {vg}
