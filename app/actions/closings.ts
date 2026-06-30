@@ -28,11 +28,12 @@ export async function saveCashCounts(closingId: string, counts: CashCountsPayloa
   // 用 upsert 避免「先 delete 再 insert」非 atomic：
   // 若 insert 失敗（race / network），原本的 cash_counts 會整筆消失。
   // cash_counts.closing_id 有 unique 約束，可直接以此為 conflict key 做 upsert。
+  // 注意：cash_counts 表沒有 updated_at 欄位，不可帶入。
   const admin = createAdminClient()
   const { error } = await admin
     .from('cash_counts')
     .upsert(
-      { closing_id: closingId, ...counts, updated_at: new Date().toISOString() },
+      { closing_id: closingId, ...counts },
       { onConflict: 'closing_id' },
     )
 
