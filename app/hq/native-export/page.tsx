@@ -28,11 +28,11 @@ export default async function NativeExportPage() {
         <div className="max-w-3xl mx-auto">
           <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
             <FileSpreadsheet className="h-3.5 w-3.5" />
-            原生匯出（測試版）
+            報表匯出
           </div>
-          <h1 className="text-xl font-bold" style={{ color: '#18181b' }}>新版 Excel 匯出</h1>
+          <h1 className="text-xl font-bold" style={{ color: '#18181b' }}>月度總覽 Excel 匯出</h1>
           <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>
-            由系統 schema 動態生成，不再依賴上傳模板。版型依店家結帳模式自動切換。
+            產出月份彙總統計（營業額、配送費、退稅、各分類小計）。日明細請用「店面核對帳目 Excel」匯出。
           </p>
         </div>
       </div>

@@ -53,8 +53,7 @@ const hqSections = [
   {
     label: '結帳設定',
     items: [
-      { href: '/hq/system-config', label: '品項 / 分類', icon: Settings },
-      { href: '/hq/store-items',   label: '店家品項',    icon: Package },
+      // 「品項 / 分類」「店家品項」功能已整合到 食耗成本頁面內的「品項對應管理」
       { href: '/hq/ck-prices',     label: '央廚單價',    icon: Package },
       { href: '/hq/native-export', label: 'Excel 匯出',  icon: FileBarChart2 },
     ],
