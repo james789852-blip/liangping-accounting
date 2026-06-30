@@ -69,6 +69,18 @@ export default function StoreItemsClient({
     }
     return m
   })
+
+  // 分類折疊狀態：「退稅 / 稅金」kind 預設折疊（畫面乾淨），其他展開
+  const [collapsedVgs, setCollapsedVgs] = useState<Set<string>>(() => {
+    return new Set(vendorGroups.filter((v: VG) => v.kind === 'tax').map((v: VG) => v.id))
+  })
+  const toggleVgCollapse = (vgId: string) => {
+    setCollapsedVgs(prev => {
+      const n = new Set(prev)
+      if (n.has(vgId)) n.delete(vgId); else n.add(vgId)
+      return n
+    })
+  }
   const getSort = (key: string, fallback: number) => sortMap.get(key) ?? fallback
 
   // 取得某 system_item 在此店的狀態（優先用 local override，再 fallback 到 server 資料）
@@ -251,9 +263,12 @@ export default function StoreItemsClient({
         const enabledInGroup = list.filter(it =>
           it.type === 'sys' ? isEnabled(it.data) : it.data.enabled
         ).length
+        const isCollapsed = collapsedVgs.has(vg.id)
         return (
           <div key={vg.id} className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <div className="px-5 py-3.5 flex items-center justify-between" style={{ borderBottom: '1px solid #f4f4f5' }}>
+            <button type="button" onClick={() => toggleVgCollapse(vg.id)}
+              className="w-full px-5 py-3.5 flex items-center justify-between transition-colors hover:bg-slate-50"
+              style={{ borderBottom: isCollapsed ? 'none' : '1px solid #f4f4f5', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
                   style={{ background: info.bg, color: info.color }}>
@@ -262,8 +277,9 @@ export default function StoreItemsClient({
                 <h3 className="text-sm font-bold" style={{ color: '#18181b' }}>{vg.name}</h3>
                 <span className="text-xs" style={{ color: '#a1a1aa' }}>{enabledInGroup} / {list.length}</span>
               </div>
-            </div>
-            <div>
+              {isCollapsed ? <ChevronDown className="h-4 w-4" style={{ color: '#a1a1aa' }} /> : <ChevronUp className="h-4 w-4" style={{ color: '#a1a1aa' }} />}
+            </button>
+            {!isCollapsed && <div>
               {list.map((it, idx) => {
                 const upDownButtons = (
                   <div className="flex flex-col shrink-0" style={{ marginRight: 4 }}>
@@ -320,7 +336,7 @@ export default function StoreItemsClient({
                   )
                 }
               })}
-            </div>
+            </div>}
           </div>
         )
       })}
