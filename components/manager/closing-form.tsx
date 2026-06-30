@@ -1919,7 +1919,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           360
                         const setSize = (s: 'S' | 'M' | 'L') => setReceiptPhotoSize(p => ({ ...p, [form.id]: s }))
                         return (
-                          <div style={{ position: 'sticky', top: 90, zIndex: 15, marginBottom: 10 }}>
+                          // 純 inline 大張：捲動下去就消失，不會擋到下方欄位
+                          <div style={{ marginBottom: 10 }}>
                             <div className="rounded-xl overflow-hidden shadow-md" style={{ border: '1px solid #f4f4f5', background: 'white' }}>
                               <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', flexWrap: 'wrap' }}>
                                 <span className="text-xs font-semibold" style={{ color: '#c2410c' }}>📷 收據</span>
