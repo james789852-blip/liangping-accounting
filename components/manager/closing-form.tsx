@@ -2588,9 +2588,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   left: '50%',
                   transform: 'translateX(-50%)',
                   width: '100%',
-                  maxWidth: 576, // 等同 max-w-xl
+                  maxWidth: 576, // 等同 max-w-xl (36rem)
                   paddingLeft: 16, // 等同 px-4
                   paddingRight: 16,
+                  boxSizing: 'border-box', // 確保 maxWidth 含 padding
                   zIndex: 30,
                   pointerEvents: 'none',
                 }}>
@@ -2628,6 +2629,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   maxWidth: 576,
                   paddingLeft: 16,
                   paddingRight: 16,
+                  boxSizing: 'border-box',
                   zIndex: 30,
                   pointerEvents: 'none',
                 }}>
