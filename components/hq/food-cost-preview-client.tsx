@@ -220,7 +220,10 @@ export default function FoodCostPreviewClient({
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-semibold" style={{ color: '#18181b' }}>品項對應狀況</p>
           <a href={storeId ? `/hq/item-mappings?storeId=${storeId}` : '/hq/item-mappings'}
-            className="text-xs font-medium" style={{ color: '#F59E0B' }}>管理對應 →</a>
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white"
+            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 2px 8px rgba(245,158,11,0.25)' }}>
+            🔧 品項對應管理（新增/排序/類別）
+          </a>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: '#f4f4f5' }}>
