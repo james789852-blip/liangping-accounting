@@ -2578,67 +2578,32 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="央廚配送"
               desc="填寫今日各品項配送數量，上傳配送單照片供總公司核對。" />}
 
-            {/* 照片真正固定在螢幕上方（fixed，PWA 比 sticky 可靠）— 品項區捲動時照片完全不移動 */}
-            {/* 用 inline style 寫死寬度算法，與下方品項 max-w-xl mx-auto px-4 完全對齊（含 padding 也一樣 576px） */}
+            {/* 照片用 sticky 黏在主 container 內，自動跟下方品項 max-w-xl 同寬同對齊
+                （fixed 相對 viewport 置中會在 desktop 有 sidebar 時往左偏） */}
             {!isLocked && (
-              <>
-                <div style={{
-                  position: 'fixed',
-                  top: 96,
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  width: '100%',
-                  maxWidth: 576, // 等同 max-w-xl (36rem)
-                  paddingLeft: 16, // 等同 px-4
-                  paddingRight: 16,
-                  boxSizing: 'border-box', // 確保 maxWidth 含 padding
-                  zIndex: 30,
-                  pointerEvents: 'none',
-                }}>
-                  <div style={{ pointerEvents: 'auto' }}>
-                    {(ckPhotoPreview || ckPhotoUrl) ? (
-                      <StickyPhotoCard
-                        src={(ckPhotoPreview || ckPhotoUrl)!}
-                        alt="配送單"
-                        onLightbox={() => setPhotoLightbox((ckPhotoPreview || ckPhotoUrl)!)}
-                        onReupload={() => ckPhotoInputRef.current?.click()}
-                      />
-                    ) : (
-                      <button onClick={() => ckPhotoInputRef.current?.click()}
-                        className="w-full rounded-2xl flex flex-col items-center justify-center gap-2 py-5"
-                        style={{ border: '2px dashed #fed7aa', background: '#fff7ed', color: '#f97316' }}>
-                        <Camera className="h-7 w-7" />
-                        <p className="text-sm font-semibold">上傳配送單照片</p>
-                        <p className="text-xs" style={{ color: '#fdba74' }}>供總公司核對品項與數量</p>
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {/* spacer：補位避免品項區被 fixed 照片擋住 */}
-                <div style={{ height: (ckPhotoPreview || ckPhotoUrl) ? 270 : 130 }} />
-              </>
+              <div style={{ position: 'sticky', top: 80, zIndex: 30, marginBottom: 10 }}>
+                {(ckPhotoPreview || ckPhotoUrl) ? (
+                  <StickyPhotoCard
+                    src={(ckPhotoPreview || ckPhotoUrl)!}
+                    alt="配送單"
+                    onLightbox={() => setPhotoLightbox((ckPhotoPreview || ckPhotoUrl)!)}
+                    onReupload={() => ckPhotoInputRef.current?.click()}
+                  />
+                ) : (
+                  <button onClick={() => ckPhotoInputRef.current?.click()}
+                    className="w-full rounded-2xl flex flex-col items-center justify-center gap-2 py-5"
+                    style={{ border: '2px dashed #fed7aa', background: '#fff7ed', color: '#f97316' }}>
+                    <Camera className="h-7 w-7" />
+                    <p className="text-sm font-semibold">上傳配送單照片</p>
+                    <p className="text-xs" style={{ color: '#fdba74' }}>供總公司核對品項與數量</p>
+                  </button>
+                )}
+              </div>
             )}
             {isLocked && ckPhotoUrl && (
-              <>
-                <div style={{
-                  position: 'fixed',
-                  top: 96,
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  width: '100%',
-                  maxWidth: 576,
-                  paddingLeft: 16,
-                  paddingRight: 16,
-                  boxSizing: 'border-box',
-                  zIndex: 30,
-                  pointerEvents: 'none',
-                }}>
-                  <div style={{ pointerEvents: 'auto' }}>
-                    <StickyPhotoCard src={ckPhotoUrl} alt="配送單" onLightbox={() => setPhotoLightbox(ckPhotoUrl!)} />
-                  </div>
-                </div>
-                <div style={{ height: 270 }} />
-              </>
+              <div style={{ position: 'sticky', top: 80, zIndex: 30, marginBottom: 10 }}>
+                <StickyPhotoCard src={ckPhotoUrl} alt="配送單" onLightbox={() => setPhotoLightbox(ckPhotoUrl!)} />
+              </div>
             )}
 
             {/* 品項數量輸入 */}
