@@ -2579,6 +2579,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               desc="填寫今日各品項配送數量，上傳配送單照片供總公司核對。" />}
 
             {/* 照片真正固定在螢幕上方（fixed，PWA 比 sticky 可靠）— 品項區捲動時照片完全不移動 */}
+            {/* 用「max-w-xl mx-auto px-4」與下方品項 container 結構一致，確保左右對齊 */}
             {!isLocked && (
               <>
                 <div style={{
@@ -2586,10 +2587,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   top: 96,
                   left: 0, right: 0,
                   zIndex: 30,
-                  paddingLeft: 16, paddingRight: 16,
                   pointerEvents: 'none',
                 }}>
-                  <div className="max-w-xl mx-auto" style={{ pointerEvents: 'auto' }}>
+                  <div className="max-w-xl mx-auto px-4" style={{ pointerEvents: 'auto' }}>
                     {(ckPhotoPreview || ckPhotoUrl) ? (
                       <StickyPhotoCard
                         src={(ckPhotoPreview || ckPhotoUrl)!}
@@ -2619,10 +2619,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   top: 96,
                   left: 0, right: 0,
                   zIndex: 30,
-                  paddingLeft: 16, paddingRight: 16,
                   pointerEvents: 'none',
                 }}>
-                  <div className="max-w-xl mx-auto" style={{ pointerEvents: 'auto' }}>
+                  <div className="max-w-xl mx-auto px-4" style={{ pointerEvents: 'auto' }}>
                     <StickyPhotoCard src={ckPhotoUrl} alt="配送單" onLightbox={() => setPhotoLightbox(ckPhotoUrl!)} />
                   </div>
                 </div>
