@@ -34,7 +34,7 @@ interface ColumnDef {
   vendorGroup?: string   // Row 1 (品項欄專用)
   docType?: string       // Row 2 (品項欄專用)
   category?: '食材' | '耗材' | '雜項'   // 用於 SUMIFS
-  kind: 'date' | 'weekday' | 'income' | 'stat' | 'item'
+  kind: 'date' | 'weekday' | 'spacer' | 'income' | 'stat' | 'item'
   incomeKey?: string  // 'pos' | 'twpay' | 'panda' | 'online' | 'online_cash' | 'uber:<account>' | 'after_deduct' | 'onsite' | 'actual' | 'ck' | 'variance' | 'revenue'
   statKey?: 'total' | 'food' | 'pack' | 'misc'
 }
@@ -63,7 +63,7 @@ function buildLayout(store: StoreInfo, items: ResolvedStoreItem[]): ColumnDef[] 
   cols.push({ index: idx++, header: '營業額', kind: 'income', incomeKey: 'revenue' })
 
   // Spacer + 4 統計欄
-  cols.push({ index: idx++, header: '', kind: 'date' })  // spacer
+  cols.push({ index: idx++, header: '', kind: 'spacer' })
   cols.push({ index: idx++, header: '總', kind: 'stat', statKey: 'total' })
   cols.push({ index: idx++, header: '食材', kind: 'stat', statKey: 'food' })
   cols.push({ index: idx++, header: '耗材', kind: 'stat', statKey: 'pack' })
@@ -212,7 +212,7 @@ export async function buildFoodCostNativeWorkbook(
   // ── Row 4 : 月份標題 + 月合計 ──
   fillHeaderCell(ws.getRow(TOTAL_ROW).getCell(1), `${monthNum}月`, 'FFFFFF00', 'FF000000', true)
   for (const c of cols) {
-    if (c.kind === 'date' || c.kind === 'weekday') continue
+    if (c.kind === 'date' || c.kind === 'weekday' || c.kind === 'spacer') continue
     const letter = colLetter(c.index)
     const formula = `SUM(${letter}${DATA_START}:${letter}${DATA_START + daysInMonth - 1})`
     const cell = ws.getRow(TOTAL_ROW).getCell(c.index)
