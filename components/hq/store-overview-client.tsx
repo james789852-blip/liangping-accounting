@@ -50,11 +50,13 @@ export default function StoreOverviewClient({ stores }: { stores: Store[] }) {
   const yearOptions = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i)
   const [downloading, setDownloading] = useState(false)
 
-  async function handleExport() {
+  async function handleExport(mode: 'month' | 'year' = 'month') {
     if (!storeId) { toast.error('請選店家'); return }
     setDownloading(true)
     try {
-      const url = `/api/export/food-cost-native?storeId=${storeId}&year=${year}&month=${monthNum}&t=${Date.now()}`
+      const url = mode === 'year'
+        ? `/api/export/food-cost-native?storeId=${storeId}&type=year&year=${year}&t=${Date.now()}`
+        : `/api/export/food-cost-native?storeId=${storeId}&year=${year}&month=${monthNum}&t=${Date.now()}`
       const res = await fetch(url, { cache: 'no-store' })
       if (!res.ok) { toast.error('匯出失敗：' + await res.text()); return }
       const blob = await res.blob()
@@ -112,11 +114,20 @@ export default function StoreOverviewClient({ stores }: { stores: Store[] }) {
 
         {/* Excel 匯出（僅當月模式） */}
         {tab === 'monthly' && (
-          <button onClick={handleExport} disabled={downloading || !storeId}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white"
-            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', border: 'none', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
-            {downloading ? <><Loader2 className="h-4 w-4 animate-spin" />匯出中…</> : <><Download className="h-4 w-4" />下載食耗成本 Excel</>}
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => handleExport('month')} disabled={downloading || !storeId}
+              className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white"
+              style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', border: 'none', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
+              {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              當月 Excel
+            </button>
+            <button onClick={() => handleExport('year')} disabled={downloading || !storeId}
+              className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold"
+              style={{ background: 'white', border: '1.5px solid #F59E0B', color: '#B45309', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
+              {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              年度 Excel（13 分頁）
+            </button>
+          </div>
         )}
       </div>
 

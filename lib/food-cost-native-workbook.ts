@@ -122,29 +122,30 @@ function fillHeaderCell(cell: ExcelJS.Cell, text: string, fillArgb?: string, fon
   }
 }
 
-/** 產出「食耗成本」workbook */
-export async function buildFoodCostNativeWorkbook(
-  storeId: string,
-  year: number,
-  monthNum: number,
-): Promise<ExcelJS.Workbook> {
+/** 一次拉店家 + 品項，共用於單月/年度匯出 */
+async function loadStoreContext(storeId: string) {
   const admin = createAdminClient()
   const { data: storeRow } = await admin.from('stores')
     .select('id, name, ichef_uber_linked, uber_accounts, twpay_enabled, panda_enabled, online_enabled, online_cash_enabled')
     .eq('id', storeId).single()
   const store = (storeRow ?? { id: storeId, name: '' }) as StoreInfo
   const items = await getStoreItemsResolved(storeId)
-  const monthly = await getMonthlyStats(storeId, year, monthNum)
+  return { store, items }
+}
 
-  // 掃當月資料，蒐集實際出現過的 handwrite account_name（依 monthly.daily）
+/** 在既有 workbook 上加一個「N 月食耗成本」sheet */
+export async function addFoodCostSheet(
+  wb: ExcelJS.Workbook,
+  store: StoreInfo,
+  items: ResolvedStoreItem[],
+  year: number,
+  monthNum: number,
+): Promise<void> {
+  const monthly = await getMonthlyStats(store.id, year, monthNum)
+
   const handwriteAccounts = Array.from(new Set(
     monthly.daily.flatMap(d => Object.keys(d.handwrite))
   )).sort()
-
-  const wb = new ExcelJS.Workbook()
-  wb.creator = 'Liangping Accounting'
-  wb.created = new Date()
-  ;(wb as any).calcProperties = { fullCalcOnLoad: true }
 
   const ws = wb.addWorksheet(`${monthNum}月食耗成本`, {
     views: [{ state: 'frozen', xSplit: 2, ySplit: 3 }],
@@ -322,8 +323,129 @@ export async function buildFoodCostNativeWorkbook(
     const width = c.kind === 'date' ? 10 : c.kind === 'weekday' ? 8 : c.kind === 'income' ? 12 : c.kind === 'stat' ? 12 : 10
     ws.getColumn(c.index).width = width
   }
+}
+
+/** 產出單月「食耗成本」workbook */
+export async function buildFoodCostNativeWorkbook(
+  storeId: string,
+  year: number,
+  monthNum: number,
+): Promise<ExcelJS.Workbook> {
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'Liangping Accounting'
+  wb.created = new Date()
+  ;(wb as any).calcProperties = { fullCalcOnLoad: true }
+  const { store, items } = await loadStoreContext(storeId)
+  await addFoodCostSheet(wb, store, items, year, monthNum)
+  return wb
+}
+
+/** 產出年度「食耗成本」workbook — 年度總覽 + 1~12 月食耗成本，共 13 個 sheet */
+export async function buildAnnualFoodCostWorkbook(
+  storeId: string,
+  year: number,
+): Promise<ExcelJS.Workbook> {
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'Liangping Accounting'
+  wb.created = new Date()
+  ;(wb as any).calcProperties = { fullCalcOnLoad: true }
+  const { store, items } = await loadStoreContext(storeId)
+
+  // 先加「年度總覽」sheet（引用各 month sheet 的月合計）
+  addAnnualOverviewSheet(wb, store, year)
+
+  // 12 個月 sheet
+  for (let m = 1; m <= 12; m++) {
+    await addFoodCostSheet(wb, store, items, year, m)
+  }
 
   return wb
+}
+
+/** 年度總覽 sheet：12 個月的月合計橫向排列（引用各月份 sheet 的 Row 4） */
+function addAnnualOverviewSheet(wb: ExcelJS.Workbook, store: StoreInfo, year: number) {
+  const ws = wb.addWorksheet('年度總覽', { views: [{ state: 'frozen', ySplit: 3 }] })
+
+  // Row 1 標題
+  fillHeaderCell(ws.getRow(1).getCell(1), `${store.name}  ${year} 年度總覽`, 'FFFFF2CC', 'FF000000', true)
+  ws.mergeCells(1, 1, 1, 14)
+
+  // Row 3 header
+  const headers = ['項目', '1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月', '全年合計']
+  headers.forEach((h, i) => fillHeaderCell(ws.getRow(3).getCell(i + 1), h, 'FFBFBFBF', 'FF000000', true))
+
+  // Row 4+ : 各統計 row，引用月份 sheet 的月合計 (Row 4) 對應 cell
+  // 月份 sheet 名: '{M}月食耗成本'，月合計欄在 Row 4
+  // 「月合計」cell 在 sheet 內 col varies；用 SUMIFS 或直接 hardcode 部分欄
+  // 簡化：只列「總／食/耗/雜／營業額／實際／配送／扣除後／現場／總發票／總收據／梁平退稅」
+  const rows: Array<{ label: string; sheetCol: 'total' | 'food' | 'pack' | 'misc' | 'revenue' | 'actual' | 'ck' | 'after_deduct' | 'onsite' | 'invoice' | 'receipt' | 'refund' }> = [
+    { label: '營業額',   sheetCol: 'revenue' },
+    { label: '現場',     sheetCol: 'onsite' },
+    { label: '實際',     sheetCol: 'actual' },
+    { label: '配送',     sheetCol: 'ck' },
+    { label: '扣除後',   sheetCol: 'after_deduct' },
+    { label: '總（食+耗+雜）', sheetCol: 'total' },
+    { label: '食材',     sheetCol: 'food' },
+    { label: '耗材',     sheetCol: 'pack' },
+    { label: '雜項',     sheetCol: 'misc' },
+    { label: '總發票',   sheetCol: 'invoice' },
+    { label: '總收據',   sheetCol: 'receipt' },
+    { label: '梁平退稅', sheetCol: 'refund' },
+  ]
+
+  // 各月份 sheet 上這些統計欄的 cell 位置不固定（依店家欄位動態算）
+  // 這裡使用「跨 sheet reference + 找 headers」的方式：用 INDEX+MATCH 抓
+  // 因為 sheet 內 Row 3 是 header，Row 4 是月合計 → 用 INDEX/MATCH 找對應 col
+  const headerRefBySheetCol: Record<string, string> = {
+    total: '"總"',
+    food: '"食材"',
+    pack: '"耗材"',
+    misc: '"雜項"',
+    revenue: '"營業額"',
+    actual: '"(手動)實際$"',
+    ck: '"配送(月底結)"',
+    after_deduct: '"扣除後的$"',
+    onsite: '"現場"',
+    invoice: '"總發票"',
+    receipt: '"總收據"',
+    refund: '"梁平退稅"',
+  }
+
+  rows.forEach((row, rIdx) => {
+    const excelRow = 4 + rIdx
+    fillHeaderCell(ws.getRow(excelRow).getCell(1), row.label, 'FFFAFAFA', 'FF000000', true)
+    for (let m = 1; m <= 12; m++) {
+      const cell = ws.getRow(excelRow).getCell(m + 1)
+      const sheetName = `${m}月食耗成本`
+      // 「總發票/收據/梁平退稅」在 sheet 上是 Row 1/2 的特殊格 → 用 SUMIF
+      let formula: string
+      if (row.sheetCol === 'invoice') {
+        // 抓月份 sheet 內 "總發票" 那格（假設在 Row 2）— 用 SUMIFS 較穩定
+        formula = `SUMIFS('${sheetName}'!$4:$4,'${sheetName}'!$2:$2,"發票")`
+      } else if (row.sheetCol === 'receipt') {
+        formula = `SUMIFS('${sheetName}'!$4:$4,'${sheetName}'!$2:$2,"收據")`
+      } else if (row.sheetCol === 'refund') {
+        formula = `SUMIFS('${sheetName}'!$4:$4,'${sheetName}'!$2:$2,"發票",'${sheetName}'!$1:$1,"退稅")`
+      } else {
+        // 用 INDEX+MATCH 找 header 對應欄的月合計
+        formula = `INDEX('${sheetName}'!$4:$4,MATCH(${headerRefBySheetCol[row.sheetCol]},'${sheetName}'!$3:$3,0))`
+      }
+      cell.value = { formula } as any
+      cell.numFmt = '#,##0;-#,##0;"-"'
+      cell.alignment = { horizontal: 'right', vertical: 'middle' }
+    }
+    // 全年合計 = SUM 該 row 12 個月
+    const totalCell = ws.getRow(excelRow).getCell(14)
+    totalCell.value = { formula: `SUM(B${excelRow}:M${excelRow})` } as any
+    totalCell.numFmt = '#,##0;-#,##0;"-"'
+    totalCell.font = { bold: true }
+    totalCell.alignment = { horizontal: 'right', vertical: 'middle' }
+    totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } }
+  })
+
+  // 欄寬
+  ws.getColumn(1).width = 18
+  for (let c = 2; c <= 14; c++) ws.getColumn(c).width = 12
 }
 
 function readIncomeValue(dd: DailyStats, key: string): number {

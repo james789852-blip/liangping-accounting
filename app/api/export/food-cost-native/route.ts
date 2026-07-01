@@ -1,11 +1,12 @@
 /**
  * 系統原生「食耗成本」xlsx 匯出（不依模板）
- *   GET /api/export/food-cost-native?storeId=...&year=YYYY&month=M
+ *   單月：GET /api/export/food-cost-native?storeId=...&year=YYYY&month=M
+ *   年度：GET /api/export/food-cost-native?storeId=...&year=YYYY&type=year
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { buildFoodCostNativeWorkbook } from '@/lib/food-cost-native-workbook'
+import { buildFoodCostNativeWorkbook, buildAnnualFoodCostWorkbook } from '@/lib/food-cost-native-workbook'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -20,9 +21,11 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const storeId = searchParams.get('storeId')
+  const type = searchParams.get('type') ?? 'month'
   const year = parseInt(searchParams.get('year') ?? '')
   const monthNum = parseInt(searchParams.get('month') ?? '')
-  if (!storeId || !year || !monthNum) return new NextResponse('缺少參數', { status: 400 })
+  if (!storeId || !year) return new NextResponse('缺少參數', { status: 400 })
+  if (type === 'month' && !monthNum) return new NextResponse('缺少 month 參數', { status: 400 })
 
   // HQ / 老闆 可匯出任一店；店長只能匯出自己所屬店家
   const isHq = profile?.is_hq || profile?.role === '老闆'
@@ -35,9 +38,15 @@ export async function GET(req: NextRequest) {
   const { data: storeRow } = await admin.from('stores').select('name').eq('id', storeId).single()
   const storeName = storeRow?.name ?? 'export'
 
-  const wb = await buildFoodCostNativeWorkbook(storeId, year, monthNum)
+  const wb = type === 'year'
+    ? await buildAnnualFoodCostWorkbook(storeId, year)
+    : await buildFoodCostNativeWorkbook(storeId, year, monthNum)
   const buffer = await wb.xlsx.writeBuffer()
-  const filename = encodeURIComponent(`${storeName}_${year}年${monthNum}月_食耗成本.xlsx`)
+  const filename = encodeURIComponent(
+    type === 'year'
+      ? `${storeName}_${year}年度_食耗成本.xlsx`
+      : `${storeName}_${year}年${monthNum}月_食耗成本.xlsx`
+  )
 
   return new NextResponse(buffer as any, {
     headers: {
