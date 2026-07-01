@@ -72,16 +72,18 @@ function cloneWorksheet(
     if (src.style) dst.style = { ...src.style }
   }
   // Cells + row heights
-  // Formula 不帶 result（讓 Excel 打開時重算）
+  // Formula：保留所有 metadata (formula/sharedFormula/ref/shareType) 但移除 result
+  // → Excel/其他工具打開時會重算，不會顯示 stale cached result
   source.eachRow({ includeEmpty: true }, (row, rowNum) => {
     const newRow = ws.getRow(rowNum)
     if (row.height) newRow.height = row.height
     row.eachCell({ includeEmpty: true }, (cell, colNum) => {
       const newCell = newRow.getCell(colNum)
       const v = cell.value as any
-      if (v && typeof v === 'object' && 'formula' in v) {
-        // 只帶 formula，不帶 result → 打開時重算
-        newCell.value = { formula: v.formula } as any
+      if (v && typeof v === 'object' && ('formula' in v || 'sharedFormula' in v)) {
+        // 保留 formula/ref/shareType，去除 result
+        const { result, ...rest } = v
+        newCell.value = rest as any
       } else if (v !== null && v !== undefined) {
         newCell.value = v
       }
@@ -145,12 +147,16 @@ function cloneWorksheet(
           })
         }
       }
-      // 逐日填 A（M月D日）+ B（星期X）
+      // 逐日填 A（M月D日）+ B（星期X）+ 清 data rows 所有 raw numbers（stale 6 月資料）
       for (let idx = 0; idx < daysInNewMonth; idx++) {
         const row = ws.getRow(dataStartRow + idx)
         row.getCell(1).value = `${newMonth}月${idx + 1}日`
         const dt = new Date(opts.year, newMonth - 1, idx + 1)
         row.getCell(2).value = `星期${WEEKDAYS[dt.getDay()]}`
+        // 清所有 raw number cells（保留 formula 給 Excel 重算）
+        row.eachCell({ includeEmpty: false }, (cell) => {
+          if (typeof cell.value === 'number') cell.value = null
+        })
       }
       // 若新月份天數 < source → 清掉多餘 rows 的日期/星期
       for (let idx = daysInNewMonth; idx < daysInSrcMonth; idx++) {
