@@ -140,11 +140,20 @@ function DailyPanel({ data, storeName }: { data: DailyStats; storeName: string }
           <Stat label="營業額" value={data.revenue} color="#16a34a" />
         </div>
 
+        {/* 對應原 Excel 上方：梁平退稅、總發票、總收據 */}
         <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-4 gap-2" style={{ borderColor: '#f4f4f5' }}>
+          <Stat label="總發票" value={data.invoiceTotal} color="#dc2626" />
+          <Stat label="總收據" value={data.receiptTotal} color="#0369a1" />
+          <Stat label="估價單" value={data.estimateTotal} color="#8b5cf6" />
+          <Stat label="梁平退稅" value={data.taxRefund} color="#f59e0b" />
+        </div>
+
+        {/* 原 Excel: 總 = 食 + 耗 + 雜 */}
+        <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-4 gap-2" style={{ borderColor: '#f4f4f5' }}>
+          <Stat label="總（食+耗+雜）" value={data.totalCost} color="#be123c" />
           <Stat label="食材" value={data.food} color="#047857" />
           <Stat label="耗材" value={data.pack} color="#92400E" />
           <Stat label="雜項" value={data.misc} color="#71717a" />
-          <Stat label="總成本" value={data.totalCost} color="#be123c" />
         </div>
       </div>
 
@@ -226,17 +235,20 @@ function MonthlyPanel({ data }: { data: MonthlyStats }) {
           <Stat label="結果" value={t.variance} color="#0369a1" />
         </div>
 
+        {/* 對應原 Excel 上方：梁平退稅、總發票、總收據 */}
         <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-4 gap-2" style={{ borderColor: '#f4f4f5' }}>
+          <Stat label="總發票" value={data.totalInvoice} color="#dc2626" />
+          <Stat label="總收據" value={data.totalReceipt} color="#0369a1" />
+          <Stat label="估價單" value={t.estimateTotal} color="#8b5cf6" />
+          <Stat label="梁平退稅" value={data.liangpingRefund} color="#f59e0b" />
+        </div>
+
+        {/* 原 Excel: 總 = 食 + 耗 + 雜 */}
+        <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-4 gap-2" style={{ borderColor: '#f4f4f5' }}>
+          <Stat label="總（食+耗+雜）" value={t.totalCost} color="#be123c" />
           <Stat label="食材" value={t.food} color="#047857" />
           <Stat label="耗材" value={t.pack} color="#92400E" />
           <Stat label="雜項" value={t.misc} color="#71717a" />
-          <Stat label="總成本" value={t.totalCost} color="#be123c" />
-        </div>
-
-        <div className="border-t pt-3 grid grid-cols-3 gap-2" style={{ borderColor: '#f4f4f5' }}>
-          <Stat label="總發票" value={data.totalInvoice} color="#dc2626" />
-          <Stat label="總收據" value={data.totalReceipt} color="#0369a1" />
-          <Stat label="梁平退稅" value={data.liangpingRefund} color="#f59e0b" />
         </div>
       </div>
 
@@ -286,9 +298,12 @@ function MonthlyPanel({ data }: { data: MonthlyStats }) {
                 <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>配送</th>
                 <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>結果</th>
                 <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>營業額</th>
+                <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>總</th>
                 <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>食</th>
                 <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>耗</th>
                 <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>雜</th>
+                <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>發票</th>
+                <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>收據</th>
               </tr>
             </thead>
             <tbody>
@@ -302,9 +317,12 @@ function MonthlyPanel({ data }: { data: MonthlyStats }) {
                   <td className="px-2 py-1.5 text-right tabular-nums">{d.ck ? fmt(d.ck) : ''}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{d.variance ? fmt(d.variance) : ''}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{d.revenue ? fmt(d.revenue) : ''}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{d.totalCost ? fmt(d.totalCost) : ''}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{d.food ? fmt(d.food) : ''}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{d.pack ? fmt(d.pack) : ''}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{d.misc ? fmt(d.misc) : ''}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: '#dc2626' }}>{d.invoiceTotal ? fmt(d.invoiceTotal) : ''}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: '#0369a1' }}>{d.receiptTotal ? fmt(d.receiptTotal) : ''}</td>
                 </tr>
               ))}
             </tbody>
