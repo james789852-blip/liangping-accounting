@@ -161,9 +161,29 @@ export default function FoodCostPreviewClient({
             style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
             {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-          <input type="month" value={month} onChange={e => changeMonth(e.target.value)}
-            className="shrink-0"
-            style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', maxWidth: '160px' }} />
+          {(() => {
+            const [yStr, mStr] = month.split('-')
+            const y = parseInt(yStr)
+            const m = parseInt(mStr)
+            const curYear = new Date().getFullYear()
+            const years = Array.from({ length: 5 }, (_, i) => curYear - i)
+            const setYM = (nextY: number, nextM: number) =>
+              changeMonth(`${nextY}-${String(nextM).padStart(2, '0')}`)
+            return (
+              <>
+                <select value={y} onChange={e => setYM(parseInt(e.target.value), m)}
+                  className="shrink-0"
+                  style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
+                  {years.map(v => <option key={v} value={v}>{v}年</option>)}
+                </select>
+                <select value={m} onChange={e => setYM(y, parseInt(e.target.value))}
+                  className="shrink-0"
+                  style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map(v => <option key={v} value={v}>{v}月</option>)}
+                </select>
+              </>
+            )
+          })()}
         </div>
         {/* 第 2 行：模板狀態 */}
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
