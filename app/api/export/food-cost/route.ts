@@ -48,6 +48,47 @@ function getDaysInMonth(year: number, month: number) {
   )
 }
 
+// 複製整個 worksheet 為新月份 sheet（保留 layout / styles / formulas / merges）
+function cloneWorksheet(wb: ExcelJS.Workbook, source: ExcelJS.Worksheet, newName: string): ExcelJS.Worksheet {
+  const ws = wb.addWorksheet(newName, {
+    views: source.views ? JSON.parse(JSON.stringify(source.views)) : undefined,
+    properties: source.properties ? JSON.parse(JSON.stringify(source.properties)) : undefined,
+  })
+  // Column widths / hidden
+  const totalCols = (source as any).columnCount ?? 0
+  for (let c = 1; c <= totalCols; c++) {
+    const src = source.getColumn(c)
+    const dst = ws.getColumn(c)
+    if (src.width) dst.width = src.width
+    if (src.hidden) dst.hidden = src.hidden
+    if (src.style) dst.style = { ...src.style }
+  }
+  // Cells + row heights
+  source.eachRow({ includeEmpty: true }, (row, rowNum) => {
+    const newRow = ws.getRow(rowNum)
+    if (row.height) newRow.height = row.height
+    row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+      const newCell = newRow.getCell(colNum)
+      const v = cell.value as any
+      if (v && typeof v === 'object' && 'formula' in v) {
+        newCell.value = { formula: v.formula, result: v.result } as any
+      } else if (v !== null && v !== undefined) {
+        newCell.value = v
+      }
+      if (cell.style) newCell.style = JSON.parse(JSON.stringify(cell.style))
+      if (cell.note) newCell.note = cell.note
+    })
+  })
+  // Merges: 從 source.model.merges 讀
+  const merges = (source.model as any)?.merges as string[] | undefined
+  if (merges) {
+    for (const range of merges) {
+      try { ws.mergeCells(range) } catch { /* ignore invalid */ }
+    }
+  }
+  return ws
+}
+
 async function fillTemplate(
   templateBuf: Buffer,
   monthNum: number,
@@ -64,13 +105,26 @@ async function fillTemplate(
   } catch (e) { console.warn('[fillTemplate] 載入模板失敗:', e); return null }
 
   const targetName = `${monthNum}月食耗成本`
-  const ws = wb.getWorksheet(targetName)
-    ?? wb.getWorksheet(`${monthNum}月`)
-    ?? wb.worksheets.find(s => s.name.includes('食耗'))
-    ?? wb.worksheets[0]
-  if (!ws) { console.warn(`[fillTemplate] 找不到任何工作表`); return null }
-  if (ws.name !== targetName) {
-    console.warn(`[fillTemplate] 未找到「${targetName}」，改用工作表「${ws.name}」。模板所有工作表：`, wb.worksheets.map(s => s.name))
+  let ws = wb.getWorksheet(targetName) ?? wb.getWorksheet(`${monthNum}月`)
+  // 找不到目標月份 → 從模板中挑最近的月份 sheet 複製為新 sheet（自動生成當月）
+  if (!ws) {
+    const monthSheets: Array<{ n: number; sheet: ExcelJS.Worksheet }> = []
+    for (const s of wb.worksheets) {
+      const m = /^(\d{1,2})月食耗成本$/.exec(s.name) ?? /^(\d{1,2})月$/.exec(s.name)
+      if (m) monthSheets.push({ n: parseInt(m[1]), sheet: s })
+    }
+    // 挑：若有月份 sheet，優先挑「小於當月且最接近」；否則挑「最大月份」；再否則第一張含「食耗」的
+    let source: ExcelJS.Worksheet | undefined
+    if (monthSheets.length > 0) {
+      const smaller = monthSheets.filter(x => x.n < monthNum).sort((a, b) => b.n - a.n)[0]
+      const largest = monthSheets.sort((a, b) => b.n - a.n)[0]
+      source = smaller?.sheet ?? largest.sheet
+    } else {
+      source = wb.worksheets.find(s => s.name.includes('食耗'))
+    }
+    if (!source) { console.warn(`[fillTemplate] 模板內找不到任何月份 sheet`); return null }
+    console.log(`[fillTemplate] 自動從「${source.name}」複製為「${targetName}」`)
+    ws = cloneWorksheet(wb, source, targetName)
   }
 
   const filled = await fillWorksheet(ws, days, dataRows, uberAccounts, vendorGroupLookup)

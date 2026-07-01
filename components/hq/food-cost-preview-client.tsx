@@ -87,11 +87,15 @@ export default function FoodCostPreviewClient({
       if (!res.ok) { alert('匯出失敗'); return }
       const mode = res.headers.get('X-Export-Mode')
       const debug = res.headers.get('X-Template-Debug') ?? ''
+      // 讀 route 給的完整檔名（含店名+年月），fallback 到本地簡短版
+      const disposition = res.headers.get('content-disposition') ?? ''
+      const match = /filename\*=UTF-8''([^;]+)/.exec(disposition)
+      const filename = match ? decodeURIComponent(match[1]) : `食耗成本_${month}.xlsx`
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `食耗成本_${month}.xlsx`
+      a.download = filename
       a.click()
       URL.revokeObjectURL(url)
       if (mode === 'template') {
