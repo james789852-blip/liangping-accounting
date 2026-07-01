@@ -16,14 +16,20 @@ export async function GET(req: NextRequest) {
   if (!user) return new NextResponse('未登入', { status: 401 })
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile?.is_hq && profile?.role !== '老闆') return new NextResponse('無權限', { status: 403 })
+    .from('user_profiles').select('role, is_hq, store_ids').eq('user_id', user.id).single()
 
   const { searchParams } = new URL(req.url)
   const storeId = searchParams.get('storeId')
   const year = parseInt(searchParams.get('year') ?? '')
   const monthNum = parseInt(searchParams.get('month') ?? '')
   if (!storeId || !year || !monthNum) return new NextResponse('缺少參數', { status: 400 })
+
+  // HQ / 老闆 可匯出任一店；店長只能匯出自己所屬店家
+  const isHq = profile?.is_hq || profile?.role === '老闆'
+  const allowedStores = (profile?.store_ids ?? []) as string[]
+  if (!isHq && !allowedStores.includes(storeId)) {
+    return new NextResponse('無權限', { status: 403 })
+  }
 
   const admin = createAdminClient()
   const { data: storeRow } = await admin.from('stores').select('name').eq('id', storeId).single()

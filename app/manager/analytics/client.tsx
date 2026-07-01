@@ -214,10 +214,11 @@ export default function AnalyticsClient({ storeId, storeName, meetingAnchorDate,
     try {
       let url: string
       if (exportType === 'year') {
+        // 年度暫用舊 endpoint（native 尚未支援 12 月合併）
         url = `/api/export/closing-native?storeId=${storeId}&type=year&year=${exportYear}&t=${Date.now()}`
       } else {
-        const month = `${exportYear}-${String(exportMonth).padStart(2, '0')}`
-        url = `/api/export/closing-native?storeId=${storeId}&month=${month}&t=${Date.now()}`
+        // 單月改用新版 native export（無模板依賴）
+        url = `/api/export/food-cost-native?storeId=${storeId}&year=${exportYear}&month=${exportMonth}&t=${Date.now()}`
       }
       const res = await fetch(url, { cache: 'no-store' })
       if (!res.ok) { toast.error('匯出失敗：' + await res.text()); return }

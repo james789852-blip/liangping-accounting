@@ -149,6 +149,7 @@ function DailyPanel({ data, storeName }: { data: DailyStats; storeName: string }
       <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1px solid #f4f4f5' }}>
         <div className="flex items-baseline gap-2">
           <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{storeName} · {data.date} {data.weekday}</h2>
+          <StatusPill status={data.closingStatus} />
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -326,6 +327,7 @@ function MonthlyPanel({ data }: { data: MonthlyStats }) {
               <tr>
                 <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>日期</th>
                 <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>星期</th>
+                <th className="px-2 py-1.5 text-center" style={{ color: '#71717a' }}>狀態</th>
                 <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>POS</th>
                 <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>現場</th>
                 <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>實際</th>
@@ -345,6 +347,9 @@ function MonthlyPanel({ data }: { data: MonthlyStats }) {
                 <tr key={i} style={{ borderTop: '1px solid #f4f4f5' }}>
                   <td className="px-2 py-1.5">{d.date.slice(5)}</td>
                   <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{d.weekday}</td>
+                  <td className="px-2 py-1.5 text-center">
+                    <StatusPill status={d.closingStatus} />
+                  </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{d.pos > 0 ? fmt(d.pos) : ''}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{d.onsite ? fmt(d.onsite) : ''}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{d.actual ? fmt(d.actual) : ''}</td>
@@ -364,6 +369,23 @@ function MonthlyPanel({ data }: { data: MonthlyStats }) {
         </div>
       </div>
     </>
+  )
+}
+
+function StatusPill({ status }: { status: DailyStats['closingStatus'] }) {
+  const map: Record<string, { label: string; bg: string; color: string }> = {
+    verified:  { label: '已核對', bg: '#d1fae5', color: '#047857' },
+    submitted: { label: '已送出', bg: '#dbeafe', color: '#1e40af' },
+    disputed:  { label: '退回', bg: '#fee2e2', color: '#b91c1c' },
+    draft:     { label: '草稿',   bg: '#fef3c7', color: '#92400e' },
+    none:      { label: '無',     bg: '#f4f4f5', color: '#a1a1aa' },
+  }
+  const s = map[status] ?? map.none
+  return (
+    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+      style={{ background: s.bg, color: s.color }}>
+      {s.label}
+    </span>
   )
 }
 

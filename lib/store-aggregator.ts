@@ -72,6 +72,8 @@ export interface DailyStats {
     receipt_type: string | null
     items: Array<{ item_name: string; amount: number }>
   }>
+  // ── 該日結帳狀態 ──
+  closingStatus: 'draft' | 'submitted' | 'verified' | 'disputed' | 'none'
 }
 
 /** 月度合計 */
@@ -108,6 +110,7 @@ function newEmptyDay(date: string): DailyStats {
     food: 0, pack: 0, misc: 0, totalCost: 0,
     invoiceTotal: 0, receiptTotal: 0, estimateTotal: 0, taxRefund: 0,
     items: {}, vendorGroupBreakdown: {}, receipts: [],
+    closingStatus: 'none',
   }
 }
 
@@ -158,6 +161,7 @@ export async function getRangeStats(
     dd.actual = best.actual_remit ?? 0
     dd.ck = best.total_cost ?? 0
     dd.totalRevenue = best.total_revenue ?? 0
+    dd.closingStatus = (best.status ?? 'none') as DailyStats['closingStatus']
     for (const rv of (best.revenue_items ?? []) as any[]) {
       const ch = rv.channel
       const amt = rv.gross_amount ?? 0
