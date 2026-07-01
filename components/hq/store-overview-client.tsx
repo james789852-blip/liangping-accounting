@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Download } from 'lucide-react'
+import { Loader2, Download, ChevronLeft, ChevronRight } from 'lucide-react'
 import { fetchDailyStats, fetchMonthlyStats } from '@/app/actions/store-overview'
 import type { DailyStats, MonthlyStats } from '@/lib/store-aggregator'
 
@@ -85,10 +85,28 @@ export default function StoreOverviewClient({ stores }: { stores: Store[] }) {
 
       {/* Toolbar */}
       <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1px solid #f4f4f5' }}>
-        {/* 店家 */}
-        <select value={storeId} onChange={e => setStoreId(e.target.value)} style={inputStyle}>
-          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+        {/* 店家 + 左右切換 */}
+        <div className="flex items-center gap-2">
+          <button onClick={() => {
+            const i = stores.findIndex(s => s.id === storeId)
+            if (i > 0) setStoreId(stores[i - 1].id)
+          }} disabled={stores.findIndex(s => s.id === storeId) <= 0}
+            className="shrink-0 h-10 w-10 flex items-center justify-center rounded-lg"
+            style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b', cursor: 'pointer' }}>
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <select value={storeId} onChange={e => setStoreId(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
+            {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <button onClick={() => {
+            const i = stores.findIndex(s => s.id === storeId)
+            if (i >= 0 && i < stores.length - 1) setStoreId(stores[i + 1].id)
+          }} disabled={stores.findIndex(s => s.id === storeId) >= stores.length - 1}
+            className="shrink-0 h-10 w-10 flex items-center justify-center rounded-lg"
+            style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b', cursor: 'pointer' }}>
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
 
         {/* Tab */}
         <div className="grid grid-cols-2 gap-2">
@@ -98,7 +116,25 @@ export default function StoreOverviewClient({ stores }: { stores: Store[] }) {
 
         {/* Date/Month selector */}
         {tab === 'daily' ? (
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
+          <div className="flex items-center gap-2">
+            <button onClick={() => {
+              const dt = new Date(date + 'T12:00:00+08:00')
+              dt.setDate(dt.getDate() - 1)
+              setDate(dt.toISOString().slice(0, 10))
+            }} className="shrink-0 h-10 w-10 flex items-center justify-center rounded-lg"
+              style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b', cursor: 'pointer' }}>
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+            <button onClick={() => {
+              const dt = new Date(date + 'T12:00:00+08:00')
+              dt.setDate(dt.getDate() + 1)
+              setDate(dt.toISOString().slice(0, 10))
+            }} className="shrink-0 h-10 w-10 flex items-center justify-center rounded-lg"
+              style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b', cursor: 'pointer' }}>
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
         ) : (
           <div className="grid grid-cols-2 gap-2">
             <select value={year} onChange={e => setYear(parseInt(e.target.value))} style={inputStyle}>

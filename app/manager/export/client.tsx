@@ -13,7 +13,8 @@ export default function ExportClient({ storeId, storeName }: { storeId: string; 
   async function handleDownload() {
     setLoading(true)
     try {
-      const res = await fetch(`/api/export/food-cost?storeId=${storeId}&month=${month}`)
+      const [y, m] = month.split('-')
+      const res = await fetch(`/api/export/food-cost-native?storeId=${storeId}&year=${y}&month=${parseInt(m)}&t=${Date.now()}`, { cache: 'no-store' })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         alert(err.error ?? '匯出失敗，請稍後再試')

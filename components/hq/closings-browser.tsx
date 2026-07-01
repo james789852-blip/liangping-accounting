@@ -285,7 +285,8 @@ function ClosingCard({
     const month = closing.business_date.slice(0, 7)
     setExporting(true)
     try {
-      const res = await fetch(`/api/export/food-cost?storeId=${closing.stores.id}&month=${month}`)
+      const [y, m] = month.split('-')
+      const res = await fetch(`/api/export/food-cost-native?storeId=${closing.stores.id}&year=${y}&month=${parseInt(m)}&t=${Date.now()}`, { cache: 'no-store' })
       if (!res.ok) { toast.error('匯出失敗'); return }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
