@@ -639,7 +639,7 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, stores, c
     const month = `${selYear}-${String(selMon).padStart(2, '0')}`
     setExporting(true)
     try {
-      const res = await fetch(`/api/export/food-cost?storeId=${storeId}&month=${month}`)
+      const res = await fetch(`/api/export/food-cost-native?storeId=${storeId}&year=${selYear}&month=${selMon}&t=${Date.now()}`, { cache: 'no-store' })
       if (!res.ok) { toast.error('匯出失敗'); return }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)

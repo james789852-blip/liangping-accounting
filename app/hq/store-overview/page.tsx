@@ -6,7 +6,11 @@ import StoreOverviewClient from '@/components/hq/store-overview-client'
 
 export const dynamic = 'force-dynamic'
 
-export default async function StoreOverviewPage() {
+export default async function StoreOverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ storeId?: string }>
+}) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -20,5 +24,8 @@ export default async function StoreOverviewPage() {
     .from('stores').select('id, name').eq('active', true).neq('type', '央廚')
   const stores = sortStores(storesRaw ?? [])
 
-  return <StoreOverviewClient stores={stores} />
+  const params = await searchParams
+  const initialStoreId = params.storeId ?? ''
+
+  return <StoreOverviewClient stores={stores} initialStoreId={initialStoreId} />
 }

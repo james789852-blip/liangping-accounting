@@ -247,13 +247,36 @@ export async function addFoodCostSheet(
     }
   }
 
-  // ── Row 3 : header ──
+  // ── Row 3 : header（依 category 給不同底色，接近原檔） ──
   for (const c of cols) {
     let fill = 'FFEEEEEE'
-    if (c.kind === 'income') fill = 'FFFDE9D9'
-    else if (c.kind === 'stat') fill = 'FFF79544'
-    else if (c.kind === 'item') fill = 'FFBFBFBF'
-    fillHeaderCell(ws.getRow(HEADER_ROW).getCell(c.index), c.header, fill, 'FF000000', true)
+    let fontColor = 'FF000000'
+    if (c.kind === 'income') {
+      // POS 粉紅、TWPAY/Panda/Online 各自色、扣除/現場/實際/配送/結果/營業額 = 橘系
+      const k = c.incomeKey ?? ''
+      if (k === 'pos') fill = 'FFFDE9D9'
+      else if (k === 'twpay') fill = 'FFF4CCCC'
+      else if (k === 'panda') fill = 'FFEAD1DC'
+      else if (k === 'online' || k === 'online_cash') fill = 'FFC9DAF8'
+      else if (k.startsWith('uber:')) fill = 'FFD9EAD3'
+      else if (k.startsWith('handwrite:')) fill = 'FFFFE599'
+      else if (k === 'after_deduct') fill = 'FFFDE9D9'
+      else if (k === 'onsite') fill = 'FFFCE4D6'
+      else if (k === 'actual') fill = 'FFDA9694'
+      else if (k === 'ck') fill = 'FFFDE9D9'
+      else if (k === 'variance') fill = 'FFFFFF00'
+      else if (k === 'revenue') fill = 'FFFFFF00'
+    } else if (c.kind === 'stat') {
+      fill = c.statKey === 'total' ? 'FF000000' : 'FFF79544'
+      if (c.statKey === 'total') fontColor = 'FFFFFFFF'
+    } else if (c.kind === 'item') {
+      if (c.category === '食材') fill = 'FFBFBFBF'
+      else if (c.category === '耗材') fill = 'FFC6D9F0'
+      else fill = 'FFDDD9C4'
+    } else if (c.kind === 'date' || c.kind === 'weekday') {
+      fill = 'FFBFBFBF'
+    }
+    fillHeaderCell(ws.getRow(HEADER_ROW).getCell(c.index), c.header, fill, fontColor, true)
   }
 
   // ── Row 4 : 月份標題 + 月合計 ──

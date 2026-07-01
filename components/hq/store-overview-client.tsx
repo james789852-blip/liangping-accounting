@@ -10,10 +10,10 @@ interface Store { id: string; name: string }
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
-export default function StoreOverviewClient({ stores }: { stores: Store[] }) {
+export default function StoreOverviewClient({ stores, initialStoreId }: { stores: Store[]; initialStoreId?: string }) {
   const now = new Date()
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  const [storeId, setStoreId] = useState(stores[0]?.id ?? '')
+  const [storeId, setStoreId] = useState(initialStoreId || stores[0]?.id || '')
   const [tab, setTab] = useState<'daily' | 'monthly'>('daily')
   const [date, setDate] = useState(todayStr)
   const [year, setYear] = useState(now.getFullYear())

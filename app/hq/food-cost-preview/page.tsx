@@ -26,6 +26,9 @@ export default async function FoodCostPreviewPage({
   const params = await searchParams
   const isCK = params.type === 'ck'
 
+  // 店面模式已整合到 /hq/store-overview；只保留央廚模板管理
+  if (!isCK) redirect('/hq/store-overview')
+
   // 央廚模式：只撈央廚店家；店面模式：排除央廚
   const { data: storesRaw } = await admin
     .from('stores').select('id, name, type').eq('active', true)
