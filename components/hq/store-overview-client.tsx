@@ -20,6 +20,7 @@ export default function StoreOverviewClient({ stores, initialStoreId }: { stores
   const [monthNum, setMonthNum] = useState(now.getMonth() + 1)
   const [loading, setLoading] = useState(false)
   const [daily, setDaily] = useState<DailyStats | null>(null)
+  const [prevDaily, setPrevDaily] = useState<DailyStats | null>(null)
   const [monthly, setMonthly] = useState<MonthlyStats | null>(null)
   const [prevMonthly, setPrevMonthly] = useState<MonthlyStats | null>(null)
 
@@ -27,11 +28,12 @@ export default function StoreOverviewClient({ stores, initialStoreId }: { stores
     if (!storeId) return
     setLoading(true)
     if (tab === 'daily') {
-      setDaily(null)
+      setDaily(null); setPrevDaily(null)
       fetchDailyStats(storeId, date)
         .then(r => {
           if ('error' in r && r.error) { toast.error(r.error); return }
           if ('stats' in r && r.stats) setDaily(r.stats)
+          if ('prev' in r) setPrevDaily(r.prev)
         })
         .catch(e => toast.error('載入失敗：' + (e instanceof Error ? e.message : String(e))))
         .finally(() => setLoading(false))
@@ -177,7 +179,7 @@ export default function StoreOverviewClient({ stores, initialStoreId }: { stores
         </div>
       )}
 
-      {!loading && tab === 'daily' && daily && <DailyPanel data={daily} storeName={storeName} />}
+      {!loading && tab === 'daily' && daily && <DailyPanel data={daily} storeName={storeName} prev={prevDaily} />}
       {!loading && tab === 'daily' && !daily && (
         <div className="bg-white rounded-2xl p-8 text-center text-sm" style={{ border: '1px solid #f4f4f5', color: '#a1a1aa' }}>
           {date} 無資料
@@ -190,54 +192,55 @@ export default function StoreOverviewClient({ stores, initialStoreId }: { stores
 }
 
 /* ─────────── Daily panel ─────────── */
-function DailyPanel({ data, storeName }: { data: DailyStats; storeName: string }) {
+function DailyPanel({ data, storeName, prev }: { data: DailyStats; storeName: string; prev: DailyStats | null }) {
   const uberEntries = Object.entries(data.uber).filter(([, v]) => v > 0)
   const handwriteEntries = Object.entries(data.handwrite).filter(([, v]) => v > 0)
   return (
     <>
       <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1px solid #f4f4f5' }}>
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-baseline gap-2 flex-wrap">
           <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{storeName} · {data.date} {data.weekday}</h2>
           <StatusPill status={data.closingStatus} />
+          {prev && <span className="text-[11px]" style={{ color: '#a1a1aa' }}>對比 {prev.date}</span>}
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          <Stat label="(手動)POS" value={data.pos} color="#0369a1" />
-          <Stat label="TWPAY" value={data.twpay} color="#be123c" />
-          <Stat label="Panda" value={data.panda} color="#f43f5e" />
-          <Stat label="Online" value={data.online} color="#8b5cf6" />
-          <Stat label="Online 現金" value={data.online_cash} color="#a855f7" />
+          <Stat label="(手動)POS" value={data.pos} color="#0369a1" prev={prev?.pos} />
+          <Stat label="TWPAY" value={data.twpay} color="#be123c" prev={prev?.twpay} />
+          <Stat label="Panda" value={data.panda} color="#f43f5e" prev={prev?.panda} />
+          <Stat label="Online" value={data.online} color="#8b5cf6" prev={prev?.online} />
+          <Stat label="Online 現金" value={data.online_cash} color="#a855f7" prev={prev?.online_cash} />
           {uberEntries.map(([acc, v]) => (
-            <Stat key={acc} label={`Uber ${acc}`} value={v} color="#22c55e" />
+            <Stat key={acc} label={`Uber ${acc}`} value={v} color="#22c55e" prev={prev?.uber[acc]} />
           ))}
           {handwriteEntries.map(([acc, v]) => (
-            <Stat key={acc} label={`手寫 ${acc}`} value={v} color="#f59e0b" />
+            <Stat key={acc} label={`手寫 ${acc}`} value={v} color="#f59e0b" prev={prev?.handwrite[acc]} />
           ))}
         </div>
 
         <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-3 gap-2" style={{ borderColor: '#f4f4f5' }}>
-          <Stat label="現場" value={data.onsite} color="#f97316" />
-          <Stat label="(手動)實際$" value={data.actual} color="#dc2626" />
-          <Stat label="配送(月底結)" value={data.ck} color="#f97316" />
-          <Stat label="結果" value={data.variance} color="#0369a1" />
-          <Stat label="扣除後的$" value={data.after_deduct} color="#71717a" />
-          <Stat label="營業額" value={data.revenue} color="#16a34a" />
+          <Stat label="現場" value={data.onsite} color="#f97316" prev={prev?.onsite} />
+          <Stat label="(手動)實際$" value={data.actual} color="#dc2626" prev={prev?.actual} />
+          <Stat label="配送(月底結)" value={data.ck} color="#f97316" prev={prev?.ck} />
+          <Stat label="結果" value={data.variance} color="#0369a1" prev={prev?.variance} />
+          <Stat label="扣除後的$" value={data.after_deduct} color="#71717a" prev={prev?.after_deduct} />
+          <Stat label="營業額" value={data.revenue} color="#16a34a" prev={prev?.revenue} />
         </div>
 
         {/* 對應原 Excel 上方：梁平退稅、總發票、總收據 */}
         <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-4 gap-2" style={{ borderColor: '#f4f4f5' }}>
-          <Stat label="總發票" value={data.invoiceTotal} color="#dc2626" />
-          <Stat label="總收據" value={data.receiptTotal} color="#0369a1" />
-          <Stat label="估價單" value={data.estimateTotal} color="#8b5cf6" />
-          <Stat label="梁平退稅" value={data.taxRefund} color="#f59e0b" />
+          <Stat label="總發票" value={data.invoiceTotal} color="#dc2626" prev={prev?.invoiceTotal} />
+          <Stat label="總收據" value={data.receiptTotal} color="#0369a1" prev={prev?.receiptTotal} />
+          <Stat label="估價單" value={data.estimateTotal} color="#8b5cf6" prev={prev?.estimateTotal} />
+          <Stat label="梁平退稅" value={data.taxRefund} color="#f59e0b" prev={prev?.taxRefund} />
         </div>
 
         {/* 原 Excel: 總 = 食 + 耗 + 雜 */}
         <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-4 gap-2" style={{ borderColor: '#f4f4f5' }}>
-          <Stat label="總（食+耗+雜）" value={data.totalCost} color="#be123c" />
-          <Stat label="食材" value={data.food} color="#047857" />
-          <Stat label="耗材" value={data.pack} color="#92400E" />
-          <Stat label="雜項" value={data.misc} color="#71717a" />
+          <Stat label="總（食+耗+雜）" value={data.totalCost} color="#be123c" prev={prev?.totalCost} />
+          <Stat label="食材" value={data.food} color="#047857" prev={prev?.food} />
+          <Stat label="耗材" value={data.pack} color="#92400E" prev={prev?.pack} />
+          <Stat label="雜項" value={data.misc} color="#71717a" prev={prev?.misc} />
         </div>
       </div>
 
@@ -341,6 +344,36 @@ function MonthlyPanel({ data, prev }: { data: MonthlyStats; prev: MonthlyStats |
           <Stat label="雜項" value={t.misc} color="#71717a" prev={p?.misc} />
         </div>
       </div>
+
+      {/* Top 10 品項成本 */}
+      {data.itemMonthlyTotals.length > 0 && (
+        <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
+          <h3 className="text-sm font-bold mb-3" style={{ color: '#18181b' }}>成本 Top 10 品項</h3>
+          <div className="space-y-1">
+            {[...data.itemMonthlyTotals].sort((a, b) => b.total - a.total).slice(0, 10).map((r, i) => {
+              const pct = data.totals.totalCost > 0 ? Math.round(r.total / data.totals.totalCost * 100) : 0
+              return (
+                <div key={i} className="flex items-center gap-2">
+                  <div className="text-[11px] tabular-nums" style={{ color: '#a1a1aa', width: 18 }}>#{i + 1}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-xs font-semibold truncate">{r.item_name}</span>
+                      <span className="text-xs tabular-nums font-bold" style={{ color: '#be123c' }}>${fmt(r.total)}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex-1 h-1.5 rounded-full" style={{ background: '#f4f4f5' }}>
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: r.category === '食材' ? '#047857' : r.category === '耗材' ? '#92400E' : '#71717a' }} />
+                      </div>
+                      <span className="text-[10px] tabular-nums" style={{ color: '#a1a1aa', minWidth: 30 }}>{pct}%</span>
+                    </div>
+                    <p className="text-[10px]" style={{ color: '#a1a1aa' }}>{r.vendor_group} · {r.doc_type || '—'} · {r.category}</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 品項月合計 */}
       {data.itemMonthlyTotals.length > 0 && (

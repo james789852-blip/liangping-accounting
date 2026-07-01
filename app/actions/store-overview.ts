@@ -17,8 +17,16 @@ export async function fetchDailyStats(storeId: string, date: string) {
   const auth = await checkHqAuth()
   if ('error' in auth) return auth
   if (!storeId || !date) return { error: '缺少參數' as const }
-  const { days } = await getRangeStats(storeId, date, date)
-  return { success: true as const, stats: days[0] as DailyStats | undefined }
+
+  // 同時撈昨日，讓 UI 顯示 delta
+  const yesterday = new Date(date + 'T12:00:00+08:00')
+  yesterday.setDate(yesterday.getDate() - 1)
+  const yStr = yesterday.toISOString().slice(0, 10)
+
+  const { days } = await getRangeStats(storeId, yStr, date)
+  const prev = days.find(d => d.date === yStr) ?? null
+  const cur = days.find(d => d.date === date) ?? null
+  return { success: true as const, stats: cur as DailyStats | null, prev: prev as DailyStats | null }
 }
 
 export async function fetchMonthlyStats(storeId: string, year: number, monthNum: number) {
