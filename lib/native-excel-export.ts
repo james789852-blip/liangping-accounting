@@ -1114,13 +1114,15 @@ export async function buildNativeWorkbook(opts: {
   return Buffer.from(buffer)
 }
 
-/** 年度匯出 — 只產「年度總覽」+ 12 個「月度總覽」分頁（不再產日明細） */
+/** 年度匯出 — 產「年度總覽」+（可選）12 個「月度總覽」分頁 */
 export async function buildAnnualWorkbook(opts: {
   year: number
   store: StoreInfo
   items: ItemDef[]
   /** key: monthNum (1-12), value: dataByDate */
   dataByMonth: Record<number, Record<string, DayData>>
+  /** 是否附上 12 個月度總覽 sheet（default true） */
+  includeMonthly?: boolean
 }): Promise<Buffer> {
   const wb = new ExcelJS.Workbook()
   wb.creator = '結帳系統'
@@ -1132,14 +1134,16 @@ export async function buildAnnualWorkbook(opts: {
   }
   addAnnualOverviewSheet(wb, { year: opts.year, store: opts.store, monthlyStats })
 
-  // 每月加上「月度總覽」分頁（取代之前的「日明細」分頁）
-  for (let m = 1; m <= 12; m++) {
-    addMonthlyOverviewSheet(wb, {
-      year: opts.year,
-      monthNum: m,
-      store: opts.store,
-      stats: monthlyStats[m - 1],
-    })
+  if (opts.includeMonthly !== false) {
+    // 每月加上「月度總覽」分頁（取代之前的「日明細」分頁）
+    for (let m = 1; m <= 12; m++) {
+      addMonthlyOverviewSheet(wb, {
+        year: opts.year,
+        monthNum: m,
+        store: opts.store,
+        stats: monthlyStats[m - 1],
+      })
+    }
   }
 
   const buffer = await wb.xlsx.writeBuffer()

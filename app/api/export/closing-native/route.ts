@@ -6,11 +6,76 @@
  *   年度：GET /api/export/closing-native?storeId=...&type=year&year=YYYY
  */
 import { NextRequest, NextResponse } from 'next/server'
+import ExcelJS from 'exceljs'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMonthLastDay } from '@/lib/business-date'
 import { getStoreItemsResolved } from '@/lib/store-items-resolver'
 import { buildNativeWorkbook, buildAnnualWorkbook, type DayData, type StoreInfo } from '@/lib/native-excel-export'
+
+/** 從 source sheet 複製整份到 target workbook（保留 styles / formulas / merges） */
+function copySheetInto(target: ExcelJS.Workbook, source: ExcelJS.Worksheet, newName: string): ExcelJS.Worksheet {
+  const ws = target.addWorksheet(newName, {
+    views: source.views ? JSON.parse(JSON.stringify(source.views)) : undefined,
+    properties: source.properties ? JSON.parse(JSON.stringify(source.properties)) : undefined,
+  })
+  const totalCols = (source as any).columnCount ?? 0
+  for (let c = 1; c <= totalCols; c++) {
+    const src = source.getColumn(c)
+    const dst = ws.getColumn(c)
+    if (src.width) dst.width = src.width
+    if (src.hidden) dst.hidden = src.hidden
+    if (src.style) dst.style = { ...src.style }
+  }
+  source.eachRow({ includeEmpty: true }, (row, rowNum) => {
+    const newRow = ws.getRow(rowNum)
+    if (row.height) newRow.height = row.height
+    row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+      const newCell = newRow.getCell(colNum)
+      const v = cell.value as any
+      if (v && typeof v === 'object' && 'formula' in v) {
+        newCell.value = { formula: v.formula, result: v.result } as any
+      } else if (v !== null && v !== undefined) {
+        newCell.value = v
+      }
+      if (cell.style) newCell.style = JSON.parse(JSON.stringify(cell.style))
+      if (cell.note) newCell.note = cell.note
+    })
+  })
+  const merges = (source.model as any)?.merges as string[] | undefined
+  if (merges) for (const m of merges) { try { ws.mergeCells(m) } catch { /* ignore */ } }
+  return ws
+}
+
+/**
+ * 呼叫 food-cost route 產食耗成本 xlsx，抽出「N月食耗成本」sheet 合併到 target workbook。
+ * 失敗時 return false，caller 決定要不要 continue（不 fatal）。
+ */
+async function attachFoodCostSheet(
+  target: ExcelJS.Workbook,
+  origin: string,
+  cookie: string,
+  storeId: string,
+  monthStr: string,
+  sheetName: string,
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${origin}/api/export/food-cost?storeId=${storeId}&month=${monthStr}`, {
+      headers: { cookie },
+    })
+    if (!res.ok) { console.warn(`[attachFoodCostSheet] food-cost 回 ${res.status}`); return false }
+    const arrBuf = await res.arrayBuffer()
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(arrBuf as any)
+    const src = wb.getWorksheet(sheetName) ?? wb.worksheets.find(s => s.name.includes('食耗')) ?? wb.worksheets[0]
+    if (!src) { console.warn(`[attachFoodCostSheet] 食耗 sheet 找不到`); return false }
+    copySheetInto(target, src, sheetName)
+    return true
+  } catch (e) {
+    console.warn(`[attachFoodCostSheet] failed:`, e)
+    return false
+  }
+}
 
 function emptyDay(): DayData {
   return { pos: 0, online: 0, online_cash: 0, uber: {}, panda: 0, twpay: 0, nft: 0, actual: 0, ck: 0, total_revenue: 0, items: {}, notes: {}, ckItems: {} }
@@ -157,9 +222,20 @@ export async function GET(req: NextRequest) {
       dataByMonth[m] = await fetchRangeData(storeId, firstDay, lastDay, itemMetaMap)
     }
 
-    const buffer = await buildAnnualWorkbook({ year, store, items, dataByMonth })
+    // 年度：只產「年度總覽」sheet，接著附上 12 個「N月食耗成本」sheets → 共 13 分頁
+    const nativeBuf = await buildAnnualWorkbook({ year, store, items, dataByMonth, includeMonthly: false })
+    // 讀成 workbook，額外附上 1~12 月食耗成本 sheet
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(nativeBuf as any)
+    const origin = req.nextUrl.origin
+    const cookie = req.headers.get('cookie') ?? ''
+    for (let m = 1; m <= 12; m++) {
+      const monthStr = `${year}-${String(m).padStart(2, '0')}`
+      await attachFoodCostSheet(wb, origin, cookie, storeId, monthStr, `${m}月食耗成本`)
+    }
+    const merged = Buffer.from(await wb.xlsx.writeBuffer())
     const filename = encodeURIComponent(`${store.name}_${year}年度_食耗成本.xlsx`)
-    return new NextResponse(buffer as any, {
+    return new NextResponse(merged as any, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename*=UTF-8''${filename}`,
@@ -197,7 +273,14 @@ export async function GET(req: NextRequest) {
     ? Array.from(orphanItems.entries()).map(([n, a]) => `${n}:${Math.round(a)}`).join(',')
     : null
 
-  const buffer = await buildNativeWorkbook({ year, monthNum, store, items, dataByDate })
+  const nativeBuf = await buildNativeWorkbook({ year, monthNum, store, items, dataByDate })
+  // 讀成 workbook，額外附上「N月食耗成本」sheet
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.load(nativeBuf as any)
+  const monthStr = `${year}-${String(monthNum).padStart(2, '0')}`
+  await attachFoodCostSheet(wb, req.nextUrl.origin, req.headers.get('cookie') ?? '', storeId, monthStr, `${monthNum}月食耗成本`)
+  const merged = Buffer.from(await wb.xlsx.writeBuffer())
+
   const filename = encodeURIComponent(`${store.name}_${year}年${monthNum}月_食耗成本.xlsx`)
   const headers: Record<string, string> = {
     'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -205,5 +288,5 @@ export async function GET(req: NextRequest) {
     'X-Export-Mode': 'native',
   }
   if (orphanWarning) headers['X-Orphan-Items'] = encodeURIComponent(orphanWarning)
-  return new NextResponse(buffer as any, { headers })
+  return new NextResponse(merged as any, { headers })
 }
