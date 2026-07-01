@@ -217,10 +217,12 @@ async function fillTemplate(
     ;(wb as any).calcProperties = { fullCalcOnLoad: true }
   }
 
-  // ─── 無條件清 data rows 內 raw stale numbers（保留 formula） ────
-  // 不論是 clone 出的 sheet 還是模板既有的 sheet，都可能帶 stale 6 月數字。
-  // 這裡在 fillWorksheet 前把 data rows 內所有 raw numbers 清為 null。
-  // Formula 會在 clone 時已移除 result，Excel 打開會重算；此處不動 formula。
+  // ─── 無條件清 data rows 內 stale 資料 ────────────────────────────────────
+  // clone 過來的 sheet 或模板既有 sheet 都可能帶：
+  // (1) raw number（stale 6 月數字）→ 全清
+  // (2) hardcoded arithmetic formula（例：「75*340」= 6/1 當天量×單價）→ 清
+  // (3) 有 cell reference 的聚合 formula（例：SUM(R5:W5)）→ 保留（去 result）
+  // 因為 (2) Excel 打開會自動計算出 stale 25500 之類的值，必須清除。
   {
     let headerRowNum = -1
     for (let r = 1; r <= 10; r++) {
@@ -229,28 +231,37 @@ async function fillTemplate(
     if (headerRowNum > 0) {
       const dataStartRow = headerRowNum + 2
       const daysInMonth = new Date(year, monthNum, 0).getDate()
-      // Data rows (每日)
-      for (let idx = 0; idx < daysInMonth; idx++) {
-        const row = ws.getRow(dataStartRow + idx)
-        row.eachCell({ includeEmpty: false }, (cell) => {
-          if (typeof cell.value === 'number') cell.value = null
-          // formula 也移除 stale cached result（讓 Excel 重算）
-          const v = cell.value as any
-          if (v && typeof v === 'object' && 'result' in v) {
+      const hasCellRef = (f: string) => /[A-Z]+\d+/.test(f)
+      const cleanCell = (cell: ExcelJS.Cell) => {
+        const v = cell.value as any
+        if (v == null) return
+        if (typeof v === 'number') { cell.value = null; return }
+        if (typeof v === 'object' && ('formula' in v || 'sharedFormula' in v)) {
+          const f = v.formula || v.sharedFormula
+          if (!f || !hasCellRef(f)) {
+            // hardcoded formula (e.g. "75*340") — 清掉
+            cell.value = null
+          } else {
+            // 引用其他 cell 的聚合 formula — 保留但去 cached result
             const { result, ...rest } = v
             cell.value = rest
           }
+        }
+      }
+      // Data rows (每日)
+      for (let idx = 0; idx < daysInMonth; idx++) {
+        const row = ws.getRow(dataStartRow + idx)
+        row.eachCell({ includeEmpty: false }, (cell, colNum) => {
+          // A 欄（日期）、B 欄（星期）保留不動
+          if (colNum <= 2) return
+          cleanCell(cell)
         })
       }
-      // 月合計 row（通常在 headerRow + 1）— 同樣清 raw + formula result
+      // 月合計 row（headerRow + 1）
       const totalRow = ws.getRow(headerRowNum + 1)
-      totalRow.eachCell({ includeEmpty: false }, (cell) => {
-        if (typeof cell.value === 'number') cell.value = null
-        const v = cell.value as any
-        if (v && typeof v === 'object' && 'result' in v) {
-          const { result, ...rest } = v
-          cell.value = rest
-        }
+      totalRow.eachCell({ includeEmpty: false }, (cell, colNum) => {
+        if (colNum <= 2) return
+        cleanCell(cell)
       })
     }
     ;(wb as any).calcProperties = { fullCalcOnLoad: true }
