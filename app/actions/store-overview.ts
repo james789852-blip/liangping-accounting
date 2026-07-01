@@ -25,6 +25,13 @@ export async function fetchMonthlyStats(storeId: string, year: number, monthNum:
   const auth = await checkHqAuth()
   if ('error' in auth) return auth
   if (!storeId || !year || !monthNum) return { error: '缺少參數' as const }
-  const stats = await getMonthlyStats(storeId, year, monthNum)
-  return { success: true as const, stats: stats as MonthlyStats }
+
+  // 同時撈上月，讓 UI 顯示 delta
+  const prevYear = monthNum === 1 ? year - 1 : year
+  const prevMonth = monthNum === 1 ? 12 : monthNum - 1
+  const [stats, prev] = await Promise.all([
+    getMonthlyStats(storeId, year, monthNum),
+    getMonthlyStats(storeId, prevYear, prevMonth),
+  ])
+  return { success: true as const, stats: stats as MonthlyStats, prev: prev as MonthlyStats }
 }

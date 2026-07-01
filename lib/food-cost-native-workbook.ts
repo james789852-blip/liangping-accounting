@@ -301,6 +301,9 @@ export async function addFoodCostSheet(
     const rowNum = DATA_START + dayIdx
     const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(dayIdx + 1).padStart(2, '0')}`
     const dd = dayByDate.get(dateStr)
+    const dt = new Date(year, monthNum - 1, dayIdx + 1)
+    const dow = dt.getDay()
+    const isWeekend = dow === 0 || dow === 6
     const excelRow = ws.getRow(rowNum)
 
     for (const c of cols) {
@@ -308,10 +311,15 @@ export async function addFoodCostSheet(
       if (c.kind === 'date') {
         cell.value = `${monthNum}月${dayIdx + 1}日`
         cell.alignment = { horizontal: 'center', vertical: 'middle' }
+        if (isWeekend) {
+          cell.font = { color: { argb: dow === 0 ? 'FFDC2626' : 'FF0369A1' }, bold: true }
+        }
       } else if (c.kind === 'weekday') {
-        const dt = new Date(year, monthNum - 1, dayIdx + 1)
-        cell.value = `星期${WEEKDAYS[dt.getDay()]}`
+        cell.value = `星期${WEEKDAYS[dow]}`
         cell.alignment = { horizontal: 'center', vertical: 'middle' }
+        if (isWeekend) {
+          cell.font = { color: { argb: dow === 0 ? 'FFDC2626' : 'FF0369A1' }, bold: true }
+        }
       } else if (c.kind === 'income' && dd && c.incomeKey) {
         const v = readIncomeValue(dd, c.incomeKey)
         if (v !== 0) cell.value = v
