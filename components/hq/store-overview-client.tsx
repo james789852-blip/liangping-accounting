@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { toast } from 'sonner'
 import { Loader2, Download, ChevronLeft, ChevronRight } from 'lucide-react'
 import { fetchDailyStats, fetchMonthlyStats } from '@/app/actions/store-overview'
@@ -186,7 +187,10 @@ export default function StoreOverviewClient({ stores, initialStoreId }: { stores
         </div>
       )}
 
-      {!loading && tab === 'monthly' && monthly && <MonthlyPanel data={monthly} prev={prevMonthly} />}
+      {!loading && tab === 'monthly' && monthly && (
+        <MonthlyPanel data={monthly} prev={prevMonthly}
+          onOpenDay={(d) => { setDate(d); setTab('daily') }} />
+      )}
     </div>
   )
 }
@@ -306,7 +310,7 @@ function DailyPanel({ data, storeName, prev }: { data: DailyStats; storeName: st
 }
 
 /* ─────────── Monthly panel ─────────── */
-function MonthlyPanel({ data, prev }: { data: MonthlyStats; prev: MonthlyStats | null }) {
+function MonthlyPanel({ data, prev, onOpenDay }: { data: MonthlyStats; prev: MonthlyStats | null; onOpenDay?: (date: string) => void }) {
   const t = data.totals
   const p = prev?.totals
   return (
@@ -437,7 +441,13 @@ function MonthlyPanel({ data, prev }: { data: MonthlyStats; prev: MonthlyStats |
                 const rowBg = dow === 0 || dow === 6 ? '#fff7ed' : undefined
                 return (
                 <tr key={i} style={{ borderTop: '1px solid #f4f4f5', background: rowBg }}>
-                  <td className="px-2 py-1.5 sticky left-0" style={{ background: rowBg ?? 'white', zIndex: 1 }}>{d.date.slice(5)}</td>
+                  <td className="px-2 py-1.5 sticky left-0" style={{ background: rowBg ?? 'white', zIndex: 1 }}>
+                    {onOpenDay ? (
+                      <button onClick={() => onOpenDay(d.date)} className="hover:underline" style={{ color: '#B45309', fontWeight: 500, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>
+                        {d.date.slice(5)}
+                      </button>
+                    ) : d.date.slice(5)}
+                  </td>
                   <td className="px-2 py-1.5" style={{ color: dow === 0 ? '#dc2626' : dow === 6 ? '#0369a1' : '#52525b', fontWeight: (dow === 0 || dow === 6) ? 600 : 400 }}>{d.weekday}</td>
                   <td className="px-2 py-1.5 text-center">
                     <StatusPill status={d.closingStatus} />

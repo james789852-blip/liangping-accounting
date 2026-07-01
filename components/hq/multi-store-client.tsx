@@ -77,6 +77,7 @@ export default function MultiStoreClient() {
               <thead style={{ background: '#fafafa' }}>
                 <tr>
                   <th className="px-2 py-2 text-left sticky left-0" style={{ color: '#71717a', background: '#fafafa', minWidth: 100 }}>店家</th>
+                  <th className="px-2 py-2 text-center" style={{ color: '#71717a', minWidth: 90 }}>結帳進度</th>
                   <th className="px-2 py-2 text-right" style={{ color: '#71717a' }}>營業額</th>
                   <th className="px-2 py-2 text-right" style={{ color: '#71717a' }}>現場</th>
                   <th className="px-2 py-2 text-right" style={{ color: '#71717a' }}>實際</th>
@@ -92,12 +93,26 @@ export default function MultiStoreClient() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(r => (
+                {rows.map(r => {
+                  const pct = r.daysInMonth > 0 ? Math.round(r.daysWithClosing / r.daysInMonth * 100) : 0
+                  const barColor = pct >= 90 ? '#16a34a' : pct >= 60 ? '#f59e0b' : '#dc2626'
+                  return (
                   <tr key={r.storeId} style={{ borderTop: '1px solid #f4f4f5' }}>
                     <td className="px-2 py-2 sticky left-0" style={{ background: 'white' }}>
                       <Link href={`/hq/store-overview?storeId=${r.storeId}`} className="font-semibold hover:underline" style={{ color: '#B45309' }}>
                         {r.storeName}
                       </Link>
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      <div className="flex flex-col items-center gap-0.5">
+                        <div className="text-[10px] tabular-nums" style={{ color: '#52525b' }}>{r.daysWithClosing}/{r.daysInMonth} 天</div>
+                        <div className="w-full h-1.5 rounded-full" style={{ background: '#f4f4f5', minWidth: 60 }}>
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: barColor }} />
+                        </div>
+                        {r.daysVerified > 0 && (
+                          <div className="text-[9px] tabular-nums" style={{ color: '#16a34a' }}>已核 {r.daysVerified}</div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums" style={{ color: '#16a34a', fontWeight: 600 }}>{fmt(r.revenue)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{fmt(r.onsite)}</td>
@@ -112,9 +127,11 @@ export default function MultiStoreClient() {
                     <td className="px-2 py-2 text-right tabular-nums" style={{ color: '#0369a1' }}>{fmt(r.receiptTotal)}</td>
                     <td className="px-2 py-2 text-right tabular-nums" style={{ color: '#f59e0b' }}>{fmt(r.taxRefund)}</td>
                   </tr>
-                ))}
+                  )
+                })}
                 <tr style={{ borderTop: '2px solid #e4e4e7', background: '#fef3c7' }}>
                   <td className="px-2 py-2 sticky left-0 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>合計</td>
+                  <td className="px-2 py-2 text-center text-[11px] font-semibold" style={{ color: '#92400e' }}>—</td>
                   <td className="px-2 py-2 text-right tabular-nums font-bold" style={{ color: '#16a34a' }}>{fmt(grandTotal.revenue)}</td>
                   <td className="px-2 py-2 text-right tabular-nums font-bold">{fmt(grandTotal.onsite)}</td>
                   <td className="px-2 py-2 text-right tabular-nums font-bold">{fmt(grandTotal.actual)}</td>

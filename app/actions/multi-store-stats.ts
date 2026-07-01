@@ -30,6 +30,10 @@ export interface MultiStoreRow {
   invoiceTotal: number
   receiptTotal: number
   taxRefund: number
+  // 結帳進度
+  daysWithClosing: number   // 已有結帳資料的天數（含 draft）
+  daysVerified: number      // 已核對天數
+  daysInMonth: number       // 該月總天數（或目前月為止的天數）
 }
 
 /** 所有 active 店家的月度 highlight 數字 */
@@ -43,10 +47,18 @@ export async function fetchMultiStoreMonthly(year: number, monthNum: number) {
     .from('stores').select('id, name').eq('active', true).neq('type', '央廚')
   const stores = sortStores(storesRaw ?? [])
 
+  // 該月總天數（若當月，只算到今日）
+  const now = new Date()
+  const isCurrentMonth = now.getFullYear() === year && (now.getMonth() + 1) === monthNum
+  const totalDaysInMonth = new Date(year, monthNum, 0).getDate()
+  const daysInMonth = isCurrentMonth ? now.getDate() : totalDaysInMonth
+
   const rows: MultiStoreRow[] = []
   // Sequential fetch — 12+ 店同時 fetch 可能耗 DB。若太慢改 Promise.all 並發
   for (const s of stores) {
     const m = await getMonthlyStats(s.id, year, monthNum)
+    const daysWithClosing = m.daily.filter(d => d.closingStatus !== 'none').length
+    const daysVerified = m.daily.filter(d => d.closingStatus === 'verified').length
     rows.push({
       storeId: s.id,
       storeName: s.name,
@@ -62,6 +74,9 @@ export async function fetchMultiStoreMonthly(year: number, monthNum: number) {
       invoiceTotal: m.totalInvoice,
       receiptTotal: m.totalReceipt,
       taxRefund: m.liangpingRefund,
+      daysWithClosing,
+      daysVerified,
+      daysInMonth,
     })
   }
 
