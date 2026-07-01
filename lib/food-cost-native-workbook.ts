@@ -40,7 +40,7 @@ interface ColumnDef {
 }
 
 /** Build the column layout for a store */
-function buildLayout(store: StoreInfo, items: ResolvedStoreItem[]): ColumnDef[] {
+function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAccounts: string[] = []): ColumnDef[] {
   const cols: ColumnDef[] = []
   let idx = 1
   cols.push({ index: idx++, header: '日期', kind: 'date' })
@@ -54,6 +54,10 @@ function buildLayout(store: StoreInfo, items: ResolvedStoreItem[]): ColumnDef[] 
   if (store.online_cash_enabled) cols.push({ index: idx++, header: '線上現金', kind: 'income', incomeKey: 'online_cash' })
   for (const acc of store.uber_accounts ?? []) {
     cols.push({ index: idx++, header: acc, kind: 'income', incomeKey: `uber:${acc}` })
+  }
+  // 手寫（依當月實際出現的 account_name 動態加欄）
+  for (const acc of handwriteAccounts) {
+    cols.push({ index: idx++, header: acc ? `手寫(${acc})` : '手寫', kind: 'income', incomeKey: `handwrite:${acc}` })
   }
   cols.push({ index: idx++, header: '扣除後的$', kind: 'income', incomeKey: 'after_deduct' })
   cols.push({ index: idx++, header: '現場', kind: 'income', incomeKey: 'onsite' })
@@ -69,10 +73,13 @@ function buildLayout(store: StoreInfo, items: ResolvedStoreItem[]): ColumnDef[] 
   cols.push({ index: idx++, header: '耗材', kind: 'stat', statKey: 'pack' })
   cols.push({ index: idx++, header: '雜項', kind: 'stat', statKey: 'misc' })
 
-  // 品項欄（依 vendor_group sort_order → item sort_order 排）
+  // 品項欄（先 category → 再 vendor_group sort_order → 再 item sort_order）
+  // 這樣「食材／耗材／雜項」品項會連續分佈，方便 SUM range 動態計算
+  const catOrder: Record<string, number> = { '食材': 0, '耗材': 1, '雜項': 2 }
   const sortedItems = [...items].sort((a, b) =>
-    a.vendor_group_sort_order - b.vendor_group_sort_order
-    || a.sort_order - b.sort_order
+    ((catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3))
+    || (a.vendor_group_sort_order - b.vendor_group_sort_order)
+    || (a.sort_order - b.sort_order)
     || a.name.localeCompare(b.name)
   )
   for (const it of sortedItems) {
@@ -129,6 +136,11 @@ export async function buildFoodCostNativeWorkbook(
   const items = await getStoreItemsResolved(storeId)
   const monthly = await getMonthlyStats(storeId, year, monthNum)
 
+  // 掃當月資料，蒐集實際出現過的 handwrite account_name（依 monthly.daily）
+  const handwriteAccounts = Array.from(new Set(
+    monthly.daily.flatMap(d => Object.keys(d.handwrite))
+  )).sort()
+
   const wb = new ExcelJS.Workbook()
   wb.creator = 'Liangping Accounting'
   wb.created = new Date()
@@ -138,9 +150,19 @@ export async function buildFoodCostNativeWorkbook(
     views: [{ state: 'frozen', xSplit: 2, ySplit: 3 }],
   })
 
-  const cols = buildLayout(store, items)
+  const cols = buildLayout(store, items, handwriteAccounts)
   const totalCols = cols.length
   const daysInMonth = new Date(year, monthNum, 0).getDate()
+
+  // 計算食材／耗材／雜項品項欄的 col range（用來產出每日 stat 欄的 SUM range 公式）
+  function categoryColRange(cat: '食材' | '耗材' | '雜項'): { start: number; end: number } | null {
+    const catCols = cols.filter(c => c.kind === 'item' && c.category === cat).map(c => c.index)
+    if (!catCols.length) return null
+    return { start: Math.min(...catCols), end: Math.max(...catCols) }
+  }
+  const foodRange = categoryColRange('食材')
+  const packRange = categoryColRange('耗材')
+  const miscRange = categoryColRange('雜項')
   const HEADER_ROW = 3           // 「日期/POS/...」在 row 3
   const TOTAL_ROW = 4            // 月合計
   const DATA_START = 5           // 每日資料
@@ -185,18 +207,42 @@ export async function buildFoodCostNativeWorkbook(
     }
   }
 
-  // Row 1 上方統計欄：梁平退稅（放在「總」欄上）
+  // Row 1 上方統計欄：梁平退稅 / 總發票 / 總收據
+  // 用 SUMIFS 公式指向品項區 Row 4 月合計，Excel 打開會動態重算
   const totalStatCol = cols.find(c => c.statKey === 'total')?.index
-  if (totalStatCol) {
+  if (totalStatCol && itemCols.length > 0) {
+    const itemStart = colLetter(itemCols[0].index)
+    const itemEnd = colLetter(itemCols[itemCols.length - 1].index)
+    const totalRange = `${itemStart}${TOTAL_ROW}:${itemEnd}${TOTAL_ROW}`
+    const docRow2Range = `${itemStart}2:${itemEnd}2`
+    const vgRow1Range = `${itemStart}1:${itemEnd}1`
+
+    // 梁平退稅 = doc=發票 且 vg=退稅
     fillHeaderCell(ws.getRow(1).getCell(totalStatCol - 1), '梁平退稅', 'FFC6EFCE', 'FF000000', true)
-    fillHeaderCell(ws.getRow(1).getCell(totalStatCol), String(Math.round(monthly.liangpingRefund)), 'FFFFFFCC', 'FF000000', true)
-    // Row 2 : 總發票 / 總收據
+    const cellRefund = ws.getRow(1).getCell(totalStatCol)
+    cellRefund.value = { formula: `SUMIFS(${totalRange},${docRow2Range},"發票",${vgRow1Range},"退稅")` } as any
+    cellRefund.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFCC' } }
+    cellRefund.font = { name: 'Calibri', size: 10, bold: true }
+    cellRefund.alignment = { horizontal: 'center', vertical: 'middle' }
+    cellRefund.numFmt = '#,##0;-#,##0;"-"'
+
+    // 總發票 = 所有 doc=發票
     fillHeaderCell(ws.getRow(2).getCell(totalStatCol - 1), '總發票', 'FFC6D9F0', 'FF000000')
-    fillHeaderCell(ws.getRow(2).getCell(totalStatCol), String(Math.round(monthly.totalInvoice)), 'FFFFFFCC', 'FF000000')
+    const cellInv = ws.getRow(2).getCell(totalStatCol)
+    cellInv.value = { formula: `SUMIFS(${totalRange},${docRow2Range},"發票")` } as any
+    cellInv.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFCC' } }
+    cellInv.alignment = { horizontal: 'center', vertical: 'middle' }
+    cellInv.numFmt = '#,##0;-#,##0;"-"'
+
+    // 總收據 = 所有 doc=收據
     const foodCol = cols.find(c => c.statKey === 'food')?.index
     if (foodCol) {
       fillHeaderCell(ws.getRow(2).getCell(foodCol), '總收據', 'FFFCE4D6', 'FF000000')
-      fillHeaderCell(ws.getRow(2).getCell(foodCol + 1), String(Math.round(monthly.totalReceipt)), 'FFFFFFCC', 'FF000000')
+      const cellRec = ws.getRow(2).getCell(foodCol + 1)
+      cellRec.value = { formula: `SUMIFS(${totalRange},${docRow2Range},"收據")` } as any
+      cellRec.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFCC' } }
+      cellRec.alignment = { horizontal: 'center', vertical: 'middle' }
+      cellRec.numFmt = '#,##0;-#,##0;"-"'
     }
   }
 
@@ -246,12 +292,22 @@ export async function buildFoodCostNativeWorkbook(
         const v = readIncomeValue(dd, c.incomeKey)
         if (v !== 0) cell.value = v
         cell.numFmt = '#,##0;-#,##0;'
-      } else if (c.kind === 'stat' && dd && c.statKey) {
-        const v = c.statKey === 'total' ? dd.totalCost
-          : c.statKey === 'food' ? dd.food
-          : c.statKey === 'pack' ? dd.pack
-          : dd.misc
-        if (v !== 0) cell.value = v
+      } else if (c.kind === 'stat' && c.statKey) {
+        // 用 SUM range 公式，Excel 開會動態重算
+        const foodCol = cols.find(x => x.statKey === 'food')
+        const packCol = cols.find(x => x.statKey === 'pack')
+        const miscCol = cols.find(x => x.statKey === 'misc')
+        let formula: string | null = null
+        if (c.statKey === 'food' && foodRange) {
+          formula = `SUM(${colLetter(foodRange.start)}${rowNum}:${colLetter(foodRange.end)}${rowNum})`
+        } else if (c.statKey === 'pack' && packRange) {
+          formula = `SUM(${colLetter(packRange.start)}${rowNum}:${colLetter(packRange.end)}${rowNum})`
+        } else if (c.statKey === 'misc' && miscRange) {
+          formula = `SUM(${colLetter(miscRange.start)}${rowNum}:${colLetter(miscRange.end)}${rowNum})`
+        } else if (c.statKey === 'total' && foodCol && packCol && miscCol) {
+          formula = `${colLetter(foodCol.index)}${rowNum}+${colLetter(packCol.index)}${rowNum}+${colLetter(miscCol.index)}${rowNum}`
+        }
+        if (formula) cell.value = { formula } as any
         cell.numFmt = '#,##0;-#,##0;'
       } else if (c.kind === 'item' && dd) {
         const v = dd.items[c.header] ?? 0
@@ -285,6 +341,7 @@ function readIncomeValue(dd: DailyStats, key: string): number {
     case 'revenue': return dd.revenue
     default:
       if (key.startsWith('uber:')) return dd.uber[key.slice(5)] ?? 0
+      if (key.startsWith('handwrite:')) return dd.handwrite[key.slice(10)] ?? 0
       return 0
   }
 }
