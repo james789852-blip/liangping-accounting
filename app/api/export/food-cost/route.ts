@@ -6,6 +6,10 @@ import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import { type RowVals, norm, fillWorksheet, buildGroupByMerge } from '@/lib/food-cost-template'
 import { getMonthLastDay } from '@/lib/business-date'
 
+// 每次都要 fresh 產出，避免 Vercel edge / CDN / browser 快取到 stale xlsx
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
 const C = {
@@ -261,6 +265,9 @@ async function fillTemplate(
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename*=UTF-8''${filename}`,
+      'Cache-Control': 'no-store, no-cache, must-revalidate, private, max-age=0',
+      'Pragma': 'no-cache',
+      'Expires': '0',
     },
   })
 }
@@ -813,6 +820,9 @@ export async function GET(req: NextRequest) {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename*=UTF-8''${filename}`,
       'X-Template-Debug': templateDebug,
+      'Cache-Control': 'no-store, no-cache, must-revalidate, private, max-age=0',
+      'Pragma': 'no-cache',
+      'Expires': '0',
     },
   })
 }

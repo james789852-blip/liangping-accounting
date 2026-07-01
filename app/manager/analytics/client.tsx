@@ -214,12 +214,12 @@ export default function AnalyticsClient({ storeId, storeName, meetingAnchorDate,
     try {
       let url: string
       if (exportType === 'year') {
-        url = `/api/export/closing-native?storeId=${storeId}&type=year&year=${exportYear}`
+        url = `/api/export/closing-native?storeId=${storeId}&type=year&year=${exportYear}&t=${Date.now()}`
       } else {
         const month = `${exportYear}-${String(exportMonth).padStart(2, '0')}`
-        url = `/api/export/closing-native?storeId=${storeId}&month=${month}`
+        url = `/api/export/closing-native?storeId=${storeId}&month=${month}&t=${Date.now()}`
       }
-      const res = await fetch(url)
+      const res = await fetch(url, { cache: 'no-store' })
       if (!res.ok) { toast.error('匯出失敗：' + await res.text()); return }
       const blob = await res.blob()
       const disposition = res.headers.get('content-disposition') ?? ''

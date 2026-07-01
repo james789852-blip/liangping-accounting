@@ -83,7 +83,9 @@ export default function FoodCostPreviewClient({
   async function handleExport() {
     setExporting(true)
     try {
-      const res = await fetch(`/api/export/food-cost?storeId=${storeId}&month=${month}`)
+      const res = await fetch(`/api/export/food-cost?storeId=${storeId}&month=${month}&t=${Date.now()}`, {
+        cache: 'no-store',
+      })
       if (!res.ok) { alert('匯出失敗'); return }
       const mode = res.headers.get('X-Export-Mode')
       const debug = res.headers.get('X-Template-Debug') ?? ''

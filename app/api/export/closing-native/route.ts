@@ -13,6 +13,15 @@ import { getMonthLastDay } from '@/lib/business-date'
 import { getStoreItemsResolved } from '@/lib/store-items-resolver'
 import { buildNativeWorkbook, buildAnnualWorkbook, type DayData, type StoreInfo } from '@/lib/native-excel-export'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
+const NO_CACHE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, private, max-age=0',
+  'Pragma': 'no-cache',
+  'Expires': '0',
+}
+
 /** 從 source sheet 複製整份到 target workbook（保留 styles / formulas / merges） */
 function copySheetInto(target: ExcelJS.Workbook, source: ExcelJS.Worksheet, newName: string): ExcelJS.Worksheet {
   const ws = target.addWorksheet(newName, {
@@ -240,6 +249,7 @@ export async function GET(req: NextRequest) {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename*=UTF-8''${filename}`,
         'X-Export-Mode': 'native-annual',
+        ...NO_CACHE_HEADERS,
       },
     })
   }
@@ -286,6 +296,7 @@ export async function GET(req: NextRequest) {
     'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'Content-Disposition': `attachment; filename*=UTF-8''${filename}`,
     'X-Export-Mode': 'native',
+    ...NO_CACHE_HEADERS,
   }
   if (orphanWarning) headers['X-Orphan-Items'] = encodeURIComponent(orphanWarning)
   return new NextResponse(merged as any, { headers })
