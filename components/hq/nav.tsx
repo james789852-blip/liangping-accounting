@@ -90,11 +90,11 @@ const managerSections = [
 ]
 
 const mobileHQTabs = [
-  { href: '/hq/closings',  label: '店面',   icon: BookOpen },
-  { href: '/hq/ck',        label: '央廚',   icon: ChefHat },
-  { href: '/hq/dashboard', label: '儀表板', icon: LayoutDashboard },
-  { href: '/hq/stores',    label: '店家',   icon: Store },
-  // 「更多」由 nav 內部用 menu 處理
+  { href: '/hq/closings',       label: '店面',   icon: BookOpen },
+  { href: '/hq/ck',             label: '央廚',   icon: ChefHat },
+  { href: '/hq/store-overview', label: '總覽',   icon: FileBarChart2 },
+  { href: '/hq/multi-store',    label: '多店',   icon: LayoutDashboard },
+  // 「店家」CRUD 進「更多」menu
 ]
 const mobileManagerTabs = [
   { href: '/manager/closing',    label: '今日結帳', icon: ClipboardList },

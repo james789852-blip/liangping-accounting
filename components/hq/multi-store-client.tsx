@@ -72,8 +72,8 @@ export default function MultiStoreClient() {
 
       {!loading && rows.length > 0 && (
         <div className="bg-white rounded-2xl p-3" style={{ border: '1px solid #f4f4f5' }}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+          <div className="overflow-x-auto -mx-3 px-3">
+            <table className="text-xs" style={{ minWidth: 'max-content' }}>
               <thead style={{ background: '#fafafa' }}>
                 <tr>
                   <th className="px-2 py-2 text-left sticky left-0" style={{ color: '#71717a', background: '#fafafa', minWidth: 100 }}>店家</th>
