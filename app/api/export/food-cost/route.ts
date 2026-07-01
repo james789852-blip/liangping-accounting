@@ -213,6 +213,45 @@ async function fillTemplate(
     ;(wb as any).calcProperties = { fullCalcOnLoad: true }
   }
 
+  // ─── 無條件清 data rows 內 raw stale numbers（保留 formula） ────
+  // 不論是 clone 出的 sheet 還是模板既有的 sheet，都可能帶 stale 6 月數字。
+  // 這裡在 fillWorksheet 前把 data rows 內所有 raw numbers 清為 null。
+  // Formula 會在 clone 時已移除 result，Excel 打開會重算；此處不動 formula。
+  {
+    let headerRowNum = -1
+    for (let r = 1; r <= 10; r++) {
+      if (ws.getRow(r).getCell(1).text?.replace(/[\s　]/g, '') === '日期') { headerRowNum = r; break }
+    }
+    if (headerRowNum > 0) {
+      const dataStartRow = headerRowNum + 2
+      const daysInMonth = new Date(year, monthNum, 0).getDate()
+      // Data rows (每日)
+      for (let idx = 0; idx < daysInMonth; idx++) {
+        const row = ws.getRow(dataStartRow + idx)
+        row.eachCell({ includeEmpty: false }, (cell) => {
+          if (typeof cell.value === 'number') cell.value = null
+          // formula 也移除 stale cached result（讓 Excel 重算）
+          const v = cell.value as any
+          if (v && typeof v === 'object' && 'result' in v) {
+            const { result, ...rest } = v
+            cell.value = rest
+          }
+        })
+      }
+      // 月合計 row（通常在 headerRow + 1）— 同樣清 raw + formula result
+      const totalRow = ws.getRow(headerRowNum + 1)
+      totalRow.eachCell({ includeEmpty: false }, (cell) => {
+        if (typeof cell.value === 'number') cell.value = null
+        const v = cell.value as any
+        if (v && typeof v === 'object' && 'result' in v) {
+          const { result, ...rest } = v
+          cell.value = rest
+        }
+      })
+    }
+    ;(wb as any).calcProperties = { fullCalcOnLoad: true }
+  }
+
   const filled = await fillWorksheet(ws, days, dataRows, uberAccounts, vendorGroupLookup)
   if (!filled) { console.warn('[fillTemplate] fillWorksheet returned null'); return null }
 
@@ -550,11 +589,23 @@ export async function GET(req: NextRequest) {
   // 梁平退稅 = 當月免洗稅金合計
   const lianpingTaxRefund = totals.items['免洗稅金'] ?? 0
 
-  // ─── Template mode: DISABLED ──────────────────────────────────────────────
-  // 使用者要求：以後不依模板匯出，避免模板 clone 過來的 stale 數字。
-  // 一律走下面的 non-template path，每次自建乾淨 layout。
-  // vendorGroupLookup 已在上面用模板 header 建好，仍會參與欄位分組。
-  const templateDebug = 'template_disabled'
+  // ─── Template mode: fill original Excel if uploaded ───────────────────────
+  let templateDebug = 'no_template'
+  if (templateBuffer) {
+    try {
+      templateDebug = 'fill_attempt'
+      const result = await fillTemplate(templateBuffer, monthNum, year, days, dataRows, storeRow?.name ?? 'export', uberAccounts, vendorGroupLookup)
+      if (result) {
+        result.headers.set('X-Export-Mode', 'template')
+        return result
+      }
+      templateDebug = 'fill_null'
+      console.warn(`[food-cost export] fillTemplate returned null for store ${storeId}, month ${month}`)
+    } catch (e) {
+      templateDebug = `exception:${(e as Error)?.message ?? e}`
+      console.warn(`[food-cost export] template fill failed:`, e)
+    }
+  }
 
   // ─── Excel workbook ───────────────────────────────────────────────────────
   const wb = new ExcelJS.Workbook()
