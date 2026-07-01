@@ -550,24 +550,11 @@ export async function GET(req: NextRequest) {
   // 梁平退稅 = 當月免洗稅金合計
   const lianpingTaxRefund = totals.items['免洗稅金'] ?? 0
 
-  // ─── Template mode: fill original Excel if uploaded ───────────────────────
-  // 重用先前下載的 templateBuffer
-  let templateDebug = 'no_template'
-  if (templateBuffer) {
-    try {
-      templateDebug = 'fill_attempt'
-      const result = await fillTemplate(templateBuffer, monthNum, year, days, dataRows, storeRow?.name ?? 'export', uberAccounts, vendorGroupLookup)
-      if (result) {
-        result.headers.set('X-Export-Mode', 'template')
-        return result
-      }
-      templateDebug = 'fill_null'
-      console.warn(`[food-cost export] fillTemplate returned null for store ${storeId}, month ${month}`)
-    } catch (e) {
-      templateDebug = `exception:${(e as Error)?.message ?? e}`
-      console.warn(`[food-cost export] template fill failed:`, e)
-    }
-  }
+  // ─── Template mode: DISABLED ──────────────────────────────────────────────
+  // 使用者要求：以後不依模板匯出，避免模板 clone 過來的 stale 數字。
+  // 一律走下面的 non-template path，每次自建乾淨 layout。
+  // vendorGroupLookup 已在上面用模板 header 建好，仍會參與欄位分組。
+  const templateDebug = 'template_disabled'
 
   // ─── Excel workbook ───────────────────────────────────────────────────────
   const wb = new ExcelJS.Workbook()
