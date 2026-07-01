@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Download } from 'lucide-react'
 import { fetchDailyStats, fetchMonthlyStats } from '@/app/actions/store-overview'
 import type { DailyStats, MonthlyStats } from '@/lib/store-aggregator'
 
@@ -48,6 +48,31 @@ export default function StoreOverviewClient({ stores }: { stores: Store[] }) {
 
   const storeName = stores.find(s => s.id === storeId)?.name ?? ''
   const yearOptions = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i)
+  const [downloading, setDownloading] = useState(false)
+
+  async function handleExport() {
+    if (!storeId) { toast.error('請選店家'); return }
+    setDownloading(true)
+    try {
+      const url = `/api/export/food-cost-native?storeId=${storeId}&year=${year}&month=${monthNum}&t=${Date.now()}`
+      const res = await fetch(url, { cache: 'no-store' })
+      if (!res.ok) { toast.error('匯出失敗：' + await res.text()); return }
+      const blob = await res.blob()
+      const disp = res.headers.get('content-disposition') ?? ''
+      const m = /filename\*=UTF-8''([^;]+)/.exec(disp)
+      const filename = m ? decodeURIComponent(m[1]) : `${storeName}_${year}年${monthNum}月_食耗成本.xlsx`
+      const dl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = dl; a.download = filename
+      document.body.appendChild(a); a.click(); a.remove()
+      URL.revokeObjectURL(dl)
+      toast.success('匯出完成')
+    } catch (e) {
+      toast.error('匯出失敗：' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4" style={{ background: '#fafafa', minHeight: '100vh' }}>
@@ -83,6 +108,15 @@ export default function StoreOverviewClient({ stores }: { stores: Store[] }) {
               ))}
             </select>
           </div>
+        )}
+
+        {/* Excel 匯出（僅當月模式） */}
+        {tab === 'monthly' && (
+          <button onClick={handleExport} disabled={downloading || !storeId}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white"
+            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', border: 'none', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
+            {downloading ? <><Loader2 className="h-4 w-4 animate-spin" />匯出中…</> : <><Download className="h-4 w-4" />下載食耗成本 Excel</>}
+          </button>
         )}
       </div>
 

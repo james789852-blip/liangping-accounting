@@ -45,18 +45,23 @@ const hqSections = [
   {
     label: '數據分析',
     items: [
-      { href: '/hq/dashboard',         label: '即時儀表板', icon: LayoutDashboard },
-      { href: '/hq/store-overview',    label: '店家總覽（新）', icon: FileBarChart2 },
-      { href: '/hq/food-cost-preview', label: '食耗成本（舊）',   icon: FileBarChart2 },
+      { href: '/hq/dashboard',      label: '即時儀表板', icon: LayoutDashboard },
+      { href: '/hq/store-overview', label: '店家總覽',   icon: FileBarChart2 },
+    ],
+  },
+  // ── 店家設定 ─────────────
+  {
+    label: '店家設定',
+    items: [
+      { href: '/hq/receipt-settings', label: '店家收據廠商', icon: Settings },
     ],
   },
   // ── 結帳規則 ─────────────
   {
     label: '結帳設定',
     items: [
-      // 「品項 / 分類」「店家品項」功能已整合到 食耗成本頁面內的「品項對應管理」
-      { href: '/hq/ck-prices',     label: '央廚單價',    icon: Package },
-      { href: '/hq/native-export', label: '月度總覽 Excel',  icon: FileBarChart2 },
+      // 「品項 / 分類」「店家品項」「月度總覽 Excel」「食耗成本模板」都已整合到 /hq/store-overview
+      { href: '/hq/ck-prices', label: '央廚單價', icon: Package },
     ],
   },
   // ── 系統與權限 ─────────────
@@ -80,12 +85,7 @@ const managerSections = [
       { href: '/manager/analytics',  label: '營運洞察', icon: LineChart },
     ],
   },
-  {
-    label: '設定',
-    items: [
-      { href: '/manager/settings', label: '收據設定', icon: Settings },
-    ],
-  },
+  // 「收據設定」已整合到總公司端 /hq/receipt-settings，店長端不再獨立管理
 ]
 
 const mobileHQTabs = [
