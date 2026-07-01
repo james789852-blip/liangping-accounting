@@ -54,6 +54,11 @@ export interface DailyStats {
   pack: number
   misc: number
   totalCost: number
+  // ── 依單據類型（doc_type）當日加總 ──
+  invoiceTotal: number   // doc_type=發票 品項加總（食+耗+雜）
+  receiptTotal: number   // doc_type=收據 品項加總
+  estimateTotal: number  // doc_type=估價單 品項加總
+  taxRefund: number      // 梁平退稅：doc_type=發票 且 vendor_group 含「退稅」
   // ── 品項明細 (item_name → amount) 對應到啟用品項 ──
   items: Record<string, number>
   // ── 廠商群組小計 (vg_name → doc_type → amount) ──
@@ -101,6 +106,7 @@ function newEmptyDay(date: string): DailyStats {
     actual: 0, ck: 0, onsite: 0, variance: 0, after_deduct: 0,
     revenue: 0, totalRevenue: 0,
     food: 0, pack: 0, misc: 0, totalCost: 0,
+    invoiceTotal: 0, receiptTotal: 0, estimateTotal: 0, taxRefund: 0,
     items: {}, vendorGroupBreakdown: {}, receipts: [],
   }
 }
@@ -233,7 +239,7 @@ export async function getRangeStats(
   //   營業額 = 結果 + 現場               （原 Excel: K + (C-SUM(D:F))）
   const uberSumOf = (dd: DailyStats) => Object.values(dd.uber).reduce((s, v) => s + v, 0)
   for (const dd of days) {
-    // Step 1: 食/耗/雜 by category + vendor group breakdown
+    // Step 1: 食/耗/雜 by category + vendor group breakdown + 依單據類型加總
     for (const [itemName, amt] of Object.entries(dd.items)) {
       const meta = itemMeta.get(itemName)
       if (!meta) continue
@@ -245,6 +251,16 @@ export async function getRangeStats(
       const doc = meta.doc_type ?? ''
       if (!dd.vendorGroupBreakdown[vg]) dd.vendorGroupBreakdown[vg] = {}
       dd.vendorGroupBreakdown[vg][doc] = (dd.vendorGroupBreakdown[vg][doc] ?? 0) + amt
+
+      // 依 doc_type 加總（跨食/耗/雜）
+      if (doc === '發票') {
+        dd.invoiceTotal += amt
+        if (vg.includes('退稅')) dd.taxRefund += amt
+      } else if (doc === '收據') {
+        dd.receiptTotal += amt
+      } else if (doc === '估價單') {
+        dd.estimateTotal += amt
+      }
     }
     dd.totalCost = dd.food + dd.pack + dd.misc
 
@@ -298,6 +314,10 @@ export async function getMonthlyStats(storeId: string, year: number, monthNum: n
     totals.pack += dd.pack
     totals.misc += dd.misc
     totals.totalCost += dd.totalCost
+    totals.invoiceTotal += dd.invoiceTotal
+    totals.receiptTotal += dd.receiptTotal
+    totals.estimateTotal += dd.estimateTotal
+    totals.taxRefund += dd.taxRefund
     for (const [k, v] of Object.entries(dd.items)) totals.items[k] = (totals.items[k] ?? 0) + v
   }
 
@@ -323,26 +343,16 @@ export async function getMonthlyStats(storeId: string, year: number, monthNum: n
     || a.item_name.localeCompare(b.item_name)
   )
 
-  // 特殊統計欄
-  let totalInvoice = 0, totalReceipt = 0, liangpingRefund = 0
-  for (const row of itemMonthlyTotals) {
-    if (row.doc_type === '發票') totalInvoice += row.total
-    if (row.doc_type === '收據') totalReceipt += row.total
-    // 梁平退稅 = 發票 且 vg=退稅 或 vg=X總發票
-    if (row.doc_type === '發票' && (row.vendor_group === '退稅' || row.vendor_group.includes('退稅'))) {
-      liangpingRefund += row.total
-    }
-  }
-
+  // 特殊統計欄（已在 daily loop 累計，這裡直接用 totals）
   return {
     year, monthNum,
     storeName: store.name,
     daily: days,
     totals,
     itemMonthlyTotals,
-    totalInvoice,
-    totalReceipt,
-    liangpingRefund,
+    totalInvoice: totals.invoiceTotal,
+    totalReceipt: totals.receiptTotal,
+    liangpingRefund: totals.taxRefund,
   }
 }
 
