@@ -224,25 +224,16 @@ export async function getRangeStats(
   }
 
   // ── 計算派生欄位 & 食/耗/雜 by category ──
+  // 對齊使用者原 Excel 公式：
+  //   現場   = POS − (TWPAY + Panda + Online + Uber) + handwrite (若 ichef_linked)
+  //           或 POS + handwrite (若非 ichef_linked)
+  //   總成本 = 食 + 耗 + 雜
+  //   扣除後 = 現場 − 總成本            （原 Excel: C-N-SUM(D:F)）
+  //   結果   = 實際 − 扣除後 − 配送     （原 Excel: I - G - J）
+  //   營業額 = 結果 + 現場               （原 Excel: K + (C-SUM(D:F))）
   const uberSumOf = (dd: DailyStats) => Object.values(dd.uber).reduce((s, v) => s + v, 0)
   for (const dd of days) {
-    // 現場 (onsite):
-    //   ichef_uber_linked = true → POS 含各平台 → 扣除得純現場
-    //   否則 POS 已是純現場
-    //   handwriteTotal 一律加進現場
-    const uberSum = uberSumOf(dd)
-    dd.onsite = (store.ichef_uber_linked
-      ? (dd.pos - uberSum - dd.twpay - dd.panda - dd.online)
-      : dd.pos
-    ) + dd.handwriteTotal
-    // 結果 = 實際 - 現場 - 配送
-    dd.variance = dd.actual - dd.onsite - dd.ck
-    // 扣除後的$ = 實際 - 配送 - 結果
-    dd.after_deduct = dd.actual - dd.ck - dd.variance
-    // 營業額 = 現場 + 結果
-    dd.revenue = dd.onsite + dd.variance
-
-    // 食/耗/雜 by category + vendor group breakdown
+    // Step 1: 食/耗/雜 by category + vendor group breakdown
     for (const [itemName, amt] of Object.entries(dd.items)) {
       const meta = itemMeta.get(itemName)
       if (!meta) continue
@@ -256,6 +247,22 @@ export async function getRangeStats(
       dd.vendorGroupBreakdown[vg][doc] = (dd.vendorGroupBreakdown[vg][doc] ?? 0) + amt
     }
     dd.totalCost = dd.food + dd.pack + dd.misc
+
+    // Step 2: 現場
+    const uberSum = uberSumOf(dd)
+    dd.onsite = (store.ichef_uber_linked
+      ? (dd.pos - uberSum - dd.twpay - dd.panda - dd.online)
+      : dd.pos
+    ) + dd.handwriteTotal
+
+    // Step 3: 扣除後 = 現場 − 總成本
+    dd.after_deduct = dd.onsite - dd.totalCost
+
+    // Step 4: 結果 = 實際 − 扣除後 − 配送
+    dd.variance = dd.actual - dd.after_deduct - dd.ck
+
+    // Step 5: 營業額 = 結果 + 現場（若現場 > 0）
+    dd.revenue = dd.onsite > 0 ? dd.variance + dd.onsite : 0
   }
 
   return { store, items, days }
