@@ -49,7 +49,15 @@ function getDaysInMonth(year: number, month: number) {
 }
 
 // 複製整個 worksheet 為新月份 sheet（保留 layout / styles / formulas / merges）
-function cloneWorksheet(wb: ExcelJS.Workbook, source: ExcelJS.Worksheet, newName: string): ExcelJS.Worksheet {
+// sourceMonthNum: source sheet 的月份（例：從 "6月食耗成本" clone → 6）
+// newMonthNum: 目標月份（例：7）
+// year: 用於算星期
+function cloneWorksheet(
+  wb: ExcelJS.Workbook,
+  source: ExcelJS.Worksheet,
+  newName: string,
+  opts?: { sourceMonthNum?: number; newMonthNum?: number; year?: number },
+): ExcelJS.Worksheet {
   const ws = wb.addWorksheet(newName, {
     views: source.views ? JSON.parse(JSON.stringify(source.views)) : undefined,
     properties: source.properties ? JSON.parse(JSON.stringify(source.properties)) : undefined,
@@ -64,6 +72,7 @@ function cloneWorksheet(wb: ExcelJS.Workbook, source: ExcelJS.Worksheet, newName
     if (src.style) dst.style = { ...src.style }
   }
   // Cells + row heights
+  // Formula 不帶 result（讓 Excel 打開時重算）
   source.eachRow({ includeEmpty: true }, (row, rowNum) => {
     const newRow = ws.getRow(rowNum)
     if (row.height) newRow.height = row.height
@@ -71,7 +80,8 @@ function cloneWorksheet(wb: ExcelJS.Workbook, source: ExcelJS.Worksheet, newName
       const newCell = newRow.getCell(colNum)
       const v = cell.value as any
       if (v && typeof v === 'object' && 'formula' in v) {
-        newCell.value = { formula: v.formula, result: v.result } as any
+        // 只帶 formula，不帶 result → 打開時重算
+        newCell.value = { formula: v.formula } as any
       } else if (v !== null && v !== undefined) {
         newCell.value = v
       }
@@ -79,13 +89,78 @@ function cloneWorksheet(wb: ExcelJS.Workbook, source: ExcelJS.Worksheet, newName
       if (cell.note) newCell.note = cell.note
     })
   })
-  // Merges: 從 source.model.merges 讀
+  // Merges
   const merges = (source.model as any)?.merges as string[] | undefined
   if (merges) {
     for (const range of merges) {
       try { ws.mergeCells(range) } catch { /* ignore invalid */ }
     }
   }
+
+  // 若指定了新月份 → 更新日期欄 / 星期欄 / 月份標題
+  if (opts?.newMonthNum && opts.year) {
+    const newMonth = opts.newMonthNum
+    const daysInNewMonth = new Date(opts.year, newMonth, 0).getDate()
+    const daysInSrcMonth = opts.sourceMonthNum
+      ? new Date(opts.year, opts.sourceMonthNum, 0).getDate()
+      : 30
+    const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
+
+    // 找 header row（A 欄含「日期」）
+    let headerRowNum = -1
+    for (let r = 1; r <= 10; r++) {
+      if (ws.getRow(r).getCell(1).text?.replace(/[\s　]/g, '') === '日期') { headerRowNum = r; break }
+    }
+    const dataStartRow = headerRowNum > 0 ? headerRowNum + 2 : -1
+
+    // 更新月份標題 cell（任何 text 完全是「N月」的 cell 都改）
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        const v = cell.value as any
+        if (v == null) return
+        if (typeof v === 'object' && 'formula' in v) return // 不動 formula
+        let t: string | undefined
+        try { t = cell.text?.trim() } catch { return }
+        if (t && /^\d{1,2}月$/.test(t)) cell.value = `${newMonth}月`
+      })
+    })
+
+    // 更新 data rows 的日期 + 星期
+    if (dataStartRow > 0) {
+      // 若新月份天數 > source → 需要多加 rows（複製最後一 data row 的 style）
+      if (daysInNewMonth > daysInSrcMonth) {
+        const templateRow = ws.getRow(dataStartRow + daysInSrcMonth - 1)
+        for (let extra = daysInSrcMonth; extra < daysInNewMonth; extra++) {
+          const newRow = ws.getRow(dataStartRow + extra)
+          if (templateRow.height) newRow.height = templateRow.height
+          templateRow.eachCell({ includeEmpty: true }, (srcCell, colNum) => {
+            const dstCell = newRow.getCell(colNum)
+            const v = srcCell.value as any
+            if (v && typeof v === 'object' && 'formula' in v) {
+              // 平移公式：ExcelJS 沒有原生 shift，先簡單複製 formula 字串 → Excel 開啟時參照可能有偏差
+              // 保守做法：清掉，之後 fillWorksheet 塞 value
+              dstCell.value = null
+            }
+            if (srcCell.style) dstCell.style = JSON.parse(JSON.stringify(srcCell.style))
+          })
+        }
+      }
+      // 逐日填 A（M月D日）+ B（星期X）
+      for (let idx = 0; idx < daysInNewMonth; idx++) {
+        const row = ws.getRow(dataStartRow + idx)
+        row.getCell(1).value = `${newMonth}月${idx + 1}日`
+        const dt = new Date(opts.year, newMonth - 1, idx + 1)
+        row.getCell(2).value = `星期${WEEKDAYS[dt.getDay()]}`
+      }
+      // 若新月份天數 < source → 清掉多餘 rows 的日期/星期
+      for (let idx = daysInNewMonth; idx < daysInSrcMonth; idx++) {
+        const row = ws.getRow(dataStartRow + idx)
+        row.getCell(1).value = null
+        row.getCell(2).value = null
+      }
+    }
+  }
+
   return ws
 }
 
@@ -115,16 +190,21 @@ async function fillTemplate(
     }
     // 挑：若有月份 sheet，優先挑「小於當月且最接近」；否則挑「最大月份」；再否則第一張含「食耗」的
     let source: ExcelJS.Worksheet | undefined
+    let sourceMonth: number | undefined
     if (monthSheets.length > 0) {
       const smaller = monthSheets.filter(x => x.n < monthNum).sort((a, b) => b.n - a.n)[0]
       const largest = monthSheets.sort((a, b) => b.n - a.n)[0]
-      source = smaller?.sheet ?? largest.sheet
+      const pick = smaller ?? largest
+      source = pick.sheet
+      sourceMonth = pick.n
     } else {
       source = wb.worksheets.find(s => s.name.includes('食耗'))
     }
     if (!source) { console.warn(`[fillTemplate] 模板內找不到任何月份 sheet`); return null }
     console.log(`[fillTemplate] 自動從「${source.name}」複製為「${targetName}」`)
-    ws = cloneWorksheet(wb, source, targetName)
+    ws = cloneWorksheet(wb, source, targetName, { sourceMonthNum: sourceMonth, newMonthNum: monthNum, year })
+    // 強制 Excel 打開時重算 formula（避免顯示 clone 過來的 cached result）
+    ;(wb as any).calcProperties = { fullCalcOnLoad: true }
   }
 
   const filled = await fillWorksheet(ws, days, dataRows, uberAccounts, vendorGroupLookup)
