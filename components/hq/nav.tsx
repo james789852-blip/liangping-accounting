@@ -46,7 +46,8 @@ const hqSections = [
     label: '數據分析',
     items: [
       { href: '/hq/dashboard',         label: '即時儀表板', icon: LayoutDashboard },
-      { href: '/hq/food-cost-preview', label: '食耗成本',   icon: FileBarChart2 },
+      { href: '/hq/store-overview',    label: '店家總覽（新）', icon: FileBarChart2 },
+      { href: '/hq/food-cost-preview', label: '食耗成本（舊）',   icon: FileBarChart2 },
     ],
   },
   // ── 結帳規則 ─────────────
