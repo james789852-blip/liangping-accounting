@@ -98,19 +98,15 @@ export default function ItemMappingsClient({
 
   function handleAdd() {
     if (!newName.trim()) return
-    // Excel 欄位空 → 預設用品項名（90% 情況相同，新品項也可直接建立）
     const excelCol = newCol.trim() || newName.trim()
     const storeIdParam = activeStoreId || undefined
     startTransition(async () => {
-      await saveItemMapping(newName.trim(), excelCol, newCat, storeIdParam, newVendorGroup.trim() || undefined)
-      setMappings(prev => [...prev, {
-        id: `tmp-${Date.now()}`,
-        item_name: newName.trim(),
-        excel_column: excelCol,
-        item_category: newCat,
-        vendor_group: newVendorGroup.trim() || null,
-        store_id: storeIdParam ?? null,
-      }])
+      const r = await saveItemMapping(newName.trim(), excelCol, newCat, storeIdParam, newVendorGroup.trim() || undefined)
+      if (r && 'error' in r) {
+        toast.error('新增失敗：' + r.error)
+        return
+      }
+      toast.success('已新增')
       setShowAdd(false); setNewName(''); setNewCol(''); setNewCat('食材'); setNewVendorGroup('')
       router.refresh()
     })

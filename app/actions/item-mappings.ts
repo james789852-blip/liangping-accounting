@@ -17,19 +17,26 @@ export async function saveItemMapping(
 ) {
   const admin = createAdminClient()
 
-  // 1. 寫 item_column_mappings（原有邏輯 — 決定該品項對到 Excel 哪個欄名）
-  await admin.from('item_column_mappings').insert({
+  // 檢查是否已存在（避免 unique constraint 錯誤）
+  let query = admin.from('item_column_mappings').select('id').eq('item_name', itemName)
+  if (storeId) query = query.eq('store_id', storeId)
+  else query = query.is('store_id', null)
+  const { data: existing } = await query.maybeSingle()
+  if (existing) return { error: `品項「${itemName}」已存在對應` }
+
+  // 1. 寫 item_column_mappings
+  const { error: insertErr } = await admin.from('item_column_mappings').insert({
     item_name: itemName, excel_column: excelColumn, item_category: itemCategory,
     vendor_group: vendorGroup ?? null,
     store_id: storeId ?? null, updated_at: new Date().toISOString(),
   })
+  if (insertErr) return { error: `新增失敗：${insertErr.message}` }
 
-  // 2. 確保 system_items + store_items 也有這品項（xlsx 匯出從這裡讀）
-  //    否則新品項就算 mapping 有，xlsx 不會出現
+  // 2. 確保 system_items + store_items 也有這品項
   await ensureSystemItemAndEnable(itemName, itemCategory, vendorGroup, storeId)
 
   revalidate()
-  return { success: true }
+  return { success: true as const }
 }
 
 /** 確保品項在 system_items 存在，且該店的 store_items 啟用 */
