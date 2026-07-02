@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn } from 'lucide-react'
 import { saveCKDailyRecord, addCKExternalStore, deleteCKExternalStore, confirmCKOrder } from '@/app/actions/ck'
+import CKHelp from './ck-help'
 import { uploadToStorage } from '@/app/actions/upload'
 import { compressImage } from '@/lib/compress-image'
 
@@ -258,6 +259,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-28 space-y-4">
+      <CKHelp />
 
       {/* 狀態 banner */}
       {isLocked && (

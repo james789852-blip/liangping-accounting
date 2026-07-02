@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import ClosingHelp from './closing-help'
 import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn, PiggyBank } from 'lucide-react'
 import { saveCashCounts, submitClosing, savePettyCounts } from '@/app/actions/closings'
 import { syncStoreCKOrder } from '@/app/actions/ck'
@@ -1806,6 +1807,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       </div>
 
       <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-32" style={{ visibility: stepMounted ? 'visible' : 'hidden' }}>
+
+        {/* 教學（新店長第一次用會展開） */}
+        <ClosingHelp />
 
         {/* 退回提示 */}
         {isDisputed && (
