@@ -71,6 +71,7 @@ export default function ItemMappingsClient({
   const [newVendorGroup, setNewVendorGroup] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [showAddVg, setShowAddVg] = useState(false)
+  const [sortMode, setSortMode] = useState(false)
   const [newVgName, setNewVgName] = useState('')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
@@ -343,6 +344,14 @@ export default function ItemMappingsClient({
                   <Copy className="h-3.5 w-3.5" /> 複製全域
                 </button>
               )}
+              <button onClick={() => setSortMode(v => !v)}
+                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                style={sortMode
+                  ? { background: '#F59E0B', color: 'white', boxShadow: '0 2px 8px rgba(245,158,11,0.3)' }
+                  : { background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}
+                title={sortMode ? '完成排序' : '進入排序模式（避免誤觸）'}>
+                {sortMode ? <><Check className="h-3.5 w-3.5" /> 完成</> : <><ChevronUp className="h-3.5 w-3.5" /> 排序</>}
+              </button>
               <button onClick={() => setShowAddVg(true)}
                 className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold"
                 style={{ background: 'white', border: '1.5px solid #E0F2FE', color: '#0369A1' }}>
@@ -533,14 +542,14 @@ export default function ItemMappingsClient({
           return (
             <div key={vg}>
               <div className="flex items-center gap-2 mb-2 px-1">
-                {hasVgRecord && (
-                  <div className="flex flex-col" style={{ width: 18 }}>
+                {sortMode && hasVgRecord && (
+                  <div className="flex flex-col" style={{ width: 20, background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, padding: 2 }}>
                     <button onClick={() => moveVendorGroup(vg, 'up')} disabled={isVgFirst || isPending}
-                      style={{ background: 'none', border: 'none', cursor: isVgFirst ? 'default' : 'pointer', color: isVgFirst ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.7 }}>
+                      style={{ background: 'none', border: 'none', cursor: isVgFirst ? 'default' : 'pointer', color: isVgFirst ? '#e4e4e7' : '#92400e', padding: 0, lineHeight: 0.7 }}>
                       <ChevronUp className="h-3 w-3" />
                     </button>
                     <button onClick={() => moveVendorGroup(vg, 'down')} disabled={isVgLast || isPending}
-                      style={{ background: 'none', border: 'none', cursor: isVgLast ? 'default' : 'pointer', color: isVgLast ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.7 }}>
+                      style={{ background: 'none', border: 'none', cursor: isVgLast ? 'default' : 'pointer', color: isVgLast ? '#e4e4e7' : '#92400e', padding: 0, lineHeight: 0.7 }}>
                       <ChevronDown className="h-3 w-3" />
                     </button>
                   </div>
@@ -598,6 +607,7 @@ export default function ItemMappingsClient({
                         isLast={idx === items.length - 1}
                         isStorePage={isStorePage}
                         activeStoreId={activeStoreId}
+                        sortMode={sortMode}
                         editId={editId}
                         editCol={editCol}
                         editCat={editCat}
@@ -628,10 +638,10 @@ export default function ItemMappingsClient({
 
 /** 可拖曳的品項 row（同 vg 內拖曳排序） */
 function SortableItemRow({
-  m, vg, isLast, isStorePage, activeStoreId, editId, editCol, editCat, editVendorGroup,
+  m, vg, isLast, isStorePage, activeStoreId, sortMode, editId, editCol, editCat, editVendorGroup,
   setEditCol, setEditCat, setEditVendorGroup, startEdit, handleUpdate, setEditId, handleDelete, displayName,
 }: {
-  m: Mapping; vg: string; isLast: boolean; isStorePage: boolean; activeStoreId: string
+  m: Mapping; vg: string; isLast: boolean; isStorePage: boolean; activeStoreId: string; sortMode: boolean
   editId: string | null; editCol: string; editCat: string; editVendorGroup: string
   setEditCol: (v: string) => void; setEditCat: (v: string) => void; setEditVendorGroup: (v: string) => void
   startEdit: (m: Mapping) => void; handleUpdate: (id: string) => void; setEditId: (v: string | null) => void
@@ -648,14 +658,16 @@ function SortableItemRow({
   }
   return (
     <div ref={setNodeRef} style={style} className="flex items-center gap-2 px-3 py-2.5">
-      {/* Drag handle — 手機長按 200ms 拖曳；桌面拖動即可 */}
-      <button {...attributes} {...listeners}
-        className="shrink-0"
-        style={{ background: 'none', border: 'none', cursor: 'grab', color: '#a1a1aa', padding: '4px', touchAction: 'none' }}
-        title="拖曳排序（手機長按）"
-        aria-label="拖曳排序">
-        <GripVertical className="h-4 w-4" />
-      </button>
+      {/* Drag handle — 只在排序模式時可見可操作，避免手機誤觸 */}
+      {sortMode && (
+        <button {...attributes} {...listeners}
+          className="shrink-0"
+          style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, cursor: 'grab', color: '#92400e', padding: '4px', touchAction: 'none' }}
+          title="拖曳排序"
+          aria-label="拖曳排序">
+          <GripVertical className="h-4 w-4" />
+        </button>
+      )}
       <span className="flex-1 text-sm font-semibold flex items-center gap-1.5" style={{ color: '#18181b' }}>
         {displayName(m)}
         {isStorePage && !m.store_id && (
