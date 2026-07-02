@@ -70,9 +70,16 @@ export default function ItemMappingsClient({
   // Sync from server after router.refresh()
   useEffect(() => { setMappings(initial) }, [initial])
 
+  // 店家 tab 顯示 = 該店 override + 未被 override 的全域繼承（即 xlsx 實際會用到的完整品項清單）
+  // 全域 tab 只顯示全域 mapping
   const displayMappings = activeStoreId === ''
     ? mappings.filter(m => !m.store_id)
-    : mappings.filter(m => m.store_id === activeStoreId)
+    : (() => {
+        const storeOverride = mappings.filter(m => m.store_id === activeStoreId)
+        const overriddenNames = new Set(storeOverride.map(m => m.item_name))
+        const globalInherited = mappings.filter(m => !m.store_id && !overriddenNames.has(m.item_name))
+        return [...storeOverride, ...globalInherited]
+      })()
 
   const globalCount = mappings.filter(m => !m.store_id).length
   const isStorePage = activeStoreId !== ''
@@ -282,7 +289,7 @@ export default function ItemMappingsClient({
               </div>
               <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>品項對應管理</h1>
               <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>
-                {isStorePage ? '此店自訂對應（優先於全域預設）' : '全域預設對應（適用所有店）'}
+                {isStorePage ? '包含「此店專屬」+「全域繼承」— 即 Excel 匯出實際會用到的品項' : '全域預設對應（適用所有店）'}
               </p>
             </div>
             <div className="flex items-center gap-2 mt-1">
@@ -530,7 +537,17 @@ export default function ItemMappingsClient({
                           <ChevronDown className="h-3 w-3" />
                         </button>
                       </div>
-                      <span className="flex-1 text-sm font-semibold" style={{ color: '#18181b' }}>{displayName(m)}</span>
+                      <span className="flex-1 text-sm font-semibold flex items-center gap-1.5" style={{ color: '#18181b' }}>
+                        {displayName(m)}
+                        {isStorePage && !m.store_id && (
+                          <span title="來自全域預設（編輯會影響所有店）" className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                            style={{ background: '#e0e7ff', color: '#4338ca' }}>全域</span>
+                        )}
+                        {isStorePage && m.store_id === activeStoreId && (
+                          <span title="此店專屬 override" className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                            style={{ background: '#fef3c7', color: '#92400e' }}>專屬</span>
+                        )}
+                      </span>
 
                       {/* 品項單據 override（覆蓋 vg 預設） */}
                       {editId !== m.id && (
