@@ -74,6 +74,9 @@ export interface DailyStats {
   }>
   // ── 該日結帳狀態 ──
   closingStatus: 'draft' | 'submitted' | 'verified' | 'disputed' | 'none'
+  // ── 公休 ──
+  isHoliday: boolean
+  holidayNote: string | null
 }
 
 /** 月度合計 */
@@ -110,7 +113,7 @@ function newEmptyDay(date: string): DailyStats {
     food: 0, pack: 0, misc: 0, totalCost: 0,
     invoiceTotal: 0, receiptTotal: 0, estimateTotal: 0, taxRefund: 0,
     items: {}, vendorGroupBreakdown: {}, receipts: [],
-    closingStatus: 'none',
+    closingStatus: 'none', isHoliday: false, holidayNote: null,
   }
 }
 
@@ -129,7 +132,7 @@ export async function getRangeStats(
   lastDay: string,
 ): Promise<{ store: StoreInfo; items: ResolvedStoreItem[]; days: DailyStats[] }> {
   const admin = createAdminClient()
-  const [{ data: storeRow }, resolved, { data: closings }, { data: receipts }] = await Promise.all([
+  const [{ data: storeRow }, resolved, { data: closings }, { data: receipts }, { data: holidays }] = await Promise.all([
     admin.from('stores')
       .select('id, name, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled')
       .eq('id', storeId).single(),
@@ -143,7 +146,13 @@ export async function getRangeStats(
       .select('business_date, vendor_name, total_amount, tax_amount, notes, receipt_type, receipt_items(item_name, amount)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
+    admin.from('store_holidays')
+      .select('holiday_date, note').eq('store_id', storeId)
+      .gte('holiday_date', firstDay).lte('holiday_date', lastDay),
   ])
+  const holidayByDate = new Map<string, string | null>(
+    (holidays ?? []).map((h: any) => [h.holiday_date as string, (h.note as string | null) ?? null])
+  )
   const store = (storeRow ?? { id: storeId, name: '' }) as StoreInfo
   const items = resolved
   const itemMeta = new Map(items.map(i => [i.name, i] as const))
@@ -230,7 +239,12 @@ export async function getRangeStats(
     const m = String(dt.getMonth() + 1).padStart(2, '0')
     const d = String(dt.getDate()).padStart(2, '0')
     const date = `${y}-${m}-${d}`
-    days.push(byDate[date] ?? newEmptyDay(date))
+    const dd = byDate[date] ?? newEmptyDay(date)
+    if (holidayByDate.has(date)) {
+      dd.isHoliday = true
+      dd.holidayNote = holidayByDate.get(date) ?? null
+    }
+    days.push(dd)
   }
 
   // ── 計算派生欄位 & 食/耗/雜 by category ──

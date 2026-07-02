@@ -43,10 +43,16 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
     (todayClosings ?? []).map((c: any) => [c.store_id as string, c.status as string])
   )
 
+  // 公休日：今日公休的店家不算「未結帳」
+  const { data: holidayRows } = await admin.from('store_holidays')
+    .select('store_id').eq('holiday_date', today)
+  const closedTodayStores = new Set((holidayRows ?? []).map((h: any) => h.store_id as string))
+
   const storeNotClosed: HQAlerts['storeNotClosed'] = []
   const storeInDraft: HQAlerts['storeInDraft'] = []
   const storeInDispute: HQAlerts['storeInDispute'] = []
   for (const s of storeList) {
+    if (closedTodayStores.has(s.id as string)) continue // 公休不算
     const status = closingByStore.get(s.id as string)
     if (!status) storeNotClosed.push({ id: s.id, name: s.name })
     else if (status === 'draft') storeInDraft.push({ id: s.id, name: s.name })

@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Loader2, Download, ChevronLeft, ChevronRight } from 'lucide-react'
 import { fetchDailyStats, fetchMonthlyStats } from '@/app/actions/store-overview'
 import type { DailyStats, MonthlyStats } from '@/lib/store-aggregator'
+import HolidaysEditor from './holidays-editor'
 
 interface Store { id: string; name: string }
 
@@ -54,6 +55,7 @@ export default function StoreOverviewClient({ stores, initialStoreId }: { stores
   const storeName = stores.find(s => s.id === storeId)?.name ?? ''
   const yearOptions = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i)
   const [downloading, setDownloading] = useState(false)
+  const [showHolidays, setShowHolidays] = useState(false)
 
   async function handleExport(mode: 'month' | 'year' | 'csv' = 'month') {
     if (!storeId) { toast.error('請選店家'); return }
@@ -183,9 +185,24 @@ export default function StoreOverviewClient({ stores, initialStoreId }: { stores
               style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}>
               🔧 品項對應管理（Excel 欄位順序 / 廠商 / 分類）
             </Link>
+            <button onClick={() => setShowHolidays(true)}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold"
+              style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#6b21a8', cursor: 'pointer' }}>
+              📅 管理公休日（本月）
+            </button>
           </div>
         )}
       </div>
+
+      {showHolidays && storeId && (
+        <HolidaysEditor
+          storeId={storeId}
+          storeName={storeName}
+          year={year}
+          monthNum={monthNum}
+          onClose={() => setShowHolidays(false)}
+        />
+      )}
 
       {/* Body */}
       {loading && (
@@ -453,7 +470,7 @@ function MonthlyPanel({ data, prev, onOpenDay }: { data: MonthlyStats; prev: Mon
               {data.daily.map((d, i) => {
                 const dt = new Date(d.date + 'T12:00:00+08:00')
                 const dow = dt.getDay()
-                const rowBg = dow === 0 || dow === 6 ? '#fff7ed' : undefined
+                const rowBg = d.isHoliday ? '#f3e8ff' : (dow === 0 || dow === 6 ? '#fff7ed' : undefined)
                 return (
                 <tr key={i} style={{ borderTop: '1px solid #f4f4f5', background: rowBg }}>
                   <td className="px-2 py-1.5 sticky left-0" style={{ background: rowBg ?? 'white', zIndex: 1 }}>
@@ -465,7 +482,9 @@ function MonthlyPanel({ data, prev, onOpenDay }: { data: MonthlyStats; prev: Mon
                   </td>
                   <td className="px-2 py-1.5" style={{ color: dow === 0 ? '#dc2626' : dow === 6 ? '#0369a1' : '#52525b', fontWeight: (dow === 0 || dow === 6) ? 600 : 400 }}>{d.weekday}</td>
                   <td className="px-2 py-1.5 text-center">
-                    <StatusPill status={d.closingStatus} />
+                    {d.isHoliday
+                      ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: '#e9d5ff', color: '#6b21a8' }} title={d.holidayNote ?? ''}>公休</span>
+                      : <StatusPill status={d.closingStatus} />}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{d.pos > 0 ? fmt(d.pos) : ''}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{d.onsite ? fmt(d.onsite) : ''}</td>
