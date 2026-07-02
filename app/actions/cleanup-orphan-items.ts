@@ -34,10 +34,11 @@ export async function fetchOrphanStoreItems(): Promise<{ error: string } | { suc
   if ('error' in auth) return { error: auth.error as string }
 
   const admin = createAdminClient()
-  const [{ data: mappings }, { data: sysItems }, { data: storeItems }, { data: stores }, { data: vgs }] = await Promise.all([
-    admin.from('item_column_mappings').select('item_name, store_id').limit(10000),
+  const { fetchAllPaged } = await import('@/lib/supabase-paged')
+  const [mappings, { data: sysItems }, storeItems, { data: stores }, { data: vgs }] = await Promise.all([
+    fetchAllPaged<any>(() => admin.from('item_column_mappings').select('item_name, store_id')),
     admin.from('system_items').select('id, name, category, vendor_group_id').eq('active', true),
-    admin.from('store_items').select('id, store_id, system_item_id').eq('enabled', true).limit(10000),
+    fetchAllPaged<any>(() => admin.from('store_items').select('id, store_id, system_item_id').eq('enabled', true)),
     admin.from('stores').select('id, name').eq('active', true),
     admin.from('system_vendor_groups').select('id, name'),
   ])

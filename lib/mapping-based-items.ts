@@ -8,6 +8,7 @@
  */
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { ResolvedStoreItem } from '@/lib/store-items-resolver'
+import { fetchAllPaged } from '@/lib/supabase-paged'
 
 /**
  * 從 mappings 撈出該店的品項清單，附帶完整的 vg / doc_type / category / sort_order
@@ -15,11 +16,12 @@ import type { ResolvedStoreItem } from '@/lib/store-items-resolver'
  */
 export async function getStoreItemsFromMappings(storeId: string): Promise<ResolvedStoreItem[]> {
   const admin = createAdminClient()
-  const [{ data: mappings }, { data: vgs }, { data: sysItems }, { data: storeItems }] = await Promise.all([
-    admin.from('item_column_mappings').select('*').or(`store_id.is.null,store_id.eq.${storeId}`).limit(10000),
+  const [mappings, { data: vgs }, sysItems, storeItems] = await Promise.all([
+    // 分頁撈：避免 PostgREST 1000 max-rows 截斷
+    fetchAllPaged<any>(() => admin.from('item_column_mappings').select('*').or(`store_id.is.null,store_id.eq.${storeId}`)),
     admin.from('system_vendor_groups').select('id, name, doc_type, sort_order, tax_mode, merge_across_category').eq('active', true),
-    admin.from('system_items').select('id, name, doc_type_override').eq('active', true).limit(10000),
-    admin.from('store_items').select('id, system_item_id, doc_type_override, custom_vendor_group_id').eq('store_id', storeId).eq('enabled', true).limit(10000),
+    fetchAllPaged<any>(() => admin.from('system_items').select('id, name, doc_type_override').eq('active', true)),
+    fetchAllPaged<any>(() => admin.from('store_items').select('id, system_item_id, doc_type_override, custom_vendor_group_id').eq('store_id', storeId).eq('enabled', true)),
   ])
 
   const vgByName = new Map<string, any>((vgs ?? []).map((v: any) => [v.name as string, v]))

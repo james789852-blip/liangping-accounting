@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import ItemMappingsClient from '@/components/hq/item-mappings-client'
 import { sortStores } from '@/lib/store-order'
+import { fetchAllPaged } from '@/lib/supabase-paged'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,12 +21,13 @@ export default async function ItemMappingsPage({
   if (!profile?.is_hq && profile?.role !== '老闆') redirect('/manager/dashboard')
 
   const admin = createAdminClient()
-  const [{ data: stores }, { data: mappings }, { data: vgs }, { data: sysItems }, { data: storeItems }] = await Promise.all([
+  const [{ data: stores }, mappings, { data: vgs }, sysItems, storeItems] = await Promise.all([
     admin.from('stores').select('id, name').eq('active', true).order('name'),
-    admin.from('item_column_mappings').select('*').order('sort_order').order('item_category').order('item_name').limit(10000),
+    // 分頁撈：mapping 表總筆數可能 > 1000（PostgREST 預設 max-rows）
+    fetchAllPaged<any>(() => admin.from('item_column_mappings').select('*').order('sort_order').order('item_category').order('item_name')),
     admin.from('system_vendor_groups').select('id, name, sort_order, doc_type').eq('active', true).order('sort_order'),
-    admin.from('system_items').select('id, name, doc_type_override').eq('active', true).limit(10000),
-    admin.from('store_items').select('store_id, system_item_id, doc_type_override').eq('enabled', true).limit(10000),
+    fetchAllPaged<any>(() => admin.from('system_items').select('id, name, doc_type_override').eq('active', true)),
+    fetchAllPaged<any>(() => admin.from('store_items').select('store_id, system_item_id, doc_type_override').eq('enabled', true)),
   ])
 
   const params = await searchParams
