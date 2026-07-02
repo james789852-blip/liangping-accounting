@@ -107,10 +107,10 @@ function colLetter(colNum: number): string {
   return s
 }
 
-function fillHeaderCell(cell: ExcelJS.Cell, text: string, fillArgb?: string, fontColor = 'FF000000', bold = false) {
+function fillHeaderCell(cell: ExcelJS.Cell, text: string, fillArgb?: string, fontColor = 'FF000000', bold = false, size = 12) {
   cell.value = text
-  cell.alignment = { horizontal: 'center', vertical: 'middle' }
-  cell.font = { name: 'Calibri', size: 10, bold, color: { argb: fontColor } }
+  cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+  cell.font = { name: 'Calibri', size, bold, color: { argb: fontColor } }
   cell.border = {
     top: { style: 'thin', color: { argb: 'FFD0D0D0' } },
     bottom: { style: 'thin', color: { argb: 'FFD0D0D0' } },
@@ -120,6 +120,40 @@ function fillHeaderCell(cell: ExcelJS.Cell, text: string, fillArgb?: string, fon
   if (fillArgb) {
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillArgb } }
   }
+}
+
+// vendor_group 顏色調色盤（Excel Row 1 每個廠商群組不同色）
+const VG_PALETTE = [
+  'FFFDE9D9', // 橘 (央廚配送)
+  'FFDCEBF3', // 藍 (菜商)
+  'FFE2EFDA', // 綠 (振源)
+  'FFFFF2CC', // 黃 (蛋)
+  'FFF4CCCC', // 粉 (小雲)
+  'FFEAD1DC', // 紫粉 (雜貨)
+  'FFC9DAF8', // 淺藍 (免洗)
+  'FFD9EAD3', // 淺綠 (退稅)
+  'FFFCE5CD', // 米色 (Uber)
+  'FFEFEFEF', // 灰 (惠敘)
+  'FFFDEBD0', // 淺橘 (翁師傅)
+  'FFD5E8D4', // 綠 (達特)
+]
+function vgColor(vgName: string): string {
+  // 依名稱穩定 hash → palette index
+  let h = 0
+  for (let i = 0; i < vgName.length; i++) h = (h * 31 + vgName.charCodeAt(i)) >>> 0
+  return VG_PALETTE[h % VG_PALETTE.length]
+}
+// doc_type 顏色（Excel Row 2）— 較淺的變體
+const DOC_PALETTE: Record<string, string> = {
+  '發票':   'FFD9E2F3',
+  '收據':   'FFFCE4D6',
+  '估價單': 'FFE2EFDA',
+  '公司開': 'FFD9E2F3',
+  '梁鑫開': 'FFEAD1DC',
+  '府中開': 'FFFFF2CC',
+}
+function docColor(doc: string): string {
+  return DOC_PALETTE[doc] ?? 'FFF2F2F2'
 }
 
 /** 一次拉店家 + 品項，共用於單月/年度匯出 */
@@ -182,7 +216,7 @@ export async function addFoodCostSheet(
   }
   for (const r of vgRanges) {
     const cell = ws.getRow(1).getCell(r.start)
-    fillHeaderCell(cell, r.vg, 'FFFDE9D9', 'FF000000', true)
+    fillHeaderCell(cell, r.vg, vgColor(r.vg), 'FF000000', true, 13)
     if (r.end > r.start) {
       ws.mergeCells(1, r.start, 1, r.end)
     }
@@ -202,7 +236,7 @@ export async function addFoodCostSheet(
   for (const r of docRanges) {
     if (!r.doc) continue
     const cell = ws.getRow(2).getCell(r.start)
-    fillHeaderCell(cell, r.doc, 'FFC6D9F0', 'FF000000')
+    fillHeaderCell(cell, r.doc, docColor(r.doc), 'FF000000', true, 12)
     if (r.end > r.start) {
       ws.mergeCells(2, r.start, 2, r.end)
     }
@@ -287,7 +321,7 @@ export async function addFoodCostSheet(
     const formula = `SUM(${letter}${DATA_START}:${letter}${DATA_START + daysInMonth - 1})`
     const cell = ws.getRow(TOTAL_ROW).getCell(c.index)
     cell.value = { formula } as any
-    cell.font = { name: 'Calibri', size: 10, bold: true, italic: true }
+    cell.font = { name: 'Calibri', size: 12, bold: true, italic: true }
     cell.alignment = { horizontal: 'right', vertical: 'middle' }
     cell.numFmt = '#,##0;-#,##0;"-"'
     if (c.kind === 'stat') {
@@ -308,18 +342,21 @@ export async function addFoodCostSheet(
 
     for (const c of cols) {
       const cell = excelRow.getCell(c.index)
+      // Data row 統一字體大小
+      if (c.kind !== 'spacer') {
+        cell.font = { name: 'Calibri', size: 12,
+          color: isWeekend && (c.kind === 'date' || c.kind === 'weekday')
+            ? { argb: dow === 0 ? 'FFDC2626' : 'FF0369A1' }
+            : { argb: 'FF000000' },
+          bold: isWeekend && (c.kind === 'date' || c.kind === 'weekday'),
+        }
+      }
       if (c.kind === 'date') {
         cell.value = `${monthNum}月${dayIdx + 1}日`
         cell.alignment = { horizontal: 'center', vertical: 'middle' }
-        if (isWeekend) {
-          cell.font = { color: { argb: dow === 0 ? 'FFDC2626' : 'FF0369A1' }, bold: true }
-        }
       } else if (c.kind === 'weekday') {
         cell.value = `星期${WEEKDAYS[dow]}`
         cell.alignment = { horizontal: 'center', vertical: 'middle' }
-        if (isWeekend) {
-          cell.font = { color: { argb: dow === 0 ? 'FFDC2626' : 'FF0369A1' }, bold: true }
-        }
       } else if (c.kind === 'income' && dd && c.incomeKey) {
         const v = readIncomeValue(dd, c.incomeKey)
         if (v !== 0) cell.value = v
@@ -349,10 +386,18 @@ export async function addFoodCostSheet(
     }
   }
 
-  // ── 欄寬 ──
+  // ── 欄寬（字體變大同步拉寬） ──
   for (const c of cols) {
-    const width = c.kind === 'date' ? 10 : c.kind === 'weekday' ? 8 : c.kind === 'income' ? 12 : c.kind === 'stat' ? 12 : 10
+    const width = c.kind === 'date' ? 12 : c.kind === 'weekday' ? 10 : c.kind === 'income' ? 14 : c.kind === 'stat' ? 14 : 12
     ws.getColumn(c.index).width = width
+  }
+  // ── Row 高度加大以容納較大字體 ──
+  ws.getRow(1).height = 24
+  ws.getRow(2).height = 22
+  ws.getRow(HEADER_ROW).height = 24
+  ws.getRow(TOTAL_ROW).height = 22
+  for (let i = 0; i < daysInMonth; i++) {
+    ws.getRow(DATA_START + i).height = 20
   }
 }
 
