@@ -49,6 +49,7 @@ const hqSections = [
       { href: '/hq/store-overview', label: '店家總覽',   icon: FileBarChart2 },
       { href: '/hq/ck-overview',    label: '央廚總覽',   icon: FileBarChart2 },
       { href: '/hq/multi-store',    label: '多店比較',   icon: FileBarChart2 },
+      { href: '/hq/ck-multi',       label: '央廚多店',   icon: FileBarChart2 },
     ],
   },
   // ── 店家設定 ─────────────

@@ -50,13 +50,15 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
   const yearOptions = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i)
   const [downloading, setDownloading] = useState(false)
 
-  async function handleExport(mode: 'xlsx' | 'csv') {
+  async function handleExport(mode: 'xlsx' | 'year' | 'csv') {
     if (!storeId) { toast.error('請選店家'); return }
     setDownloading(true)
     try {
-      const url = mode === 'xlsx'
-        ? `/api/export/ck-native?storeId=${storeId}&year=${year}&month=${monthNum}&t=${Date.now()}`
-        : `/api/export/ck-csv?storeId=${storeId}&year=${year}&month=${monthNum}&t=${Date.now()}`
+      const url = mode === 'year'
+        ? `/api/export/ck-native?storeId=${storeId}&type=year&year=${year}&t=${Date.now()}`
+        : mode === 'csv'
+        ? `/api/export/ck-csv?storeId=${storeId}&year=${year}&month=${monthNum}&t=${Date.now()}`
+        : `/api/export/ck-native?storeId=${storeId}&year=${year}&month=${monthNum}&t=${Date.now()}`
       const res = await fetch(url, { cache: 'no-store' })
       if (!res.ok) { toast.error('匯出失敗：' + await res.text()); return }
       const blob = await res.blob()
@@ -136,17 +138,25 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
         {/* 匯出按鈕（僅當月） */}
         {tab === 'monthly' && (
           <div className="space-y-2">
-            <button onClick={() => handleExport('xlsx')} disabled={downloading || !storeId}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white"
-              style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', border: 'none', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
-              {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              下載央廚 Excel
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => handleExport('xlsx')} disabled={downloading || !storeId}
+                className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white"
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', border: 'none', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
+                {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                當月 Excel
+              </button>
+              <button onClick={() => handleExport('year')} disabled={downloading || !storeId}
+                className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold"
+                style={{ background: 'white', border: '1.5px solid #F59E0B', color: '#B45309', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
+                {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                年度 Excel（13 分頁）
+              </button>
+            </div>
             <button onClick={() => handleExport('csv')} disabled={downloading || !storeId}
               className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold"
               style={{ background: '#fafafa', border: '1.5px solid #e4e4e7', color: '#52525b', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
               {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-              下載 CSV（Google Sheets / 會計軟體）
+              當月 CSV（Google Sheets / 會計軟體）
             </button>
           </div>
         )}

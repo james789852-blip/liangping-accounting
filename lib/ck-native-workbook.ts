@@ -45,18 +45,14 @@ function fillHeader(cell: ExcelJS.Cell, text: string, fill?: string, bold = fals
   if (fill) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } }
 }
 
-/** 產出「央廚食耗成本」workbook (單月) */
-export async function buildCKNativeWorkbook(
+/** 在既有 workbook 上加一個「N 月央廚食耗」sheet */
+export async function addCKSheet(
+  wb: ExcelJS.Workbook,
   ckStoreId: string,
   year: number,
   monthNum: number,
-): Promise<ExcelJS.Workbook> {
+): Promise<void> {
   const monthly = await getCKMonthlyStats(ckStoreId, year, monthNum)
-
-  const wb = new ExcelJS.Workbook()
-  wb.creator = 'Liangping Accounting'
-  wb.created = new Date()
-  ;(wb as any).calcProperties = { fullCalcOnLoad: true }
 
   const ws = wb.addWorksheet(`${monthNum}月央廚食耗`, {
     views: [{ state: 'frozen', xSplit: 3, ySplit: 3 }],
@@ -283,6 +279,79 @@ export async function buildCKNativeWorkbook(
     const w = c.kind === 'date' ? 10 : c.kind === 'weekday' ? 8 : c.kind === 'status' ? 8 : 12
     ws.getColumn(c.index).width = w
   }
+}
+
+/** 產出「央廚食耗成本」workbook（單月） */
+export async function buildCKNativeWorkbook(
+  ckStoreId: string, year: number, monthNum: number,
+): Promise<ExcelJS.Workbook> {
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'Liangping Accounting'
+  wb.created = new Date()
+  ;(wb as any).calcProperties = { fullCalcOnLoad: true }
+  await addCKSheet(wb, ckStoreId, year, monthNum)
+  return wb
+}
+
+/** 產出「央廚食耗成本」年度 workbook — 年度總覽 + 12 月，共 13 個 sheet */
+export async function buildAnnualCKWorkbook(
+  ckStoreId: string, year: number,
+): Promise<ExcelJS.Workbook> {
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'Liangping Accounting'
+  wb.created = new Date()
+  ;(wb as any).calcProperties = { fullCalcOnLoad: true }
+
+  // 年度總覽 sheet
+  addCKAnnualOverviewSheet(wb, year)
+
+  // 12 個月 sheet
+  for (let m = 1; m <= 12; m++) {
+    await addCKSheet(wb, ckStoreId, year, m)
+  }
 
   return wb
+}
+
+/** 年度總覽：12 個月的核心數字橫向排列 */
+function addCKAnnualOverviewSheet(wb: ExcelJS.Workbook, year: number) {
+  const ws = wb.addWorksheet('年度總覽', { views: [{ state: 'frozen', ySplit: 3 }] })
+
+  fillHeader(ws.getRow(1).getCell(1), `央廚 ${year} 年度總覽`, 'FFFFF2CC', true)
+  ws.mergeCells(1, 1, 1, 14)
+
+  const headers = ['項目', '1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月', '全年合計']
+  headers.forEach((h, i) => fillHeader(ws.getRow(3).getCell(i + 1), h, 'FFBFBFBF', true))
+
+  const rows: Array<{ label: string; sheetHeader: string }> = [
+    { label: '總收入', sheetHeader: '總收入' },
+    { label: '食材',   sheetHeader: '食材' },
+    { label: '耗材',   sheetHeader: '耗材' },
+    { label: '雜項',   sheetHeader: '雜項' },
+    { label: '總支出', sheetHeader: '總支出' },
+    { label: '淨額',   sheetHeader: '淨額' },
+  ]
+
+  rows.forEach((row, rIdx) => {
+    const excelRow = 4 + rIdx
+    fillHeader(ws.getRow(excelRow).getCell(1), row.label, 'FFFAFAFA', true)
+    for (let m = 1; m <= 12; m++) {
+      const cell = ws.getRow(excelRow).getCell(m + 1)
+      const sheetName = `${m}月央廚食耗`
+      // 用 INDEX+MATCH 從月份 sheet 的 Row 3 header + Row 4 月合計抓對應數字
+      const formula = `IFERROR(INDEX('${sheetName}'!$4:$4,MATCH("${row.sheetHeader}",'${sheetName}'!$3:$3,0)),0)`
+      cell.value = { formula } as any
+      cell.numFmt = '#,##0;-#,##0;"-"'
+      cell.alignment = { horizontal: 'right', vertical: 'middle' }
+    }
+    const totalCell = ws.getRow(excelRow).getCell(14)
+    totalCell.value = { formula: `SUM(B${excelRow}:M${excelRow})` } as any
+    totalCell.numFmt = '#,##0;-#,##0;"-"'
+    totalCell.font = { bold: true }
+    totalCell.alignment = { horizontal: 'right', vertical: 'middle' }
+    totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } }
+  })
+
+  ws.getColumn(1).width = 18
+  for (let c = 2; c <= 14; c++) ws.getColumn(c).width = 12
 }

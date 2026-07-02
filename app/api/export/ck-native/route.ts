@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { buildCKNativeWorkbook } from '@/lib/ck-native-workbook'
+import { buildCKNativeWorkbook, buildAnnualCKWorkbook } from '@/lib/ck-native-workbook'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -20,9 +20,11 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const storeId = searchParams.get('storeId')
+  const type = searchParams.get('type') ?? 'month'
   const year = parseInt(searchParams.get('year') ?? '')
   const monthNum = parseInt(searchParams.get('month') ?? '')
-  if (!storeId || !year || !monthNum) return new NextResponse('缺少參數', { status: 400 })
+  if (!storeId || !year) return new NextResponse('缺少參數', { status: 400 })
+  if (type === 'month' && !monthNum) return new NextResponse('缺少 month 參數', { status: 400 })
 
   const isHq = profile?.is_hq || profile?.role === '老闆'
   const allowedStores = (profile?.store_ids ?? []) as string[]
@@ -34,9 +36,15 @@ export async function GET(req: NextRequest) {
   const { data: storeRow } = await admin.from('stores').select('name').eq('id', storeId).single()
   const storeName = storeRow?.name ?? '央廚'
 
-  const wb = await buildCKNativeWorkbook(storeId, year, monthNum)
+  const wb = type === 'year'
+    ? await buildAnnualCKWorkbook(storeId, year)
+    : await buildCKNativeWorkbook(storeId, year, monthNum)
   const buffer = await wb.xlsx.writeBuffer()
-  const filename = encodeURIComponent(`${storeName}_${year}年${monthNum}月_央廚食耗.xlsx`)
+  const filename = encodeURIComponent(
+    type === 'year'
+      ? `${storeName}_${year}年度_央廚食耗.xlsx`
+      : `${storeName}_${year}年${monthNum}月_央廚食耗.xlsx`
+  )
 
   return new NextResponse(buffer as any, {
     headers: {
