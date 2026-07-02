@@ -193,6 +193,16 @@ export async function getCKMonthlyStats(ckStoreId: string, year: number, monthNu
   const lastDay = getMonthLastDay(year, monthNum)
   const { ckStore, days } = await getCKRangeStats(ckStoreId, firstDay, lastDay)
 
+  // 撈成員店家 (assigned_store_ids) 名字，用來確保就算某店該月沒訂單，仍顯示欄
+  const admin = createAdminClient()
+  const assignedIds = (ckStore.assigned_store_ids ?? []) as string[]
+  const memberStoreOrder: Array<{ id: string; name: string }> = []
+  if (assignedIds.length > 0) {
+    const { data: memberStoreRows } = await admin.from('stores').select('id, name').in('id', assignedIds)
+    const nameById = Object.fromEntries((memberStoreRows ?? []).map((s: any) => [s.id, s.name as string]))
+    for (const id of assignedIds) memberStoreOrder.push({ id, name: nameById[id] ?? id })
+  }
+
   const totals = {
     memberRevenue: 0, externalRevenue: 0, revenue: 0,
     food: 0, pack: 0, misc: 0, totalExpense: 0,
@@ -233,10 +243,20 @@ export async function getCKMonthlyStats(ckStoreId: string, year: number, monthNu
     }
   }
 
+  // memberByStore：優先照 assigned_store_ids 順序（含 total=0 的），再補未預先 assigned 但實際有訂單過的
+  const orderedMembers = memberStoreOrder.map(m => ({
+    store_id: m.id,
+    store_name: m.name,
+    total: memberMap[m.id]?.total ?? 0,
+  }))
+  const extraMembers = Object.values(memberMap)
+    .filter(m => !memberStoreOrder.find(x => x.id === m.store_id))
+    .sort((a, b) => b.total - a.total)
+
   return {
     year, monthNum, ckStore, daily: days, totals,
     expenseByItem: Object.values(itemMap).sort((a, b) => b.total - a.total),
-    memberByStore: Object.values(memberMap).sort((a, b) => b.total - a.total),
+    memberByStore: [...orderedMembers, ...extraMembers],
     externalByName: Object.values(externalMap).sort((a, b) => b.total - a.total),
   }
 }
