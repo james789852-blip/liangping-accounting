@@ -6,9 +6,17 @@ import {
   deleteItemMapping, updateItemMapping, saveItemMapping, copyGlobalMappingsToStore, reorderItemMappings,
 } from '@/app/actions/item-mappings'
 import { useRouter } from 'next/navigation'
-import { Trash2, Edit2, Check, X, Plus, Tag, Copy, ChevronLeft, ChevronUp, ChevronDown } from 'lucide-react'
+import { Trash2, Edit2, Check, X, Plus, Tag, Copy, ChevronLeft, ChevronUp, ChevronDown, GripVertical } from 'lucide-react'
 import { toast } from 'sonner'
 import HelpBox from './help-box'
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 interface Mapping {
   id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null
@@ -69,6 +77,41 @@ export default function ItemMappingsClient({
 
   // Sync from server after router.refresh()
   useEffect(() => { setMappings(initial) }, [initial])
+
+  // Drag-and-drop sensors（支援手機 touch + 桌面 mouse + 鍵盤）
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const activeItem = displayMappings.find(m => m.id === active.id)
+    const overItem = displayMappings.find(m => m.id === over.id)
+    if (!activeItem || !overItem) return
+    const activeVg = activeItem.vendor_group ?? '未分類'
+    const overVg = overItem.vendor_group ?? '未分類'
+    if (activeVg !== overVg) {
+      toast.info(`拖到「${overVg}」廠商群組？請按 ✏️ 編輯品項改廠商`)
+      return
+    }
+    // 同 vg 內：arrayMove 計算新順序，更新 sort_order
+    const vgItems = (grouped[activeVg] ?? [])
+    const oldIdx = vgItems.findIndex(m => m.id === active.id)
+    const newIdx = vgItems.findIndex(m => m.id === over.id)
+    if (oldIdx < 0 || newIdx < 0) return
+    const reordered = arrayMove(vgItems, oldIdx, newIdx)
+    // optimistic：將 mappings state 內同 vg items 依 reordered 重排
+    setMappings(prev => {
+      const otherItems = prev.filter(m => !reordered.some(r => r.id === m.id))
+      return [...otherItems, ...reordered]
+    })
+    reorderItemMappings(reordered.map(i => i.id))
+      .then(r => { if (r && 'error' in r) toast.error('排序儲存失敗：' + r.error) })
+      .catch(e => toast.error('排序儲存失敗：' + (e instanceof Error ? e.message : String(e))))
+  }
 
   // 店家 tab 顯示 = 該店 override + 未被 override 的全域繼承（即 xlsx 實際會用到的完整品項清單）
   // 全域 tab 只顯示全域 mapping
@@ -480,6 +523,7 @@ export default function ItemMappingsClient({
         ) : null}
 
         {/* Mapping list — 以 vendor_group 為主分類 */}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         {groupOrder.map((vg, vgIdx) => {
           const items = grouped[vg]
           const vgSt = vg === '未分類' ? VG_STYLE_UNCAT : DOC_TYPES.has(vg) ? VG_STYLE_DOC : VG_STYLE
@@ -520,9 +564,9 @@ export default function ItemMappingsClient({
                 )}
               </div>
               <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                <SortableContext items={items.map(m => m.id)} strategy={verticalListSortingStrategy}>
                 {(() => {
                   // 「退稅」vg 特別處理：依品項名稱的「稅金/稅」前綴推導原廠商，拆子區塊
-                  // 例：「免洗稅金」→ 免洗、「豆腐稅金」→ 豆腐、「菜商稅金」→ 菜商
                   const isRefund = vg === '退稅'
                   const refundSource = (name: string) => {
                     if (name.endsWith('稅金')) return name.slice(0, -2)
@@ -534,9 +578,6 @@ export default function ItemMappingsClient({
                   const rendered: React.ReactNode[] = []
                   let lastSource = ''
                   items.forEach((m, idx) => {
-                    const catSt = CAT_STYLE[m.item_category] ?? CAT_STYLE['雜項']
-                    const isFirst = idx === 0
-                    const isLast = idx === items.length - 1
                     const source = refundSource(m.item_name)
                     if (showSubHeaders && source !== lastSource) {
                       rendered.push(
@@ -550,83 +591,123 @@ export default function ItemMappingsClient({
                       lastSource = source
                     }
                     rendered.push(
-                    <div key={m.id} className="flex items-center gap-3 px-4 py-2.5"
-                      style={{ borderBottom: idx !== items.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
-                      <div className="flex flex-col shrink-0" style={{ width: 20 }}>
-                        <button onClick={() => moveItem(vg, idx, 'up')} disabled={isFirst || isPending}
-                          style={{ background: 'none', border: 'none', cursor: isFirst ? 'default' : 'pointer', color: isFirst ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.8 }}>
-                          <ChevronUp className="h-3 w-3" />
-                        </button>
-                        <button onClick={() => moveItem(vg, idx, 'down')} disabled={isLast || isPending}
-                          style={{ background: 'none', border: 'none', cursor: isLast ? 'default' : 'pointer', color: isLast ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.8 }}>
-                          <ChevronDown className="h-3 w-3" />
-                        </button>
-                      </div>
-                      <span className="flex-1 text-sm font-semibold flex items-center gap-1.5" style={{ color: '#18181b' }}>
-                        {displayName(m)}
-                        {isStorePage && !m.store_id && (
-                          <span title="來自全域預設（編輯會影響所有店）" className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                            style={{ background: '#e0e7ff', color: '#4338ca' }}>全域</span>
-                        )}
-                        {isStorePage && m.store_id === activeStoreId && (
-                          <span title="此店專屬 override" className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                            style={{ background: '#fef3c7', color: '#92400e' }}>專屬</span>
-                        )}
-                      </span>
-
-                      {/* 品項單據 override（覆蓋 vg 預設） */}
-                      {editId !== m.id && (
-                        <ItemDocOverrideSelector
-                          itemName={m.item_name}
-                          storeId={m.store_id ?? null}
-                          currentOverride={m.doc_type_override ?? null}
-                        />
-                      )}
-
-                      {editId === m.id ? (
-                        <>
-                          <input list="excel-col-list" style={SELECT_STYLE}
-                            value={editCol} onChange={e => setEditCol(e.target.value)}
-                            placeholder="Excel 欄位" />
-                          <select style={SELECT_STYLE} value={editCat} onChange={e => setEditCat(e.target.value)}>
-                            <option>食材</option><option>耗材</option><option>雜項</option>
-                          </select>
-                          <input placeholder="分類（廠商或發票）" value={editVendorGroup} onChange={e => setEditVendorGroup(e.target.value)}
-                            style={{ height: '32px', padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit', width: '110px' }} />
-                          <button onClick={() => handleUpdate(m.id)} style={{ color: '#047857' }}>
-                            <Check className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => setEditId(null)} style={{ color: '#a1a1aa' }}>
-                            <X className="h-4 w-4" />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
-                            style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
-                          <span className="text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
-                          <button onClick={() => startEdit(m)} style={{ color: '#d4d4d8' }}
-                            onMouseEnter={e => (e.currentTarget.style.color = '#F59E0B')}
-                            onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => handleDelete(m.id)} style={{ color: '#d4d4d8' }}
-                            onMouseEnter={e => (e.currentTarget.style.color = '#be123c')}
-                            onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )
+                      <SortableItemRow
+                        key={m.id}
+                        m={m}
+                        vg={vg}
+                        isLast={idx === items.length - 1}
+                        isStorePage={isStorePage}
+                        activeStoreId={activeStoreId}
+                        editId={editId}
+                        editCol={editCol}
+                        editCat={editCat}
+                        editVendorGroup={editVendorGroup}
+                        setEditCol={setEditCol}
+                        setEditCat={setEditCat}
+                        setEditVendorGroup={setEditVendorGroup}
+                        startEdit={startEdit}
+                        handleUpdate={handleUpdate}
+                        setEditId={setEditId}
+                        handleDelete={handleDelete}
+                        displayName={displayName}
+                      />
+                    )
                   })
                   return rendered
                 })()}
+                </SortableContext>
               </div>
             </div>
           )
         })}
+        </DndContext>
       </div>
+    </div>
+  )
+}
+
+/** 可拖曳的品項 row（同 vg 內拖曳排序） */
+function SortableItemRow({
+  m, vg, isLast, isStorePage, activeStoreId, editId, editCol, editCat, editVendorGroup,
+  setEditCol, setEditCat, setEditVendorGroup, startEdit, handleUpdate, setEditId, handleDelete, displayName,
+}: {
+  m: Mapping; vg: string; isLast: boolean; isStorePage: boolean; activeStoreId: string
+  editId: string | null; editCol: string; editCat: string; editVendorGroup: string
+  setEditCol: (v: string) => void; setEditCat: (v: string) => void; setEditVendorGroup: (v: string) => void
+  startEdit: (m: Mapping) => void; handleUpdate: (id: string) => void; setEditId: (v: string | null) => void
+  handleDelete: (id: string) => void; displayName: (m: Mapping) => string
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: m.id })
+  const catSt = CAT_STYLE[m.item_category] ?? CAT_STYLE['雜項']
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    borderBottom: isLast ? 'none' : '1px solid #f4f4f5',
+    background: isDragging ? '#fef3c7' : undefined,
+  }
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center gap-2 px-3 py-2.5">
+      {/* Drag handle — 手機長按 200ms 拖曳；桌面拖動即可 */}
+      <button {...attributes} {...listeners}
+        className="shrink-0"
+        style={{ background: 'none', border: 'none', cursor: 'grab', color: '#a1a1aa', padding: '4px', touchAction: 'none' }}
+        title="拖曳排序（手機長按）"
+        aria-label="拖曳排序">
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <span className="flex-1 text-sm font-semibold flex items-center gap-1.5" style={{ color: '#18181b' }}>
+        {displayName(m)}
+        {isStorePage && !m.store_id && (
+          <span title="來自全域預設（編輯會影響所有店）" className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+            style={{ background: '#e0e7ff', color: '#4338ca' }}>全域</span>
+        )}
+        {isStorePage && m.store_id === activeStoreId && (
+          <span title="此店專屬 override" className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+            style={{ background: '#fef3c7', color: '#92400e' }}>專屬</span>
+        )}
+      </span>
+      {editId !== m.id && (
+        <ItemDocOverrideSelector
+          itemName={m.item_name}
+          storeId={m.store_id ?? null}
+          currentOverride={m.doc_type_override ?? null}
+        />
+      )}
+      {editId === m.id ? (
+        <>
+          <input list="excel-col-list" style={SELECT_STYLE}
+            value={editCol} onChange={e => setEditCol(e.target.value)}
+            placeholder="Excel 欄位" />
+          <select style={SELECT_STYLE} value={editCat} onChange={e => setEditCat(e.target.value)}>
+            <option>食材</option><option>耗材</option><option>雜項</option>
+          </select>
+          <input placeholder="分類（廠商或發票）" value={editVendorGroup} onChange={e => setEditVendorGroup(e.target.value)}
+            style={{ height: '32px', padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit', width: '110px' }} />
+          <button onClick={() => handleUpdate(m.id)} style={{ color: '#047857' }}>
+            <Check className="h-4 w-4" />
+          </button>
+          <button onClick={() => setEditId(null)} style={{ color: '#a1a1aa' }}>
+            <X className="h-4 w-4" />
+          </button>
+        </>
+      ) : (
+        <>
+          <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
+            style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
+          <span className="text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
+          <button onClick={() => startEdit(m)} style={{ color: '#d4d4d8' }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#F59E0B')}
+            onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
+            <Edit2 className="h-4 w-4" />
+          </button>
+          <button onClick={() => handleDelete(m.id)} style={{ color: '#d4d4d8' }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#be123c')}
+            onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </>
+      )}
     </div>
   )
 }
