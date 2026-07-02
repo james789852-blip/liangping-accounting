@@ -222,9 +222,11 @@ export async function getRangeStats(
         dd.items['免洗稅金'] = (dd.items['免洗稅金'] ?? 0) + tax
       } else {
         // 抓第一個品項的 vendor_group，用該 vg 的稅金欄
+        // 命名 convention：「{vg}稅金」（例：「小雲稅金」「翁師傅稅金」）
+        //   → 需在品項對應管理新增此品項，收據稅外加金額才會匯進來
         const firstItem = (r.receipt_items ?? [])[0]
         const m = firstItem ? itemMeta.get(firstItem.item_name) : null
-        const vgTaxKey = m?.vendor_group ? `${m.vendor_group}_稅金` : '雜項稅金'
+        const vgTaxKey = m?.vendor_group ? `${m.vendor_group}稅金` : '雜項稅金'
         dd.items[vgTaxKey] = (dd.items[vgTaxKey] ?? 0) + tax
       }
     }
