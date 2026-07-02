@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp, Image, FileText, AlertTriangle, Check } from 'lucide-react'
 import ReviewActions from './review-actions'
+import PhotoLightbox from './photo-lightbox'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -64,7 +65,21 @@ function InfoRow({ label, value, muted, accent }: { label: string; value: string
 export default function ReviewCard({ closing, receipts, canReview, canDispute, selected, onToggleSelect, onProcessed }: Props) {
   const [expanded, setExpanded] = useState(closing.variance !== 0 || closing.status === 'disputed')
   const [photoId, setPhotoId] = useState<string | null>(null)
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
   const showCheckbox = canReview && closing.status === 'submitted' && !!onToggleSelect
+
+  // 統一收集所有照片給 lightbox（收據 + 其他）
+  const allPhotos: { url: string; label: string }[] = [
+    ...receipts.filter(r => r.photo_url).map(r => ({ url: r.photo_url, label: `收據：${r.vendor_name}` })),
+    ...(closing.ck_delivery_photo_url ? [{ url: closing.ck_delivery_photo_url, label: '央廚配送單' }] : []),
+    ...(closing.channel_photo_urls
+      ? Object.entries(closing.channel_photo_urls).filter(([, u]) => u).map(([k, u]) => ({ url: u as string, label: CHANNEL_LABEL[k] ?? k }))
+      : []),
+    ...(closing.envelope_photo_url ? [{ url: closing.envelope_photo_url, label: '信封袋' }] : []),
+    ...(closing.void_invoice_photo_urls ?? []).map((url, i, arr) => ({ url, label: `作廢發票${arr.length > 1 ? ` ${i + 1}` : ''}` })),
+    ...(closing.note_photo_url ? [{ url: closing.note_photo_url, label: '備註照片' }] : []),
+    ...(closing.extra_photo_urls ?? []).map((url, i) => ({ url, label: `附加照片 ${i + 1}` })),
+  ]
 
   const absVar = Math.abs(closing.variance)
   const varColor = absVar === 0 ? '#047857' : absVar <= 200 ? '#b45309' : '#be123c'
@@ -78,6 +93,16 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const st = STATUS_STYLE[closing.status] ?? STATUS_STYLE.submitted
 
   return (
+    <>
+    {lightboxIdx !== null && allPhotos.length > 0 && (
+      <PhotoLightbox
+        photos={allPhotos}
+        index={lightboxIdx}
+        onClose={() => setLightboxIdx(null)}
+        onPrev={() => setLightboxIdx(i => (i !== null && i > 0 ? i - 1 : i))}
+        onNext={() => setLightboxIdx(i => (i !== null && i < allPhotos.length - 1 ? i + 1 : i))}
+      />
+    )}
     <div className="bg-white rounded-2xl overflow-hidden transition-colors"
       style={{
         border: selected ? '1.5px solid #10b981' : '1px solid #f4f4f5',
@@ -271,22 +296,18 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                           <span className="text-xs font-bold tabular-nums" style={{ color: '#18181b' }}>${fmt(r.total_amount)}</span>
                           {r.photo_url && (
                             <button
-                              onClick={() => setPhotoId(photoId === r.id ? null : r.id)}
+                              onClick={() => {
+                                const idx = allPhotos.findIndex(x => x.url === r.photo_url)
+                                setLightboxIdx(idx >= 0 ? idx : 0)
+                              }}
                               className="p-1.5 rounded-lg"
-                              style={{
-                                background: photoId === r.id ? '#FFFBEB' : '#f4f4f5',
-                                color: photoId === r.id ? '#92400E' : '#a1a1aa',
-                              }}>
+                              style={{ background: '#f4f4f5', color: '#a1a1aa' }}
+                              title="放大檢視">
                               <Image className="h-3.5 w-3.5" />
                             </button>
                           )}
                         </div>
                       </div>
-                      {photoId === r.id && r.photo_url && (
-                        <img src={r.photo_url} alt="receipt" loading="lazy"
-                          className="w-full max-h-72 object-contain"
-                          style={{ background: 'white', borderTop: '1px solid #f4f4f5' }} />
-                      )}
                     </div>
                   ))}
                 </div>
@@ -315,15 +336,19 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                 <div>
                   <SubLabel>其他照片</SubLabel>
                   <div className="grid grid-cols-3 gap-2">
-                    {otherPhotos.map((p, i) => (
-                      <a key={i} href={p.url} target="_blank" rel="noopener noreferrer"
-                        className="block rounded-lg overflow-hidden"
-                        style={{ border: '1px solid #f4f4f5', background: 'white' }}>
-                        <img src={p.url} alt={p.label} loading="lazy"
-                          className="w-full aspect-square object-cover" />
-                        <p className="text-[10px] text-center py-1" style={{ color: '#71717a' }}>{p.label}</p>
-                      </a>
-                    ))}
+                    {otherPhotos.map((p, i) => {
+                      // 找到這張照片在 allPhotos 內的 index
+                      const globalIdx = allPhotos.findIndex(x => x.url === p.url)
+                      return (
+                        <button key={i} onClick={() => setLightboxIdx(globalIdx >= 0 ? globalIdx : 0)}
+                          className="block rounded-lg overflow-hidden text-left"
+                          style={{ border: '1px solid #f4f4f5', background: 'white', cursor: 'pointer', padding: 0 }}>
+                          <img src={p.url} alt={p.label} loading="lazy"
+                            className="w-full aspect-square object-cover" />
+                          <p className="text-[10px] text-center py-1" style={{ color: '#71717a' }}>{p.label}</p>
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               )
@@ -337,5 +362,6 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
         ) : null}
       </div>
     </div>
+    </>
   )
 }
