@@ -33,21 +33,12 @@ function useClock() {
 }
 
 const hqSections = [
-  // ── 每日工作 ─────────────
+  // ── 帳目中心（整合店家+央廚審核 + 統計） ─────────────
   {
-    label: '帳目審核',
+    label: '每日工作',
     items: [
-      { href: '/hq/closings', label: '店面帳目', icon: BookOpen },
-      { href: '/hq/ck',       label: '央廚帳目', icon: ChefHat },
-    ],
-  },
-  // ── 數據總覽 ─────────────
-  {
-    label: '數據總覽',
-    items: [
-      { href: '/hq/dashboard',      label: '即時儀表板', icon: LayoutDashboard },
-      { href: '/hq/store-overview', label: '店家總覽',   icon: FileBarChart2 },
-      { href: '/hq/ck-overview',    label: '央廚總覽',   icon: FileBarChart2 },
+      { href: '/hq/accounting', label: '帳目中心', icon: BookOpen },
+      { href: '/hq/dashboard',  label: '即時儀表板', icon: LayoutDashboard },
     ],
   },
   // ── 系統與權限（整併：店家 / 品項對應 / 收據廠商 / 央廚單價 / 帳號 / 軌跡）────
@@ -78,11 +69,10 @@ const managerSections = [
 ]
 
 const mobileHQTabs = [
-  { href: '/hq/closings',       label: '店面',   icon: BookOpen },
-  { href: '/hq/ck',             label: '央廚',   icon: ChefHat },
-  { href: '/hq/store-overview', label: '總覽',   icon: FileBarChart2 },
-  { href: '/hq/multi-store',    label: '多店',   icon: LayoutDashboard },
-  // 「店家」CRUD 進「更多」menu
+  { href: '/hq/accounting',     label: '帳目',   icon: BookOpen },
+  { href: '/hq/dashboard',      label: '儀表板', icon: LayoutDashboard },
+  { href: '/hq/item-mappings',  label: '品項',   icon: Package },
+  { href: '/hq/stores',         label: '店家',   icon: Store },
 ]
 const mobileManagerTabs = [
   { href: '/manager/closing',    label: '今日結帳', icon: ClipboardList },
