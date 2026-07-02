@@ -761,6 +761,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }, 300)
     return () => clearTimeout(h)
   }, [...CASH_KEYS.map(k => data[k])])
+  // Bug fix: 需在 restore 完成後才允許 persist
+  //   原因：receiptForms 初始 []，persist useEffect on mount 會先執行→把 localStorage 清空
+  //   再 restore 就找不到 draft → 類別/廠商全消失
+  const [receiptFormsHydrated, setReceiptFormsHydrated] = useState(false)
   useEffect(() => {
     try {
       const stored = localStorage.getItem(receiptFormsDraftKey)
@@ -769,9 +773,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         setReceiptForms(parsed.map(f => ({ ...f, file: undefined, previewUrl: undefined, uploading: false })))
       }
     } catch {}
+    setReceiptFormsHydrated(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => {
+    if (!receiptFormsHydrated) return
     try {
       const toStore = receiptForms
         .filter(f => !f.uploading)
@@ -780,7 +786,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (toStore.length > 0) localStorage.setItem(receiptFormsDraftKey, JSON.stringify(toStore))
       else localStorage.removeItem(receiptFormsDraftKey)
     } catch {}
-  }, [receiptForms])
+  }, [receiptForms, receiptFormsHydrated, receiptFormsDraftKey])
   const stepLsKey = `closing_step_${store.id}_${today}`
   const submitDoneSsKey = `submit_done_${store.id}_${today}`
   const saveBkKey = `save_bk_${store.id}_${today}`
