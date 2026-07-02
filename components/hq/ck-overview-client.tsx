@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
-import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { fetchCKDailyStats, fetchCKMonthlyStats } from '@/app/actions/ck-overview'
 import type { CKDailyStats, CKMonthlyStats } from '@/lib/ck-aggregator'
 
@@ -48,6 +48,34 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
 
   const storeName = stores.find(s => s.id === storeId)?.name ?? ''
   const yearOptions = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i)
+  const [downloading, setDownloading] = useState(false)
+
+  async function handleExport(mode: 'xlsx' | 'csv') {
+    if (!storeId) { toast.error('請選店家'); return }
+    setDownloading(true)
+    try {
+      const url = mode === 'xlsx'
+        ? `/api/export/ck-native?storeId=${storeId}&year=${year}&month=${monthNum}&t=${Date.now()}`
+        : `/api/export/ck-csv?storeId=${storeId}&year=${year}&month=${monthNum}&t=${Date.now()}`
+      const res = await fetch(url, { cache: 'no-store' })
+      if (!res.ok) { toast.error('匯出失敗：' + await res.text()); return }
+      const blob = await res.blob()
+      const disp = res.headers.get('content-disposition') ?? ''
+      const m = /filename\*=UTF-8''([^;]+)/.exec(disp)
+      const ext = mode === 'xlsx' ? 'xlsx' : 'csv'
+      const filename = m ? decodeURIComponent(m[1]) : `${storeName}_${year}年${monthNum}月_央廚食耗.${ext}`
+      const dl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = dl; a.download = filename
+      document.body.appendChild(a); a.click(); a.remove()
+      URL.revokeObjectURL(dl)
+      toast.success('匯出完成')
+    } catch (e) {
+      toast.error('匯出失敗：' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   if (stores.length === 0) {
     return (
@@ -102,6 +130,24 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
                 <option key={m} value={m}>{m} 月</option>
               ))}
             </select>
+          </div>
+        )}
+
+        {/* 匯出按鈕（僅當月） */}
+        {tab === 'monthly' && (
+          <div className="space-y-2">
+            <button onClick={() => handleExport('xlsx')} disabled={downloading || !storeId}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white"
+              style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', border: 'none', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
+              {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              下載央廚 Excel
+            </button>
+            <button onClick={() => handleExport('csv')} disabled={downloading || !storeId}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold"
+              style={{ background: '#fafafa', border: '1.5px solid #e4e4e7', color: '#52525b', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
+              {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              下載 CSV（Google Sheets / 會計軟體）
+            </button>
           </div>
         )}
       </div>
