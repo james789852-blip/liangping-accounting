@@ -23,13 +23,15 @@ export interface ResolvedStoreItem {
   is_system: boolean
   /** 排序（store_items.sort_order 或 system_items.sort_order） */
   sort_order: number
+  /** vg 是否跨 category 合併顯示 */
+  vg_merge_across_category?: boolean
 }
 
 /** 撈出某店家「實際啟用的品項列表」(含系統 + 自訂) */
 export async function getStoreItemsResolved(storeId: string): Promise<ResolvedStoreItem[]> {
   const admin = createAdminClient()
   const [{ data: vgs }, { data: sysItems }, { data: storeItems }] = await Promise.all([
-    admin.from('system_vendor_groups').select('id, name, doc_type, sort_order, tax_mode').eq('active', true),
+    admin.from('system_vendor_groups').select('id, name, doc_type, sort_order, tax_mode, merge_across_category').eq('active', true),
     admin.from('system_items').select('*').eq('active', true).order('sort_order'),
     admin.from('store_items').select('*').eq('store_id', storeId).order('sort_order'),
   ])
@@ -39,12 +41,15 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
     doc_type: (v.doc_type ?? null) as string | null,
     sort_order: (v.sort_order ?? 9999) as number,
     tax_mode: ((v.tax_mode ?? 'inclusive') as 'inclusive' | 'free'),
+    merge_across_category: !!v.merge_across_category,
   }]))
   const vgName = (id: string | null | undefined) => id ? (vgMap.get(id)?.name ?? '未分類') : '未分類'
   const vgDoc  = (id: string | null | undefined) => id ? (vgMap.get(id)?.doc_type ?? null) : null
   const vgSort = (id: string | null | undefined) => id ? (vgMap.get(id)?.sort_order ?? 9999) : 9999
   const vgTax  = (id: string | null | undefined): 'inclusive' | 'free' =>
     id ? (vgMap.get(id)?.tax_mode ?? 'inclusive') : 'inclusive'
+  const vgMergeFlag = (id: string | null | undefined): boolean =>
+    id ? !!vgMap.get(id)?.merge_across_category : false
 
   // 1) 店家對系統品項的明確啟用/停用設定 + 店家自訂的 sort_order（覆寫 system 預設順序）
   //    + 店家對 vg 的 override（custom_vendor_group_id）
@@ -70,6 +75,7 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
         tax_mode: vgTax(si.custom_vendor_group_id),
         is_system: false,
         sort_order: si.sort_order ?? 1000,
+        vg_merge_across_category: vgMergeFlag(si.custom_vendor_group_id),
       })
     }
   }
@@ -97,6 +103,7 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
       tax_mode: vgTax(effectiveVgId),
       is_system: true,
       sort_order: overridden?.sort_order ?? it.sort_order ?? 1000,
+      vg_merge_across_category: vgMergeFlag(effectiveVgId),
     })
   }
 

@@ -12,7 +12,8 @@
  */
 import ExcelJS from 'exceljs'
 import { getMonthlyStats, type DailyStats, type MonthlyStats } from '@/lib/store-aggregator'
-import { getStoreItemsResolved, type ResolvedStoreItem } from '@/lib/store-items-resolver'
+import { type ResolvedStoreItem } from '@/lib/store-items-resolver'
+import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
@@ -73,15 +74,33 @@ function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAcco
   cols.push({ index: idx++, header: '耗材', kind: 'stat', statKey: 'pack' })
   cols.push({ index: idx++, header: '雜項', kind: 'stat', statKey: 'misc' })
 
-  // 品項欄（先 category → 再 vendor_group sort_order → 再 item sort_order）
-  // 這樣「食材／耗材／雜項」品項會連續分佈，方便 SUM range 動態計算
+  // 品項欄排序：預設 category 優先（食→耗→雜分區），但**允許 vg 標記為「跨 category 合併」**
+  // 標記後該 vg 的所有品項會連續顯示（不被 category 拆散）
   const catOrder: Record<string, number> = { '食材': 0, '耗材': 1, '雜項': 2 }
-  const sortedItems = [...items].sort((a, b) =>
-    ((catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3))
-    || (a.vendor_group_sort_order - b.vendor_group_sort_order)
-    || (a.sort_order - b.sort_order)
-    || a.name.localeCompare(b.name)
+  const mergedVgs = new Set(
+    items.filter(i => i.vg_merge_across_category).map(i => i.vendor_group)
   )
+  const sortedItems = [...items].sort((a, b) => {
+    const aMerge = mergedVgs.has(a.vendor_group)
+    const bMerge = mergedVgs.has(b.vendor_group)
+    // 若兩者都在 merge vg 且同 vg → 直接 vg 內連續排
+    if (aMerge && bMerge && a.vendor_group === b.vendor_group) {
+      return (catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3)
+        || (a.sort_order - b.sort_order)
+        || a.name.localeCompare(b.name)
+    }
+    // 兩者都 merge 但不同 vg → 依 vg_sort_order
+    if (aMerge && bMerge) {
+      return (a.vendor_group_sort_order - b.vendor_group_sort_order)
+        || a.vendor_group.localeCompare(b.vendor_group)
+    }
+    // 一個 merge 一個沒 → merge 的看 vg_sort_order；非 merge 的按 category 分區
+    // 統一用 (category, vg_sort_order, sort_order) — merge vg 靠 vg_sort_order 排到定位
+    return ((catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3))
+      || (a.vendor_group_sort_order - b.vendor_group_sort_order)
+      || (a.sort_order - b.sort_order)
+      || a.name.localeCompare(b.name)
+  })
   for (const it of sortedItems) {
     cols.push({
       index: idx++,
@@ -163,7 +182,9 @@ async function loadStoreContext(storeId: string) {
     .select('id, name, ichef_uber_linked, uber_accounts, twpay_enabled, panda_enabled, online_enabled, online_cash_enabled')
     .eq('id', storeId).single()
   const store = (storeRow ?? { id: storeId, name: '' }) as StoreInfo
-  const items = await getStoreItemsResolved(storeId)
+  // 用 item_column_mappings 撈品項清單（作為 xlsx layout source of truth）
+  // → xlsx 內容 100% 反映品項對應管理設定，不受 store_items orphan 影響
+  const items = await getStoreItemsFromMappings(storeId)
   return { store, items }
 }
 
@@ -190,14 +211,21 @@ export async function addFoodCostSheet(
   const daysInMonth = new Date(year, monthNum, 0).getDate()
 
   // 計算食材／耗材／雜項品項欄的 col range（用來產出每日 stat 欄的 SUM range 公式）
-  function categoryColRange(cat: '食材' | '耗材' | '雜項'): { start: number; end: number } | null {
-    const catCols = cols.filter(c => c.kind === 'item' && c.category === cat).map(c => c.index)
-    if (!catCols.length) return null
-    return { start: Math.min(...catCols), end: Math.max(...catCols) }
+  // 按 vg 排序後，同 category 品項可能不連續 → 用「列出所有品項 col」明列相加，
+  // 而非 SUM range（避免夾雜非該 category 的品項）
+  function categoryCols(cat: '食材' | '耗材' | '雜項'): number[] {
+    return cols.filter(c => c.kind === 'item' && c.category === cat).map(c => c.index)
   }
-  const foodRange = categoryColRange('食材')
-  const packRange = categoryColRange('耗材')
-  const miscRange = categoryColRange('雜項')
+  const foodCols = categoryCols('食材')
+  const packCols = categoryCols('耗材')
+  const miscCols = categoryCols('雜項')
+
+  function catSumFormula(catCols: number[], rowNum: number): string | null {
+    if (!catCols.length) return null
+    // 用 SUM(A5,B5,E5,...) 明列，Excel 支援
+    const refs = catCols.map(i => `${colLetter(i)}${rowNum}`).join(',')
+    return `SUM(${refs})`
+  }
   const HEADER_ROW = 3           // 「日期/POS/...」在 row 3
   const TOTAL_ROW = 4            // 月合計
   const DATA_START = 5           // 每日資料
@@ -367,12 +395,12 @@ export async function addFoodCostSheet(
         const packCol = cols.find(x => x.statKey === 'pack')
         const miscCol = cols.find(x => x.statKey === 'misc')
         let formula: string | null = null
-        if (c.statKey === 'food' && foodRange) {
-          formula = `SUM(${colLetter(foodRange.start)}${rowNum}:${colLetter(foodRange.end)}${rowNum})`
-        } else if (c.statKey === 'pack' && packRange) {
-          formula = `SUM(${colLetter(packRange.start)}${rowNum}:${colLetter(packRange.end)}${rowNum})`
-        } else if (c.statKey === 'misc' && miscRange) {
-          formula = `SUM(${colLetter(miscRange.start)}${rowNum}:${colLetter(miscRange.end)}${rowNum})`
+        if (c.statKey === 'food') {
+          formula = catSumFormula(foodCols, rowNum)
+        } else if (c.statKey === 'pack') {
+          formula = catSumFormula(packCols, rowNum)
+        } else if (c.statKey === 'misc') {
+          formula = catSumFormula(miscCols, rowNum)
         } else if (c.statKey === 'total' && foodCol && packCol && miscCol) {
           formula = `${colLetter(foodCol.index)}${rowNum}+${colLetter(packCol.index)}${rowNum}+${colLetter(miscCol.index)}${rowNum}`
         }

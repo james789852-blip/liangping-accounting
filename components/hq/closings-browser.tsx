@@ -363,18 +363,6 @@ function ClosingCard({
           <span className="text-xs font-semibold px-2 py-0.5 rounded-lg shrink-0" style={{ background: st.bg, color: st.color }}>{st.label}</span>
           {expanded ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} /> : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />}
         </button>
-        <button onClick={handleSync} disabled={syncing}
-          className="shrink-0 flex items-center justify-center h-8 w-8 rounded-xl transition-opacity"
-          style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: syncing ? '#a1a1aa' : '#15803d', cursor: syncing ? 'wait' : 'pointer', opacity: syncing ? 0.6 : 1 }}
-          title={`同步到 Google Sheets`}>
-          {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sheet className="h-3.5 w-3.5" />}
-        </button>
-        <button onClick={handleExport} disabled={exporting}
-          className="shrink-0 flex items-center justify-center h-8 w-8 rounded-xl transition-opacity"
-          style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: exporting ? '#a1a1aa' : '#92400E', cursor: exporting ? 'wait' : 'pointer', opacity: exporting ? 0.6 : 1 }}
-          title={`匯出 ${closing.stores?.name} Excel`}>
-          {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-        </button>
       </div>
 
       {expanded && (
@@ -794,19 +782,6 @@ export default function ClosingsBrowser({ closings, receiptsByClosing, stores, c
           )
         })}
 
-        {/* 匯出 Excel：選定特定店家時顯示 */}
-        {storeId && (
-          <button onClick={handleExportExcel} disabled={exporting}
-            className="ml-auto flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-semibold"
-            style={{
-              background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white',
-              border: 'none', cursor: exporting ? 'wait' : 'pointer',
-              opacity: exporting ? 0.7 : 1, boxShadow: '0 2px 8px rgba(245,158,11,0.25)',
-            }}>
-            <Download className="h-3.5 w-3.5" />
-            {exporting ? '匯出中...' : '匯出 Excel'}
-          </button>
-        )}
       </div>
 
       {filtered.length === 0 ? (
