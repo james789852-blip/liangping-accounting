@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, createContext, useContext } from 'react'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import {
   deleteItemMapping, updateItemMapping, saveItemMapping, copyGlobalMappingsToStore, reorderItemMappings,
@@ -89,6 +89,32 @@ export default function ItemMappingsClient({
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
+
+    // 判斷是拖分類還是拖品項（分類 id 有 'vg-' prefix）
+    const isVgDrag = String(active.id).startsWith('vg-') && String(over.id).startsWith('vg-')
+    if (isVgDrag) {
+      const activeVg = String(active.id).slice(3)
+      const overVg = String(over.id).slice(3)
+      const oldIdx = groupOrder.indexOf(activeVg)
+      const newIdx = groupOrder.indexOf(overVg)
+      if (oldIdx < 0 || newIdx < 0) return
+      const reordered = arrayMove(groupOrder, oldIdx, newIdx)
+      const ids = reordered.map(name => vendorGroups.find(v => v.name === name)?.id).filter((x): x is string => !!x)
+      if (ids.length === 0) return
+      // optimistic 更新 local vgSortMap
+      ids.forEach((id, i) => {
+        const vg = vendorGroups.find(v => v.id === id)
+        if (vg) vg.sort_order = (i + 1) * 10
+      })
+      import('@/app/actions/system-config').then(({ reorderVendorGroups }) => {
+        reorderVendorGroups(ids)
+          .then(r => { if (r && 'error' in r) toast.error('分類排序失敗：' + r.error) })
+          .catch(e => toast.error('分類排序失敗：' + (e instanceof Error ? e.message : String(e))))
+      })
+      return
+    }
+
+    // 品項排序
     const activeItem = displayMappings.find(m => m.id === active.id)
     const overItem = displayMappings.find(m => m.id === over.id)
     if (!activeItem || !overItem) return
@@ -98,13 +124,11 @@ export default function ItemMappingsClient({
       toast.info(`拖到「${overVg}」廠商群組？請按 ✏️ 編輯品項改廠商`)
       return
     }
-    // 同 vg 內：arrayMove 計算新順序，更新 sort_order
     const vgItems = (grouped[activeVg] ?? [])
     const oldIdx = vgItems.findIndex(m => m.id === active.id)
     const newIdx = vgItems.findIndex(m => m.id === over.id)
     if (oldIdx < 0 || newIdx < 0) return
     const reordered = arrayMove(vgItems, oldIdx, newIdx)
-    // optimistic：將 mappings state 內同 vg items 依 reordered 重排
     setMappings(prev => {
       const otherItems = prev.filter(m => !reordered.some(r => r.id === m.id))
       return [...otherItems, ...reordered]
@@ -533,26 +557,16 @@ export default function ItemMappingsClient({
 
         {/* Mapping list — 以 vendor_group 為主分類 */}
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={groupOrder.map(vg => `vg-${vg}`)} strategy={verticalListSortingStrategy}>
         {groupOrder.map((vg, vgIdx) => {
           const items = grouped[vg]
           const vgSt = vg === '未分類' ? VG_STYLE_UNCAT : DOC_TYPES.has(vg) ? VG_STYLE_DOC : VG_STYLE
-          const isVgFirst = vgIdx === 0
-          const isVgLast = vgIdx === groupOrder.length - 1
           const hasVgRecord = vgSortMap.has(vg)
           return (
-            <div key={vg}>
+            <SortableVgGroup key={vg} vg={vg} enableDrag={sortMode && hasVgRecord}>
               <div className="flex items-center gap-2 mb-2 px-1">
                 {sortMode && hasVgRecord && (
-                  <div className="flex flex-col" style={{ width: 20, background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, padding: 2 }}>
-                    <button onClick={() => moveVendorGroup(vg, 'up')} disabled={isVgFirst || isPending}
-                      style={{ background: 'none', border: 'none', cursor: isVgFirst ? 'default' : 'pointer', color: isVgFirst ? '#e4e4e7' : '#92400e', padding: 0, lineHeight: 0.7 }}>
-                      <ChevronUp className="h-3 w-3" />
-                    </button>
-                    <button onClick={() => moveVendorGroup(vg, 'down')} disabled={isVgLast || isPending}
-                      style={{ background: 'none', border: 'none', cursor: isVgLast ? 'default' : 'pointer', color: isVgLast ? '#e4e4e7' : '#92400e', padding: 0, lineHeight: 0.7 }}>
-                      <ChevronDown className="h-3 w-3" />
-                    </button>
-                  </div>
+                  <VgDragHandle />
                 )}
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                   style={{ background: vgSt.bg, color: vgSt.color }}>
@@ -627,12 +641,46 @@ export default function ItemMappingsClient({
                 })()}
                 </SortableContext>
               </div>
-            </div>
+            </SortableVgGroup>
           )
         })}
+        </SortableContext>
         </DndContext>
       </div>
     </div>
+  )
+}
+
+/** 可拖曳的分類群組 wrapper */
+function SortableVgGroup({ vg, enableDrag, children }: { vg: string; enableDrag: boolean; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `vg-${vg}`, disabled: !enableDrag })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+  }
+  return (
+    <div ref={setNodeRef} style={style}>
+      <SortableVgContext.Provider value={{ listeners, attributes }}>
+        {children}
+      </SortableVgContext.Provider>
+    </div>
+  )
+}
+
+const SortableVgContext = createContext<{ listeners: any; attributes: any }>({ listeners: {}, attributes: {} })
+
+/** 分類 header 內的拖曳 handle（讀 SortableVgContext 取得 listeners） */
+function VgDragHandle() {
+  const { listeners, attributes } = useContext(SortableVgContext)
+  return (
+    <button {...attributes} {...listeners}
+      className="shrink-0"
+      style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, cursor: 'grab', color: '#92400e', padding: 4, touchAction: 'none' }}
+      title="拖曳分類排序"
+      aria-label="拖曳分類">
+      <GripVertical className="h-4 w-4" />
+    </button>
   )
 }
 
