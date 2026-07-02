@@ -33,6 +33,7 @@ export interface StoreInfo {
 export interface DailyStats {
   date: string           // YYYY-MM-DD
   weekday: string        // 星期X
+  channels?: { twpay: boolean; panda: boolean; online: boolean; online_cash: boolean; uber: boolean }
   pos: number            // (手動)POS
   twpay: number
   panda: number
@@ -84,6 +85,7 @@ export interface MonthlyStats {
   year: number
   monthNum: number
   storeName: string
+  channels?: { twpay: boolean; panda: boolean; online: boolean; online_cash: boolean; uber: boolean }
   daily: DailyStats[]
   totals: DailyStats  // 每欄的月合計（date/weekday 為空）
   // ── 品項月合計（含 vendor_group + doc_type + item_name） ──
@@ -236,6 +238,13 @@ export async function getRangeStats(
   const startDate = new Date(firstDay + 'T12:00:00+08:00')
   const endDate = new Date(lastDay + 'T12:00:00+08:00')
   const days: DailyStats[] = []
+  const channels = {
+    twpay: !!store.twpay_enabled,
+    panda: !!store.panda_enabled,
+    online: !!store.online_enabled,
+    online_cash: !!store.online_cash_enabled,
+    uber: !!store.uber_enabled || ((store.uber_accounts?.length ?? 0) > 0),
+  }
   for (let dt = new Date(startDate); dt <= endDate; dt.setDate(dt.getDate() + 1)) {
     const y = dt.getFullYear()
     const m = String(dt.getMonth() + 1).padStart(2, '0')
@@ -246,6 +255,7 @@ export async function getRangeStats(
       dd.isHoliday = true
       dd.holidayNote = holidayByDate.get(date) ?? null
     }
+    dd.channels = channels
     days.push(dd)
   }
 
@@ -363,10 +373,22 @@ export async function getMonthlyStats(storeId: string, year: number, monthNum: n
     || a.item_name.localeCompare(b.item_name)
   )
 
+  const channels = {
+    twpay: !!store.twpay_enabled,
+    panda: !!store.panda_enabled,
+    online: !!store.online_enabled,
+    online_cash: !!store.online_cash_enabled,
+    uber: !!store.uber_enabled || ((store.uber_accounts?.length ?? 0) > 0),
+  }
+  // 幫每個 day + totals 加 channels 資訊，讓 UI 可依店家設定決定顯示哪些欄
+  for (const d of days) d.channels = channels
+  totals.channels = channels
+
   // 特殊統計欄（已在 daily loop 累計，這裡直接用 totals）
   return {
     year, monthNum,
     storeName: store.name,
+    channels,
     daily: days,
     totals,
     itemMonthlyTotals,

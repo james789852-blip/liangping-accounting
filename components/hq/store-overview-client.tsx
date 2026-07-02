@@ -238,10 +238,10 @@ function DailyPanel({ data, storeName, prev }: { data: DailyStats; storeName: st
           <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>通路收入</p>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             <Stat label="(手動)POS" value={data.pos} color="#0369a1" prev={prev?.pos} />
-            <Stat label="TWPAY" value={data.twpay} color="#be123c" prev={prev?.twpay} />
-            <Stat label="Panda" value={data.panda} color="#f43f5e" prev={prev?.panda} />
-            <Stat label="Online" value={data.online} color="#8b5cf6" prev={prev?.online} />
-            <Stat label="Online 現金" value={data.online_cash} color="#a855f7" prev={prev?.online_cash} />
+            {data.channels?.twpay && <Stat label="TWPAY" value={data.twpay} color="#be123c" prev={prev?.twpay} />}
+            {data.channels?.panda && <Stat label="Panda" value={data.panda} color="#f43f5e" prev={prev?.panda} />}
+            {data.channels?.online && <Stat label="Online" value={data.online} color="#8b5cf6" prev={prev?.online} />}
+            {data.channels?.online_cash && <Stat label="Online 現金" value={data.online_cash} color="#a855f7" prev={prev?.online_cash} />}
             {uberEntries.map(([acc, v]) => (
               <Stat key={acc} label={`Uber ${acc}`} value={v} color="#22c55e" prev={prev?.uber[acc]} />
             ))}
