@@ -134,9 +134,13 @@ export default function ItemMappingsClient({
     // fire-and-forget server update（不 refresh，避免重 fetch 整頁拖慢）
     const reorderedIds = [...items]
     ;[reorderedIds[idx], reorderedIds[newIdx]] = [reorderedIds[newIdx], reorderedIds[idx]]
-    reorderItemMappings(reorderedIds.map(i => i.id)).catch(e => {
-      toast.error('排序儲存失敗：' + (e instanceof Error ? e.message : String(e)))
-    })
+    reorderItemMappings(reorderedIds.map(i => i.id))
+      .then(r => {
+        if (r && 'error' in r) toast.error('排序儲存失敗：' + r.error)
+      })
+      .catch(e => {
+        toast.error('排序儲存失敗：' + (e instanceof Error ? e.message : String(e)))
+      })
   }
 
   function handleCopyGlobal() {
@@ -213,9 +217,13 @@ export default function ItemMappingsClient({
     })
     // fire-and-forget server update
     import('@/app/actions/system-config').then(({ reorderVendorGroups }) => {
-      reorderVendorGroups(ids).catch(e => {
-        toast.error('分類排序失敗：' + (e instanceof Error ? e.message : String(e)))
-      })
+      reorderVendorGroups(ids)
+        .then(r => {
+          if (r && 'error' in r) toast.error('分類排序失敗：' + r.error)
+        })
+        .catch(e => {
+          toast.error('分類排序失敗：' + (e instanceof Error ? e.message : String(e)))
+        })
     })
     // 強制 re-render（vendorGroups 是 prop 修改但 React 不會察覺，所以手動觸發）
     setMappings(prev => [...prev])
