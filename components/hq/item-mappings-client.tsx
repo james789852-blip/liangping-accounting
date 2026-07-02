@@ -345,7 +345,7 @@ export default function ItemMappingsClient({
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 pb-28">
 
         {/* 教學說明 */}
-        <HelpBox title="📖 這頁怎麼用？（直接決定 Excel 匯出）" defaultOpen>
+        <HelpBox title="📖 這頁怎麼用？（直接決定 Excel 匯出）">
           <p className="font-semibold" style={{ color: '#7c2d12' }}>此頁決定「食耗成本 Excel」的每一欄！設錯 → 數字對不上原檔。</p>
 
           <div className="rounded-lg p-3 mt-2" style={{ background: 'white' }}>

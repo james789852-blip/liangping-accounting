@@ -8,13 +8,12 @@ const STORAGE_KEY = 'ck-help-collapsed'
 export default function CKHelp() {
   const [open, setOpen] = useState(false)
   useEffect(() => {
-    const v = localStorage.getItem(STORAGE_KEY)
-    setOpen(v !== 'yes')
+    setOpen(localStorage.getItem(STORAGE_KEY) === 'open')
   }, [])
   function toggle() {
     const next = !open
     setOpen(next)
-    localStorage.setItem(STORAGE_KEY, next ? 'no' : 'yes')
+    localStorage.setItem(STORAGE_KEY, next ? 'open' : 'closed')
   }
   return (
     <div className="rounded-2xl overflow-hidden mb-3" style={{ background: '#FEF3C7', border: '1px solid #FDE68A' }}>

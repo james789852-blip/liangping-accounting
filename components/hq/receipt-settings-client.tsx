@@ -42,7 +42,7 @@ export default function ReceiptSettingsClient({
 
       {/* 教學區塊 */}
       {type === 'store' ? (
-        <HelpBox title="📖 店面收據廠商設定教學" defaultOpen>
+        <HelpBox title="📖 店面收據廠商設定教學">
           <div className="rounded-lg p-3" style={{ background: 'white' }}>
             <p className="font-bold mb-1.5">💡 這頁是做什麼的？</p>
             <p>設定店長在錄入收據時，「大類」+「廠商」下拉選單會出現的選項。</p>
@@ -73,7 +73,7 @@ export default function ReceiptSettingsClient({
           </div>
         </HelpBox>
       ) : (
-        <HelpBox title="📖 央廚廠商群組設定教學" defaultOpen>
+        <HelpBox title="📖 央廚廠商群組設定教學">
           <div className="rounded-lg p-3" style={{ background: 'white' }}>
             <p className="font-bold mb-1.5">💡 這頁是做什麼的？</p>
             <p>設定該央廚常用的廠商清單。央廚每日輸入 expense 時，會從這裡自動帶「廠商群組」+「預設單據類型」。</p>

@@ -6,16 +6,14 @@ import { BookOpen, ChevronDown, ChevronUp } from 'lucide-react'
 const STORAGE_KEY = 'closing-help-collapsed'
 
 export default function ClosingHelp() {
-  // 第一次用會展開；一旦 user 折疊過，之後保持折疊
   const [open, setOpen] = useState(false)
   useEffect(() => {
-    const v = localStorage.getItem(STORAGE_KEY)
-    setOpen(v !== 'yes')
+    setOpen(localStorage.getItem(STORAGE_KEY) === 'open')
   }, [])
   function toggle() {
     const next = !open
     setOpen(next)
-    localStorage.setItem(STORAGE_KEY, next ? 'no' : 'yes')
+    localStorage.setItem(STORAGE_KEY, next ? 'open' : 'closed')
   }
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: '#FEF3C7', border: '1px solid #FDE68A' }}>

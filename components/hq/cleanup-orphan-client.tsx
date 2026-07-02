@@ -72,7 +72,7 @@ export default function CleanupOrphanClient() {
 
       <div className="max-w-3xl mx-auto px-4 py-5 space-y-4 pb-28">
 
-        <HelpBox title="📖 這頁怎麼用？" defaultOpen>
+        <HelpBox title="📖 這頁怎麼用？">
           <div className="rounded-lg p-3" style={{ background: 'white' }}>
             <p className="font-bold mb-1">🧹 為何會有「多餘欄位」？</p>
             <p>歷史舊資料 or 過去批次設定時把某品項啟用了，但沒對應到品項對應管理表。這些品項會**在 xlsx 匯出時多出一欄**（可能是空的或有 stale 資料）。</p>
