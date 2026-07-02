@@ -48,7 +48,7 @@ export default function ItemMappingsClient({
 }: {
   mappings: Mapping[]
   stores: { id: string; name: string }[]
-  vendorGroups?: { id: string; name: string; sort_order: number }[]
+  vendorGroups?: { id: string; name: string; sort_order: number; doc_type?: string | null }[]
   selectedStoreId: string
 }) {
   const [mappings, setMappings] = useState(initial)
@@ -495,6 +495,14 @@ export default function ItemMappingsClient({
                   {vg}
                 </span>
                 <span className="text-xs" style={{ color: '#a1a1aa' }}>{items.length} 項</span>
+                {/* 單據類型（doc_type）— Excel Row 2 顯示的內容 */}
+                {(() => {
+                  const vgRec = vendorGroups.find(v => v.name === vg)
+                  if (!vgRec) return null
+                  return (
+                    <VgDocTypeSelector vgId={vgRec.id} vgName={vg} currentDoc={vgRec.doc_type ?? null} />
+                  )
+                })()}
               </div>
               <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                 {items.map((m, idx) => {
@@ -559,5 +567,41 @@ export default function ItemMappingsClient({
         })}
       </div>
     </div>
+  )
+}
+
+/** 廠商群組的單據類型（doc_type）快速編輯 */
+function VgDocTypeSelector({ vgId, vgName, currentDoc }: { vgId: string; vgName: string; currentDoc: string | null }) {
+  const [doc, setDoc] = useState(currentDoc ?? '')
+  const [saving, setSaving] = useState(false)
+
+  async function save(next: string) {
+    setDoc(next)
+    setSaving(true)
+    try {
+      const { updateVendorGroup } = await import('@/app/actions/system-config')
+      const r = await updateVendorGroup(vgId, { doc_type: next || null })
+      if ('error' in r) { toast.error(String((r as any).error)); return }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <select value={doc} onChange={e => save(e.target.value)} disabled={saving}
+      title={`「${vgName}」的預設單據類型（會顯示在 Excel Row 2）`}
+      style={{
+        height: 22, padding: '0 4px', fontSize: 11, borderRadius: 4,
+        border: '1px solid #DBEAFE', background: doc ? '#DBEAFE' : 'white',
+        color: doc ? '#1E40AF' : '#a1a1aa', fontFamily: 'inherit', outline: 'none',
+      }}>
+      <option value="">單據類型…</option>
+      <option value="發票">發票</option>
+      <option value="收據">收據</option>
+      <option value="估價單">估價單</option>
+      <option value="公司開">公司開</option>
+      <option value="梁鑫開">梁鑫開</option>
+      <option value="府中開">府中開</option>
+    </select>
   )
 }

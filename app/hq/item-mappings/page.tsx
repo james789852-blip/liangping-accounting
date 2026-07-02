@@ -23,7 +23,7 @@ export default async function ItemMappingsPage({
   const [{ data: stores }, { data: mappings }, { data: vgs }] = await Promise.all([
     admin.from('stores').select('id, name').eq('active', true).order('name'),
     admin.from('item_column_mappings').select('*').order('sort_order').order('item_category').order('item_name').limit(10000),
-    admin.from('system_vendor_groups').select('id, name, sort_order').eq('active', true).order('sort_order'),
+    admin.from('system_vendor_groups').select('id, name, sort_order, doc_type').eq('active', true).order('sort_order'),
   ])
 
   const params = await searchParams
