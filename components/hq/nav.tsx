@@ -47,6 +47,7 @@ const hqSections = [
     items: [
       { href: '/hq/dashboard',      label: '即時儀表板', icon: LayoutDashboard },
       { href: '/hq/store-overview', label: '店家總覽',   icon: FileBarChart2 },
+      { href: '/hq/ck-overview',    label: '央廚總覽',   icon: FileBarChart2 },
       { href: '/hq/multi-store',    label: '多店比較',   icon: FileBarChart2 },
     ],
   },

@@ -62,7 +62,6 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
   const [pettyCash, setPettyCash] = useState(store.petty_cash)
   const [storeType, setStoreType] = useState(store.type ?? '店面')
   const [assignedStoreIds, setAssignedStoreIds] = useState<string[]>(store.assigned_store_ids ?? [])
-  const [googleSheetsId, setGoogleSheetsId] = useState(store.google_sheets_id ?? '')
   const [extStores, setExtStores] = useState<{ id: string; name: string }[]>(initExternal)
   const [newExtName, setNewExtName] = useState('')
   const [addingExt, setAddingExt] = useState(false)
@@ -132,7 +131,6 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
         panda_enabled: pandaEnabled, twpay_enabled: twpayEnabled,
         online_enabled: onlineEnabled, online_cash_enabled: onlineCashEnabled,
         petty_cash: pettyCash,
-        google_sheets_id: googleSheetsId.trim() || null,
       }),
       storeType === '央廚'
         ? updateCKAssignedStores(store.id, assignedStoreIds)
@@ -466,22 +464,6 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
                 </div>
               </div>
             </>
-          )}
-
-          {/* Google Sheets 試算表 ID */}
-          {canEdit && (
-            <div className="space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>Google Sheets 試算表 ID</p>
-              <input
-                value={googleSheetsId}
-                onChange={e => setGoogleSheetsId(e.target.value)}
-                placeholder="貼上試算表 ID（審核後自動同步）"
-                style={{ width: '100%', height: '36px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
-              />
-              <p className="text-xs" style={{ color: '#a1a1aa' }}>
-                網址中的 /d/<strong style={{ color: '#52525b' }}>試算表ID</strong>/edit，每間店不同
-              </p>
-            </div>
           )}
 
           {canEdit && (

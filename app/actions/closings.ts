@@ -4,7 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { syncClosingToSheets, syncMonthToSheets } from '@/lib/google-sheets'
+// Google Sheets 同步功能已停用（2026-07）
+// 保留 import 註解讓 refactor 時容易找回：syncClosingToSheets, syncMonthToSheets from '@/lib/google-sheets'
 import { logAudit } from '@/lib/audit'
 import { getAuthContext, canAccessStore, getClosingMeta } from '@/lib/permissions'
 
@@ -72,16 +73,7 @@ export async function verifyClosing(closingId: string) {
     description: `${profile.name ?? user.email ?? '未知'} 審核 ${closing.business_date} 帳目`,
   })
 
-  // Fire-and-forget sync to Google Sheets (non-blocking; won't fail verification if Sheets errors)
-  try { await syncClosingToSheets(closingId) } catch (e) {
-    console.error('[verifyClosing] Sheets sync failed:', e)
-    await logAudit({
-      eventType: 'sheets_sync_failed', severity: 'warn',
-      storeId: closing.store_id, userId: user.id, closingId,
-      description: `${closing.business_date} 試算表同步失敗`,
-      metadata: { error: (e as Error).message },
-    })
-  }
+  // Google Sheets sync 已停用
 
   revalidatePath('/hq/reviews')
   revalidatePath('/hq/closings')
@@ -124,9 +116,6 @@ export async function verifyClosingsBatch(closingIds: string[]) {
       storeId: c.store_id, userId: user.id, closingId: id,
       description: `${profile.name ?? user.email ?? '未知'} 批次審核 ${c.business_date} 帳目`,
     })
-    try { await syncClosingToSheets(id) } catch (e) {
-      console.error('[verifyClosingsBatch] Sheets sync failed:', e)
-    }
   }))
 
   revalidatePath('/hq/reviews')
@@ -359,19 +348,7 @@ export async function savePettyCounts(
   return { success: true }
 }
 
-export async function reSyncMonthToSheets(storeId: string, month: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
-
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile || (!profile.is_hq && profile.role !== '老闆')) return { error: '權限不足' }
-
-  try {
-    await syncMonthToSheets(storeId, month)
-    return { success: true }
-  } catch (e) {
-    return { error: (e as Error).message }
-  }
+// reSyncMonthToSheets 已停用 — Google Sheets 同步功能移除
+export async function reSyncMonthToSheets(_storeId: string, _month: string) {
+  return { error: 'Google Sheets 同步已停用' as const }
 }

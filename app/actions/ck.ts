@@ -3,30 +3,12 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { syncCKMonthToSheets as syncCKMonthToSheetsImpl } from '@/lib/google-sheets'
 import { getAuthContext, canAccessStore } from '@/lib/permissions'
 import { logAudit } from '@/lib/audit'
 
-// 同步央廚月份資料到 Google 試算表（內容 = Excel 匯出內容）
-export async function syncCKMonthToSheets(ckStoreId: string, month: string) {
-  const ctx = await getAuthContext()
-  if (!ctx) return { error: '未登入' }
-  if (!ctx.isHQ) return { error: '權限不足（僅總公司可同步）' }
-
-  try {
-    await syncCKMonthToSheetsImpl(ckStoreId, month)
-    return { success: true }
-  } catch (e) {
-    const msg = (e as Error)?.message ?? '未知錯誤'
-    console.error('[syncCKMonthToSheets] failed:', e)
-    await logAudit({
-      eventType: 'sheets_sync_failed', severity: 'warn',
-      storeId: ckStoreId, userId: ctx.userId,
-      description: `央廚 ${month} 試算表同步失敗`,
-      metadata: { error: msg, month },
-    })
-    return { error: msg }
-  }
+// Google Sheets 同步已停用；保留 stub 讓可能存在的舊 client 收到明確錯誤
+export async function syncCKMonthToSheets(_ckStoreId: string, _month: string) {
+  return { error: 'Google Sheets 同步已停用' as const }
 }
 
 // ──────────────────────────────────────────────────────

@@ -2,9 +2,8 @@
 
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { FileSpreadsheet, Upload, Download, Loader2, CheckCircle2 } from 'lucide-react'
+import { FileSpreadsheet, Upload, Download, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { syncCKMonthToSheets } from '@/app/actions/ck'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -34,7 +33,6 @@ export default function CKTemplateClient({
   const router = useRouter()
   const [uploading, setUploading] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [syncing, setSyncing] = useState(false)
   const [templateOk, setTemplateOk] = useState(hasTemplate)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -67,7 +65,7 @@ export default function CKTemplateClient({
       const res = await fetch(`/api/ck-stores/${storeId}/template`, { method: 'POST', body: fd })
       if (!res.ok) { toast.error('上傳失敗'); return }
       setTemplateOk(true)
-      toast.success('模板已更新，下次匯出/同步自動套用')
+      toast.success('模板已更新，下次匯出自動套用')
       router.refresh()
     } catch { toast.error('上傳失敗') }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
@@ -88,17 +86,6 @@ export default function CKTemplateClient({
       toast.success('匯出完成')
     } catch { toast.error('匯出失敗') }
     finally { setExporting(false) }
-  }
-
-  async function handleSync() {
-    setSyncing(true)
-    try {
-      const r = await syncCKMonthToSheets(storeId, month)
-      if (r.error) toast.error('同步失敗：' + r.error)
-      else toast.success('已同步到 Google 試算表')
-    } catch (e: any) {
-      toast.error('同步失敗：' + (e?.message ?? '未知錯誤'))
-    } finally { setSyncing(false) }
   }
 
   return (
@@ -126,29 +113,20 @@ export default function CKTemplateClient({
             {templateOk ? (templateMeta?.filename ?? '模板已設定') : '尚未上傳模板'}
           </span>
         </div>
-        {/* 第 3 行：動作按鈕（手機 3 等分；桌機自然排列）*/}
-        <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-2">
+        {/* 第 3 行：動作按鈕（上傳 + 匯出）*/}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
           <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={handleUpload} />
           <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
             className="flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl"
             style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b' }}>
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            <span className="hidden sm:inline">{templateOk ? '更換模板' : '上傳模板'}</span>
-            <span className="sm:hidden">{templateOk ? '更換' : '上傳'}</span>
+            <span>{templateOk ? '更換模板' : '上傳模板'}</span>
           </button>
           <button type="button" onClick={handleExport} disabled={exporting}
             className="flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl text-white"
             style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            <span className="hidden sm:inline">匯出 Excel</span>
-            <span className="sm:hidden">匯出</span>
-          </button>
-          <button type="button" onClick={handleSync} disabled={syncing}
-            className="flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl"
-            style={{ background: 'white', border: '1px solid #10b981', color: '#047857' }}>
-            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            <span className="hidden sm:inline">同步試算表</span>
-            <span className="sm:hidden">同步</span>
+            <span>匯出 Excel</span>
           </button>
         </div>
       </div>
@@ -224,7 +202,7 @@ export default function CKTemplateClient({
         <ul className="text-xs space-y-1 pl-5" style={{ color: '#71717a', listStyleType: 'decimal' }}>
           <li>上傳央廚 Excel 模板（包含「{month.split('-')[1]}月食耗成本」工作表，第 3 列為欄位名稱）</li>
           <li>店長填入每日叫貨資料與支出明細</li>
-          <li>點「匯出 Excel」下載完整檔案，或「同步試算表」自動推到 Google Sheets</li>
+          <li>點「匯出 Excel」下載完整檔案</li>
         </ul>
       </div>
     </div>

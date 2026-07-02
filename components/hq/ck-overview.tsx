@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { ChevronDown, ChevronUp, CheckCircle2, Loader2, Banknote, Camera, X, FileSpreadsheet } from 'lucide-react'
-import { markCKHQPaid, syncCKMonthToSheets } from '@/app/actions/ck'
+import { ChevronDown, ChevronUp, CheckCircle2, Loader2, Banknote, Camera, X } from 'lucide-react'
+import { markCKHQPaid } from '@/app/actions/ck'
 import { toast } from 'sonner'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -101,45 +101,6 @@ function PayButton({ ckStoreId, date, paid, expenseTotal }: { ckStoreId: string;
   )
 }
 
-function SyncSection({ ckStoreId }: { ckStoreId: string }) {
-  const now = new Date()
-  const [month, setMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
-  const [syncing, setSyncing] = useState(false)
-
-  async function handleSync() {
-    setSyncing(true)
-    try {
-      const r = await syncCKMonthToSheets(ckStoreId, month)
-      if (r.error) toast.error('同步失敗：' + r.error)
-      else toast.success('已同步到 Google 試算表')
-    } catch (e: any) {
-      toast.error('同步失敗：' + (e?.message ?? '未知錯誤'))
-    } finally { setSyncing(false) }
-  }
-
-  return (
-    <div>
-      <p className="text-xs font-semibold mb-2" style={{ color: '#a1a1aa' }}>同步試算表</p>
-      <div className="rounded-2xl p-4" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
-        <div className="flex items-center gap-2">
-          <input type="month" value={month} onChange={e => setMonth(e.target.value)}
-            className="flex-1 text-sm px-3 py-2 rounded-xl outline-none border transition-colors"
-            style={{ border: '1.5px solid #e4e4e7', background: 'white', color: '#18181b', fontFamily: 'inherit' }}
-          />
-          <button type="button" onClick={handleSync} disabled={syncing}
-            className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl text-white shrink-0 transition-colors hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
-            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-            同步試算表
-          </button>
-        </div>
-        <p className="text-[11px] mt-2" style={{ color: '#a1a1aa' }}>
-          同步本月 Excel 內容到綁定的 Google 試算表（模板於「Excel模板設定」管理）
-        </p>
-      </div>
-    </div>
-  )
-}
 
 function CKCard({ d, date }: { d: CKStoreData; date: string }) {
   const [open, setOpen] = useState(false)
@@ -310,12 +271,10 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
               )}
 
               {/* 匯出 Excel */}
-              <SyncSection ckStoreId={d.ckStore.id} />
             </>
           ) : (
             <>
               <p className="text-sm text-center py-4" style={{ color: '#a1a1aa' }}>今日尚未填寫帳目</p>
-              <SyncSection ckStoreId={d.ckStore.id} />
             </>
           )}
         </div>
