@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
-import { Loader2, ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Download, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { fetchCKDailyStats, fetchCKMonthlyStats } from '@/app/actions/ck-overview'
+import { fetchCKReconciliation, type ReconciliationRow } from '@/app/actions/ck-reconciliation'
 import type { CKDailyStats, CKMonthlyStats } from '@/lib/ck-aggregator'
 
 interface Store { id: string; name: string }
@@ -14,13 +15,15 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
   const now = new Date()
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const [storeId, setStoreId] = useState(initialStoreId || stores[0]?.id || '')
-  const [tab, setTab] = useState<'daily' | 'monthly'>('monthly')
+  const [tab, setTab] = useState<'daily' | 'monthly' | 'reconcile'>('monthly')
   const [date, setDate] = useState(todayStr)
   const [year, setYear] = useState(now.getFullYear())
   const [monthNum, setMonthNum] = useState(now.getMonth() + 1)
   const [loading, setLoading] = useState(false)
   const [daily, setDaily] = useState<CKDailyStats | null>(null)
   const [monthly, setMonthly] = useState<CKMonthlyStats | null>(null)
+  const [reconcileRows, setReconcileRows] = useState<ReconciliationRow[]>([])
+  const [reconcileSummary, setReconcileSummary] = useState<{ total: number; match: number; mismatch: number; ck_only: number; store_only: number; total_variance: number } | null>(null)
 
   useEffect(() => {
     if (!storeId) return
@@ -34,12 +37,21 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
         })
         .catch(e => toast.error('載入失敗：' + (e instanceof Error ? e.message : String(e))))
         .finally(() => setLoading(false))
-    } else {
+    } else if (tab === 'monthly') {
       setMonthly(null)
       fetchCKMonthlyStats(storeId, year, monthNum)
         .then(r => {
           if ('error' in r && r.error) { toast.error(r.error); return }
           if ('stats' in r) setMonthly(r.stats)
+        })
+        .catch(e => toast.error('載入失敗：' + (e instanceof Error ? e.message : String(e))))
+        .finally(() => setLoading(false))
+    } else {
+      setReconcileRows([]); setReconcileSummary(null)
+      fetchCKReconciliation(storeId, year, monthNum)
+        .then(r => {
+          if ('error' in r && r.error) { toast.error(r.error); return }
+          if ('rows' in r) { setReconcileRows(r.rows); setReconcileSummary(r.summary) }
         })
         .catch(e => toast.error('載入失敗：' + (e instanceof Error ? e.message : String(e))))
         .finally(() => setLoading(false))
@@ -115,13 +127,25 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <button onClick={() => setTab('daily')} style={tabBtn(tab === 'daily')}>當日</button>
           <button onClick={() => setTab('monthly')} style={tabBtn(tab === 'monthly')}>當月</button>
+          <button onClick={() => setTab('reconcile')} style={tabBtn(tab === 'reconcile')}>對帳</button>
         </div>
 
         {tab === 'daily' ? (
           <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
+        ) : tab === 'reconcile' ? (
+          <div className="grid grid-cols-2 gap-2">
+            <select value={year} onChange={e => setYear(parseInt(e.target.value))} style={inputStyle}>
+              {yearOptions.map(y => <option key={y} value={y}>{y} 年</option>)}
+            </select>
+            <select value={monthNum} onChange={e => setMonthNum(parseInt(e.target.value))} style={inputStyle}>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                <option key={m} value={m}>{m} 月</option>
+              ))}
+            </select>
+          </div>
         ) : (
           <div className="grid grid-cols-2 gap-2">
             <select value={year} onChange={e => setYear(parseInt(e.target.value))} style={inputStyle}>
@@ -171,6 +195,7 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
 
       {!loading && tab === 'daily' && daily && <CKDailyPanel data={daily} storeName={storeName} />}
       {!loading && tab === 'monthly' && monthly && <CKMonthlyPanel data={monthly} />}
+      {!loading && tab === 'reconcile' && reconcileSummary && <ReconcilePanel rows={reconcileRows} summary={reconcileSummary} storeName={storeName} year={year} monthNum={monthNum} />}
     </div>
   )
 }
@@ -405,6 +430,92 @@ function CKMonthlyPanel({ data }: { data: CKMonthlyStats }) {
                   </tr>
                 )
               })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function ReconcilePanel({ rows, summary, storeName, year, monthNum }: {
+  rows: ReconciliationRow[]
+  summary: { total: number; match: number; mismatch: number; ck_only: number; store_only: number; total_variance: number }
+  storeName: string; year: number; monthNum: number
+}) {
+  const statusBadge = (s: ReconciliationRow['status']) => {
+    const map: Record<string, { label: string; bg: string; color: string }> = {
+      match:      { label: '一致', bg: '#d1fae5', color: '#047857' },
+      mismatch:   { label: '不一致', bg: '#fee2e2', color: '#b91c1c' },
+      ck_only:    { label: '僅央廚', bg: '#fef3c7', color: '#92400e' },
+      store_only: { label: '僅店家', bg: '#fef3c7', color: '#92400e' },
+    }
+    const st = map[s]
+    return <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: st.bg, color: st.color }}>{st.label}</span>
+  }
+
+  return (
+    <>
+      <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1px solid #f4f4f5' }}>
+        <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{storeName} · {year} 年 {monthNum} 月對帳</h2>
+        <p className="text-xs" style={{ color: '#a1a1aa' }}>比對「央廚輸入的各店叫貨金額」vs「店家輸入的央廚配送金額」</p>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="rounded-xl p-3" style={{ background: '#d1fae5' }}>
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="h-4 w-4" style={{ color: '#047857' }} />
+              <span className="text-xs font-semibold" style={{ color: '#047857' }}>一致</span>
+            </div>
+            <p className="text-lg font-bold tabular-nums mt-1" style={{ color: '#047857' }}>{summary.match}</p>
+          </div>
+          <div className="rounded-xl p-3" style={{ background: '#fee2e2' }}>
+            <div className="flex items-center gap-1.5">
+              <AlertTriangle className="h-4 w-4" style={{ color: '#b91c1c' }} />
+              <span className="text-xs font-semibold" style={{ color: '#b91c1c' }}>不一致</span>
+            </div>
+            <p className="text-lg font-bold tabular-nums mt-1" style={{ color: '#b91c1c' }}>{summary.mismatch}</p>
+          </div>
+          <div className="rounded-xl p-3" style={{ background: '#fef3c7' }}>
+            <div className="text-xs font-semibold" style={{ color: '#92400e' }}>僅央廚 / 僅店家</div>
+            <p className="text-lg font-bold tabular-nums mt-1" style={{ color: '#92400e' }}>{summary.ck_only} / {summary.store_only}</p>
+          </div>
+          <div className="rounded-xl p-3" style={{ background: '#fafafa' }}>
+            <div className="text-xs font-semibold" style={{ color: '#52525b' }}>累計差額</div>
+            <p className="text-lg font-bold tabular-nums mt-1" style={{ color: '#dc2626' }}>${fmt(summary.total_variance)}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
+        <h3 className="text-sm font-bold mb-3" style={{ color: '#18181b' }}>對帳明細</h3>
+        <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
+          <table className="text-xs" style={{ minWidth: 'max-content' }}>
+            <thead style={{ background: '#fafafa' }}>
+              <tr>
+                <th className="px-2 py-1.5 text-left sticky left-0" style={{ color: '#71717a', background: '#fafafa', minWidth: 80, zIndex: 2 }}>日期</th>
+                <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>店家</th>
+                <th className="px-2 py-1.5 text-center" style={{ color: '#71717a' }}>狀態</th>
+                <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>央廚輸入</th>
+                <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>店家輸入</th>
+                <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>差額</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} style={{ borderTop: '1px solid #f4f4f5', background: r.status === 'mismatch' ? '#fef2f2' : undefined }}>
+                  <td className="px-2 py-1.5 sticky left-0" style={{ background: r.status === 'mismatch' ? '#fef2f2' : 'white', zIndex: 1 }}>{r.business_date.slice(5)}</td>
+                  <td className="px-2 py-1.5 font-medium">{r.member_store_name}</td>
+                  <td className="px-2 py-1.5 text-center">{statusBadge(r.status)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{r.ck_reported_amount ? fmt(r.ck_reported_amount) : '—'}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{r.store_reported_amount ? fmt(r.store_reported_amount) : '—'}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold" style={{ color: r.variance !== 0 ? '#dc2626' : '#a1a1aa' }}>
+                    {r.variance !== 0 ? (r.variance > 0 ? '+' : '') + fmt(r.variance) : '0'}
+                  </td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr><td colSpan={6} className="px-2 py-8 text-center text-sm" style={{ color: '#a1a1aa' }}>本月無對帳資料</td></tr>
+              )}
             </tbody>
           </table>
         </div>

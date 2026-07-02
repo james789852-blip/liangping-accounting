@@ -43,37 +43,23 @@ const hqSections = [
   },
   // ── 數據總覽 ─────────────
   {
-    label: '數據分析',
+    label: '數據總覽',
     items: [
       { href: '/hq/dashboard',      label: '即時儀表板', icon: LayoutDashboard },
       { href: '/hq/store-overview', label: '店家總覽',   icon: FileBarChart2 },
       { href: '/hq/ck-overview',    label: '央廚總覽',   icon: FileBarChart2 },
       { href: '/hq/multi-store',    label: '多店比較',   icon: FileBarChart2 },
-      { href: '/hq/ck-multi',       label: '央廚多店',   icon: FileBarChart2 },
     ],
   },
-  // ── 店家設定 ─────────────
-  {
-    label: '店家設定',
-    items: [
-      { href: '/hq/receipt-settings', label: '店家收據廠商', icon: Settings },
-    ],
-  },
-  // ── 結帳規則 ─────────────
-  {
-    label: '結帳設定',
-    items: [
-      // 「品項 / 分類」「店家品項」「月度總覽 Excel」「食耗成本模板」都已整合到 /hq/store-overview
-      { href: '/hq/ck-prices', label: '央廚單價', icon: Package },
-    ],
-  },
-  // ── 系統與權限 ─────────────
+  // ── 系統與權限（整併：店家 / 收據廠商 / 央廚單價 / 帳號 / 軌跡）────
   {
     label: '系統管理',
     items: [
-      { href: '/hq/stores', label: '店家管理', icon: Store },
-      { href: '/hq/users',  label: '帳號管理', icon: Users },
-      { href: '/hq/audit',  label: '操作軌跡', icon: History },
+      { href: '/hq/stores',           label: '店家管理',    icon: Store },
+      { href: '/hq/receipt-settings', label: '收據廠商設定', icon: Settings },
+      { href: '/hq/ck-prices',        label: '央廚單價',    icon: Package },
+      { href: '/hq/users',            label: '帳號管理',    icon: Users },
+      { href: '/hq/audit',            label: '操作軌跡',    icon: History },
     ],
   },
 ]
