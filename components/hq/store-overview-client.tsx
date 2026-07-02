@@ -355,29 +355,42 @@ function MonthlyPanel({ data, prev, onOpenDay }: { data: MonthlyStats; prev: Mon
           </p>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          <Stat label="營業額" value={t.revenue} color="#16a34a" prev={p?.revenue} />
-          <Stat label="(手動)POS" value={t.pos} color="#0369a1" prev={p?.pos} />
-          <Stat label="現場" value={t.onsite} color="#f97316" prev={p?.onsite} />
-          <Stat label="(手動)實際$" value={t.actual} color="#dc2626" prev={p?.actual} />
-          <Stat label="配送(月底結)" value={t.ck} color="#f97316" prev={p?.ck} />
-          <Stat label="結果" value={t.variance} color="#0369a1" prev={p?.variance} />
+        <div>
+          <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>營收</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <Stat label="營業額" value={t.revenue} color="#16a34a" prev={p?.revenue} />
+            <Stat label="(手動)POS" value={t.pos} color="#0369a1" prev={p?.pos} />
+            <Stat label="現場" value={t.onsite} color="#f97316" prev={p?.onsite} />
+          </div>
         </div>
 
-        {/* 對應原 Excel 上方：梁平退稅、總發票、總收據 */}
-        <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-4 gap-2" style={{ borderColor: '#f4f4f5' }}>
-          <Stat label="總發票" value={data.totalInvoice} color="#dc2626" prev={prev?.totalInvoice} />
-          <Stat label="總收據" value={data.totalReceipt} color="#0369a1" prev={prev?.totalReceipt} />
-          <Stat label="估價單" value={t.estimateTotal} color="#8b5cf6" prev={p?.estimateTotal} />
-          <Stat label="梁平退稅" value={data.liangpingRefund} color="#f59e0b" prev={prev?.liangpingRefund} />
+        <div>
+          <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>結算</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <Stat label="(手動)實際$" value={t.actual} color="#dc2626" prev={p?.actual} />
+            <Stat label="配送(月底結)" value={t.ck} color="#f97316" prev={p?.ck} />
+            <Stat label="結果" value={t.variance} color="#0369a1" prev={p?.variance} />
+          </div>
         </div>
 
-        {/* 原 Excel: 總 = 食 + 耗 + 雜 */}
-        <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-4 gap-2" style={{ borderColor: '#f4f4f5' }}>
-          <Stat label="總（食+耗+雜）" value={t.totalCost} color="#be123c" prev={p?.totalCost} />
-          <Stat label="食材" value={t.food} color="#047857" prev={p?.food} />
-          <Stat label="耗材" value={t.pack} color="#92400E" prev={p?.pack} />
-          <Stat label="雜項" value={t.misc} color="#71717a" prev={p?.misc} />
+        <div className="border-t pt-3" style={{ borderColor: '#f4f4f5' }}>
+          <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>單據</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <Stat label="總發票" value={data.totalInvoice} color="#dc2626" prev={prev?.totalInvoice} />
+            <Stat label="總收據" value={data.totalReceipt} color="#0369a1" prev={prev?.totalReceipt} />
+            <Stat label="估價單" value={t.estimateTotal} color="#8b5cf6" prev={p?.estimateTotal} />
+            <Stat label="梁平退稅" value={data.liangpingRefund} color="#f59e0b" prev={prev?.liangpingRefund} />
+          </div>
+        </div>
+
+        <div className="border-t pt-3" style={{ borderColor: '#f4f4f5' }}>
+          <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>成本</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <Stat label="總（食+耗+雜）" value={t.totalCost} color="#be123c" prev={p?.totalCost} />
+            <Stat label="食材" value={t.food} color="#047857" prev={p?.food} />
+            <Stat label="耗材" value={t.pack} color="#92400E" prev={p?.pack} />
+            <Stat label="雜項" value={t.misc} color="#71717a" prev={p?.misc} />
+          </div>
         </div>
       </div>
 
@@ -443,8 +456,32 @@ function MonthlyPanel({ data, prev, onOpenDay }: { data: MonthlyStats; prev: Mon
       )}
 
       {/* 每日 breakdown */}
-      <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
-        <h3 className="text-sm font-bold mb-3" style={{ color: '#18181b' }}>每日 breakdown</h3>
+      <DailyBreakdown data={data} onOpenDay={onOpenDay} />
+    </>
+  )
+}
+
+/** 每日 breakdown 表格 — 預設隱藏未來（沒資料）日期，讓當月只顯示已錄的部分 */
+function DailyBreakdown({ data, onOpenDay }: { data: MonthlyStats; onOpenDay?: (date: string) => void }) {
+  const [showAll, setShowAll] = useState(false)
+  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+  // 有資料 = 已 submit / 有錄款 / 是公休 / 已過去或今天
+  const hasData = (d: MonthlyStats['daily'][number]) =>
+    d.closingStatus !== 'none' || d.isHoliday || d.revenue > 0 || d.totalCost > 0 || d.actual !== 0 || d.pos > 0
+  const filtered = showAll ? data.daily : data.daily.filter(d => hasData(d) || d.date <= today)
+  const hiddenCount = data.daily.length - filtered.length
+  return (
+    <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-bold" style={{ color: '#18181b' }}>每日 breakdown</h3>
+          {hiddenCount > 0 && (
+            <button onClick={() => setShowAll(v => !v)}
+              className="text-[11px] px-2.5 py-1 rounded-lg"
+              style={{ background: '#fafafa', border: '1px solid #e4e4e7', color: '#52525b', cursor: 'pointer' }}>
+              {showAll ? '收起未來日期' : `顯示未來 ${hiddenCount} 天`}
+            </button>
+          )}
+        </div>
         <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
           <table className="text-xs" style={{ minWidth: 'max-content' }}>
             <thead style={{ background: '#fafafa' }}>
@@ -467,7 +504,7 @@ function MonthlyPanel({ data, prev, onOpenDay }: { data: MonthlyStats; prev: Mon
               </tr>
             </thead>
             <tbody>
-              {data.daily.map((d, i) => {
+              {filtered.map((d, i) => {
                 const dt = new Date(d.date + 'T12:00:00+08:00')
                 const dow = dt.getDay()
                 const rowBg = d.isHoliday ? '#f3e8ff' : (dow === 0 || dow === 6 ? '#fff7ed' : undefined)
@@ -505,7 +542,6 @@ function MonthlyPanel({ data, prev, onOpenDay }: { data: MonthlyStats; prev: Mon
           </table>
         </div>
       </div>
-    </>
   )
 }
 
@@ -531,11 +567,13 @@ function Stat({ label, value, color, prev }: { label: string; value: number; col
   const pct = prev !== undefined && prev !== 0 ? Math.round((value - prev) / Math.abs(prev) * 100) : null
   const deltaColor = delta === null ? '#a1a1aa' : delta > 0 ? '#16a34a' : delta < 0 ? '#dc2626' : '#a1a1aa'
   const arrow = delta === null ? '' : delta > 0 ? '↑' : delta < 0 ? '↓' : '='
+  // 減少視覺雜訊：當月 value=0（月初還沒錄資料）→ 隱藏對比行；當月和上月都=0 也隱藏
+  const hideDelta = value === 0 || (delta !== null && Math.abs(delta) === 0)
   return (
     <div className="rounded-xl px-3 py-2.5" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
       <p className="text-[11px]" style={{ color: '#71717a' }}>{label}</p>
       <p className="text-base font-bold tabular-nums mt-0.5" style={{ color }}>${fmt(value)}</p>
-      {delta !== null && (
+      {delta !== null && !hideDelta && (
         <p className="text-[10px] tabular-nums mt-0.5" style={{ color: deltaColor }}>
           {arrow} {delta >= 0 ? '+' : ''}{fmt(delta)}{pct !== null ? ` (${pct >= 0 ? '+' : ''}${pct}%)` : ''}
         </p>
