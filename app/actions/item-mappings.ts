@@ -108,7 +108,25 @@ export async function deleteItemMapping(id: string) {
     .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
   if (!profile?.is_hq && profile?.role !== '老闆') return { error: '權限不足' }
   const admin = createAdminClient()
+
+  // 先撈 mapping 資料，用來反查 system_item + store_item
+  const { data: mapping } = await admin.from('item_column_mappings')
+    .select('item_name, store_id').eq('id', id).maybeSingle()
+
   await admin.from('item_column_mappings').delete().eq('id', id)
+
+  // 若 mapping 綁定特定店家 → 同步 disable 該店的 store_item（否則 xlsx 匯出還會有這欄）
+  if (mapping?.store_id && mapping?.item_name) {
+    const { data: sys } = await admin.from('system_items')
+      .select('id').eq('name', mapping.item_name).eq('active', true).maybeSingle()
+    if (sys) {
+      await admin.from('store_items')
+        .update({ enabled: false })
+        .eq('store_id', mapping.store_id)
+        .eq('system_item_id', sys.id)
+    }
+  }
+
   revalidate()
   return { success: true }
 }
