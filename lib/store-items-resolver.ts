@@ -109,8 +109,14 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
     })
   }
 
-  // 合併 + 排序
-  return [...enabledSys, ...customs].sort((a, b) => a.sort_order - b.sort_order)
+  // 合併 + dedup by name（同名保留第一個，通常是店家 override 或第一個 vg 命中的）
+  // 避免 system_items 有多筆同名不同 vg 都 active 造成下拉重複顯示
+  const merged = [...enabledSys, ...customs]
+  const byName = new Map<string, ResolvedStoreItem>()
+  for (const it of merged) {
+    if (!byName.has(it.name)) byName.set(it.name, it)
+  }
+  return [...byName.values()].sort((a, b) => a.sort_order - b.sort_order)
 }
 
 /** 把 ResolvedStoreItem[] 轉成 closing-form 期待的 mappingColumns 格式 */
