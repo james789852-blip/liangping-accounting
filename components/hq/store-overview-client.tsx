@@ -468,17 +468,18 @@ function DailyBreakdown({ data, onOpenDay }: { data: MonthlyStats; onOpenDay?: (
   // 有資料 = 已 submit / 有錄款 / 是公休 / 已過去或今天
   const hasData = (d: MonthlyStats['daily'][number]) =>
     d.closingStatus !== 'none' || d.isHoliday || d.revenue > 0 || d.totalCost > 0 || d.actual !== 0 || d.pos > 0
+  // 潛在會被隱藏的天數（不依當前展開狀態，這樣 button 展開後也能收回）
+  const potentialHiddenCount = data.daily.filter(d => !hasData(d) && d.date > today).length
   const filtered = showAll ? data.daily : data.daily.filter(d => hasData(d) || d.date <= today)
-  const hiddenCount = data.daily.length - filtered.length
   return (
     <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-bold" style={{ color: '#18181b' }}>每日 breakdown</h3>
-          {hiddenCount > 0 && (
+          {potentialHiddenCount > 0 && (
             <button onClick={() => setShowAll(v => !v)}
               className="text-[11px] px-2.5 py-1 rounded-lg"
               style={{ background: '#fafafa', border: '1px solid #e4e4e7', color: '#52525b', cursor: 'pointer' }}>
-              {showAll ? '收起未來日期' : `顯示未來 ${hiddenCount} 天`}
+              {showAll ? '收起未來日期' : `顯示未來 ${potentialHiddenCount} 天`}
             </button>
           )}
         </div>
