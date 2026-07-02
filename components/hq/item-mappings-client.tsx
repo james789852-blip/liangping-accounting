@@ -377,6 +377,19 @@ export default function ItemMappingsClient({
               <li>到「店家總覽」試匯出 Excel，看是否對得上原檔</li>
             </ol>
           </div>
+
+          <div className="rounded-lg p-3 mt-2" style={{ background: '#fef3c7', color: '#92400e' }}>
+            <p className="font-bold mb-1">➕ 新增系統沒有的品項（例：娃娃菜）</p>
+            <p className="mb-1">「Excel 欄位」欄可直接**打新的欄名**，不用非要選預設清單裡的！</p>
+            <ul className="space-y-0.5 list-disc list-inside">
+              <li>品項名稱：<b>娃娃菜</b></li>
+              <li>Excel 欄位：<b>留空</b>（系統自動用「娃娃菜」）或自己打「娃娃菜」</li>
+              <li>類別：食材</li>
+              <li>廠商分類：菜商</li>
+            </ul>
+            <p className="mt-1">Excel 匯出時會**自動多一欄「娃娃菜」**，落在你設定的 Row 1 廠商 + Row 2 單據下。</p>
+            <p className="mt-1">💡 若想把「娃娃菜」的金額**合併**到既有欄（例：「大陸妹」），把 Excel 欄位選成「大陸妹」即可。</p>
+          </div>
         </HelpBox>
 
         {/* Add form */}
