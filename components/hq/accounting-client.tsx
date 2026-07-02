@@ -214,12 +214,16 @@ export default function AccountingClient({
   )
 }
 
-/* ─────────── 匯出按鈕 ─────────── */
+/* ─────────── 匯出按鈕（含年月自由選擇） ─────────── */
 function ExportButtons({ kind, storeId, storeName, date }: { kind: 'store' | 'ck'; storeId: string; storeName: string; date: string }) {
   const [downloading, setDownloading] = useState<'month' | 'year' | null>(null)
-  const [y, m] = date.split('-')
-  const year = parseInt(y)
-  const monthNum = parseInt(m)
+  const [dy, dm] = date.split('-')
+  const nowY = new Date().getFullYear()
+  const [year, setYear] = useState<number>(parseInt(dy))
+  const [monthNum, setMonthNum] = useState<number>(parseInt(dm))
+  // 當外部 date 改變時同步（除非 user 已手動選）
+  useEffect(() => { setYear(parseInt(dy)); setMonthNum(parseInt(dm)) }, [dy, dm])
+  const yearOptions = Array.from({ length: 5 }, (_, i) => nowY - i)
 
   async function handleExport(mode: 'month' | 'year') {
     if (!storeId) return
@@ -253,19 +257,26 @@ function ExportButtons({ kind, storeId, storeName, date }: { kind: 'store' | 'ck
     }
   }
 
+  const selectStyle: React.CSSProperties = { height: 34, padding: '0 8px', border: '1px solid #e4e4e7', borderRadius: 8, background: 'white', fontFamily: 'inherit', fontSize: 12, color: '#18181b', outline: 'none' }
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap items-center gap-2">
+      <select value={year} onChange={e => setYear(parseInt(e.target.value))} style={selectStyle}>
+        {yearOptions.map(y => <option key={y} value={y}>{y} 年</option>)}
+      </select>
+      <select value={monthNum} onChange={e => setMonthNum(parseInt(e.target.value))} style={selectStyle}>
+        {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m} 月</option>)}
+      </select>
       <button onClick={() => handleExport('month')} disabled={downloading !== null}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+        className="flex items-center gap-1.5 px-3 h-[34px] rounded-lg text-xs font-semibold"
         style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white', boxShadow: '0 2px 6px rgba(245,158,11,0.25)', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
         {downloading === 'month' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-        {monthNum} 月 Excel
+        當月 Excel
       </button>
       <button onClick={() => handleExport('year')} disabled={downloading !== null}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+        className="flex items-center gap-1.5 px-3 h-[34px] rounded-lg text-xs font-semibold"
         style={{ background: 'white', border: '1.5px solid #F59E0B', color: '#B45309', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
         {downloading === 'year' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-        年度 Excel
+        年度 Excel（13 分頁）
       </button>
     </div>
   )
