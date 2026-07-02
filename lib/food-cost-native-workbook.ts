@@ -36,6 +36,7 @@ interface ColumnDef {
   vendorGroup?: string   // Row 1 (品項欄專用)
   docType?: string       // Row 2 (品項欄專用)
   category?: '食材' | '耗材' | '雜項'   // 用於 SUMIFS
+  isRefund?: boolean  // 是否納入梁平退稅（跟 vg 解耦）
   kind: 'date' | 'weekday' | 'spacer' | 'income' | 'stat' | 'item'
   incomeKey?: string  // 'pos' | 'twpay' | 'panda' | 'online' | 'online_cash' | 'uber:<account>' | 'after_deduct' | 'onsite' | 'actual' | 'ck' | 'variance' | 'revenue'
   statKey?: 'total' | 'food' | 'pack' | 'misc'
@@ -129,6 +130,7 @@ function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAcco
       vendorGroup: it.vendor_group,
       docType: it.doc_type ?? '',
       category: it.category,
+      isRefund: !!it.is_refund,
       kind: 'item',
     })
   }
@@ -318,10 +320,17 @@ export async function addFoodCostSheet(
     const docRow2Range = `${itemStart}2:${itemEnd}2`
     const vgRow1Range = `${itemStart}1:${itemEnd}1`
 
-    // 梁平退稅 = doc=發票 且 vg=退稅
+    // 梁平退稅 = 所有 is_refund=true 品項的月合計加總（跟 vg 解耦，位置可自由排）
     fillHeaderCell(ws.getRow(1).getCell(totalStatCol - 1), '梁平退稅', 'FFC6EFCE', 'FF000000', true)
     const cellRefund = ws.getRow(1).getCell(totalStatCol)
-    cellRefund.value = { formula: `SUMIFS(${totalRange},${docRow2Range},"發票",${vgRow1Range},"退稅")` } as any
+    const refundCols = itemCols.filter(c => c.isRefund)
+    if (refundCols.length > 0) {
+      const refs = refundCols.map(c => `${colLetter(c.index)}${TOTAL_ROW}`).join(',')
+      cellRefund.value = { formula: `SUM(${refs})` } as any
+    } else {
+      // fallback：無勾選任何 is_refund 時，回舊邏輯（doc=發票 且 vg=退稅）
+      cellRefund.value = { formula: `SUMIFS(${totalRange},${docRow2Range},"發票",${vgRow1Range},"退稅")` } as any
+    }
     cellRefund.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFCC' } }
     cellRefund.font = { name: 'Calibri', size: 10, bold: true }
     cellRefund.alignment = { horizontal: 'center', vertical: 'middle' }
@@ -586,7 +595,8 @@ function addAnnualOverviewSheet(wb: ExcelJS.Workbook, store: StoreInfo, year: nu
       } else if (row.sheetCol === 'receipt') {
         formula = `SUMIFS('${sheetName}'!$4:$4,'${sheetName}'!$2:$2,"收據")`
       } else if (row.sheetCol === 'refund') {
-        formula = `SUMIFS('${sheetName}'!$4:$4,'${sheetName}'!$2:$2,"發票",'${sheetName}'!$1:$1,"退稅")`
+        // 直接引用該月 sheet 已算好的「梁平退稅」cell（Row 1，label 右邊那格）
+        formula = `INDEX('${sheetName}'!$1:$1,MATCH("梁平退稅",'${sheetName}'!$1:$1,0)+1)`
       } else {
         // 用 INDEX+MATCH 找 header 對應欄的月合計
         formula = `INDEX('${sheetName}'!$4:$4,MATCH(${headerRefBySheetCol[row.sheetCol]},'${sheetName}'!$3:$3,0))`

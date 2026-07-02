@@ -266,6 +266,17 @@ export async function setItemDocOverride(itemName: string, storeId: string | nul
   return { success: true as const }
 }
 
+/** 設定該 mapping 是否納入「梁平退稅」總額 */
+export async function setItemRefundFlag(id: string, isRefund: boolean) {
+  const admin = createAdminClient()
+  const { error } = await admin.from('item_column_mappings')
+    .update({ is_refund: isRefund, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) return { error: error.message }
+  revalidate()
+  return { success: true as const }
+}
+
 /** 修改廠商群組名稱（同步更新 system_vendor_groups + item_column_mappings） */
 export async function renameVendorGroup(oldName: string, newName: string) {
   const supabase = await createClient()

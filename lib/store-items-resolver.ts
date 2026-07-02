@@ -25,6 +25,8 @@ export interface ResolvedStoreItem {
   sort_order: number
   /** vg 是否跨 category 合併顯示 */
   vg_merge_across_category?: boolean
+  /** 是否納入梁平退稅總額（跟 vg 解耦，明確標記） */
+  is_refund?: boolean
 }
 
 /** 撈出某店家「實際啟用的品項列表」(含系統 + 自訂) */

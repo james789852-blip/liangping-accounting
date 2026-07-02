@@ -62,6 +62,7 @@ export async function getStoreItemsFromMappings(storeId: string): Promise<Resolv
       is_system: true,
       sort_order: (m.sort_order ?? 1000) as number,
       vg_merge_across_category: !!vg?.merge_across_category,
+      is_refund: !!m.is_refund,
     })
   }
 

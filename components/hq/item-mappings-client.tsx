@@ -19,7 +19,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 
 interface Mapping {
-  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null
+  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean
 }
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
@@ -695,6 +695,7 @@ function SortableItemRow({
         <>
           <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
             style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
+          <RefundToggle mappingId={m.id} isRefund={!!m.is_refund} />
           <span className="text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
           <button onClick={() => startEdit(m)} style={{ color: '#d4d4d8' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#F59E0B')}
@@ -709,6 +710,32 @@ function SortableItemRow({
         </>
       )}
     </div>
+  )
+}
+
+/** 「屬於退稅」勾選框 — 勾了此品項納入「梁平退稅」總額，跟 vg 解耦 */
+function RefundToggle({ mappingId, isRefund }: { mappingId: string; isRefund: boolean }) {
+  const [checked, setChecked] = useState(isRefund)
+  useEffect(() => { setChecked(isRefund) }, [isRefund])
+  async function toggle() {
+    const next = !checked
+    setChecked(next)  // optimistic
+    const { setItemRefundFlag } = await import('@/app/actions/item-mappings')
+    const r = await setItemRefundFlag(mappingId, next)
+    if (r && 'error' in r) {
+      setChecked(!next)
+      toast.error('儲存失敗：' + r.error)
+    }
+  }
+  return (
+    <button onClick={toggle}
+      className="text-xs px-2 py-0.5 rounded-full shrink-0 font-semibold transition-colors"
+      style={checked
+        ? { background: '#dcfce7', color: '#166534', border: '1.5px solid #86efac' }
+        : { background: 'white', color: '#a1a1aa', border: '1.5px solid #e4e4e7' }}
+      title={checked ? '已納入梁平退稅總額（點擊取消）' : '未納入梁平退稅（點擊勾選）'}>
+      {checked ? '✓ 退稅' : '退稅'}
+    </button>
   )
 }
 
