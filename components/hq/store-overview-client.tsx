@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Loader2, Download, ChevronLeft, ChevronRight } from 'lucide-react'
-import { fetchDailyStats, fetchMonthlyStats } from '@/app/actions/store-overview'
+import { fetchDailyStats, fetchMonthlyStats, fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
 import type { DailyStats, MonthlyStats } from '@/lib/store-aggregator'
 import HolidaysEditor from './holidays-editor'
+import ReviewCard from './review-card'
 
 interface Store { id: string; name: string }
 
@@ -206,7 +207,7 @@ export default function StoreOverviewClient({ stores, initialStoreId }: { stores
         </div>
       )}
 
-      {!loading && tab === 'daily' && daily && <DailyPanel data={daily} storeName={storeName} prev={prevDaily} />}
+      {!loading && tab === 'daily' && daily && <DailyPanel data={daily} storeName={storeName} storeId={storeId} prev={prevDaily} />}
       {!loading && tab === 'daily' && !daily && (
         <div className="bg-white rounded-2xl p-8 text-center text-sm" style={{ border: '1px solid #f4f4f5', color: '#a1a1aa' }}>
           {date} 無資料
@@ -222,9 +223,21 @@ export default function StoreOverviewClient({ stores, initialStoreId }: { stores
 }
 
 /* ─────────── Daily panel ─────────── */
-function DailyPanel({ data, storeName, prev }: { data: DailyStats; storeName: string; prev: DailyStats | null }) {
+function DailyPanel({ data, storeName, storeId, prev }: { data: DailyStats; storeName: string; storeId: string; prev: DailyStats | null }) {
   const uberEntries = Object.entries(data.uber).filter(([, v]) => v > 0)
   const handwriteEntries = Object.entries(data.handwrite).filter(([, v]) => v > 0)
+  // 撈當日 closing + receipts 給內嵌審核卡用
+  const [reviewData, setReviewData] = useState<{ closing: any; receipts: any[]; submitterName: string | null } | null>(null)
+  const [reviewLoading, setReviewLoading] = useState(false)
+  useEffect(() => {
+    setReviewData(null)
+    setReviewLoading(true)
+    fetchDailyClosingWithReceipts(storeId, data.date)
+      .then(r => {
+        if ('success' in r) setReviewData({ closing: r.closing, receipts: r.receipts ?? [], submitterName: r.submitterName ?? null })
+      })
+      .finally(() => setReviewLoading(false))
+  }, [storeId, data.date])
   return (
     <>
       <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1px solid #f4f4f5' }}>
@@ -339,6 +352,35 @@ function DailyPanel({ data, storeName, prev }: { data: DailyStats; storeName: st
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* 當日帳目審核卡（含照片、明細、審核按鈕） */}
+      {reviewLoading && (
+        <div className="bg-white rounded-2xl p-4 text-center text-sm" style={{ color: '#a1a1aa', border: '1px solid #f4f4f5' }}>
+          載入帳目中…
+        </div>
+      )}
+      {!reviewLoading && reviewData?.closing && (
+        <div>
+          <h3 className="text-sm font-bold mb-2 px-1" style={{ color: '#18181b' }}>📋 當日帳目審核</h3>
+          <ReviewCard
+            closing={{ ...reviewData.closing, stores: { name: storeName } } as any}
+            receipts={reviewData.receipts as any}
+            canReview={true}
+            canDispute={true}
+            onProcessed={() => {
+              // 重新載入 review data
+              fetchDailyClosingWithReceipts(storeId, data.date).then(r => {
+                if ('success' in r) setReviewData({ closing: r.closing, receipts: r.receipts ?? [], submitterName: r.submitterName ?? null })
+              })
+            }}
+          />
+        </div>
+      )}
+      {!reviewLoading && !reviewData?.closing && (
+        <div className="bg-white rounded-2xl p-4 text-center text-sm" style={{ color: '#a1a1aa', border: '1px solid #f4f4f5' }}>
+          當日尚無帳目提交
         </div>
       )}
     </>
@@ -459,8 +501,9 @@ function MonthlyPanel({ data, prev, onOpenDay }: { data: MonthlyStats; prev: Mon
         </div>
       )}
 
-      {/* 每日 breakdown */}
+      {/* 每日 breakdown 暫時隱藏（user 要求，之後有需要再開回來）
       <DailyBreakdown data={data} onOpenDay={onOpenDay} />
+      */}
     </>
   )
 }
