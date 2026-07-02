@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download } from 'lucide-react'
 import { fetchDailyStats, fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
 import { fetchCKDailyStats, fetchCKDailyDetail } from '@/app/actions/ck-overview'
 import type { DailyStats } from '@/lib/store-aggregator'
@@ -212,6 +212,63 @@ export default function AccountingClient({
   )
 }
 
+/* ─────────── 匯出按鈕 ─────────── */
+function ExportButtons({ kind, storeId, storeName, date }: { kind: 'store' | 'ck'; storeId: string; storeName: string; date: string }) {
+  const [downloading, setDownloading] = useState<'month' | 'year' | null>(null)
+  const [y, m] = date.split('-')
+  const year = parseInt(y)
+  const monthNum = parseInt(m)
+
+  async function handleExport(mode: 'month' | 'year') {
+    if (!storeId) return
+    setDownloading(mode)
+    try {
+      const base = kind === 'store' ? '/api/export/food-cost-native' : '/api/export/ck-native'
+      const url = mode === 'year'
+        ? `${base}?storeId=${storeId}&type=year&year=${year}&t=${Date.now()}`
+        : `${base}?storeId=${storeId}&year=${year}&month=${monthNum}&t=${Date.now()}`
+      const res = await fetch(url, { cache: 'no-store' })
+      if (!res.ok) { toast.error('匯出失敗：' + await res.text()); return }
+      const blob = await res.blob()
+      const disp = res.headers.get('content-disposition') ?? ''
+      const mth = /filename\*=UTF-8''([^;]+)/.exec(disp)
+      const suffix = kind === 'store' ? '食耗成本' : '央廚食耗'
+      const filename = mth
+        ? decodeURIComponent(mth[1])
+        : mode === 'year'
+          ? `${storeName}_${year}年_${suffix}.xlsx`
+          : `${storeName}_${year}年${monthNum}月_${suffix}.xlsx`
+      const dl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = dl; a.download = filename
+      document.body.appendChild(a); a.click(); a.remove()
+      URL.revokeObjectURL(dl)
+      toast.success('匯出完成')
+    } catch (e) {
+      toast.error('匯出失敗：' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setDownloading(null)
+    }
+  }
+
+  return (
+    <div className="flex gap-2">
+      <button onClick={() => handleExport('month')} disabled={downloading !== null}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+        style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white', boxShadow: '0 2px 6px rgba(245,158,11,0.25)', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
+        {downloading === 'month' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+        {monthNum} 月 Excel
+      </button>
+      <button onClick={() => handleExport('year')} disabled={downloading !== null}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+        style={{ background: 'white', border: '1.5px solid #F59E0B', color: '#B45309', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
+        {downloading === 'year' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+        年度 Excel
+      </button>
+    </div>
+  )
+}
+
 /* ─────────── 店家詳情 ─────────── */
 function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName: string; date: string }) {
   const [loading, setLoading] = useState(true)
@@ -236,7 +293,10 @@ function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName:
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
-        <h2 className="text-base font-bold mb-3" style={{ color: '#18181b' }}>{storeName} · {date}</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{storeName} · {date}</h2>
+          <ExportButtons kind="store" storeId={storeId} storeName={storeName} date={date} />
+        </div>
         {stats ? (
           <StoreStatsGrid data={stats} />
         ) : (
@@ -351,7 +411,10 @@ function CKDetail({ ckStoreId, storeName, date }: { ckStoreId: string; storeName
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
-        <h2 className="text-base font-bold mb-3" style={{ color: '#18181b' }}>{storeName} · {date}</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{storeName} · {date}</h2>
+          <ExportButtons kind="ck" storeId={ckStoreId} storeName={storeName} date={date} />
+        </div>
         {stats ? (
           <div className="space-y-3">
             <div>
