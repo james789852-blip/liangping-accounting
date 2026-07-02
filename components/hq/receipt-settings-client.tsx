@@ -10,6 +10,7 @@ import {
   createCKVendorGroup, updateCKVendorGroup, deleteCKVendorGroup,
   type CKVendorGroup,
 } from '@/app/actions/ck-vendor-groups'
+import HelpBox from './help-box'
 
 interface Store { id: string; name: string }
 
@@ -39,12 +40,69 @@ export default function ReceiptSettingsClient({
         <button onClick={() => changeType('ck')} style={tabBtn(type === 'ck')}>央廚</button>
       </div>
 
-      {/* 說明區塊 */}
-      <div className="rounded-xl p-3 text-xs" style={{ background: '#FEF3C7', border: '1px solid #FDE68A', color: '#92400e' }}>
-        {type === 'store'
-          ? '此頁只影響「店長輸入收據時的下拉選單」。若要調整 Excel 匯出的欄位順序 / 廠商名 / 顯示品項，請到「品項對應管理」。'
-          : '此頁管理央廚每日輸入 expense 時的「廠商群組」建議清單。實際 Excel Row 1 廠商欄由每筆央廚 expense 自己帶的 vendor_group 決定。'}
-      </div>
+      {/* 教學區塊 */}
+      {type === 'store' ? (
+        <HelpBox title="📖 店面收據廠商設定教學" defaultOpen>
+          <div className="rounded-lg p-3" style={{ background: 'white' }}>
+            <p className="font-bold mb-1.5">💡 這頁是做什麼的？</p>
+            <p>設定店長在錄入收據時，「大類」+「廠商」下拉選單會出現的選項。</p>
+          </div>
+
+          <div className="rounded-lg p-3 mt-2" style={{ background: 'white' }}>
+            <p className="font-bold mb-1.5">🎯 三大類（不能改，系統預設）</p>
+            <ul className="space-y-0.5 list-disc list-inside">
+              <li><b>叫貨廠商</b>：向廠商叫貨（雞肉商 / 菜商 / 雜貨 / 免洗...）</li>
+              <li><b>固定成本</b>：每月固定支出（房租 / 電費 / 瓦斯...）</li>
+              <li><b>其他</b>：零星購買 / 稅金退款</li>
+            </ul>
+          </div>
+
+          <div className="rounded-lg p-3 mt-2" style={{ background: '#fee2e2', color: '#991b1b' }}>
+            <p className="font-bold">⚠️ 這裡設定的**不影響 Excel 欄位順序或名稱**！</p>
+            <p className="mt-1">若要調整 Excel 匯出的欄位，請到「<b>品項對應管理</b>」設定。</p>
+          </div>
+
+          <div className="rounded-lg p-3 mt-2" style={{ background: '#e0f2fe' }}>
+            <p className="font-bold mb-1">📝 建議操作步驟</p>
+            <ol className="space-y-0.5 list-decimal list-inside">
+              <li>展開「叫貨廠商」→ 加入該店常用廠商（跟品項對應管理的廠商群組名稱一致）</li>
+              <li>「固定成本」列出每月會付的項目</li>
+              <li>「其他」通常保留預設就好</li>
+              <li>店長錄入收據時，這些名字會出現在下拉選單中</li>
+            </ol>
+          </div>
+        </HelpBox>
+      ) : (
+        <HelpBox title="📖 央廚廠商群組設定教學" defaultOpen>
+          <div className="rounded-lg p-3" style={{ background: 'white' }}>
+            <p className="font-bold mb-1.5">💡 這頁是做什麼的？</p>
+            <p>設定該央廚常用的廠商清單。央廚每日輸入 expense 時，會從這裡自動帶「廠商群組」+「預設單據類型」。</p>
+          </div>
+
+          <div className="rounded-lg p-3 mt-2" style={{ background: 'white' }}>
+            <p className="font-bold mb-1.5">🎯 對應央廚 Excel 匯出</p>
+            <ul className="space-y-0.5 list-disc list-inside">
+              <li><b>廠商群組</b>（vendor_group）→ 央廚 Excel <b>Row 1</b>（例：雞肉商 / 菜商 / 雜貨 / 翁師傅 / 退稅）</li>
+              <li><b>單據類型</b>（doc_type）→ 央廚 Excel <b>Row 2</b>（發票 / 收據 / 估價單 / 公司開）</li>
+            </ul>
+          </div>
+
+          <div className="rounded-lg p-3 mt-2" style={{ background: '#e0f2fe' }}>
+            <p className="font-bold mb-1">📝 建議操作步驟</p>
+            <ol className="space-y-0.5 list-decimal list-inside">
+              <li>對照原本 Excel Row 1 的廠商，逐一「新增廠商」加進系統</li>
+              <li>每個廠商設定「預設單據類型」（例：翁師傅 → 估價單、菜商 → 公司開）</li>
+              <li>央廚每日輸入 expense 時，選了廠商後系統會**自動填單據類型**</li>
+              <li>Excel 匯出時 Row 1 / Row 2 自動照這裡的順序 + 名稱產出</li>
+            </ol>
+          </div>
+
+          <div className="rounded-lg p-3 mt-2" style={{ background: '#fef3c7', color: '#92400e' }}>
+            <p className="font-bold">💡 小提示</p>
+            <p className="mt-1">這裡是「建議清單」— 每筆央廚 expense 實際存的是自己帶的 vendor_group 字串。若要改某筆 expense 的廠商，回到央廚每日輸入頁面編輯。</p>
+          </div>
+        </HelpBox>
+      )}
 
       {/* 店家 selector */}
       <select value={currentStoreId} onChange={e => changeStore(e.target.value)}

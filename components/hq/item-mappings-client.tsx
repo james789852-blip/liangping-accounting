@@ -8,6 +8,7 @@ import {
 import { useRouter } from 'next/navigation'
 import { Trash2, Edit2, Check, X, Plus, Tag, Copy, ChevronLeft, ChevronUp, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
+import HelpBox from './help-box'
 
 interface Mapping {
   id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null
@@ -329,6 +330,52 @@ export default function ItemMappingsClient({
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 pb-28">
+
+        {/* 教學說明 */}
+        <HelpBox title="📖 這頁怎麼用？（直接決定 Excel 匯出）" defaultOpen>
+          <p className="font-semibold" style={{ color: '#7c2d12' }}>此頁決定「食耗成本 Excel」的每一欄！設錯 → 數字對不上原檔。</p>
+
+          <div className="rounded-lg p-3 mt-2" style={{ background: 'white' }}>
+            <p className="font-bold mb-1.5">🎯 三個核心設定與 Excel 對應</p>
+            <ul className="space-y-1 list-none">
+              <li>1. <b>廠商群組</b>（vendor_group）→ Excel <b>Row 1</b>（例：央廚配送 / 菜商 / 雜貨 / 免洗）</li>
+              <li>2. <b>單據類型</b>（doc_type）→ Excel <b>Row 2</b>（例：發票 / 收據 / 公司開 / 梁鑫開）</li>
+              <li>3. <b>品項名稱</b>（item_name）→ Excel <b>Row 3</b>（例：雞肉 / 好吃醬 / 油菜）</li>
+            </ul>
+          </div>
+
+          <div className="rounded-lg p-3 mt-2" style={{ background: 'white' }}>
+            <p className="font-bold mb-1.5">🔧 主要操作</p>
+            <ul className="space-y-1 list-disc list-inside">
+              <li><b>調整欄位順序</b>：用「↑↓」箭頭排序，會**直接影響 Excel 從左到右的順序**</li>
+              <li><b>新增分類</b>：點右上角「新增分類」按鈕（Row 1 廠商群組多一欄）</li>
+              <li><b>新增品項</b>：點右上角「新增品項」按鈕（Row 3 多一欄品項）</li>
+              <li><b>設分類（食/耗/雜）</b>：影響 Excel「食材小計 / 耗材小計 / 雜項小計」加總</li>
+              <li><b>Excel 欄名</b>：填入該品項的 Excel 欄位標題（通常跟品項名一致）</li>
+            </ul>
+          </div>
+
+          <div className="rounded-lg p-3 mt-2" style={{ background: '#fee2e2', color: '#991b1b' }}>
+            <p className="font-bold">⚠️ 重要提醒</p>
+            <ul className="space-y-0.5 list-disc list-inside mt-1">
+              <li>「新增／刪除品項」= Excel 該欄會出現 / 消失</li>
+              <li>店面收據錄入時，店長選的品項會自動對應到這裡設定的欄位</li>
+              <li>設完後可到「店家總覽」的「匯出 Excel」預覽</li>
+            </ul>
+          </div>
+
+          <div className="rounded-lg p-3 mt-2" style={{ background: '#e0f2fe' }}>
+            <p className="font-bold mb-1">📝 建議設定步驟</p>
+            <ol className="space-y-0.5 list-decimal list-inside">
+              <li>先「新增分類」建好所有廠商群組（Row 1）</li>
+              <li>用「↑↓」把廠商群組排到跟原本 Excel 一樣的順序</li>
+              <li>在每個分類下「新增品項」加入該廠商賣的所有品項（Row 3）</li>
+              <li>用「↑↓」在每個分類內把品項排好順序</li>
+              <li>設定各品項的「單據類型」+「食/耗/雜」</li>
+              <li>到「店家總覽」試匯出 Excel，看是否對得上原檔</li>
+            </ol>
+          </div>
+        </HelpBox>
 
         {/* Add form */}
         {showAdd && (

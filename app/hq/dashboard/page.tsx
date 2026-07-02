@@ -210,8 +210,11 @@ export default async function HQDashboard() {
                       const statusKey = closing?.status ?? 'none'
                       const st = DOT_STYLE[statusKey] ?? DOT_STYLE.none
                       const hasRevenue = closing && ['submitted', 'verified'].includes(closing.status)
+                      const overviewHref = type === '央廚'
+                        ? `/hq/ck-overview?storeId=${store.id}`
+                        : `/hq/store-overview?storeId=${store.id}`
                       return (
-                        <div key={store.id}
+                        <Link key={store.id} href={overviewHref}
                           className="flex items-center gap-3 px-4 py-3 rounded-xl border transition-all hover:translate-x-1 hover:shadow-sm mb-1.5"
                           style={{ borderColor: '#f4f4f5', opacity: hasRevenue ? 1 : 0.55 }}>
                           <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white font-bold shrink-0"
@@ -235,7 +238,7 @@ export default async function HQDashboard() {
                             <span className="text-xs font-semibold" style={{ color: '#52525b' }}>{st.label}</span>
                           </div>
                           <ChevronRight className="h-[18px] w-[18px] shrink-0" style={{ color: '#a1a1aa' }} />
-                        </div>
+                        </Link>
                       )
                     })}
                   </div>
