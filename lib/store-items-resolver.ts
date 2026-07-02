@@ -47,12 +47,17 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
     id ? (vgMap.get(id)?.tax_mode ?? 'inclusive') : 'inclusive'
 
   // 1) 店家對系統品項的明確啟用/停用設定 + 店家自訂的 sort_order（覆寫 system 預設順序）
-  const sysOverride = new Map<string, { enabled: boolean; sort_order: number | null }>()
+  //    + 店家對 vg 的 override（custom_vendor_group_id）
+  const sysOverride = new Map<string, { enabled: boolean; sort_order: number | null; custom_vg_id: string | null }>()
   // 2) 店家自訂品項
   const customs: ResolvedStoreItem[] = []
   for (const si of (storeItems ?? []) as any[]) {
     if (si.system_item_id) {
-      sysOverride.set(si.system_item_id, { enabled: si.enabled, sort_order: si.sort_order ?? null })
+      sysOverride.set(si.system_item_id, {
+        enabled: si.enabled,
+        sort_order: si.sort_order ?? null,
+        custom_vg_id: si.custom_vendor_group_id ?? null,
+      })
     } else {
       customs.push({
         id: si.id,
@@ -76,18 +81,20 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
     const overridden = sysOverride.get(it.id)
     const enabled = overridden?.enabled !== undefined ? overridden.enabled : it.default_enabled
     if (!enabled) continue
+    // vg 優先序：store_items.custom_vendor_group_id > system_items.vendor_group_id
+    const effectiveVgId = overridden?.custom_vg_id ?? it.vendor_group_id
     // doc_type 優先序：store_items.doc_type_override > system_items.doc_type_override > vendor_group.doc_type
     const storeOverrideDocType = (storeItems ?? [] as any[]).find((s: any) => s.system_item_id === it.id)?.doc_type_override
-    const effectiveDocType = storeOverrideDocType ?? it.doc_type_override ?? vgDoc(it.vendor_group_id)
+    const effectiveDocType = storeOverrideDocType ?? it.doc_type_override ?? vgDoc(effectiveVgId)
     enabledSys.push({
       id: it.id,
       name: it.name,
       category: it.category as ResolvedStoreItem['category'],
-      vendor_group: vgName(it.vendor_group_id),
-      vendor_group_id: it.vendor_group_id,
+      vendor_group: vgName(effectiveVgId),
+      vendor_group_id: effectiveVgId,
       doc_type: effectiveDocType,
-      vendor_group_sort_order: vgSort(it.vendor_group_id),
-      tax_mode: vgTax(it.vendor_group_id),
+      vendor_group_sort_order: vgSort(effectiveVgId),
+      tax_mode: vgTax(effectiveVgId),
       is_system: true,
       sort_order: overridden?.sort_order ?? it.sort_order ?? 1000,
     })

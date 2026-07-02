@@ -77,18 +77,19 @@ async function ensureSystemItemAndEnable(
     systemItemId = newSys?.id ?? null
   }
 
-  // 若指定店家 → 啟用 store_items
+  // 若指定店家 → 啟用 store_items + 同步 custom_vendor_group_id
   if (storeId && systemItemId) {
     const { data: existingStore } = await admin.from('store_items')
       .select('id, enabled')
       .eq('store_id', storeId).eq('system_item_id', systemItemId).maybeSingle()
     if (existingStore) {
-      if (!existingStore.enabled) {
-        await admin.from('store_items').update({ enabled: true }).eq('id', existingStore.id)
-      }
+      const patch: any = { enabled: true }
+      if (vendorGroupId) patch.custom_vendor_group_id = vendorGroupId
+      await admin.from('store_items').update(patch).eq('id', existingStore.id)
     } else {
       await admin.from('store_items').insert({
         store_id: storeId, system_item_id: systemItemId, enabled: true, sort_order: 200,
+        custom_vendor_group_id: vendorGroupId,
       })
     }
   }
@@ -143,11 +144,35 @@ export async function updateItemMapping(id: string, excelColumn: string, itemCat
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '未登入' }
   const admin = createAdminClient()
+
+  // 撈原 mapping 拿 item_name + store_id
+  const { data: mapping } = await admin.from('item_column_mappings')
+    .select('item_name, store_id').eq('id', id).maybeSingle()
+
   await admin.from('item_column_mappings').update({
     excel_column: excelColumn, item_category: itemCategory,
     vendor_group: vendorGroup !== undefined ? (vendorGroup || null) : undefined,
     updated_at: new Date().toISOString(),
   }).eq('id', id)
+
+  // 同步 store_items.custom_vendor_group_id（xlsx 匯出讀這個）
+  if (mapping?.store_id && mapping.item_name && vendorGroup !== undefined) {
+    let vgId: string | null = null
+    if (vendorGroup?.trim()) {
+      const { data: vg } = await admin.from('system_vendor_groups')
+        .select('id').eq('name', vendorGroup.trim()).eq('active', true).maybeSingle()
+      vgId = vg?.id ?? null
+    }
+    const { data: sys } = await admin.from('system_items')
+      .select('id').eq('name', mapping.item_name).eq('active', true).maybeSingle()
+    if (sys) {
+      await admin.from('store_items')
+        .update({ custom_vendor_group_id: vgId })
+        .eq('store_id', mapping.store_id)
+        .eq('system_item_id', sys.id)
+    }
+  }
+
   revalidate()
   return { success: true }
 }
