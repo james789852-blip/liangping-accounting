@@ -208,17 +208,23 @@ function CKDailyPanel({ data, storeName }: { data: CKDailyStats; storeName: stri
           </span>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <Stat label="總收入" value={data.revenue} color="#16a34a" />
-          <Stat label="總支出" value={data.totalExpense} color="#be123c" />
-          <Stat label="淨額" value={data.balance} color={data.balance >= 0 ? '#0369a1' : '#dc2626'} />
-          <Stat label="總補款" value={data.hqPaid ? data.totalExpense : 0} color="#f59e0b" />
+        <div>
+          <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>結算</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <Stat label="總收入" value={data.revenue} color="#16a34a" />
+            <Stat label="總支出" value={data.totalExpense} color="#be123c" />
+            <Stat label="淨額" value={data.balance} color={data.balance >= 0 ? '#0369a1' : '#dc2626'} />
+            <Stat label="總補款" value={data.hqPaid ? data.totalExpense : 0} color="#f59e0b" />
+          </div>
         </div>
 
-        <div className="border-t pt-3 grid grid-cols-3 gap-2" style={{ borderColor: '#f4f4f5' }}>
-          <Stat label="食材" value={data.food} color="#047857" />
-          <Stat label="耗材" value={data.pack} color="#92400E" />
-          <Stat label="雜項" value={data.misc} color="#71717a" />
+        <div className="border-t pt-3" style={{ borderColor: '#f4f4f5' }}>
+          <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>成本</p>
+          <div className="grid grid-cols-3 gap-2">
+            <Stat label="食材" value={data.food} color="#047857" />
+            <Stat label="耗材" value={data.pack} color="#92400E" />
+            <Stat label="雜項" value={data.misc} color="#71717a" />
+          </div>
         </div>
       </div>
 
@@ -298,25 +304,33 @@ function CKMonthlyPanel({ data }: { data: CKMonthlyStats }) {
       <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1px solid #f4f4f5' }}>
         <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{data.ckStore.name} · {data.year} 年 {data.monthNum} 月合計</h2>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <Stat label="總收入" value={t.revenue} color="#16a34a" />
-          <Stat label="總支出" value={t.totalExpense} color="#be123c" />
-          <Stat label="淨額" value={t.balance} color={t.balance >= 0 ? '#0369a1' : '#dc2626'} />
-          <Stat label="成員店家" value={t.memberRevenue} color="#8b5cf6" />
+        <div>
+          <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>結算</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <Stat label="總收入" value={t.revenue} color="#16a34a" />
+            <Stat label="總支出" value={t.totalExpense} color="#be123c" />
+            <Stat label="淨額" value={t.balance} color={t.balance >= 0 ? '#0369a1' : '#dc2626'} />
+            <Stat label="成員店家" value={t.memberRevenue} color="#8b5cf6" />
+          </div>
         </div>
 
-        <div className="border-t pt-3 grid grid-cols-3 gap-2" style={{ borderColor: '#f4f4f5' }}>
-          <Stat label="食材" value={t.food} color="#047857" />
-          <Stat label="耗材" value={t.pack} color="#92400E" />
-          <Stat label="雜項" value={t.misc} color="#71717a" />
+        <div className="border-t pt-3" style={{ borderColor: '#f4f4f5' }}>
+          <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>成本</p>
+          <div className="grid grid-cols-3 gap-2">
+            <Stat label="食材" value={t.food} color="#047857" />
+            <Stat label="耗材" value={t.pack} color="#92400E" />
+            <Stat label="雜項" value={t.misc} color="#71717a" />
+          </div>
         </div>
 
-        {/* 對應原檔上方：總發票 / 總收據 / 估價單 / 梁平退稅 */}
-        <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-4 gap-2" style={{ borderColor: '#f4f4f5' }}>
-          <Stat label="總發票" value={t.invoiceTotal} color="#dc2626" />
-          <Stat label="總收據" value={t.receiptTotal} color="#0369a1" />
-          <Stat label="估價單" value={t.estimateTotal} color="#8b5cf6" />
-          <Stat label="梁平退稅" value={t.taxRefund} color="#f59e0b" />
+        <div className="border-t pt-3" style={{ borderColor: '#f4f4f5' }}>
+          <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>單據</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <Stat label="總發票" value={t.invoiceTotal} color="#dc2626" />
+            <Stat label="總收據" value={t.receiptTotal} color="#0369a1" />
+            <Stat label="估價單" value={t.estimateTotal} color="#8b5cf6" />
+            <Stat label="梁平退稅" value={t.taxRefund} color="#f59e0b" />
+          </div>
         </div>
       </div>
 
