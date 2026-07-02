@@ -97,14 +97,16 @@ export default function ItemMappingsClient({
   }
 
   function handleAdd() {
-    if (!newName.trim() || !newCol) return
+    if (!newName.trim()) return
+    // Excel 欄位空 → 預設用品項名（90% 情況相同，新品項也可直接建立）
+    const excelCol = newCol.trim() || newName.trim()
     const storeIdParam = activeStoreId || undefined
     startTransition(async () => {
-      await saveItemMapping(newName.trim(), newCol, newCat, storeIdParam, newVendorGroup.trim() || undefined)
+      await saveItemMapping(newName.trim(), excelCol, newCat, storeIdParam, newVendorGroup.trim() || undefined)
       setMappings(prev => [...prev, {
         id: `tmp-${Date.now()}`,
         item_name: newName.trim(),
-        excel_column: newCol,
+        excel_column: excelCol,
         item_category: newCat,
         vendor_group: newVendorGroup.trim() || null,
         store_id: storeIdParam ?? null,
@@ -399,15 +401,22 @@ export default function ItemMappingsClient({
                 </datalist>
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: '#52525b' }}>Excel 欄位</label>
-                <select style={SELECT_ADD_STYLE} value={newCol} onChange={e => setNewCol(e.target.value)}>
-                  <option value="">請選擇</option>
-                  {Object.entries(EXCEL_COLUMNS).map(([cat, cols]) => (
-                    <optgroup key={cat} label={cat}>
-                      {cols.map(col => <option key={col} value={col}>{col}</option>)}
-                    </optgroup>
+                <label className="block text-xs font-medium mb-1" style={{ color: '#52525b' }}>
+                  Excel 欄位 <span className="text-[10px]" style={{ color: '#a1a1aa' }}>（可打新的，通常跟品項同名）</span>
+                </label>
+                <input list="excel-col-list" style={SELECT_ADD_STYLE}
+                  value={newCol} onChange={e => setNewCol(e.target.value)}
+                  placeholder={newName.trim() ? `留空預設為「${newName.trim()}」` : '選預設或自訂'} />
+                <datalist id="excel-col-list">
+                  {/* 系統預設欄位 */}
+                  {Object.entries(EXCEL_COLUMNS).flatMap(([, cols]) => cols).map(col => (
+                    <option key={`preset-${col}`} value={col} />
                   ))}
-                </select>
+                  {/* 已存在的自訂欄位（來自現有 mappings） */}
+                  {[...new Set(mappings.map(m => m.excel_column).filter(Boolean))].map(col => (
+                    <option key={`existing-${col}`} value={col} />
+                  ))}
+                </datalist>
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#52525b' }}>類別</label>
@@ -417,9 +426,9 @@ export default function ItemMappingsClient({
               </div>
             </div>
             <div className="flex gap-2">
-              <button onClick={handleAdd} disabled={!newName.trim() || !newCol || isPending}
+              <button onClick={handleAdd} disabled={!newName.trim() || isPending}
                 className="px-4 py-2 rounded-xl text-sm font-semibold text-white"
-                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', opacity: !newName.trim() || !newCol || isPending ? 0.5 : 1 }}>
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', opacity: !newName.trim() || isPending ? 0.5 : 1 }}>
                 儲存
               </button>
               <button onClick={() => setShowAdd(false)}
@@ -496,13 +505,9 @@ export default function ItemMappingsClient({
 
                       {editId === m.id ? (
                         <>
-                          <select style={SELECT_STYLE} value={editCol} onChange={e => setEditCol(e.target.value)}>
-                            {Object.entries(EXCEL_COLUMNS).map(([c, cols]) => (
-                              <optgroup key={c} label={c}>
-                                {cols.map(col => <option key={col} value={col}>{col}</option>)}
-                              </optgroup>
-                            ))}
-                          </select>
+                          <input list="excel-col-list" style={SELECT_STYLE}
+                            value={editCol} onChange={e => setEditCol(e.target.value)}
+                            placeholder="Excel 欄位" />
                           <select style={SELECT_STYLE} value={editCat} onChange={e => setEditCat(e.target.value)}>
                             <option>食材</option><option>耗材</option><option>雜項</option>
                           </select>
