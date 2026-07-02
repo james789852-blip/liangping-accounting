@@ -81,11 +81,25 @@ export async function GET(req: NextRequest) {
 
   lines.push('')
 
-  // Section 4: 支出品項月合計
+  // Section 4: 支出品項月合計（含廠商 + 單據）
   lines.push('== 支出品項月合計 ==')
-  lines.push(['類別', '品項', '金額'].map(csvEscape).join(','))
+  lines.push(['類別', '廠商群組', '單據類型', '品項', '金額'].map(csvEscape).join(','))
   for (const item of monthly.expenseByItem) {
-    lines.push([item.category, item.item_name, item.total].map(csvEscape).join(','))
+    lines.push([item.category, item.vendor_group, item.doc_type, item.item_name, item.total].map(csvEscape).join(','))
+  }
+
+  lines.push('')
+
+  // Section 5: 每日支出明細（含廠商 + 單據 + 付款人）
+  lines.push('== 每日支出明細 ==')
+  lines.push(['日期', '類別', '廠商群組', '單據類型', '品項', '付款人', '金額'].map(csvEscape).join(','))
+  for (const d of monthly.daily) {
+    for (const e of d.expenses) {
+      lines.push([
+        d.date, e.category, e.vendor_group ?? '', e.doc_type ?? '',
+        e.item_name, e.payer_name ?? '', e.amount,
+      ].map(csvEscape).join(','))
+    }
   }
 
   const body = '﻿' + lines.join('\r\n')

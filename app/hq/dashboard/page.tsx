@@ -10,6 +10,7 @@ import {
 import Link from 'next/link'
 import { sortStores } from '@/lib/store-order'
 import { getCachedAllStores } from '@/lib/cached-queries'
+import HQAlertsCard from '@/components/hq/hq-alerts-card'
 
 export const dynamic = 'force-dynamic'
 
@@ -110,6 +111,9 @@ export default async function HQDashboard() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-5 pb-24 lg:pb-8">
+
+        {/* 今日提醒 */}
+        <HQAlertsCard />
 
         {/* Hero — 深色漸層 */}
         <div className="rounded-3xl p-8 relative overflow-hidden text-white"
