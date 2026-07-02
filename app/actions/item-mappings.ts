@@ -202,6 +202,38 @@ export async function reorderItemMappings(ids: string[]) {
   return { success: true }
 }
 
+/**
+ * 設定「品項層級 doc_type override」
+ * 若指定 storeId → 存到 store_items.doc_type_override（該店專屬）
+ * 若沒 storeId → 存到 system_items.doc_type_override（全域）
+ */
+export async function setItemDocOverride(itemName: string, storeId: string | null, docOverride: string | null) {
+  const admin = createAdminClient()
+  const { data: sys } = await admin.from('system_items')
+    .select('id').eq('name', itemName).eq('active', true).maybeSingle()
+  if (!sys) return { error: '找不到 system_item' }
+  if (storeId) {
+    const { data: existing } = await admin.from('store_items')
+      .select('id').eq('store_id', storeId).eq('system_item_id', sys.id).maybeSingle()
+    if (existing) {
+      await admin.from('store_items').update({
+        doc_type_override: docOverride || null, updated_at: new Date().toISOString(),
+      }).eq('id', existing.id)
+    } else {
+      await admin.from('store_items').insert({
+        store_id: storeId, system_item_id: sys.id, enabled: true,
+        doc_type_override: docOverride || null, sort_order: 200,
+      })
+    }
+  } else {
+    await admin.from('system_items').update({
+      doc_type_override: docOverride || null, updated_at: new Date().toISOString(),
+    }).eq('id', sys.id)
+  }
+  revalidate()
+  return { success: true as const }
+}
+
 export async function copyGlobalMappingsToStore(storeId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

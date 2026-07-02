@@ -20,18 +20,36 @@ export default async function ItemMappingsPage({
   if (!profile?.is_hq && profile?.role !== '老闆') redirect('/manager/dashboard')
 
   const admin = createAdminClient()
-  const [{ data: stores }, { data: mappings }, { data: vgs }] = await Promise.all([
+  const [{ data: stores }, { data: mappings }, { data: vgs }, { data: sysItems }, { data: storeItems }] = await Promise.all([
     admin.from('stores').select('id, name').eq('active', true).order('name'),
     admin.from('item_column_mappings').select('*').order('sort_order').order('item_category').order('item_name').limit(10000),
     admin.from('system_vendor_groups').select('id, name, sort_order, doc_type').eq('active', true).order('sort_order'),
+    admin.from('system_items').select('id, name, doc_type_override').eq('active', true),
+    admin.from('store_items').select('store_id, system_item_id, doc_type_override').eq('enabled', true),
   ])
 
   const params = await searchParams
   const storeId = params.storeId ?? ''
 
+  // 幫每個 mapping 加 doc_type_override 資訊
+  const sysByName = new Map((sysItems ?? []).map((s: any) => [s.name as string, { id: s.id as string, override: s.doc_type_override as string | null }]))
+  const storeOverrideMap = new Map<string, string | null>()
+  for (const si of storeItems ?? []) {
+    storeOverrideMap.set(`${si.store_id}||${si.system_item_id}`, si.doc_type_override ?? null)
+  }
+  const enrichedMappings = (mappings ?? []).map((m: any) => {
+    const sys = sysByName.get(m.item_name)
+    let override: string | null = sys?.override ?? null
+    if (m.store_id && sys) {
+      const storeOverride = storeOverrideMap.get(`${m.store_id}||${sys.id}`)
+      if (storeOverride !== undefined) override = storeOverride
+    }
+    return { ...m, doc_type_override: override }
+  })
+
   return (
     <ItemMappingsClient
-      mappings={mappings ?? []}
+      mappings={enrichedMappings}
       stores={sortStores(stores ?? [])}
       vendorGroups={vgs ?? []}
       selectedStoreId={storeId}

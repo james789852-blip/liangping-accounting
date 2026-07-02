@@ -11,7 +11,7 @@ import { toast } from 'sonner'
 import HelpBox from './help-box'
 
 interface Mapping {
-  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null
+  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null
 }
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
@@ -524,6 +524,15 @@ export default function ItemMappingsClient({
                       </div>
                       <span className="flex-1 text-sm font-semibold" style={{ color: '#18181b' }}>{displayName(m)}</span>
 
+                      {/* 品項單據 override（覆蓋 vg 預設） */}
+                      {editId !== m.id && (
+                        <ItemDocOverrideSelector
+                          itemName={m.item_name}
+                          storeId={m.store_id ?? null}
+                          currentOverride={m.doc_type_override ?? null}
+                        />
+                      )}
+
                       {editId === m.id ? (
                         <>
                           <input list="excel-col-list" style={SELECT_STYLE}
@@ -567,6 +576,40 @@ export default function ItemMappingsClient({
         })}
       </div>
     </div>
+  )
+}
+
+/** 品項層級 doc_type override（覆蓋 vg 預設） */
+function ItemDocOverrideSelector({ itemName, storeId, currentOverride }: {
+  itemName: string; storeId: string | null; currentOverride: string | null
+}) {
+  const [doc, setDoc] = useState(currentOverride ?? '')
+  const [saving, setSaving] = useState(false)
+  async function save(next: string) {
+    setDoc(next)
+    setSaving(true)
+    try {
+      const { setItemDocOverride } = await import('@/app/actions/item-mappings')
+      const r = await setItemDocOverride(itemName, storeId, next || null)
+      if ('error' in r) toast.error(String(r.error))
+    } finally { setSaving(false) }
+  }
+  return (
+    <select value={doc} onChange={e => save(e.target.value)} disabled={saving}
+      title={`「${itemName}」的單據 override（覆蓋廠商群組預設）`}
+      style={{
+        height: 22, padding: '0 4px', fontSize: 10, borderRadius: 4,
+        border: '1px solid #E0E7FF', background: doc ? '#DBEAFE' : 'transparent',
+        color: doc ? '#1E40AF' : '#a1a1aa', fontFamily: 'inherit', outline: 'none',
+      }}>
+      <option value="">單據 (預設)</option>
+      <option value="發票">發票</option>
+      <option value="收據">收據</option>
+      <option value="估價單">估價單</option>
+      <option value="公司開">公司開</option>
+      <option value="梁鑫開">梁鑫開</option>
+      <option value="府中開">府中開</option>
+    </select>
   )
 }
 
