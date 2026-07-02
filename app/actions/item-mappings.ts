@@ -163,9 +163,41 @@ export async function reorderItemMappings(ids: string[]) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '未登入' }
   const admin = createAdminClient()
+
+  // 1. 更新 item_column_mappings.sort_order（UI 排序）
   await Promise.all(
     ids.map((id, i) => admin.from('item_column_mappings').update({ sort_order: (i + 1) * 10 }).eq('id', id))
   )
+
+  // 2. 同步 system_items / store_items 的 sort_order（xlsx 匯出依這個排）
+  const { data: mappings } = await admin.from('item_column_mappings')
+    .select('id, item_name, store_id').in('id', ids)
+  if (mappings?.length) {
+    // 撈所有涉及的 system_items
+    const names = mappings.map(m => m.item_name)
+    const { data: sys } = await admin.from('system_items')
+      .select('id, name').in('name', names).eq('active', true)
+    const sysIdByName = new Map((sys ?? []).map((s: any) => [s.name, s.id]))
+
+    await Promise.all(ids.map(async (id, i) => {
+      const m = mappings.find(x => x.id === id)
+      if (!m) return
+      const order = (i + 1) * 10
+      const sysId = sysIdByName.get(m.item_name)
+      if (!sysId) return
+      if (m.store_id) {
+        // 該店 store_item.sort_order（優先）
+        await admin.from('store_items')
+          .update({ sort_order: order })
+          .eq('store_id', m.store_id)
+          .eq('system_item_id', sysId)
+      } else {
+        // 全域 mapping → 更新 system_items.sort_order
+        await admin.from('system_items').update({ sort_order: order }).eq('id', sysId)
+      }
+    }))
+  }
+
   revalidate()
   return { success: true }
 }
