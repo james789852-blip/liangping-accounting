@@ -503,6 +503,10 @@ export default function ItemMappingsClient({
                     <VgDocTypeSelector vgId={vgRec.id} vgName={vg} currentDoc={vgRec.doc_type ?? null} />
                   )
                 })()}
+                {/* Rename / 刪除 */}
+                {hasVgRecord && vg !== '未分類' && (
+                  <VgActions vgName={vg} storeId={activeStoreId || null} itemCount={items.length} onDone={() => router.refresh()} />
+                )}
               </div>
               <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                 {items.map((m, idx) => {
@@ -576,6 +580,71 @@ export default function ItemMappingsClient({
         })}
       </div>
     </div>
+  )
+}
+
+/** vg 修改名稱 / 刪除 */
+function VgActions({ vgName, storeId, itemCount, onDone }: { vgName: string; storeId: string | null; itemCount: number; onDone: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [newName, setNewName] = useState(vgName)
+  const [saving, setSaving] = useState(false)
+
+  async function handleRename() {
+    if (!newName.trim() || newName.trim() === vgName) { setEditing(false); return }
+    setSaving(true)
+    try {
+      const { renameVendorGroup } = await import('@/app/actions/item-mappings')
+      const r = await renameVendorGroup(vgName, newName.trim())
+      if ('error' in r) { toast.error(String(r.error)); return }
+      toast.success('已改名')
+      onDone()
+    } finally { setSaving(false); setEditing(false) }
+  }
+
+  async function handleDelete() {
+    const scope = storeId ? '本店' : '所有店家'
+    if (!confirm(`確定刪除「${vgName}」廠商群組？（${scope}，含底下 ${itemCount} 個品項的對應）\n\n※ 品項本身不會刪除，只是移除對應。可到品項對應管理重建。`)) return
+    setSaving(true)
+    try {
+      const { deleteVendorGroupWithItems } = await import('@/app/actions/item-mappings')
+      const r = await deleteVendorGroupWithItems(vgName, storeId ?? undefined)
+      if ('error' in r) { toast.error(String(r.error)); return }
+      toast.success(`已移除 ${r.mappingsRemoved} 筆對應`)
+      onDone()
+    } finally { setSaving(false) }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <input value={newName} onChange={e => setNewName(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleRename(); if (e.key === 'Escape') setEditing(false) }}
+          autoFocus
+          style={{ height: 22, padding: '0 6px', fontSize: 11, borderRadius: 4, border: '1.5px solid #F59E0B', outline: 'none' }} />
+        <button onClick={handleRename} disabled={saving}
+          style={{ background: 'none', border: 'none', color: '#047857', cursor: 'pointer', padding: 2 }}>
+          <Check className="h-3 w-3" />
+        </button>
+        <button onClick={() => setEditing(false)}
+          style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: 2 }}>
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    )
+  }
+  return (
+    <>
+      <button onClick={() => setEditing(true)}
+        title="改名"
+        style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: 2 }}>
+        <Edit2 className="h-3 w-3" />
+      </button>
+      <button onClick={handleDelete} disabled={saving}
+        title="刪除整個群組"
+        style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 2 }}>
+        <Trash2 className="h-3 w-3" />
+      </button>
+    </>
   )
 }
 

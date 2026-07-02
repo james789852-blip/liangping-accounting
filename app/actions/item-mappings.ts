@@ -234,6 +234,76 @@ export async function setItemDocOverride(itemName: string, storeId: string | nul
   return { success: true as const }
 }
 
+/** 修改廠商群組名稱（同步更新 system_vendor_groups + item_column_mappings） */
+export async function renameVendorGroup(oldName: string, newName: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+  const { data: profile } = await supabase
+    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
+  if (!profile?.is_hq && profile?.role !== '老闆') return { error: '權限不足' }
+  const trimmed = newName.trim()
+  if (!trimmed) return { error: '名稱不能空' }
+  if (trimmed === oldName) return { success: true as const }
+
+  const admin = createAdminClient()
+  // 檢查新名字有沒重複
+  const { data: dup } = await admin.from('system_vendor_groups').select('id').eq('name', trimmed).eq('active', true).maybeSingle()
+  if (dup) return { error: `已有廠商群組叫「${trimmed}」` }
+
+  await admin.from('system_vendor_groups').update({ name: trimmed, updated_at: new Date().toISOString() }).eq('name', oldName)
+  await admin.from('item_column_mappings').update({ vendor_group: trimmed, updated_at: new Date().toISOString() }).eq('vendor_group', oldName)
+
+  revalidate()
+  return { success: true as const }
+}
+
+/**
+ * 移除整個廠商群組（含底下所有 mappings + store_items disable + system_vendor_group deactivate）
+ * @param vgName - vendor_group 名稱
+ * @param storeId - 若有 → 只刪該店 mappings；若沒 → 也 deactivate 全域 vg
+ */
+export async function deleteVendorGroupWithItems(vgName: string, storeId?: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+  const { data: profile } = await supabase
+    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
+  if (!profile?.is_hq && profile?.role !== '老闆') return { error: '權限不足' }
+
+  const admin = createAdminClient()
+
+  // 1. 找 vg 底下的 mappings
+  let mapQuery = admin.from('item_column_mappings').select('id, item_name, store_id').eq('vendor_group', vgName)
+  if (storeId) mapQuery = mapQuery.eq('store_id', storeId)
+  const { data: mappings } = await mapQuery
+  const itemNames = [...new Set((mappings ?? []).map((m: any) => m.item_name as string))]
+
+  // 2. 刪除 mappings
+  if (mappings && mappings.length > 0) {
+    await admin.from('item_column_mappings').delete().in('id', mappings.map((m: any) => m.id))
+  }
+
+  // 3. Disable 對應 store_items
+  if (itemNames.length > 0) {
+    const { data: sys } = await admin.from('system_items').select('id, name').in('name', itemNames).eq('active', true)
+    const sysIds = (sys ?? []).map((s: any) => s.id)
+    if (sysIds.length > 0) {
+      let siQuery = admin.from('store_items').update({ enabled: false }).in('system_item_id', sysIds)
+      if (storeId) siQuery = siQuery.eq('store_id', storeId)
+      await siQuery
+    }
+  }
+
+  // 4. 若沒指定 store（全域刪除）→ deactivate system_vendor_group
+  if (!storeId) {
+    await admin.from('system_vendor_groups').update({ active: false }).eq('name', vgName)
+  }
+
+  revalidate()
+  return { success: true as const, mappingsRemoved: mappings?.length ?? 0, itemsAffected: itemNames.length }
+}
+
 export async function copyGlobalMappingsToStore(storeId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
