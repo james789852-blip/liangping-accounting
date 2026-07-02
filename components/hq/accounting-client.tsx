@@ -105,18 +105,20 @@ export default function AccountingClient({
             <h1 className="text-lg sm:text-xl font-bold" style={{ color: '#18181b' }}>帳目中心</h1>
           </div>
           <div className="flex items-center gap-1.5">
-            <button onClick={() => goDate(prevDay(date))} className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ border: '1px solid #e4e4e7', background: 'white' }}>
+            <button onClick={() => goDate(prevDay(date))} className="h-9 w-9 rounded-lg flex items-center justify-center" style={{ border: '1px solid #e4e4e7', background: 'white' }} title="前一天">
               <ChevronLeft className="h-4 w-4" style={{ color: '#52525b' }} />
             </button>
-            <span className="text-sm font-semibold tabular-nums px-2" style={{ color: '#18181b', minWidth: 96, textAlign: 'center' }}>{date}</span>
+            <input type="date" value={date} onChange={e => e.target.value && goDate(e.target.value)}
+              className="h-9 px-3 rounded-lg text-sm font-semibold tabular-nums"
+              style={{ border: '1px solid #e4e4e7', background: 'white', color: '#18181b', fontFamily: 'inherit', outline: 'none', minWidth: 148 }} />
             <button onClick={() => goDate(nextDay(date))} disabled={isToday}
-              className="h-8 w-8 rounded-lg flex items-center justify-center"
-              style={{ border: '1px solid #e4e4e7', background: 'white', opacity: isToday ? 0.4 : 1, cursor: isToday ? 'default' : 'pointer' }}>
+              className="h-9 w-9 rounded-lg flex items-center justify-center"
+              style={{ border: '1px solid #e4e4e7', background: 'white', opacity: isToday ? 0.4 : 1, cursor: isToday ? 'default' : 'pointer' }} title="後一天">
               <ChevronRight className="h-4 w-4" style={{ color: '#52525b' }} />
             </button>
             {!isToday && (
               <button onClick={() => goDate(new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10))}
-                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg"
+                className="text-xs font-semibold px-2.5 h-9 rounded-lg"
                 style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>今日</button>
             )}
           </div>
