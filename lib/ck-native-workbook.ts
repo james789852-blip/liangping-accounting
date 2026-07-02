@@ -10,6 +10,7 @@
  */
 import ExcelJS from 'exceljs'
 import { getCKMonthlyStats } from '@/lib/ck-aggregator'
+import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -54,16 +55,37 @@ export async function addCKSheet(
   year: number,
   monthNum: number,
 ): Promise<void> {
-  const monthly = await getCKMonthlyStats(ckStoreId, year, monthNum)
+  const [monthly, mappingItems] = await Promise.all([
+    getCKMonthlyStats(ckStoreId, year, monthNum),
+    getStoreItemsFromMappings(ckStoreId),
+  ])
 
   const ws = wb.addWorksheet(`${monthNum}月央廚食耗`, {
     views: [{ state: 'frozen', xSplit: 3, ySplit: 3 }],
   })
 
-  // 動態欄：成員店家 / 外部店家 / 支出品項（依當月出現過的）
+  // 動態欄：成員店家 / 外部店家 / 支出品項
+  //   支出品項改為 mapping-based（跟店家 xlsx 一樣）：
+  //   即使當月沒錄，layout 也顯示所有已設定品項欄；已錄金額自動填入
   const memberStores = monthly.memberByStore
   const externalNames = monthly.externalByName
-  const expenseItems = monthly.expenseByItem  // 已依 total desc 排序
+  const expenseByName = new Map(monthly.expenseByItem.map(e => [e.item_name, e]))
+  // 用 mapping 為主，若 mapping 沒有但實際有錄 → 也補進來（避免資料消失）
+  const seen = new Set(mappingItems.map(m => m.name))
+  const orphanFromReceipts = monthly.expenseByItem.filter(e => !seen.has(e.item_name))
+  const expenseItems: typeof monthly.expenseByItem = [
+    ...mappingItems.map(m => {
+      const rec = expenseByName.get(m.name)
+      return {
+        item_name: m.name,
+        category: m.category,
+        vendor_group: m.vendor_group,
+        doc_type: m.doc_type ?? '',
+        total: rec?.total ?? 0,
+      }
+    }),
+    ...orphanFromReceipts,
+  ]
 
   const cols: ColumnDef[] = []
   let idx = 1
