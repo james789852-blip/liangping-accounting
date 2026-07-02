@@ -31,13 +31,20 @@ interface StoreInfo {
 
 interface ColumnDef {
   index: number       // 1-based Excel column
-  header: string      // Row 3 (item name / income column title)
+  header: string      // Row 3 (顯示名，可能剝掉 vg 前綴)
+  nameKey?: string    // aggregator items 抓值用的完整 item_name
   vendorGroup?: string   // Row 1 (品項欄專用)
   docType?: string       // Row 2 (品項欄專用)
   category?: '食材' | '耗材' | '雜項'   // 用於 SUMIFS
   kind: 'date' | 'weekday' | 'spacer' | 'income' | 'stat' | 'item'
   incomeKey?: string  // 'pos' | 'twpay' | 'panda' | 'online' | 'online_cash' | 'uber:<account>' | 'after_deduct' | 'onsite' | 'actual' | 'ck' | 'variance' | 'revenue'
   statKey?: 'total' | 'food' | 'pack' | 'misc'
+}
+
+/** 剝掉 vg 前綴：例「振源滷蛋」→ vg=振源 → 「滷蛋」 */
+function displayHeader(name: string, vg?: string): string {
+  if (vg && name.startsWith(vg) && name !== vg) return name.slice(vg.length)
+  return name
 }
 
 /** Build the column layout for a store */
@@ -107,17 +114,19 @@ function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAcco
       return (a.vendor_group_sort_order - b.vendor_group_sort_order)
         || a.vendor_group.localeCompare(b.vendor_group)
     }
-    // 一個 merge 一個沒 → merge 的看 vg_sort_order；非 merge 的按 category 分區
-    // 統一用 (category, vg_sort_order, sort_order) — merge vg 靠 vg_sort_order 排到定位
+    // 同 category 內完全依 item.sort_order 排（廢除 vg_sort_order 這一層）
+    // → user 可跨 vg 拖動品項改變位置（例：把「豆腐稅金」sort_order 調到小雲旁邊）
+    // vg header 依「連續同 vg 就 merge」動態產生
     return ((catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3))
-      || (a.vendor_group_sort_order - b.vendor_group_sort_order)
       || (a.sort_order - b.sort_order)
+      || (a.vendor_group_sort_order - b.vendor_group_sort_order)  // fallback tiebreaker
       || a.name.localeCompare(b.name)
   })
   for (const it of sortedItems) {
     cols.push({
       index: idx++,
-      header: it.name,
+      header: displayHeader(it.name, it.vendor_group),
+      nameKey: it.name,
       vendorGroup: it.vendor_group,
       docType: it.doc_type ?? '',
       category: it.category,
@@ -256,7 +265,7 @@ export async function addFoodCostSheet(
   const vgRanges: Array<{ vg: string; source: string | null; start: number; end: number }> = []
   for (const c of itemCols) {
     const vg = c.vendorGroup ?? ''
-    const source = vg === '退稅' ? refundSource(c.header) : null
+    const source = vg === '退稅' ? refundSource(c.nameKey ?? c.header) : null
     const last = vgRanges[vgRanges.length - 1]
     const sameGroup = last && last.vg === vg && last.source === source
     if (sameGroup) {
@@ -455,7 +464,8 @@ export async function addFoodCostSheet(
         if (formula) cell.value = { formula } as any
         cell.numFmt = '#,##0;-#,##0;'
       } else if (c.kind === 'item' && dd) {
-        const v = dd.items[c.header] ?? 0
+        // nameKey = 完整 item_name（aggregator items 用），header 可能剝過前綴
+        const v = dd.items[c.nameKey ?? c.header] ?? 0
         if (v !== 0) cell.value = v
         cell.numFmt = '#,##0;-#,##0;'
       }
