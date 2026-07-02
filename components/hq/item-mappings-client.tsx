@@ -520,11 +520,36 @@ export default function ItemMappingsClient({
                 )}
               </div>
               <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                {items.map((m, idx) => {
-                  const catSt = CAT_STYLE[m.item_category] ?? CAT_STYLE['雜項']
-                  const isFirst = idx === 0
-                  const isLast = idx === items.length - 1
-                  return (
+                {(() => {
+                  // 「退稅」vg 特別處理：依品項名稱的「稅金/稅」前綴推導原廠商，拆子區塊
+                  // 例：「免洗稅金」→ 免洗、「豆腐稅金」→ 豆腐、「菜商稅金」→ 菜商
+                  const isRefund = vg === '退稅'
+                  const refundSource = (name: string) => {
+                    if (name.endsWith('稅金')) return name.slice(0, -2)
+                    if (name.endsWith('稅')) return name.slice(0, -1)
+                    return name
+                  }
+                  const uniqSources = isRefund ? new Set(items.map(i => refundSource(i.item_name))) : new Set<string>()
+                  const showSubHeaders = isRefund && uniqSources.size > 1
+                  const rendered: React.ReactNode[] = []
+                  let lastSource = ''
+                  items.forEach((m, idx) => {
+                    const catSt = CAT_STYLE[m.item_category] ?? CAT_STYLE['雜項']
+                    const isFirst = idx === 0
+                    const isLast = idx === items.length - 1
+                    const source = refundSource(m.item_name)
+                    if (showSubHeaders && source !== lastSource) {
+                      rendered.push(
+                        <div key={`sub-${m.id}`} className="px-4 py-1.5 text-[11px] font-semibold flex items-center gap-1.5"
+                          style={{ background: '#fef9c3', color: '#713f12', borderBottom: '1px solid #fde68a', borderTop: idx > 0 ? '2px solid #fbbf24' : 'none' }}>
+                          <span>🏷️</span>
+                          <span>{source} 退稅</span>
+                          <span className="text-[10px] font-normal" style={{ color: '#a1a1aa' }}>（獨立區塊）</span>
+                        </div>
+                      )
+                      lastSource = source
+                    }
+                    rendered.push(
                     <div key={m.id} className="flex items-center gap-3 px-4 py-2.5"
                       style={{ borderBottom: idx !== items.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
                       <div className="flex flex-col shrink-0" style={{ width: 20 }}>
@@ -594,7 +619,9 @@ export default function ItemMappingsClient({
                       )}
                     </div>
                   )
-                })}
+                  })
+                  return rendered
+                })()}
               </div>
             </div>
           )
