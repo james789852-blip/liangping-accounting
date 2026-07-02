@@ -137,9 +137,10 @@ interface Props {
   memberOrders: MemberOrder[]
   externalStores: ExternalStore[]
   existing: ExistingRecord | null
+  vendorGroups?: { id: string; name: string; doc_type: string | null }[]
 }
 
-export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders, externalStores, existing }: Props) {
+export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders, externalStores, existing, vendorGroups = [] }: Props) {
   const router = useRouter()
   const isLocked = existing?.status === 'submitted'
 
@@ -437,7 +438,16 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
                   <input className={INPUT} style={INPUT_STYLE} placeholder="廠商群組（如：雞肉商 / 菜商 / 雜貨 / 退稅）"
                     list="ck-vendor-groups"
                     value={newExpense.vendor_group}
-                    onChange={e => setNewExpense(p => ({ ...p, vendor_group: e.target.value }))} />
+                    onChange={e => {
+                      const v = e.target.value
+                      // 若使用者選了 DB 內的廠商，且該廠商有預設 doc_type → 自動填
+                      const matched = vendorGroups.find(g => g.name === v)
+                      setNewExpense(p => ({
+                        ...p,
+                        vendor_group: v,
+                        doc_type: matched?.doc_type ?? p.doc_type,
+                      }))
+                    }} />
                   <select className={INPUT} style={INPUT_STYLE}
                     value={newExpense.doc_type}
                     onChange={e => setNewExpense(p => ({ ...p, doc_type: e.target.value }))}>
@@ -450,17 +460,16 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
                   </select>
                 </div>
                 <datalist id="ck-vendor-groups">
-                  {[...new Set(expenses.map(e => e.vendor_group).filter(Boolean))].map(vg => (
-                    <option key={vg} value={vg} />
+                  {/* 從 DB 撈的央廚廠商群組（HQ 設定於 /hq/receipt-settings?type=ck） */}
+                  {vendorGroups.map(vg => (
+                    <option key={vg.id} value={vg.name} />
                   ))}
-                  <option value="雞肉商" />
-                  <option value="菜商" />
-                  <option value="雜貨" />
-                  <option value="翁師傅" />
-                  <option value="達特" />
-                  <option value="小雲" />
-                  <option value="退稅" />
-                  <option value="固定費用" />
+                  {/* 當日已輸入過的（避免重複） */}
+                  {[...new Set(expenses.map(e => e.vendor_group).filter(Boolean))]
+                    .filter(vg => !vendorGroups.find(x => x.name === vg))
+                    .map(vg => (
+                      <option key={vg} value={vg} />
+                    ))}
                 </datalist>
                 <div className="grid grid-cols-2 gap-2">
                   <input type="number" min="0" className={INPUT} style={INPUT_STYLE} placeholder="金額"

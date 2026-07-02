@@ -48,6 +48,7 @@ export default async function CKPage() {
     { data: externalStores },
     { data: ckRecord },
     { data: todayClosings },
+    { data: ckVendorGroups },
   ] = await Promise.all([
     assignedStoreIds.length > 0
       ? admin.from('stores').select('id, name').in('id', assignedStoreIds)
@@ -64,6 +65,9 @@ export default async function CKPage() {
           .in('store_id', assignedStoreIds)
           .eq('business_date', today)
       : Promise.resolve({ data: [] }),
+    admin.from('ck_vendor_groups')
+      .select('id, name, doc_type').eq('ck_store_id', storeId).eq('active', true)
+      .order('sort_order').order('name'),
   ])
 
   // 哪些店已送出今日結帳
@@ -230,6 +234,7 @@ export default async function CKPage() {
         memberOrders={memberOrders}
         externalStores={externalStores ?? []}
         existing={existing}
+        vendorGroups={(ckVendorGroups ?? []) as { id: string; name: string; doc_type: string | null }[]}
       />
     </div>
   )
