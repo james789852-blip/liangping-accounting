@@ -176,12 +176,6 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
                 年度 Excel（13 分頁）
               </button>
             </div>
-            <button onClick={() => handleExport('csv')} disabled={downloading || !storeId}
-              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold"
-              style={{ background: '#fafafa', border: '1.5px solid #e4e4e7', color: '#52525b', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
-              {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-              當月 CSV（Google Sheets / 會計軟體）
-            </button>
           </div>
         )}
       </div>
