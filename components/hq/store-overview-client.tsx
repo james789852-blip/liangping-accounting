@@ -253,8 +253,8 @@ function DailyPanel({ data, storeName, storeId, prev }: { data: DailyStats; stor
             <Stat label="(手動)POS" value={data.pos} color="#0369a1" prev={prev?.pos} />
             {data.channels?.twpay && <Stat label="TWPAY" value={data.twpay} color="#be123c" prev={prev?.twpay} />}
             {data.channels?.panda && <Stat label="Panda" value={data.panda} color="#f43f5e" prev={prev?.panda} />}
-            {data.channels?.online && <Stat label="Online" value={data.online} color="#8b5cf6" prev={prev?.online} />}
-            {data.channels?.online_cash && <Stat label="Online 現金" value={data.online_cash} color="#a855f7" prev={prev?.online_cash} />}
+            {data.channels?.online && <Stat label="線上點餐" value={data.online} color="#8b5cf6" prev={prev?.online} />}
+            {data.channels?.online_cash && <Stat label="線上點餐（現金）" value={data.online_cash} color="#a855f7" prev={prev?.online_cash} />}
             {uberEntries.map(([acc, v]) => (
               <Stat key={acc} label={`Uber ${acc}`} value={v} color="#22c55e" prev={prev?.uber[acc]} />
             ))}

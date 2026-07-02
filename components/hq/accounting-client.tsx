@@ -368,8 +368,8 @@ function StoreStatsGrid({ data }: { data: DailyStats }) {
           <Stat label="(手動)POS" value={data.pos} color="#0369a1" />
           {data.channels?.twpay && <Stat label="TWPAY" value={data.twpay} color="#be123c" />}
           {data.channels?.panda && <Stat label="Panda" value={data.panda} color="#f43f5e" />}
-          {data.channels?.online && <Stat label="Online" value={data.online} color="#8b5cf6" />}
-          {data.channels?.online_cash && <Stat label="Online 現金" value={data.online_cash} color="#a855f7" />}
+          {data.channels?.online && <Stat label="線上點餐" value={data.online} color="#8b5cf6" />}
+          {data.channels?.online_cash && <Stat label="線上點餐（現金）" value={data.online_cash} color="#a855f7" />}
           {uberEntries.map(([acc, v]) => <Stat key={acc} label={`Uber ${acc}`} value={v} color="#22c55e" />)}
           {handwriteEntries.map(([acc, v]) => <Stat key={acc} label={`手寫 ${acc}`} value={v} color="#f59e0b" />)}
         </div>

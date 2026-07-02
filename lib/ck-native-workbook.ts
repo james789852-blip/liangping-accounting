@@ -341,11 +341,19 @@ export async function addCKSheet(
     }
   }
 
-  // 欄寬
+  // 欄寬（依 header 中文字數動態拉寬，避免字體被壓縮）
   for (const c of cols) {
-    const w = c.kind === 'date' ? 10 : c.kind === 'weekday' ? 8 : c.kind === 'status' ? 8 : 12
+    const base = c.kind === 'date' ? 12 : c.kind === 'weekday' ? 10 : c.kind === 'status' ? 10 : 14
+    const headerLen = (c.header ?? '').length
+    const w = Math.max(base, headerLen * 2 + 2)
     ws.getColumn(c.index).width = w
+    ws.getColumn(c.index).alignment = { ...(ws.getColumn(c.index).alignment as any), shrinkToFit: false, wrapText: true }
   }
+  // Row 高度加大
+  ws.getRow(1).height = 32
+  ws.getRow(2).height = 26
+  ws.getRow(3).height = 32
+  ws.getRow(4).height = 26
 }
 
 /** 產出「央廚食耗成本」workbook（單月） */
