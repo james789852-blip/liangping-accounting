@@ -22,6 +22,13 @@ interface Closing {
   total_cost: number; total_expenses: number; stores: { name: string }
   revenue_items: RevenueItem[]; expense_items: ExpenseItem[]; order_items: OrderItem[]
   remittance_adjustments?: any[]; reserve_items?: ReserveItem[]
+  // 其他照片（總覽用）
+  ck_delivery_photo_url?: string | null
+  channel_photo_urls?: Record<string, string> | null
+  envelope_photo_url?: string | null
+  void_invoice_photo_urls?: string[] | null
+  note_photo_url?: string | null
+  extra_photo_urls?: string[] | null
 }
 interface Props {
   closing: Closing; receipts: Receipt[]; canReview: boolean; canDispute: boolean
@@ -285,6 +292,42 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                 </div>
               )}
             </div>
+
+            {/* 其他照片：央廚配送單 / 通路截圖 / 信封袋 / 作廢發票 / 備註 */}
+            {(() => {
+              const otherPhotos: { url: string; label: string }[] = []
+              if (closing.ck_delivery_photo_url) otherPhotos.push({ url: closing.ck_delivery_photo_url, label: '央廚配送單' })
+              if (closing.channel_photo_urls) {
+                for (const [k, url] of Object.entries(closing.channel_photo_urls)) {
+                  if (url) otherPhotos.push({ url: url as string, label: CHANNEL_LABEL[k] ?? k })
+                }
+              }
+              if (closing.envelope_photo_url) otherPhotos.push({ url: closing.envelope_photo_url, label: '信封袋' })
+              for (const [i, url] of (closing.void_invoice_photo_urls ?? []).entries()) {
+                otherPhotos.push({ url, label: `作廢發票${(closing.void_invoice_photo_urls?.length ?? 1) > 1 ? ` ${i + 1}` : ''}` })
+              }
+              if (closing.note_photo_url) otherPhotos.push({ url: closing.note_photo_url, label: '備註照片' })
+              for (const [i, url] of (closing.extra_photo_urls ?? []).entries()) {
+                otherPhotos.push({ url, label: `附加照片 ${i + 1}` })
+              }
+              if (otherPhotos.length === 0) return null
+              return (
+                <div>
+                  <SubLabel>其他照片</SubLabel>
+                  <div className="grid grid-cols-3 gap-2">
+                    {otherPhotos.map((p, i) => (
+                      <a key={i} href={p.url} target="_blank" rel="noopener noreferrer"
+                        className="block rounded-lg overflow-hidden"
+                        style={{ border: '1px solid #f4f4f5', background: 'white' }}>
+                        <img src={p.url} alt={p.label} loading="lazy"
+                          className="w-full aspect-square object-cover" />
+                        <p className="text-[10px] text-center py-1" style={{ color: '#71717a' }}>{p.label}</p>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )}
 
