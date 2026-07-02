@@ -358,11 +358,29 @@ export async function addFoodCostSheet(
   }
 
   // ── Row 5+ : 每日資料 ──
+  // 稅金 fallback：aggregator 產生「{vg}稅金」key，若 xlsx 沒該欄，累加到「其他稅金」
+  const itemNames = new Set(cols.filter(c => c.kind === 'item').map(c => c.header))
+  const fallbackTaxItem = itemNames.has('其他稅金') ? '其他稅金' : (itemNames.has('免洗稅金') ? '免洗稅金' : null)
+  function normalizeDayItems(items: Record<string, number>): Record<string, number> {
+    if (!fallbackTaxItem) return items
+    const next: Record<string, number> = { ...items }
+    for (const [key, val] of Object.entries(items)) {
+      // key 如「小雲稅金」「菜商稅金」等，若對應品項不存在 → 累加到 fallback
+      if (key.endsWith('稅金') && !itemNames.has(key)) {
+        next[fallbackTaxItem] = (next[fallbackTaxItem] ?? 0) + val
+        delete next[key]
+      }
+    }
+    return next
+  }
+
   const dayByDate = new Map(monthly.daily.map(d => [d.date, d] as const))
   for (let dayIdx = 0; dayIdx < daysInMonth; dayIdx++) {
     const rowNum = DATA_START + dayIdx
     const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(dayIdx + 1).padStart(2, '0')}`
     const dd = dayByDate.get(dateStr)
+    // 稅金 fallback
+    if (dd) dd.items = normalizeDayItems(dd.items)
     const dt = new Date(year, monthNum - 1, dayIdx + 1)
     const dow = dt.getDay()
     const isWeekend = dow === 0 || dow === 6
