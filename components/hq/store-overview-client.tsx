@@ -234,43 +234,53 @@ function DailyPanel({ data, storeName, prev }: { data: DailyStats; storeName: st
           {prev && <span className="text-[11px]" style={{ color: '#a1a1aa' }}>對比 {prev.date}</span>}
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          <Stat label="(手動)POS" value={data.pos} color="#0369a1" prev={prev?.pos} />
-          <Stat label="TWPAY" value={data.twpay} color="#be123c" prev={prev?.twpay} />
-          <Stat label="Panda" value={data.panda} color="#f43f5e" prev={prev?.panda} />
-          <Stat label="Online" value={data.online} color="#8b5cf6" prev={prev?.online} />
-          <Stat label="Online 現金" value={data.online_cash} color="#a855f7" prev={prev?.online_cash} />
-          {uberEntries.map(([acc, v]) => (
-            <Stat key={acc} label={`Uber ${acc}`} value={v} color="#22c55e" prev={prev?.uber[acc]} />
-          ))}
-          {handwriteEntries.map(([acc, v]) => (
-            <Stat key={acc} label={`手寫 ${acc}`} value={v} color="#f59e0b" prev={prev?.handwrite[acc]} />
-          ))}
+        <div>
+          <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>通路收入</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <Stat label="(手動)POS" value={data.pos} color="#0369a1" prev={prev?.pos} />
+            <Stat label="TWPAY" value={data.twpay} color="#be123c" prev={prev?.twpay} />
+            <Stat label="Panda" value={data.panda} color="#f43f5e" prev={prev?.panda} />
+            <Stat label="Online" value={data.online} color="#8b5cf6" prev={prev?.online} />
+            <Stat label="Online 現金" value={data.online_cash} color="#a855f7" prev={prev?.online_cash} />
+            {uberEntries.map(([acc, v]) => (
+              <Stat key={acc} label={`Uber ${acc}`} value={v} color="#22c55e" prev={prev?.uber[acc]} />
+            ))}
+            {handwriteEntries.map(([acc, v]) => (
+              <Stat key={acc} label={`手寫 ${acc}`} value={v} color="#f59e0b" prev={prev?.handwrite[acc]} />
+            ))}
+          </div>
         </div>
 
-        <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-3 gap-2" style={{ borderColor: '#f4f4f5' }}>
-          <Stat label="現場" value={data.onsite} color="#f97316" prev={prev?.onsite} />
-          <Stat label="(手動)實際$" value={data.actual} color="#dc2626" prev={prev?.actual} />
-          <Stat label="配送(月底結)" value={data.ck} color="#f97316" prev={prev?.ck} />
-          <Stat label="結果" value={data.variance} color="#0369a1" prev={prev?.variance} />
-          <Stat label="扣除後的$" value={data.after_deduct} color="#71717a" prev={prev?.after_deduct} />
-          <Stat label="營業額" value={data.revenue} color="#16a34a" prev={prev?.revenue} />
+        <div className="border-t pt-3" style={{ borderColor: '#f4f4f5' }}>
+          <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>結算</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <Stat label="現場" value={data.onsite} color="#f97316" prev={prev?.onsite} />
+            <Stat label="(手動)實際$" value={data.actual} color="#dc2626" prev={prev?.actual} />
+            <Stat label="配送(月底結)" value={data.ck} color="#f97316" prev={prev?.ck} />
+            <Stat label="結果" value={data.variance} color="#0369a1" prev={prev?.variance} />
+            <Stat label="扣除後的$" value={data.after_deduct} color="#71717a" prev={prev?.after_deduct} />
+            <Stat label="營業額" value={data.revenue} color="#16a34a" prev={prev?.revenue} />
+          </div>
         </div>
 
-        {/* 對應原 Excel 上方：梁平退稅、總發票、總收據 */}
-        <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-4 gap-2" style={{ borderColor: '#f4f4f5' }}>
-          <Stat label="總發票" value={data.invoiceTotal} color="#dc2626" prev={prev?.invoiceTotal} />
-          <Stat label="總收據" value={data.receiptTotal} color="#0369a1" prev={prev?.receiptTotal} />
-          <Stat label="估價單" value={data.estimateTotal} color="#8b5cf6" prev={prev?.estimateTotal} />
-          <Stat label="梁平退稅" value={data.taxRefund} color="#f59e0b" prev={prev?.taxRefund} />
+        <div className="border-t pt-3" style={{ borderColor: '#f4f4f5' }}>
+          <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>單據</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <Stat label="總發票" value={data.invoiceTotal} color="#dc2626" prev={prev?.invoiceTotal} />
+            <Stat label="總收據" value={data.receiptTotal} color="#0369a1" prev={prev?.receiptTotal} />
+            <Stat label="估價單" value={data.estimateTotal} color="#8b5cf6" prev={prev?.estimateTotal} />
+            <Stat label="梁平退稅" value={data.taxRefund} color="#f59e0b" prev={prev?.taxRefund} />
+          </div>
         </div>
 
-        {/* 原 Excel: 總 = 食 + 耗 + 雜 */}
-        <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-4 gap-2" style={{ borderColor: '#f4f4f5' }}>
-          <Stat label="總（食+耗+雜）" value={data.totalCost} color="#be123c" prev={prev?.totalCost} />
-          <Stat label="食材" value={data.food} color="#047857" prev={prev?.food} />
-          <Stat label="耗材" value={data.pack} color="#92400E" prev={prev?.pack} />
-          <Stat label="雜項" value={data.misc} color="#71717a" prev={prev?.misc} />
+        <div className="border-t pt-3" style={{ borderColor: '#f4f4f5' }}>
+          <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>成本</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <Stat label="總（食+耗+雜）" value={data.totalCost} color="#be123c" prev={prev?.totalCost} />
+            <Stat label="食材" value={data.food} color="#047857" prev={prev?.food} />
+            <Stat label="耗材" value={data.pack} color="#92400E" prev={prev?.pack} />
+            <Stat label="雜項" value={data.misc} color="#71717a" prev={prev?.misc} />
+          </div>
         </div>
       </div>
 
