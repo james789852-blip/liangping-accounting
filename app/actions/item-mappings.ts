@@ -16,13 +16,75 @@ export async function saveItemMapping(
   itemName: string, excelColumn: string, itemCategory: string, storeId?: string, vendorGroup?: string
 ) {
   const admin = createAdminClient()
+
+  // 1. 寫 item_column_mappings（原有邏輯 — 決定該品項對到 Excel 哪個欄名）
   await admin.from('item_column_mappings').insert({
     item_name: itemName, excel_column: excelColumn, item_category: itemCategory,
     vendor_group: vendorGroup ?? null,
     store_id: storeId ?? null, updated_at: new Date().toISOString(),
   })
+
+  // 2. 確保 system_items + store_items 也有這品項（xlsx 匯出從這裡讀）
+  //    否則新品項就算 mapping 有，xlsx 不會出現
+  await ensureSystemItemAndEnable(itemName, itemCategory, vendorGroup, storeId)
+
   revalidate()
   return { success: true }
+}
+
+/** 確保品項在 system_items 存在，且該店的 store_items 啟用 */
+async function ensureSystemItemAndEnable(
+  itemName: string, itemCategory: string, vendorGroup?: string, storeId?: string,
+) {
+  const admin = createAdminClient()
+  const catValid = (['食材', '耗材', '雜項'] as const).includes(itemCategory as any) ? itemCategory : '雜項'
+
+  // 找 vendor_group_id（若 vendorGroup 有值）
+  let vendorGroupId: string | null = null
+  if (vendorGroup?.trim()) {
+    const { data: vg } = await admin.from('system_vendor_groups')
+      .select('id').eq('name', vendorGroup.trim()).eq('active', true).maybeSingle()
+    if (vg) {
+      vendorGroupId = vg.id
+    } else {
+      // 建新的 vendor group
+      const { data: newVg } = await admin.from('system_vendor_groups').insert({
+        name: vendorGroup.trim(), sort_order: 100, active: true,
+      }).select('id').single()
+      vendorGroupId = newVg?.id ?? null
+    }
+  }
+
+  // 找/建 system_item
+  let systemItemId: string | null = null
+  const { data: existingSys } = await admin.from('system_items')
+    .select('id').eq('name', itemName).eq('active', true).maybeSingle()
+  if (existingSys) {
+    systemItemId = existingSys.id
+  } else {
+    const { data: newSys } = await admin.from('system_items').insert({
+      name: itemName, category: catValid,
+      vendor_group_id: vendorGroupId,
+      default_enabled: false, sort_order: 100, active: true,
+    }).select('id').single()
+    systemItemId = newSys?.id ?? null
+  }
+
+  // 若指定店家 → 啟用 store_items
+  if (storeId && systemItemId) {
+    const { data: existingStore } = await admin.from('store_items')
+      .select('id, enabled')
+      .eq('store_id', storeId).eq('system_item_id', systemItemId).maybeSingle()
+    if (existingStore) {
+      if (!existingStore.enabled) {
+        await admin.from('store_items').update({ enabled: true }).eq('id', existingStore.id)
+      }
+    } else {
+      await admin.from('store_items').insert({
+        store_id: storeId, system_item_id: systemItemId, enabled: true, sort_order: 200,
+      })
+    }
+  }
 }
 
 export async function saveItemMappingsBatch(
