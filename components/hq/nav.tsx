@@ -55,12 +55,13 @@ const hqSections = [
   {
     label: '系統管理',
     items: [
-      { href: '/hq/stores',           label: '店家管理',    icon: Store },
-      { href: '/hq/item-mappings',    label: '品項對應管理', icon: Package },
-      { href: '/hq/receipt-settings', label: '收據廠商設定', icon: Settings },
-      { href: '/hq/ck-prices',        label: '央廚單價',    icon: Package },
-      { href: '/hq/users',            label: '帳號管理',    icon: Users },
-      { href: '/hq/audit',            label: '操作軌跡',    icon: History },
+      { href: '/hq/stores',                label: '店家管理',    icon: Store },
+      { href: '/hq/item-mappings',         label: '品項對應管理', icon: Package },
+      { href: '/hq/cleanup-orphan-items',  label: '品項清理',    icon: Package },
+      { href: '/hq/receipt-settings',      label: '收據廠商設定', icon: Settings },
+      { href: '/hq/ck-prices',             label: '央廚單價',    icon: Package },
+      { href: '/hq/users',                 label: '帳號管理',    icon: Users },
+      { href: '/hq/audit',                 label: '操作軌跡',    icon: History },
     ],
   },
 ]
