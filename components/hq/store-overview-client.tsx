@@ -178,6 +178,11 @@ export default function StoreOverviewClient({ stores, initialStoreId }: { stores
               {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
               當月 CSV（Google Sheets / 會計軟體）
             </button>
+            <Link href={`/hq/item-mappings?storeId=${storeId}`}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold"
+              style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}>
+              🔧 品項對應管理（Excel 欄位順序 / 廠商 / 分類）
+            </Link>
           </div>
         )}
       </div>

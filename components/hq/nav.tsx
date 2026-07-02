@@ -51,11 +51,12 @@ const hqSections = [
       { href: '/hq/multi-store',    label: '多店比較',   icon: FileBarChart2 },
     ],
   },
-  // ── 系統與權限（整併：店家 / 收據廠商 / 央廚單價 / 帳號 / 軌跡）────
+  // ── 系統與權限（整併：店家 / 品項對應 / 收據廠商 / 央廚單價 / 帳號 / 軌跡）────
   {
     label: '系統管理',
     items: [
       { href: '/hq/stores',           label: '店家管理',    icon: Store },
+      { href: '/hq/item-mappings',    label: '品項對應管理', icon: Package },
       { href: '/hq/receipt-settings', label: '收據廠商設定', icon: Settings },
       { href: '/hq/ck-prices',        label: '央廚單價',    icon: Package },
       { href: '/hq/users',            label: '帳號管理',    icon: Users },
