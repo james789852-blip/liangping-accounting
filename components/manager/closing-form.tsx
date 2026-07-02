@@ -2061,9 +2061,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           const itemsTotal = (form.items ?? []).filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
                           const hasItemsTotal = itemsTotal !== 0
                           return (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                {form.has_tax ? '金額（未稅）*' : '金額 *'}
+                                金額 *
                                 {hasItemsTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
                               </label>
                               <input type="number" min="0" inputMode="numeric" placeholder="0" readOnly={hasItemsTotal}
@@ -2073,31 +2073,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             </div>
                           )
                         })()}
-
-                        {/* 稅 */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>稅</label>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 0', fontSize: '13px', color: '#52525b' }}>
-                            <input type="checkbox" id={`tax-${form.id}`} checked={form.has_tax}
-                              onChange={e => updateReceiptForm(form.id, 'has_tax', e.target.checked)} />
-                            <label htmlFor={`tax-${form.id}`} style={{ cursor: 'pointer' }}>稅外加</label>
-                            {form.has_tax && (
-                              <input type="number" min="0" inputMode="numeric" placeholder="稅額"
-                                style={{ width: '68px', padding: '4px 8px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '13px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', outline: 'none' }}
-                                value={form.tax_amount || ''}
-                                onChange={e => updateReceiptForm(form.id, 'tax_amount', parseInt(e.target.value) || 0)} />
-                            )}
-                          </div>
-                        </div>
-
-                        {/* 含稅總額（僅稅外加時顯示） */}
-                        {form.has_tax && form.total_amount > 0 && (
-                          <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>含稅總額</label>
-                            <input type="number" value={form.total_amount + (form.tax_amount || 0)} readOnly
-                              style={{ padding: '8px 10px', border: '1.5px solid #fcd34d', borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', background: '#fffbeb', outline: 'none', fontFamily: 'inherit', color: '#92400e' }} />
-                          </div>
-                        )}
+                        {/* 稅外加 UI 已移除 — 稅金請直接選稅金品項輸入金額（例：豆腐稅金） */}
 
                         {/* 備註 */}
                         <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -2373,7 +2349,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               return (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                   <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    {editHasTax ? '金額（未稅）*' : '金額 *'}
+                                    金額 *
                                     {editHasItemsTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
                                   </label>
                                   <input type="number" min="0" inputMode="numeric" placeholder="0" readOnly={editHasItemsTotal}
@@ -2384,28 +2360,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               )
                             })()}
 
-                            {/* 稅 */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>稅</label>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 0', fontSize: '13px', color: '#52525b' }}>
-                                <input type="checkbox" id="edit-tax" checked={editHasTax} onChange={e => setEditHasTax(e.target.checked)} />
-                                <label htmlFor="edit-tax" style={{ cursor: 'pointer' }}>稅外加</label>
-                                {editHasTax && (
-                                  <input type="number" min="0" inputMode="numeric" placeholder="稅額"
-                                    style={{ width: '68px', padding: '4px 8px', border: '1px solid #e4e4e7', borderRadius: '6px', fontSize: '13px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', outline: 'none' }}
-                                    value={editTaxAmount || ''} onChange={e => setEditTaxAmount(parseInt(e.target.value) || 0)} />
-                                )}
-                              </div>
-                            </div>
-
-                            {/* 含稅總額 */}
-                            {editHasTax && editAmount > 0 && (
-                              <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>含稅總額</label>
-                                <input type="number" value={editAmount + (editTaxAmount || 0)} readOnly
-                                  style={{ padding: '8px 10px', border: '1.5px solid #fcd34d', borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', background: '#fffbeb', outline: 'none', fontFamily: 'inherit', color: '#92400e' }} />
-                              </div>
-                            )}
+                            {/* 稅外加 UI 已移除 — 稅金請直接選稅金品項輸入金額 */}
 
                             {/* 備註 */}
                             <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
