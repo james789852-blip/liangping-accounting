@@ -24,8 +24,8 @@ export default async function ItemMappingsPage({
     admin.from('stores').select('id, name').eq('active', true).order('name'),
     admin.from('item_column_mappings').select('*').order('sort_order').order('item_category').order('item_name').limit(10000),
     admin.from('system_vendor_groups').select('id, name, sort_order, doc_type').eq('active', true).order('sort_order'),
-    admin.from('system_items').select('id, name, doc_type_override').eq('active', true),
-    admin.from('store_items').select('store_id, system_item_id, doc_type_override').eq('enabled', true),
+    admin.from('system_items').select('id, name, doc_type_override').eq('active', true).limit(10000),
+    admin.from('store_items').select('store_id, system_item_id, doc_type_override').eq('enabled', true).limit(10000),
   ])
 
   const params = await searchParams
