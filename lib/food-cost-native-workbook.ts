@@ -114,12 +114,11 @@ function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAcco
       return (a.vendor_group_sort_order - b.vendor_group_sort_order)
         || a.vendor_group.localeCompare(b.vendor_group)
     }
-    // 同 category 內完全依 item.sort_order 排（廢除 vg_sort_order 這一層）
-    // → user 可跨 vg 拖動品項改變位置（例：把「豆腐稅金」sort_order 調到小雲旁邊）
-    // vg header 依「連續同 vg 就 merge」動態產生
+    // 恢復舊排序：category → vg_sort_order → item.sort_order → name
+    // 跨 vg 移動品項的訴求，之後改用「加 is_refund 欄位分離 vg 和退稅屬性」方案
     return ((catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3))
+      || (a.vendor_group_sort_order - b.vendor_group_sort_order)
       || (a.sort_order - b.sort_order)
-      || (a.vendor_group_sort_order - b.vendor_group_sort_order)  // fallback tiebreaker
       || a.name.localeCompare(b.name)
   })
   for (const it of sortedItems) {
