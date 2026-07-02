@@ -80,7 +80,20 @@ function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAcco
   const mergedVgs = new Set(
     items.filter(i => i.vg_merge_across_category).map(i => i.vendor_group)
   )
+  // 「退稅」品項按名稱推導原廠商，讓同來源在 xlsx 內連續排（自然形成獨立區塊）
+  const refundSrc = (name: string) => {
+    if (name.endsWith('稅金')) return name.slice(0, -2)
+    if (name.endsWith('稅')) return name.slice(0, -1)
+    return name
+  }
   const sortedItems = [...items].sort((a, b) => {
+    // 同 vg=退稅：先按 refundSource 分組（同來源連續），再按 sort_order
+    if (a.vendor_group === '退稅' && b.vendor_group === '退稅') {
+      const sa = refundSrc(a.name)
+      const sb = refundSrc(b.name)
+      if (sa !== sb) return sa.localeCompare(sb, 'zh-Hant')
+      return (a.sort_order - b.sort_order) || a.name.localeCompare(b.name)
+    }
     const aMerge = mergedVgs.has(a.vendor_group)
     const bMerge = mergedVgs.has(b.vendor_group)
     // 若兩者都在 merge vg 且同 vg → 直接 vg 內連續排
@@ -232,14 +245,24 @@ export async function addFoodCostSheet(
 
   // ── Row 1 / Row 2：品項欄的 vendor_group / doc_type ──
   // 加 merge cells: 連續相同 vendor_group 的品項欄合併
+  // 「退稅」vg 特殊：同 vg 內若品項對應不同原廠商 → 拆多個獨立 header
+  //   Row 1 都寫「退稅」讓 SUMIFS(vg=退稅) 抓得到總額；用左右粗邊界視覺區分
+  const refundSource = (name: string) => {
+    if (name.endsWith('稅金')) return name.slice(0, -2)
+    if (name.endsWith('稅')) return name.slice(0, -1)
+    return name
+  }
   const itemCols = cols.filter(c => c.kind === 'item')
-  const vgRanges: Array<{ vg: string; start: number; end: number }> = []
+  const vgRanges: Array<{ vg: string; source: string | null; start: number; end: number }> = []
   for (const c of itemCols) {
+    const vg = c.vendorGroup ?? ''
+    const source = vg === '退稅' ? refundSource(c.header) : null
     const last = vgRanges[vgRanges.length - 1]
-    if (last && last.vg === c.vendorGroup) {
+    const sameGroup = last && last.vg === vg && last.source === source
+    if (sameGroup) {
       last.end = c.index
     } else {
-      vgRanges.push({ vg: c.vendorGroup ?? '', start: c.index, end: c.index })
+      vgRanges.push({ vg, source, start: c.index, end: c.index })
     }
   }
   for (const r of vgRanges) {
@@ -247,6 +270,13 @@ export async function addFoodCostSheet(
     fillHeaderCell(cell, r.vg, vgColor(r.vg), 'FF000000', true, 13)
     if (r.end > r.start) {
       ws.mergeCells(1, r.start, 1, r.end)
+    }
+    // 「退稅」拆多塊時加粗邊界視覺分隔
+    if (r.vg === '退稅' && r.source) {
+      const c1 = ws.getRow(1).getCell(r.start)
+      c1.border = { ...(c1.border ?? {}), left: { style: 'medium', color: { argb: 'FF7C2D12' } } }
+      const c2 = ws.getRow(1).getCell(r.end)
+      c2.border = { ...(c2.border ?? {}), right: { style: 'medium', color: { argb: 'FF7C2D12' } } }
     }
   }
 
