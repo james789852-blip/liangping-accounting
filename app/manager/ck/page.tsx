@@ -82,7 +82,7 @@ export default async function CKPage() {
     note?: string
     status: string
     externalOrders: { name: string; amount: number }[]
-    expenses: { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string }[]
+    expenses: { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string; vendor_group: string; doc_type: string }[]
     receiptPhotoUrls?: string[]
   } | null = null
 
@@ -96,7 +96,7 @@ export default async function CKPage() {
         .eq('ck_daily_record_id', ckRecord.id).not('store_id', 'is', null),
       admin.from('ck_store_orders').select('external_store_name, amount')
         .eq('ck_daily_record_id', ckRecord.id).is('store_id', null),
-      admin.from('ck_expense_items').select('id, category, item_name, amount, payer_name')
+      admin.from('ck_expense_items').select('id, category, item_name, amount, payer_name, vendor_group, doc_type')
         .eq('ck_daily_record_id', ckRecord.id).order('sort_order'),
     ])
 
@@ -122,6 +122,8 @@ export default async function CKPage() {
         item_name: e.item_name as string,
         amount: e.amount as number,
         payer_name: (e.payer_name ?? '') as string,
+        vendor_group: (e.vendor_group ?? '') as string,
+        doc_type: (e.doc_type ?? '') as string,
       })),
       receiptPhotoUrls: ((ckRecord as any).receipt_photo_urls as string[] | null) ?? [],
     }

@@ -113,7 +113,7 @@ function CrossCheckRow({ order, ckDailyRecordId, disabled }: {
 interface MemberOrder { store_id: string; store_name: string; amount: number; submitted: boolean; confirmed_amount?: number | null }
 interface ExternalStore { id: string; name: string }
 interface ExternalOrder { name: string; amount: number }
-interface Expense { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string }
+interface Expense { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string; vendor_group: string; doc_type: string }
 interface ExistingRecord {
   id: string
   payer_name?: string
@@ -155,8 +155,10 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
 
   // 支出明細
   const [expenses, setExpenses] = useState<Expense[]>(existing?.expenses ?? [])
-  const [newExpense, setNewExpense] = useState<{ category: '食材' | '耗材' | '雜項'; item_name: string; amount: string; payer_name: string }>({
-    category: '食材', item_name: '', amount: '', payer_name: '',
+  const [newExpense, setNewExpense] = useState<{
+    category: '食材' | '耗材' | '雜項'; item_name: string; amount: string; payer_name: string; vendor_group: string; doc_type: string
+  }>({
+    category: '食材', item_name: '', amount: '', payer_name: '', vendor_group: '', doc_type: '發票',
   })
 
   // 收據照片
@@ -192,6 +194,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
       item_name: newExpense.item_name.trim(),
       amount: Number(newExpense.amount) || 0,
       payer_name: newExpense.payer_name.trim(),
+      vendor_group: newExpense.vendor_group.trim(),
+      doc_type: newExpense.doc_type,
     }])
     setNewExpense(p => ({ ...p, item_name: '', amount: '', payer_name: '' }))
   }
@@ -232,7 +236,12 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
       note: note || undefined,
       status: asSubmit ? 'submitted' : 'draft',
       externalOrders: extOrders.filter(o => o.amount > 0),
-      expenses: expenses.map(e => ({ category: e.category, item_name: e.item_name, amount: e.amount, payer_name: e.payer_name || undefined })),
+      expenses: expenses.map(e => ({
+        category: e.category, item_name: e.item_name, amount: e.amount,
+        payer_name: e.payer_name || undefined,
+        vendor_group: e.vendor_group || undefined,
+        doc_type: e.doc_type || undefined,
+      })),
       receiptPhotoUrls: photoUrls,
     })
     if (r.error) { toast.error('儲存失敗：' + r.error) }
@@ -388,10 +397,17 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
                   style={{ background: CAT_COLORS[e.category]?.bg, color: CAT_COLORS[e.category]?.text }}>
                   {e.category}
                 </span>
-                <span className="flex-1 text-sm" style={{ color: '#18181b' }}>
-                  {e.item_name}
-                  {e.payer_name && <span className="ml-1.5 text-xs" style={{ color: '#a1a1aa' }}>（{e.payer_name}付）</span>}
-                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm" style={{ color: '#18181b' }}>
+                    {e.item_name}
+                    {e.payer_name && <span className="ml-1.5 text-xs" style={{ color: '#a1a1aa' }}>（{e.payer_name}付）</span>}
+                  </div>
+                  {(e.vendor_group || e.doc_type) && (
+                    <div className="text-[11px] mt-0.5" style={{ color: '#a1a1aa' }}>
+                      {e.vendor_group || '未分類'}{e.doc_type ? ` · ${e.doc_type}` : ''}
+                    </div>
+                  )}
+                </div>
                 <span className="text-sm font-bold tabular-nums shrink-0" style={{ color: '#18181b' }}>${fmt(e.amount)}</span>
                 {!isLocked && (
                   <button type="button" onClick={() => removeExpense(e.id)} style={{ color: '#a1a1aa', background: 'none', border: 'none', cursor: 'pointer' }}>
@@ -417,6 +433,35 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
                 </div>
                 <input className={INPUT} style={INPUT_STYLE} placeholder="品項名稱（如：順正雞肉）"
                   value={newExpense.item_name} onChange={e => setNewExpense(p => ({ ...p, item_name: e.target.value }))} />
+                <div className="grid grid-cols-2 gap-2">
+                  <input className={INPUT} style={INPUT_STYLE} placeholder="廠商群組（如：雞肉商 / 菜商 / 雜貨 / 退稅）"
+                    list="ck-vendor-groups"
+                    value={newExpense.vendor_group}
+                    onChange={e => setNewExpense(p => ({ ...p, vendor_group: e.target.value }))} />
+                  <select className={INPUT} style={INPUT_STYLE}
+                    value={newExpense.doc_type}
+                    onChange={e => setNewExpense(p => ({ ...p, doc_type: e.target.value }))}>
+                    <option value="發票">發票</option>
+                    <option value="收據">收據</option>
+                    <option value="估價單">估價單</option>
+                    <option value="公司開">公司開</option>
+                    <option value="梁鑫開">梁鑫開</option>
+                    <option value="">（不指定）</option>
+                  </select>
+                </div>
+                <datalist id="ck-vendor-groups">
+                  {[...new Set(expenses.map(e => e.vendor_group).filter(Boolean))].map(vg => (
+                    <option key={vg} value={vg} />
+                  ))}
+                  <option value="雞肉商" />
+                  <option value="菜商" />
+                  <option value="雜貨" />
+                  <option value="翁師傅" />
+                  <option value="達特" />
+                  <option value="小雲" />
+                  <option value="退稅" />
+                  <option value="固定費用" />
+                </datalist>
                 <div className="grid grid-cols-2 gap-2">
                   <input type="number" min="0" className={INPUT} style={INPUT_STYLE} placeholder="金額"
                     value={newExpense.amount} onChange={e => setNewExpense(p => ({ ...p, amount: e.target.value }))} />
