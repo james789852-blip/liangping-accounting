@@ -32,11 +32,16 @@ export interface CKDailyStats {
   externalRevenue: number
   revenue: number
   // Expense
-  expenses: Array<{ category: string; item_name: string; amount: number; payer_name?: string }>
+  expenses: Array<{ category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string }>
   food: number
   pack: number
   misc: number
   totalExpense: number
+  // 依單據類型加總
+  invoiceTotal: number    // doc_type=發票
+  receiptTotal: number    // doc_type=收據
+  estimateTotal: number   // doc_type=估價單
+  taxRefund: number       // doc_type=發票 且 vg 含「退稅」
   // Balance
   balance: number
   receiptPhotoUrls: string[]
@@ -55,10 +60,14 @@ export interface CKMonthlyStats {
     pack: number
     misc: number
     totalExpense: number
+    invoiceTotal: number
+    receiptTotal: number
+    estimateTotal: number
+    taxRefund: number
     balance: number
   }
-  // 品項月合計
-  expenseByItem: Array<{ category: string; item_name: string; total: number }>
+  // 品項月合計（含 vendor_group / doc_type）
+  expenseByItem: Array<{ category: string; vendor_group: string; doc_type: string; item_name: string; total: number }>
   // 分店訂單月合計
   memberByStore: Array<{ store_id: string; store_name: string; total: number }>
   externalByName: Array<{ name: string; total: number }>
@@ -76,6 +85,7 @@ function emptyDay(date: string): CKDailyStats {
     memberRevenue: 0, externalRevenue: 0, revenue: 0,
     expenses: [],
     food: 0, pack: 0, misc: 0, totalExpense: 0,
+    invoiceTotal: 0, receiptTotal: 0, estimateTotal: 0, taxRefund: 0,
     balance: 0,
     receiptPhotoUrls: [],
   }
@@ -111,7 +121,7 @@ export async function getCKRangeStats(
       ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount').in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
-      ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name').in('ck_daily_record_id', recordIds).order('sort_order')
+      ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type').in('ck_daily_record_id', recordIds).order('sort_order')
       : Promise.resolve({ data: [] }),
   ])
 
@@ -148,11 +158,26 @@ export async function getCKRangeStats(
       // 支出
       const exps = (expenses ?? []).filter((e: any) => e.ck_daily_record_id === rec.id)
       for (const e of exps) {
-        dd.expenses.push({ category: e.category, item_name: e.item_name, amount: e.amount ?? 0, payer_name: e.payer_name ?? undefined })
+        const vg = (e.vendor_group ?? '') as string
+        const doc = (e.doc_type ?? '') as string
+        dd.expenses.push({
+          category: e.category, item_name: e.item_name, amount: e.amount ?? 0,
+          payer_name: e.payer_name ?? undefined,
+          vendor_group: vg || undefined, doc_type: doc || undefined,
+        })
         const amt = e.amount ?? 0
         if (e.category === '食材') dd.food += amt
         else if (e.category === '耗材') dd.pack += amt
         else dd.misc += amt
+        // 依單據類型加總
+        if (doc === '發票') {
+          dd.invoiceTotal += amt
+          if (vg.includes('退稅')) dd.taxRefund += amt
+        } else if (doc === '收據') {
+          dd.receiptTotal += amt
+        } else if (doc === '估價單') {
+          dd.estimateTotal += amt
+        }
       }
       dd.totalExpense = dd.food + dd.pack + dd.misc
       dd.balance = dd.revenue - dd.totalExpense
@@ -170,9 +195,11 @@ export async function getCKMonthlyStats(ckStoreId: string, year: number, monthNu
 
   const totals = {
     memberRevenue: 0, externalRevenue: 0, revenue: 0,
-    food: 0, pack: 0, misc: 0, totalExpense: 0, balance: 0,
+    food: 0, pack: 0, misc: 0, totalExpense: 0,
+    invoiceTotal: 0, receiptTotal: 0, estimateTotal: 0, taxRefund: 0,
+    balance: 0,
   }
-  const itemMap: Record<string, { category: string; item_name: string; total: number }> = {}
+  const itemMap: Record<string, { category: string; vendor_group: string; doc_type: string; item_name: string; total: number }> = {}
   const memberMap: Record<string, { store_id: string; store_name: string; total: number }> = {}
   const externalMap: Record<string, { name: string; total: number }> = {}
 
@@ -184,10 +211,16 @@ export async function getCKMonthlyStats(ckStoreId: string, year: number, monthNu
     totals.pack += d.pack
     totals.misc += d.misc
     totals.totalExpense += d.totalExpense
+    totals.invoiceTotal += d.invoiceTotal
+    totals.receiptTotal += d.receiptTotal
+    totals.estimateTotal += d.estimateTotal
+    totals.taxRefund += d.taxRefund
     totals.balance += d.balance
     for (const e of d.expenses) {
-      const key = `${e.category}||${e.item_name}`
-      if (!itemMap[key]) itemMap[key] = { category: e.category, item_name: e.item_name, total: 0 }
+      const vg = e.vendor_group ?? ''
+      const doc = e.doc_type ?? ''
+      const key = `${e.category}||${vg}||${doc}||${e.item_name}`
+      if (!itemMap[key]) itemMap[key] = { category: e.category, vendor_group: vg, doc_type: doc, item_name: e.item_name, total: 0 }
       itemMap[key].total += e.amount
     }
     for (const o of d.memberOrders) {

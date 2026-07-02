@@ -18,6 +18,8 @@ interface ColumnDef {
   header: string
   kind: 'date' | 'weekday' | 'status' | 'member' | 'external' | 'expense' | 'stat'
   category?: '食材' | '耗材' | '雜項'
+  vendorGroup?: string
+  docType?: string
   itemKey?: string
   statKey?: 'memberRevenue' | 'externalRevenue' | 'revenue' | 'food' | 'pack' | 'misc' | 'totalExpense' | 'balance'
 }
@@ -81,14 +83,24 @@ export async function addCKSheet(
   // 收入小計欄
   cols.push({ index: idx++, header: '總收入', kind: 'stat', statKey: 'revenue' })
 
-  // 支出品項欄（依 category 排序：食→耗→雜）
+  // 支出品項欄（依 category → vendor_group → doc_type → item_name 排序）
   const catOrder: Record<string, number> = { '食材': 0, '耗材': 1, '雜項': 2 }
   const sortedExpenseItems = [...expenseItems].sort((a, b) =>
     (catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3)
+    || (a.vendor_group || '').localeCompare(b.vendor_group || '')
+    || (a.doc_type || '').localeCompare(b.doc_type || '')
     || b.total - a.total
   )
   for (const e of sortedExpenseItems) {
-    cols.push({ index: idx++, header: e.item_name, kind: 'expense', category: e.category as any, itemKey: `${e.category}||${e.item_name}` })
+    cols.push({
+      index: idx++,
+      header: e.item_name,
+      kind: 'expense',
+      category: e.category as any,
+      vendorGroup: e.vendor_group || '',
+      docType: e.doc_type || '',
+      itemKey: `${e.category}||${e.vendor_group || ''}||${e.doc_type || ''}||${e.item_name}`,
+    })
   }
 
   // 支出小計 + 淨額
@@ -125,25 +137,58 @@ export async function addCKSheet(
     if (e > s) ws.mergeCells(2, s, 2, e)
   }
   if (expenseCols.length > 0) {
-    const s = expenseCols[0].index, e = expenseCols[expenseCols.length - 1].index
-    fillHeader(ws.getRow(1).getCell(s), '費用支出', 'FFFDE9D9', true)
-    if (e > s) ws.mergeCells(1, s, 1, e)
-    // Row 2 依 category 分區
-    let curCat = expenseCols[0].category
-    let curStart = expenseCols[0].index
+    // Row 1: 廠商群組（vendor_group），連續相同就 merge
+    const vgRanges: Array<{ vg: string; start: number; end: number }> = []
     for (const c of expenseCols) {
-      if (c.category !== curCat) {
-        const prevEnd = c.index - 1
-        fillHeader(ws.getRow(2).getCell(curStart), curCat!, 'FFFCE4D6', true)
-        if (prevEnd > curStart) ws.mergeCells(2, curStart, 2, prevEnd)
-        curCat = c.category
-        curStart = c.index
-      }
+      const last = vgRanges[vgRanges.length - 1]
+      if (last && last.vg === (c.vendorGroup ?? '')) last.end = c.index
+      else vgRanges.push({ vg: c.vendorGroup ?? '', start: c.index, end: c.index })
     }
-    // 最後一段
-    const lastEnd = expenseCols[expenseCols.length - 1].index
-    fillHeader(ws.getRow(2).getCell(curStart), curCat!, 'FFFCE4D6', true)
-    if (lastEnd > curStart) ws.mergeCells(2, curStart, 2, lastEnd)
+    for (const r of vgRanges) {
+      fillHeader(ws.getRow(1).getCell(r.start), r.vg || '未分類', 'FFFDE9D9', true)
+      if (r.end > r.start) ws.mergeCells(1, r.start, 1, r.end)
+    }
+    // Row 2: 單據類型（doc_type），同 vg 內連續相同就 merge
+    const docRanges: Array<{ doc: string; vg: string; start: number; end: number }> = []
+    for (const c of expenseCols) {
+      const key = `${c.vendorGroup ?? ''}|${c.docType ?? ''}`
+      const last = docRanges[docRanges.length - 1]
+      const lastKey = last ? `${last.vg}|${last.doc}` : ''
+      if (last && lastKey === key) last.end = c.index
+      else docRanges.push({ doc: c.docType ?? '', vg: c.vendorGroup ?? '', start: c.index, end: c.index })
+    }
+    for (const r of docRanges) {
+      if (!r.doc) continue
+      fillHeader(ws.getRow(2).getCell(r.start), r.doc, 'FFC6D9F0', true)
+      if (r.end > r.start) ws.mergeCells(2, r.start, 2, r.end)
+    }
+  }
+
+  // 「梁平退稅 / 總發票 / 總收據」統計欄 — 放在總收入欄上方（Row 1 + Row 2）
+  const revStatCol = cols.find(c => c.statKey === 'revenue')?.index
+  if (revStatCol && expenseCols.length > 0) {
+    const eS = colLetter(expenseCols[0].index)
+    const eE = colLetter(expenseCols[expenseCols.length - 1].index)
+    const totalRange = `${eS}${TOTAL_ROW}:${eE}${TOTAL_ROW}`
+    const docRow2 = `${eS}2:${eE}2`
+    const vgRow1 = `${eS}1:${eE}1`
+
+    // 梁平退稅
+    fillHeader(ws.getRow(1).getCell(revStatCol - 1), '梁平退稅', 'FFC6EFCE', true)
+    const refundCell = ws.getRow(1).getCell(revStatCol)
+    refundCell.value = { formula: `SUMIFS(${totalRange},${docRow2},"發票",${vgRow1},"退稅")` } as any
+    refundCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFCC' } }
+    refundCell.alignment = { horizontal: 'center', vertical: 'middle' }
+    refundCell.font = { name: 'Calibri', size: 10, bold: true }
+    refundCell.numFmt = '#,##0;-#,##0;"-"'
+
+    // 總發票
+    fillHeader(ws.getRow(2).getCell(revStatCol - 1), '總發票', 'FFC6D9F0', true)
+    const invCell = ws.getRow(2).getCell(revStatCol)
+    invCell.value = { formula: `SUMIFS(${totalRange},${docRow2},"發票")` } as any
+    invCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFCC' } }
+    invCell.alignment = { horizontal: 'center', vertical: 'middle' }
+    invCell.numFmt = '#,##0;-#,##0;"-"'
   }
 
   // Row 3 header

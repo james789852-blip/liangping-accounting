@@ -240,26 +240,32 @@ function CKDailyPanel({ data, storeName }: { data: CKDailyStats; storeName: stri
       {data.expenses.length > 0 && (
         <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
           <h3 className="text-sm font-bold mb-3" style={{ color: '#18181b' }}>支出明細（{data.expenses.length} 筆）</h3>
-          <table className="w-full text-xs">
-            <thead style={{ background: '#fafafa' }}>
-              <tr>
-                <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>類別</th>
-                <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>品項</th>
-                <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>付款人</th>
-                <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>金額</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.expenses.map((e, i) => (
-                <tr key={i} style={{ borderTop: '1px solid #f4f4f5' }}>
-                  <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{e.category}</td>
-                  <td className="px-2 py-1.5">{e.item_name}</td>
-                  <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{e.payer_name || '—'}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">${fmt(e.amount)}</td>
+          <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
+            <table className="text-xs" style={{ minWidth: 'max-content' }}>
+              <thead style={{ background: '#fafafa' }}>
+                <tr>
+                  <th className="px-2 py-1.5 text-left sticky left-0" style={{ color: '#71717a', background: '#fafafa', minWidth: 80, zIndex: 2 }}>品項</th>
+                  <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>廠商</th>
+                  <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>單據</th>
+                  <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>類別</th>
+                  <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>付款人</th>
+                  <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>金額</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.expenses.map((e, i) => (
+                  <tr key={i} style={{ borderTop: '1px solid #f4f4f5' }}>
+                    <td className="px-2 py-1.5 sticky left-0 font-medium" style={{ background: 'white', zIndex: 1 }}>{e.item_name}</td>
+                    <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{e.vendor_group || '—'}</td>
+                    <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{e.doc_type || '—'}</td>
+                    <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{e.category}</td>
+                    <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{e.payer_name || '—'}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums font-semibold">${fmt(e.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </>
@@ -284,6 +290,14 @@ function CKMonthlyPanel({ data }: { data: CKMonthlyStats }) {
           <Stat label="食材" value={t.food} color="#047857" />
           <Stat label="耗材" value={t.pack} color="#92400E" />
           <Stat label="雜項" value={t.misc} color="#71717a" />
+        </div>
+
+        {/* 對應原檔上方：總發票 / 總收據 / 估價單 / 梁平退稅 */}
+        <div className="border-t pt-3 grid grid-cols-2 md:grid-cols-4 gap-2" style={{ borderColor: '#f4f4f5' }}>
+          <Stat label="總發票" value={t.invoiceTotal} color="#dc2626" />
+          <Stat label="總收據" value={t.receiptTotal} color="#0369a1" />
+          <Stat label="估價單" value={t.estimateTotal} color="#8b5cf6" />
+          <Stat label="梁平退稅" value={t.taxRefund} color="#f59e0b" />
         </div>
       </div>
 
@@ -317,15 +331,17 @@ function CKMonthlyPanel({ data }: { data: CKMonthlyStats }) {
         </div>
       )}
 
-      {/* 支出品項月合計 */}
+      {/* 支出品項月合計 — 依廠商群組 + 單據類型分層 */}
       {data.expenseByItem.length > 0 && (
         <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
-          <h3 className="text-sm font-bold mb-3" style={{ color: '#18181b' }}>支出品項月合計</h3>
+          <h3 className="text-sm font-bold mb-3" style={{ color: '#18181b' }}>支出品項月合計（依廠商群組排序）</h3>
           <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
             <table className="text-xs" style={{ minWidth: 'max-content' }}>
               <thead style={{ background: '#fafafa' }}>
                 <tr>
                   <th className="px-2 py-1.5 text-left sticky left-0" style={{ color: '#71717a', background: '#fafafa', minWidth: 80, zIndex: 2 }}>品項</th>
+                  <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>廠商</th>
+                  <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>單據</th>
                   <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>類別</th>
                   <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>金額</th>
                 </tr>
@@ -334,6 +350,8 @@ function CKMonthlyPanel({ data }: { data: CKMonthlyStats }) {
                 {data.expenseByItem.map((row, i) => (
                   <tr key={i} style={{ borderTop: '1px solid #f4f4f5' }}>
                     <td className="px-2 py-1.5 sticky left-0 font-medium" style={{ background: 'white', zIndex: 1 }}>{row.item_name}</td>
+                    <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{row.vendor_group || '—'}</td>
+                    <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{row.doc_type || '—'}</td>
                     <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{row.category}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums font-semibold">${fmt(row.total)}</td>
                   </tr>
