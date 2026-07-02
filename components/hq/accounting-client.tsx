@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download, Calendar } from 'lucide-react'
 import { fetchDailyStats, fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
 import { fetchCKDailyStats, fetchCKDailyDetail } from '@/app/actions/ck-overview'
 import type { DailyStats } from '@/lib/store-aggregator'
@@ -105,21 +105,28 @@ export default function AccountingClient({
             <h1 className="text-lg sm:text-xl font-bold" style={{ color: '#18181b' }}>帳目中心</h1>
           </div>
           <div className="flex items-center gap-1.5">
-            <button onClick={() => goDate(prevDay(date))} className="h-9 w-9 rounded-lg flex items-center justify-center" style={{ border: '1px solid #e4e4e7', background: 'white' }} title="前一天">
+            <button onClick={() => goDate(prevDay(date))} className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ border: '1px solid #e4e4e7', background: 'white' }} title="前一天">
               <ChevronLeft className="h-4 w-4" style={{ color: '#52525b' }} />
             </button>
-            <input type="date" value={date} onChange={e => e.target.value && goDate(e.target.value)}
-              className="h-9 px-3 rounded-lg text-sm font-semibold tabular-nums"
-              style={{ border: '1px solid #e4e4e7', background: 'white', color: '#18181b', fontFamily: 'inherit', outline: 'none', minWidth: 148 }} />
+            <label className="relative flex items-center gap-2 h-10 px-3 rounded-lg cursor-pointer transition-colors hover:bg-slate-50"
+              style={{ border: '1.5px solid #F59E0B', background: '#FFFBEB', color: '#92400E', minWidth: 180 }}
+              title="點擊選日期">
+              <Calendar className="h-4 w-4" />
+              <span className="text-sm font-bold tabular-nums flex-1">{date}</span>
+              <span className="text-[10px] opacity-70">點此選日期</span>
+              <input type="date" value={date} onChange={e => e.target.value && goDate(e.target.value)}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+                style={{ fontFamily: 'inherit' }} />
+            </label>
             <button onClick={() => goDate(nextDay(date))} disabled={isToday}
-              className="h-9 w-9 rounded-lg flex items-center justify-center"
+              className="h-10 w-10 rounded-lg flex items-center justify-center"
               style={{ border: '1px solid #e4e4e7', background: 'white', opacity: isToday ? 0.4 : 1, cursor: isToday ? 'default' : 'pointer' }} title="後一天">
               <ChevronRight className="h-4 w-4" style={{ color: '#52525b' }} />
             </button>
             {!isToday && (
               <button onClick={() => goDate(new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10))}
-                className="text-xs font-semibold px-2.5 h-9 rounded-lg"
-                style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>今日</button>
+                className="text-xs font-semibold px-2.5 h-10 rounded-lg"
+                style={{ background: 'white', color: '#92400E', border: '1px solid #FDE68A' }}>今日</button>
             )}
           </div>
         </div>
