@@ -1110,12 +1110,15 @@ function VgActions({ vgName, storeId, itemCount, onDone }: { vgName: string; sto
   )
 }
 
+const BUILTIN_DOC_TYPES = ['發票', '收據', '估價單', '公司開', '梁鑫開', '府中開']
 /** 品項層級 doc_type override（覆蓋 vg 預設） */
-function ItemDocOverrideSelector({ itemName, storeId, currentOverride }: {
-  itemName: string; storeId: string | null; currentOverride: string | null
+function ItemDocOverrideSelector({ itemName, storeId, currentOverride, extraOptions = [] }: {
+  itemName: string; storeId: string | null; currentOverride: string | null; extraOptions?: string[]
 }) {
   const [doc, setDoc] = useState(currentOverride ?? '')
   const [saving, setSaving] = useState(false)
+  // 合併：built-in + 目前 value + 自訂 extraOptions（去重）
+  const allOptions = Array.from(new Set([...BUILTIN_DOC_TYPES, ...extraOptions, ...(doc && !BUILTIN_DOC_TYPES.includes(doc) ? [doc] : [])]))
   async function save(next: string) {
     setDoc(next)
     setSaving(true)
@@ -1125,8 +1128,17 @@ function ItemDocOverrideSelector({ itemName, storeId, currentOverride }: {
       if ('error' in r) toast.error(String(r.error))
     } finally { setSaving(false) }
   }
+  async function handleChange(v: string) {
+    if (v === '__custom__') {
+      const name = prompt('輸入自訂單據類型名稱（例：巷日開）:')?.trim()
+      if (!name) return
+      await save(name)
+    } else {
+      await save(v)
+    }
+  }
   return (
-    <select value={doc} onChange={e => save(e.target.value)} disabled={saving}
+    <select value={doc} onChange={e => handleChange(e.target.value)} disabled={saving}
       title={`「${itemName}」的單據 override（覆蓋廠商群組預設）`}
       style={{
         height: 22, padding: '0 4px', fontSize: 10, borderRadius: 4,
@@ -1134,12 +1146,8 @@ function ItemDocOverrideSelector({ itemName, storeId, currentOverride }: {
         color: doc ? '#1E40AF' : '#a1a1aa', fontFamily: 'inherit', outline: 'none',
       }}>
       <option value="">單據 (預設)</option>
-      <option value="發票">發票</option>
-      <option value="收據">收據</option>
-      <option value="估價單">估價單</option>
-      <option value="公司開">公司開</option>
-      <option value="梁鑫開">梁鑫開</option>
-      <option value="府中開">府中開</option>
+      {allOptions.map(o => <option key={o} value={o}>{o}</option>)}
+      <option value="__custom__">➕ 新增自訂…</option>
     </select>
   )
 }
@@ -1161,8 +1169,18 @@ function VgDocTypeSelector({ vgId, vgName, currentDoc }: { vgId: string; vgName:
     }
   }
 
+  const allOptions = Array.from(new Set([...BUILTIN_DOC_TYPES, ...(doc && !BUILTIN_DOC_TYPES.includes(doc) ? [doc] : [])]))
+  async function handleChange(v: string) {
+    if (v === '__custom__') {
+      const name = prompt('輸入自訂單據類型名稱（例：巷日開）:')?.trim()
+      if (!name) return
+      await save(name)
+    } else {
+      await save(v)
+    }
+  }
   return (
-    <select value={doc} onChange={e => save(e.target.value)} disabled={saving}
+    <select value={doc} onChange={e => handleChange(e.target.value)} disabled={saving}
       title={`「${vgName}」的預設單據類型（會顯示在 Excel Row 2）`}
       style={{
         height: 22, padding: '0 4px', fontSize: 11, borderRadius: 4,
@@ -1170,12 +1188,8 @@ function VgDocTypeSelector({ vgId, vgName, currentDoc }: { vgId: string; vgName:
         color: doc ? '#1E40AF' : '#a1a1aa', fontFamily: 'inherit', outline: 'none',
       }}>
       <option value="">單據類型…</option>
-      <option value="發票">發票</option>
-      <option value="收據">收據</option>
-      <option value="估價單">估價單</option>
-      <option value="公司開">公司開</option>
-      <option value="梁鑫開">梁鑫開</option>
-      <option value="府中開">府中開</option>
+      {allOptions.map(o => <option key={o} value={o}>{o}</option>)}
+      <option value="__custom__">➕ 新增自訂…</option>
     </select>
   )
 }
