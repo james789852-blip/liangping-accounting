@@ -308,9 +308,16 @@ export async function reorderItemMappings(ids: string[]) {
  */
 export async function setItemDocOverride(itemName: string, storeId: string | null, docOverride: string | null) {
   const admin = createAdminClient()
-  const { data: sys } = await admin.from('system_items')
+  let { data: sys } = await admin.from('system_items')
     .select('id').eq('name', itemName).eq('active', true).maybeSingle()
-  if (!sys) return { error: '找不到 system_item' }
+  // 若品項對應管理有這品項但 system_items 沒 → 自動建立（避免無法設 override）
+  if (!sys) {
+    const { data: newSys, error: insertErr } = await admin.from('system_items')
+      .insert({ name: itemName, category: '雜項', active: true, default_enabled: false, sort_order: 999 })
+      .select('id').single()
+    if (insertErr || !newSys) return { error: '無法建立 system_item：' + (insertErr?.message ?? '未知') }
+    sys = newSys
+  }
   if (storeId) {
     const { data: existing } = await admin.from('store_items')
       .select('id').eq('store_id', storeId).eq('system_item_id', sys.id).maybeSingle()
