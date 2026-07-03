@@ -15,6 +15,26 @@ import {
 const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
+import { getPendingReviewCount } from '@/app/actions/pending-review'
+
+/** 待審核數 — 每 30 秒 poll，切頁時也 refresh */
+function usePendingReviewCount() {
+  const [count, setCount] = useState(0)
+  const pathname = usePathname()
+  useEffect(() => {
+    let cancelled = false
+    async function refresh() {
+      try {
+        const r = await getPendingReviewCount()
+        if (!cancelled) setCount(r.total)
+      } catch {}
+    }
+    refresh()
+    const id = setInterval(refresh, 30000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [pathname])
+  return count
+}
 
 function useClock() {
   const [time, setTime] = useState('')
@@ -94,6 +114,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const router = useRouter()
   const isManagerPath = pathname.startsWith('/manager')
   const time = useClock()
+  const pendingCount = usePendingReviewCount()
 
   function isActive(href: string): boolean {
     const [path, query] = href.split('?')
@@ -201,12 +222,20 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               </p>
               {section.items.map(({ href, label, icon: Icon }) => {
                 const active = isActive(href)
+                const showBadge = href === '/hq/accounting' && pendingCount > 0
                 return (
                   <Link key={href} href={href}
                     className={cn('flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-all duration-150 mb-0.5', !active && 'hover:bg-slate-50')}
                     style={active ? { backgroundColor: activeBg, color: activeColor, fontWeight: 600 } : { color: '#52525b' }}>
                     <Icon className="h-[18px] w-[18px] shrink-0" />
-                    {label}
+                    <span className="flex-1">{label}</span>
+                    {showBadge && (
+                      <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full"
+                        style={{ background: '#dc2626', color: 'white', minWidth: 20, textAlign: 'center' }}
+                        title={`${pendingCount} 家店/央廚待審核`}>
+                        {pendingCount}
+                      </span>
+                    )}
                   </Link>
                 )
               })}
