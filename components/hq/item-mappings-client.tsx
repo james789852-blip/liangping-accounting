@@ -80,10 +80,10 @@ export default function ItemMappingsClient({
   // Sync from server after router.refresh()
   useEffect(() => { setMappings(initial) }, [initial])
 
-  // Drag-and-drop sensors（支援手機 touch + 桌面 mouse + 鍵盤）
+  // Drag-and-drop sensors — 桌面觸發距離小 + 手機 delay 縮短
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
@@ -117,14 +117,24 @@ export default function ItemMappingsClient({
 
     // 品項排序
     const activeItem = displayMappings.find(m => m.id === active.id)
-    const overItem = displayMappings.find(m => m.id === over.id)
-    if (!activeItem || !overItem) return
+    if (!activeItem) return
     const activeVg = activeItem.vendor_group ?? '未分類'
-    const overVg = overItem.vendor_group ?? '未分類'
+    // 判斷 over 是別的 item 還是 vg group header
+    const overIsVg = String(over.id).startsWith('vg-')
+    const overVg = overIsVg
+      ? String(over.id).slice(3)
+      : (displayMappings.find(m => m.id === over.id)?.vendor_group ?? '未分類')
+
+    // 跨 vg：把 item 的 vendor_group 改為 overVg
     if (activeVg !== overVg) {
-      toast.info(`拖到「${overVg}」廠商群組？請按 ✏️ 編輯品項改廠商`)
+      setMappings(prev => prev.map(m => m.id === active.id ? { ...m, vendor_group: overVg } : m))
+      updateItemMapping(active.id as string, activeItem.excel_column, activeItem.item_category, overVg)
+        .then(r => { if (r && 'error' in r) toast.error('改廠商失敗：' + r.error) })
+        .catch(e => toast.error('改廠商失敗：' + (e instanceof Error ? e.message : String(e))))
+      toast.success(`已改到「${overVg}」`)
       return
     }
+    if (overIsVg) return
     const vgItems = (grouped[activeVg] ?? [])
     const oldIdx = vgItems.findIndex(m => m.id === active.id)
     const newIdx = vgItems.findIndex(m => m.id === over.id)
