@@ -1101,7 +1101,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   async function handleSaveReceiptEdit() {
     if (!editingReceiptId) return
     if (editAmount <= 0) { toast.error('請填寫金額'); return }
-    if (!editItems.some(i => i.item_name.trim())) { toast.error('請至少選擇一個品項'); return }
+    const isFixedCost = editCategory === '固定成本'
+    if (!isFixedCost && !editItems.some(i => i.item_name.trim())) { toast.error('請至少選擇一個品項'); return }
     const oldReceipt = localReceipts.find(r => r.id === editingReceiptId)
     if (!oldReceipt) return
     setEditUploading(true)
@@ -1119,7 +1120,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
     const finalTotal = editHasTax ? editAmount + editTaxAmount : editAmount
     let validItems = editItems.filter(i => i.item_name.trim())
-    if (validItems.length === 0 && mappingColumns.some(c => c.name === editVendor.trim())) {
+    if (validItems.length === 0 && (isFixedCost || mappingColumns.some(c => c.name === editVendor.trim()))) {
       validItems = [{ item_name: editVendor.trim(), unit: '', quantity: 1, unit_price: 0, amount: finalTotal }]
     }
 
@@ -1222,9 +1223,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       toast.error('請填寫金額')
       return
     }
-    const hasValidItem = (form.items ?? []).some(i => i.item_name.trim())
-    if (!hasValidItem) {
-      toast.error('請至少選擇一個品項')
+    const isFixedCost = form.category === '固定成本'
+    if (!isFixedCost) {
+      const hasValidItem = (form.items ?? []).some(i => i.item_name.trim())
+      if (!hasValidItem) {
+        toast.error('請至少選擇一個品項')
+        return
+      }
+    }
+    if (isFixedCost && !form.vendor_name.trim()) {
+      toast.error('固定成本請選廠商（例：瓦斯 / 水費 / 電費）')
       return
     }
     setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: true } : f))
@@ -1254,7 +1262,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return
     }
     let validItems = (form.items ?? []).filter(i => i.item_name.trim())
-    if (validItems.length === 0 && mappingColumns.some(c => c.name === form.vendor_name.trim())) {
+    if (validItems.length === 0 && (isFixedCost || mappingColumns.some(c => c.name === form.vendor_name.trim()))) {
+      // 固定成本 or 廠商名本身就是品項 → 自動用 vendor_name 建 1 個 item
       validItems = [{ id: crypto.randomUUID(), item_name: form.vendor_name.trim(), unit: '', quantity: 1, unit_price: 0, amount: finalTotal }]
     }
     if (validItems.length > 0) {
@@ -2084,8 +2093,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             onChange={e => updateReceiptForm(form.id, 'notes', e.target.value)} />
                         </div>
 
-                        {/* 品項 */}
-                        {(() => {
+                        {/* 品項 — 固定成本類別不需輸品項（廠商=瓦斯/水費等本身就是品項） */}
+                        {form.category === '固定成本' ? (
+                          <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
+                            <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
+                              💡 固定成本類別不用選品項，直接於上方輸入金額即可（廠商={form.vendor_name || '瓦斯 / 水費 / 電費 等'}）
+                            </p>
+                          </div>
+                        ) : (() => {
                           function syncItems(newItems: ReceiptFormItem[]) {
                             const total = newItems.filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
                             setReceiptForms(prev => prev.map(f =>
@@ -2370,8 +2385,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 value={editNotes} onChange={e => setEditNotes(e.target.value)} />
                             </div>
 
-                            {/* 品項 */}
-                            {(() => {
+                            {/* 品項 — 固定成本類別不需輸品項 */}
+                            {editCategory === '固定成本' ? (
+                              <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
+                                <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
+                                  💡 固定成本類別不用選品項，直接於上方輸入金額（廠商={editVendor || '瓦斯 / 水費 / 電費 等'}）
+                                </p>
+                              </div>
+                            ) : (() => {
                               function syncEditItems(newItems: typeof editItems) {
                                 setEditItems(newItems)
                                 const total = newItems.filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
