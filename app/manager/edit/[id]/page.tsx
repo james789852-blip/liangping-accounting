@@ -24,7 +24,9 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
   const storeId = await getEffectiveStoreId(profile)
   if (!storeId) return <div className="p-6 text-red-500">您尚未被指派到任何店家</div>
 
-  const { data: closing } = await supabase
+  const admin1 = createAdminClient()
+  // 用 admin 撈避開 RLS 限制導致 cash_counts join 撈不到
+  const { data: closing } = await admin1
     .from('daily_closings')
     .select('*, revenue_items(*), order_items(*), expense_items(*), handwrite_orders(*), cash_counts(*)')
     .eq('id', id)
