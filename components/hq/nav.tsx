@@ -19,21 +19,21 @@ import { getPendingReviewCount } from '@/app/actions/pending-review'
 
 /** 待審核數 — 每 30 秒 poll，切頁時也 refresh */
 function usePendingReviewCount() {
-  const [count, setCount] = useState(0)
+  const [detail, setDetail] = useState<{ stores: number; ck: number; total: number }>({ stores: 0, ck: 0, total: 0 })
   const pathname = usePathname()
   useEffect(() => {
     let cancelled = false
     async function refresh() {
       try {
         const r = await getPendingReviewCount()
-        if (!cancelled) setCount(r.total)
+        if (!cancelled) setDetail(r)
       } catch {}
     }
     refresh()
     const id = setInterval(refresh, 30000)
     return () => { cancelled = true; clearInterval(id) }
   }, [pathname])
-  return count
+  return detail
 }
 
 function useClock() {
@@ -114,7 +114,9 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const router = useRouter()
   const isManagerPath = pathname.startsWith('/manager')
   const time = useClock()
-  const pendingCount = usePendingReviewCount()
+  const pending = usePendingReviewCount()
+  const pendingCount = pending.total
+  const pendingTitle = `店家 ${pending.stores} 家、央廚 ${pending.ck} 間待審核`
 
   function isActive(href: string): boolean {
     const [path, query] = href.split('?')
@@ -232,7 +234,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                     {showBadge && (
                       <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full"
                         style={{ background: '#dc2626', color: 'white', minWidth: 20, textAlign: 'center' }}
-                        title={`${pendingCount} 家店/央廚待審核`}>
+                        title={pendingTitle}>
                         {pendingCount}
                       </span>
                     )}

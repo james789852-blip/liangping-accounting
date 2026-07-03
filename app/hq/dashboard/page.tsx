@@ -56,13 +56,16 @@ export default async function HQDashboard() {
     { data: todayClosings },
     { data: monthClosings },
     { data: pendingCount },
+    { data: todayHolidays },
   ] = await Promise.all([
     getCachedAllStores(),
     admin.from('daily_closings').select('id, store_id, status, total_revenue, variance').eq('business_date', today),
     admin.from('daily_closings').select('store_id, total_revenue, status')
       .gte('business_date', firstOfMonth).lte('business_date', today).in('status', ['submitted', 'verified']),
     admin.from('daily_closings').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
+    admin.from('store_holidays').select('store_id').eq('holiday_date', today),
   ])
+  const holidayStoreIds = new Set((todayHolidays ?? []).map((h: any) => h.store_id as string))
 
   const storeList = sortStores(stores)
   const closingByStore = Object.fromEntries((todayClosings ?? []).map(c => [c.store_id, c]))
@@ -77,7 +80,9 @@ export default async function HQDashboard() {
     ['submitted', 'verified'].includes(c.status) && Math.abs(c.variance) > 200
   )
   const bigVarianceCount = bigVarianceStores.length
-  const totalStores = storeList.length
+  // 排除公休店：totalStores = 應做帳店數（不含當日公休）
+  const holidayCount = storeList.filter(s => holidayStoreIds.has(s.id)).length
+  const totalStores = storeList.length - holidayCount
   const pendingN = (pendingCount as any)?.count ?? 0
   const twHour = new Date(Date.now() + 8 * 3600000).getUTCHours()
   const greeting = twHour < 12 ? '早安' : twHour < 18 ? '午安' : '晚安'
