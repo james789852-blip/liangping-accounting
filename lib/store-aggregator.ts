@@ -284,14 +284,12 @@ export async function getRangeStats(
       dd.vendorGroupBreakdown[vg][doc] = (dd.vendorGroupBreakdown[vg][doc] ?? 0) + amt
 
       // 依 doc_type 加總（跨食/耗/雜）
-      if (doc === '發票') {
-        dd.invoiceTotal += amt
-        if (vg.includes('退稅')) dd.taxRefund += amt
-      } else if (doc === '收據') {
-        dd.receiptTotal += amt
-      } else if (doc === '估價單') {
-        dd.estimateTotal += amt
-      }
+      if (doc === '發票') dd.invoiceTotal += amt
+      else if (doc === '收據') dd.receiptTotal += amt
+      else if (doc === '估價單') dd.estimateTotal += amt
+
+      // 梁平退稅：依「品項對應管理」勾選的 is_refund 判別（跟 vg 解耦）
+      if ((meta as any).is_refund) dd.taxRefund += amt
     }
     dd.totalCost = dd.food + dd.pack + dd.misc
 
