@@ -114,7 +114,9 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const router = useRouter()
   const isManagerPath = pathname.startsWith('/manager')
   const time = useClock()
-  const pending = usePendingReviewCount()
+  // 待審核紅點暫時隱藏（之後確定要開再改 true）
+  const showPendingBadge = false
+  const pending = { stores: 0, ck: 0, total: 0 }
   const pendingCount = pending.total
   const pendingTitle = `店家 ${pending.stores} 家、央廚 ${pending.ck} 間待審核`
 
@@ -224,7 +226,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               </p>
               {section.items.map(({ href, label, icon: Icon }) => {
                 const active = isActive(href)
-                const showBadge = href === '/hq/accounting' && pendingCount > 0
+                const showBadge = showPendingBadge && href === '/hq/accounting' && pendingCount > 0
                 return (
                   <Link key={href} href={href}
                     className={cn('flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-all duration-150 mb-0.5', !active && 'hover:bg-slate-50')}
