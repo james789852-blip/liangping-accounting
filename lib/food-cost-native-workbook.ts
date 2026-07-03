@@ -42,9 +42,14 @@ interface ColumnDef {
   statKey?: 'total' | 'food' | 'pack' | 'misc'
 }
 
-/** 剝掉 vg 前綴：例「振源滷蛋」→ vg=振源 → 「滷蛋」 */
+/** 剝掉 vg 前綴：例「振源滷蛋」→ vg=振源 → 「滷蛋」
+ *  但剝掉後長度需 ≥ 2 字元，避免「麵線」→「線」單字誤剝
+ */
 function displayHeader(name: string, vg?: string): string {
-  if (vg && name.startsWith(vg) && name !== vg) return name.slice(vg.length)
+  if (vg && name.startsWith(vg) && name !== vg) {
+    const stripped = name.slice(vg.length)
+    if (stripped.length >= 2) return stripped
+  }
   return name
 }
 
