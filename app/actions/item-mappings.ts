@@ -190,6 +190,39 @@ export async function setItemMapping(
   return { success: true }
 }
 
+/** 批次刪除品項 */
+export async function batchDeleteItemMappings(ids: string[]) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+  const { data: profile } = await supabase
+    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
+  if (!profile?.is_hq && profile?.role !== '老闆') return { error: '權限不足' }
+  if (ids.length === 0) return { success: true as const, deleted: 0 }
+  const admin = createAdminClient()
+
+  // 撈全部 mappings 資料
+  const { data: mappings } = await admin.from('item_column_mappings')
+    .select('id, item_name, store_id').in('id', ids)
+
+  await admin.from('item_column_mappings').delete().in('id', ids)
+
+  // 同步 disable 店家專屬 store_items
+  for (const m of mappings ?? []) {
+    if (!m.store_id || !m.item_name) continue
+    const { data: sys } = await admin.from('system_items')
+      .select('id').eq('name', m.item_name).eq('active', true).maybeSingle()
+    if (sys) {
+      await admin.from('store_items')
+        .update({ enabled: false })
+        .eq('store_id', m.store_id)
+        .eq('system_item_id', sys.id)
+    }
+  }
+  revalidate()
+  return { success: true as const, deleted: mappings?.length ?? 0 }
+}
+
 /** 改品項名稱：同步更新 mapping.item_name + 選擇性同步 receipt_items 舊資料 */
 export async function renameItem(mappingId: string, newName: string, syncReceipts = false) {
   const admin = createAdminClient()

@@ -73,6 +73,8 @@ export default function ItemMappingsClient({
   const [showAddVg, setShowAddVg] = useState(false)
   const [sortMode, setSortMode] = useState(false)
   const [batchStoreIds, setBatchStoreIds] = useState<string[]>([])
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [newVgName, setNewVgName] = useState('')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
@@ -297,8 +299,39 @@ export default function ItemMappingsClient({
     setMappings(prev => [...prev])
   }
 
+  async function handleBatchDelete() {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    if (!confirm(`確定刪除 ${ids.length} 個品項？此動作無法復原。`)) return
+    startTransition(async () => {
+      const { batchDeleteItemMappings } = await import('@/app/actions/item-mappings')
+      const r = await batchDeleteItemMappings(ids)
+      if (r && 'error' in r) { toast.error(r.error); return }
+      toast.success(`已刪除 ${(r as any).deleted ?? ids.length} 個品項`)
+      setSelectedIds(new Set())
+      setSelectMode(false)
+      router.refresh()
+    })
+  }
+
   return (
     <div className="flex flex-col" style={{ background: '#fafafa', height: '100dvh' }}>
+
+      {/* 浮動選取工具列 */}
+      {selectMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2.5 rounded-xl shadow-lg"
+          style={{ background: 'white', border: '1.5px solid #fecaca', boxShadow: '0 8px 24px rgba(220,38,38,0.15)' }}>
+          <span className="text-sm font-semibold" style={{ color: '#18181b' }}>已選 {selectedIds.size} 個品項</span>
+          <button onClick={() => setSelectedIds(new Set())}
+            className="text-xs font-semibold px-2 py-1 rounded-lg"
+            style={{ background: '#fafafa', border: '1px solid #e4e4e7', color: '#52525b', cursor: 'pointer' }}>清除</button>
+          <button onClick={handleBatchDelete} disabled={isPending}
+            className="text-xs font-semibold px-3 py-1 rounded-lg text-white flex items-center gap-1"
+            style={{ background: '#dc2626', cursor: 'pointer', opacity: isPending ? 0.5 : 1 }}>
+            <Trash2 className="h-3 w-3" /> 刪除選中
+          </button>
+        </div>
+      )}
 
       {/* 新增分類 modal */}
       {showAddVg && (
@@ -365,13 +398,21 @@ export default function ItemMappingsClient({
                   <Copy className="h-3.5 w-3.5" /> 複製全域
                 </button>
               )}
-              <button onClick={() => setSortMode(v => !v)}
+              <button onClick={() => { setSortMode(v => !v); setSelectMode(false) }}
                 className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors"
                 style={sortMode
                   ? { background: '#F59E0B', color: 'white', boxShadow: '0 2px 8px rgba(245,158,11,0.3)' }
                   : { background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}
                 title={sortMode ? '完成排序' : '進入排序模式（避免誤觸）'}>
                 {sortMode ? <><Check className="h-3.5 w-3.5" /> 完成</> : <><ChevronUp className="h-3.5 w-3.5" /> 排序</>}
+              </button>
+              <button onClick={() => { setSelectMode(v => !v); setSortMode(false); if (selectMode) setSelectedIds(new Set()) }}
+                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                style={selectMode
+                  ? { background: '#dc2626', color: 'white', boxShadow: '0 2px 8px rgba(220,38,38,0.3)' }
+                  : { background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}
+                title={selectMode ? '取消選取' : '進入選取模式（可批次刪除）'}>
+                {selectMode ? <><X className="h-3.5 w-3.5" /> 取消</> : <><Check className="h-3.5 w-3.5" /> 選取</>}
               </button>
               <button onClick={() => setShowAddVg(true)}
                 className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold"
@@ -669,6 +710,13 @@ export default function ItemMappingsClient({
                         isStorePage={isStorePage}
                         activeStoreId={activeStoreId}
                         sortMode={sortMode}
+                        selectMode={selectMode}
+                        isSelected={selectedIds.has(m.id)}
+                        onToggleSelect={() => setSelectedIds(prev => {
+                          const next = new Set(prev)
+                          if (next.has(m.id)) next.delete(m.id); else next.add(m.id)
+                          return next
+                        })}
                         storesUsingIds={storesUsingIds}
                         allStores={stores}
                         editId={editId}
@@ -734,10 +782,11 @@ function VgDragHandle() {
 
 /** 可拖曳的品項 row（同 vg 內拖曳排序） */
 function SortableItemRow({
-  m, vg, isLast, isStorePage, activeStoreId, sortMode, storesUsingIds, allStores, editId, editCol, editCat, editVendorGroup,
+  m, vg, isLast, isStorePage, activeStoreId, sortMode, selectMode, isSelected, onToggleSelect, storesUsingIds, allStores, editId, editCol, editCat, editVendorGroup,
   setEditCol, setEditCat, setEditVendorGroup, startEdit, handleUpdate, setEditId, handleDelete, displayName,
 }: {
   m: Mapping; vg: string; isLast: boolean; isStorePage: boolean; activeStoreId: string; sortMode: boolean
+  selectMode: boolean; isSelected: boolean; onToggleSelect: () => void
   storesUsingIds: string[]; allStores: { id: string; name: string }[]
   editId: string | null; editCol: string; editCat: string; editVendorGroup: string
   setEditCol: (v: string) => void; setEditCat: (v: string) => void; setEditVendorGroup: (v: string) => void
@@ -756,6 +805,11 @@ function SortableItemRow({
   }
   return (
     <div ref={setNodeRef} style={style} className="flex items-center gap-2 px-3 py-2.5">
+      {/* 選取模式：checkbox */}
+      {selectMode && (
+        <input type="checkbox" checked={isSelected} onChange={onToggleSelect}
+          className="shrink-0 cursor-pointer" style={{ width: 18, height: 18, accentColor: '#dc2626' }} />
+      )}
       {/* Drag handle — 只在排序模式時可見可操作，避免手機誤觸 */}
       {sortMode && (
         <button {...attributes} {...listeners}
