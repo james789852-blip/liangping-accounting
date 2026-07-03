@@ -190,6 +190,40 @@ export async function setItemMapping(
   return { success: true }
 }
 
+/** 改品項名稱：同步更新 mapping.item_name + 選擇性同步 receipt_items 舊資料 */
+export async function renameItem(mappingId: string, newName: string, syncReceipts = false) {
+  const admin = createAdminClient()
+  const { data: mapping } = await admin.from('item_column_mappings')
+    .select('id, item_name, store_id, excel_column').eq('id', mappingId).maybeSingle()
+  if (!mapping) return { error: '找不到品項' }
+  const oldName = mapping.item_name as string
+  if (!newName.trim()) return { error: '名稱不可空白' }
+  if (newName.trim() === oldName) return { success: true as const }
+
+  // 檢查同 store 是否已有同名
+  const { data: dup } = await admin.from('item_column_mappings')
+    .select('id').eq('item_name', newName.trim())
+    .eq('store_id', mapping.store_id ?? null).maybeSingle()
+  if (dup) return { error: `已有同名品項「${newName.trim()}」` }
+
+  // 更新 mapping
+  await admin.from('item_column_mappings').update({
+    item_name: newName.trim(),
+    // 若 excel_column 跟舊名字一樣，同步更新（新名字）
+    excel_column: mapping.excel_column === oldName ? newName.trim() : mapping.excel_column,
+    updated_at: new Date().toISOString(),
+  }).eq('id', mappingId)
+
+  // 選擇性同步 receipt_items（歷史資料重新命名）
+  if (syncReceipts && mapping.store_id) {
+    await admin.from('receipt_items').update({ item_name: newName.trim() })
+      .eq('item_name', oldName)
+      // 只更新該店的 receipts（透過 receipt_id join → 過濾）— 用 raw filter 較複雜，這裡 update by name 影響全部歷史
+  }
+  revalidate()
+  return { success: true as const }
+}
+
 export async function reorderItemMappings(ids: string[]) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

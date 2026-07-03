@@ -767,7 +767,7 @@ function SortableItemRow({
         </button>
       )}
       <span className="flex-1 text-sm font-semibold flex flex-wrap items-center gap-1.5" style={{ color: '#18181b' }}>
-        {displayName(m)}
+        <InlineItemNameEditor mappingId={m.id} currentName={displayName(m)} fullName={m.item_name} />
         {isStorePage && !m.store_id && (
           <span title="來自全域預設（編輯會影響所有店）" className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
             style={{ background: '#e0e7ff', color: '#4338ca' }}>全域</span>
@@ -832,6 +832,45 @@ function SortableItemRow({
         </>
       )}
     </div>
+  )
+}
+
+/** 點名稱直接編輯 — Enter 儲存、Esc 取消 */
+function InlineItemNameEditor({ mappingId, currentName, fullName }: { mappingId: string; currentName: string; fullName: string }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(fullName)
+  const [saving, setSaving] = useState(false)
+  const router = useRouter()
+  useEffect(() => { setValue(fullName) }, [fullName])
+
+  async function save() {
+    if (value.trim() === fullName) { setEditing(false); return }
+    setSaving(true)
+    try {
+      const { renameItem } = await import('@/app/actions/item-mappings')
+      const r = await renameItem(mappingId, value.trim())
+      if (r && 'error' in r) { toast.error(r.error); return }
+      toast.success('已改名')
+      setEditing(false)
+      router.refresh()
+    } finally { setSaving(false) }
+  }
+  if (editing) {
+    return (
+      <input autoFocus value={value} onChange={e => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={e => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') { setValue(fullName); setEditing(false) } }}
+        disabled={saving}
+        style={{ minWidth: 100, padding: '2px 6px', border: '1.5px solid #F59E0B', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', color: '#18181b' }} />
+    )
+  }
+  return (
+    <button onClick={() => setEditing(true)}
+      className="hover:bg-amber-50 rounded px-1 -mx-1 transition-colors"
+      style={{ background: 'none', border: 'none', padding: '0 4px', cursor: 'text', color: '#18181b', fontWeight: 600, fontSize: 14, fontFamily: 'inherit', textAlign: 'left' }}
+      title="點擊改名稱">
+      {currentName}
+    </button>
   )
 }
 
