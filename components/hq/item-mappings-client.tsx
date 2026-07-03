@@ -301,7 +301,7 @@ export default function ItemMappingsClient({
   }
 
   return (
-    <div className="min-h-full" style={{ background: '#fafafa' }}>
+    <div className="flex flex-col" style={{ background: '#fafafa', height: '100dvh' }}>
 
       {/* 新增分類 modal */}
       {showAddVg && (
@@ -341,8 +341,8 @@ export default function ItemMappingsClient({
         </div>
       )}
 
-      {/* Header (sticky) */}
-      <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', position: 'sticky', top: 0, zIndex: 40 }}>
+      {/* Header (固定不滑動) */}
+      <div className="bg-white px-6 py-5 shrink-0" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', zIndex: 40 }}>
         <div className="max-w-2xl mx-auto">
           <button onClick={() => router.back()}
             className="flex items-center gap-1 text-sm font-medium mb-3"
@@ -418,7 +418,7 @@ export default function ItemMappingsClient({
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 pb-28">
+      <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 pb-28 flex-1 overflow-y-auto w-full">
 
         {/* 教學說明 */}
         <HelpBox title="📖 這頁怎麼用？（直接決定 Excel 匯出）">
