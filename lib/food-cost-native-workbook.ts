@@ -457,8 +457,17 @@ export async function addFoodCostSheet(
         cell.alignment = { horizontal: 'center', vertical: 'middle' }
       } else if (c.kind === 'income' && dd && c.incomeKey) {
         const v = readIncomeValue(dd, c.incomeKey)
-        if (v !== 0) cell.value = v
-        cell.numFmt = '#,##0;-#,##0;'
+        // 「結果」欄特殊：=0 顯示 0（不是空）、有誤差顯示紅色
+        if (c.incomeKey === 'variance') {
+          cell.value = v
+          cell.numFmt = '#,##0;-#,##0;0'
+          if (v !== 0) {
+            cell.font = { ...(cell.font as any), color: { argb: 'FFDC2626' }, bold: true }
+          }
+        } else {
+          if (v !== 0) cell.value = v
+          cell.numFmt = '#,##0;-#,##0;'
+        }
       } else if (c.kind === 'stat' && c.statKey) {
         // 用 SUM range 公式，Excel 開會動態重算
         const foodCol = cols.find(x => x.statKey === 'food')
