@@ -512,16 +512,7 @@ function CategoryPicker({ categories, value, onChange }: {
         appearance: 'auto',
       }}>
       <option value="">— 選擇類別 —</option>
-      {pinned.length > 0 && (
-        <optgroup label="常用">
-          {pinned.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-        </optgroup>
-      )}
-      {rest.length > 0 && (
-        <optgroup label="其他">
-          {rest.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-        </optgroup>
-      )}
+      {sortedAll.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
     </select>
   )
 }
