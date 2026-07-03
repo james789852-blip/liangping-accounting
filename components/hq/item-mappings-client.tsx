@@ -779,25 +779,17 @@ function SortableItemRow({
           <span title="此店專屬 override" className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
             style={{ background: '#fef3c7', color: '#92400e' }}>專屬</span>
         )}
-        {!isStorePage && storesUsingIds.length > 0 && (
+        {!isStorePage && (
           <button onClick={() => setShowStores(v => !v)}
             className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-1"
             style={{ background: '#dcfce7', color: '#166534', border: '1px solid #86efac', cursor: 'pointer' }}
-            title="哪些店有專屬 override">
-            {storesUsingIds.length} 家店 override
+            title="管理哪些店有專屬 override">
+            {storesUsingIds.length} 家店使用
             <span style={{ fontSize: 8 }}>{showStores ? '▲' : '▼'}</span>
           </button>
         )}
-        {!isStorePage && showStores && storesUsingIds.length > 0 && (
-          <div className="w-full flex flex-wrap gap-1 mt-1">
-            {storesUsingIds.map(sid => {
-              const s = allStores.find(x => x.id === sid)
-              return s ? (
-                <span key={sid} className="text-[10px] px-1.5 py-0.5 rounded"
-                  style={{ background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>{s.name}</span>
-              ) : null
-            })}
-          </div>
+        {!isStorePage && showStores && (
+          <StoresOverridePanel item={m} allStores={allStores} storesUsingIds={storesUsingIds} />
         )}
       </span>
       {editId !== m.id && (
@@ -841,6 +833,81 @@ function SortableItemRow({
             <Trash2 className="h-4 w-4" />
           </button>
         </>
+      )}
+    </div>
+  )
+}
+
+/** 展開店家 override 面板 — 已 override 的店可移除，未 override 的店可新增 */
+function StoresOverridePanel({ item, allStores, storesUsingIds }: {
+  item: Mapping
+  allStores: { id: string; name: string }[]
+  storesUsingIds: string[]
+}) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const router = useRouter()
+  const usedSet = new Set(storesUsingIds)
+  const used = allStores.filter(s => usedSet.has(s.id))
+  const unused = allStores.filter(s => !usedSet.has(s.id))
+
+  async function addStore(sid: string) {
+    setBusy(sid)
+    try {
+      const { saveItemMapping } = await import('@/app/actions/item-mappings')
+      const r = await saveItemMapping(item.item_name, item.excel_column || item.item_name, item.item_category, sid, item.vendor_group ?? undefined)
+      if (r && 'error' in r) toast.error('新增失敗：' + r.error)
+      else { toast.success('已新增'); router.refresh() }
+    } finally { setBusy(null) }
+  }
+  async function removeStore(sid: string) {
+    if (!confirm(`確定要移除該店的專屬 override？該店會回到全域繼承。`)) return
+    setBusy(sid)
+    try {
+      // 找該店對應的 mapping id → deleteItemMapping
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+      const { data: target } = await supabase.from('item_column_mappings').select('id')
+        .eq('item_name', item.item_name).eq('store_id', sid).maybeSingle()
+      if (target) {
+        const { deleteItemMapping } = await import('@/app/actions/item-mappings')
+        await deleteItemMapping(target.id)
+        toast.success('已移除')
+        router.refresh()
+      }
+    } finally { setBusy(null) }
+  }
+
+  return (
+    <div className="w-full mt-1 rounded-lg p-2 space-y-2" style={{ background: '#fafafa', border: '1px solid #e4e4e7' }}>
+      {used.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold mb-1" style={{ color: '#166534' }}>✓ 已使用店家（{used.length}）</p>
+          <div className="flex flex-wrap gap-1">
+            {used.map(s => (
+              <button key={s.id} onClick={() => removeStore(s.id)} disabled={busy === s.id}
+                className="text-[10px] px-1.5 py-0.5 rounded transition-opacity hover:opacity-70"
+                style={{ background: '#dcfce7', color: '#166534', border: '1px solid #86efac', cursor: 'pointer' }}
+                title="點擊移除該店 override">
+                {s.name} ✕
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {unused.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold mb-1" style={{ color: '#71717a' }}>+ 加店家使用（{unused.length}）</p>
+          <div className="flex flex-wrap gap-1">
+            {unused.map(s => (
+              <button key={s.id} onClick={() => addStore(s.id)} disabled={busy === s.id}
+                className="text-[10px] px-1.5 py-0.5 rounded transition-colors hover:bg-amber-50"
+                style={{ background: 'white', color: '#52525b', border: '1px dashed #d4d4d8', cursor: 'pointer' }}
+                title="點擊新增到該店">
+                {s.name} +
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )
