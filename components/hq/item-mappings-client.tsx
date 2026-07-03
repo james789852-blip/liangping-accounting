@@ -857,11 +857,27 @@ function InlineItemNameEditor({ mappingId, currentName, fullName }: { mappingId:
   }
   if (editing) {
     return (
-      <input autoFocus value={value} onChange={e => setValue(e.target.value)}
-        onBlur={save}
-        onKeyDown={e => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') { setValue(fullName); setEditing(false) } }}
-        disabled={saving}
-        style={{ minWidth: 100, padding: '2px 6px', border: '1.5px solid #F59E0B', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', color: '#18181b' }} />
+      <span className="inline-flex items-center gap-1">
+        <input autoFocus value={value} onChange={e => setValue(e.target.value)}
+          onKeyDown={e => {
+            // 不用 Enter 儲存，避免 IME 選字時誤觸；只保留 Esc 取消
+            if (e.key === 'Escape') { setValue(fullName); setEditing(false) }
+          }}
+          disabled={saving}
+          style={{ minWidth: 100, padding: '2px 6px', border: '1.5px solid #F59E0B', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', color: '#18181b' }} />
+        <button onClick={save} disabled={saving || !value.trim()}
+          className="rounded transition-opacity hover:opacity-70"
+          style={{ background: '#22c55e', color: 'white', border: 'none', padding: '3px 6px', cursor: 'pointer', fontSize: 12, fontWeight: 700, opacity: (saving || !value.trim()) ? 0.5 : 1 }}
+          title="確認">
+          ✓
+        </button>
+        <button onClick={() => { setValue(fullName); setEditing(false) }} disabled={saving}
+          className="rounded transition-opacity hover:opacity-70"
+          style={{ background: '#e4e4e7', color: '#71717a', border: 'none', padding: '3px 6px', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}
+          title="取消">
+          ✕
+        </button>
+      </span>
     )
   }
   return (
