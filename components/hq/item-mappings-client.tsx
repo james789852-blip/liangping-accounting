@@ -342,7 +342,7 @@ export default function ItemMappingsClient({
       )}
 
       {/* Header (sticky) */}
-      <div className="bg-white px-6 py-5 sticky top-0 z-30" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+      <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', position: 'sticky', top: 0, zIndex: 40 }}>
         <div className="max-w-2xl mx-auto">
           <button onClick={() => router.back()}
             className="flex items-center gap-1 text-sm font-medium mb-3"
