@@ -3,13 +3,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download, Calendar } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays } from 'lucide-react'
 import { fetchDailyStats, fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
 import { fetchCKDailyStats, fetchCKDailyDetail } from '@/app/actions/ck-overview'
 import type { DailyStats } from '@/lib/store-aggregator'
 import type { CKDailyStats } from '@/lib/ck-aggregator'
 import ReviewCard from './review-card'
 import CKOverview from './ck-overview'
+import HolidaysEditor from './holidays-editor'
 
 interface Store { id: string; name: string }
 interface ClosingRow { store_id: string; status: string; variance: number; dispute_note?: string | null }
@@ -294,6 +295,8 @@ function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName:
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<DailyStats | null>(null)
   const [detail, setDetail] = useState<{ closing: any; receipts: any[] } | null>(null)
+  const [showHolidays, setShowHolidays] = useState(false)
+  const [y, m] = date.split('-').map(Number)
   useEffect(() => {
     setLoading(true); setStats(null); setDetail(null)
     Promise.all([
@@ -314,9 +317,20 @@ function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName:
     <div className="space-y-4">
       <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{storeName} · {date}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{storeName} · {date}</h2>
+            <button onClick={() => setShowHolidays(true)}
+              className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg"
+              style={{ background: '#f3e8ff', color: '#6b21a8', border: '1px solid #d8b4fe', cursor: 'pointer' }}
+              title="管理該店公休日">
+              <CalendarDays className="h-3 w-3" /> 公休
+            </button>
+          </div>
           <ExportButtons kind="store" storeId={storeId} storeName={storeName} date={date} />
         </div>
+        {showHolidays && (
+          <HolidaysEditor storeId={storeId} storeName={storeName} year={y} monthNum={m} onClose={() => setShowHolidays(false)} />
+        )}
         {stats ? (
           <StoreStatsGrid data={stats} />
         ) : (
