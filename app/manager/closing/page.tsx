@@ -7,6 +7,7 @@ import { getBusinessDate } from '@/lib/business-date'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
 import { getCachedUserProfile, getCachedStoreFull, getCachedActiveCKPrices, getCachedStoreMappings, getCachedItemOrder } from '@/lib/cached-queries'
 import { getStoreItemsResolved, toMappingColumns } from '@/lib/store-items-resolver'
+import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,6 +52,7 @@ export default async function ClosingPage({
     { data: prevClosing },
     itemOrder,
     newItems,
+    mappingBasedItems,
   ] = await Promise.all([
     getCachedStoreFull(storeId),
     getCachedActiveCKPrices(),
@@ -79,7 +81,9 @@ export default async function ClosingPage({
       .maybeSingle(),
     getCachedItemOrder(storeId),
     getStoreItemsResolved(storeId),
-  ])
+    // 也撈 mapping-based items（跟 xlsx 匯出同源，確保下拉品項齊全）
+    getStoreItemsFromMappings(storeId),
+  ] as const)
 
   // 央廚店家使用專屬流程
   if ((store as any)?.type === '央廚') redirect('/manager/ck')
@@ -95,8 +99,11 @@ export default async function ClosingPage({
 
   const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
 
-  // 優先用新 schema (system_items + store_items)；沒設定才 fallback 舊 item_column_mappings
-  const mappingColumns = newItems.length > 0
+  // 優先用 item_column_mappings（跟 xlsx 匯出同源，確保收據下拉品項跟 xlsx 一致）
+  // 若 mapping 空才 fallback 舊資料源
+  const mappingColumns = mappingBasedItems.length > 0
+    ? toMappingColumns(mappingBasedItems)
+    : newItems.length > 0
     ? toMappingColumns(newItems)
     : (mappingRows ?? []).map((r: { item_name: string; item_category: string; vendor_group: string | null; excel_column: string }) => ({
         name: r.item_name,

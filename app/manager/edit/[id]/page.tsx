@@ -9,6 +9,7 @@ import { getReceiptSettings } from '@/app/actions/receipt-settings'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { getStoreItemsResolved, toMappingColumns } from '@/lib/store-items-resolver'
+import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 
 export default async function EditClosingPage({ params }: { params: Promise<{ id: string }> }) {
@@ -70,6 +71,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     { data: mappingRows },
     itemOrderText,
     newItems,
+    mappingBasedItems,
   ] = await Promise.all([
     supabase.from('stores').select('*').eq('id', storeId).single(),
     supabase
@@ -89,14 +91,17 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .then(async ({ data }) => (data ? data.text() : null))
       .catch((): null => null),
     getStoreItemsResolved(storeId),
+    getStoreItemsFromMappings(storeId),
   ])
 
   let itemOrder: string[] = []
   try { if (itemOrderText) itemOrder = JSON.parse(itemOrderText) } catch {}
   const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
 
-  // 優先用新 schema，沒設定才 fallback 舊 mapping
-  const mappingColumns = newItems.length > 0
+  // 優先用 mapping-based（跟 xlsx 匯出同源）→ newItems → 舊 mapping
+  const mappingColumns = mappingBasedItems.length > 0
+    ? toMappingColumns(mappingBasedItems)
+    : newItems.length > 0
     ? toMappingColumns(newItems)
     : (mappingRows ?? []).map((r: any) => ({
         name: r.item_name,

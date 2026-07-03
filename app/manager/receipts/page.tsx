@@ -5,6 +5,7 @@ import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
 import ReceiptsClient from '@/components/manager/receipts-client'
 import { getStoreItemsResolved } from '@/lib/store-items-resolver'
+import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,14 +39,17 @@ export default async function ReceiptsPage() {
     .order('business_date', { ascending: false })
     .order('created_at', { ascending: false })
 
-  const [{ data: store }, { data: mappingRows }, newItems] = await Promise.all([
+  const [{ data: store }, { data: mappingRows }, newItems, mappingBasedItems] = await Promise.all([
     supabase.from('stores').select('name').eq('id', storeId).single(),
     admin.from('item_column_mappings').select('item_name, excel_column, item_category, vendor_group').eq('store_id', storeId),
     getStoreItemsResolved(storeId),
+    getStoreItemsFromMappings(storeId),
   ])
 
-  // 優先用新 schema，沒設定才用舊 mapping
-  const mappings = newItems.length > 0
+  // 優先用 mapping-based（跟 xlsx 匯出同源）→ newItems → 舊 mapping
+  const mappings = mappingBasedItems.length > 0
+    ? Object.fromEntries(mappingBasedItems.map(i => [i.name, { excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group }]))
+    : newItems.length > 0
     ? Object.fromEntries(newItems.map(i => [i.name, { excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group }]))
     : Object.fromEntries(
         (mappingRows ?? []).map(r => [r.item_name, { excel_column: r.excel_column, item_category: r.item_category, vendor_group: (r as any).vendor_group ?? null }])
