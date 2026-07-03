@@ -72,6 +72,7 @@ export default function ItemMappingsClient({
   const [showAdd, setShowAdd] = useState(false)
   const [showAddVg, setShowAddVg] = useState(false)
   const [sortMode, setSortMode] = useState(false)
+  const [batchStoreIds, setBatchStoreIds] = useState<string[]>([])
   const [newVgName, setNewVgName] = useState('')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
@@ -174,15 +175,23 @@ export default function ItemMappingsClient({
   function handleAdd() {
     if (!newName.trim()) return
     const excelCol = newCol.trim() || newName.trim()
-    const storeIdParam = activeStoreId || undefined
     startTransition(async () => {
-      const r = await saveItemMapping(newName.trim(), excelCol, newCat, storeIdParam, newVendorGroup.trim() || undefined)
-      if (r && 'error' in r) {
-        toast.error('新增失敗：' + r.error)
+      // 若在全域頁且勾了店家 → 批次建立 store-specific mapping（不建全域）
+      // 若在全域頁沒勾店家 → 建全域 mapping（store_id=null）
+      // 若在店家頁 → 只建該店 mapping
+      const targets: (string | undefined)[] = activeStoreId
+        ? [activeStoreId]
+        : (batchStoreIds.length > 0 ? batchStoreIds : [undefined])
+      const results = await Promise.all(
+        targets.map(sid => saveItemMapping(newName.trim(), excelCol, newCat, sid, newVendorGroup.trim() || undefined))
+      )
+      const errors = results.filter((r): r is { error: string } => !!(r as any)?.error)
+      if (errors.length > 0) {
+        toast.error(`新增失敗：${errors.map(e => e.error).join('；')}`)
         return
       }
-      toast.success('已新增')
-      setShowAdd(false); setNewName(''); setNewCol(''); setNewCat('食材'); setNewVendorGroup('')
+      toast.success(`已新增到 ${targets.length} 個位置`)
+      setShowAdd(false); setNewName(''); setNewCol(''); setNewCat('食材'); setNewVendorGroup(''); setBatchStoreIds([])
       router.refresh()
     })
   }
@@ -525,11 +534,47 @@ export default function ItemMappingsClient({
                 </select>
               </div>
             </div>
+            {/* 全域頁專屬：批次選店 */}
+            {!isStorePage && (
+              <div className="rounded-lg p-3" style={{ background: '#fefce8', border: '1.5px solid #fde68a' }}>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold" style={{ color: '#713f12' }}>
+                    套用到店家（{batchStoreIds.length > 0 ? `${batchStoreIds.length} 家店` : '不勾＝建全域'}）
+                  </p>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setBatchStoreIds(stores.map(s => s.id))}
+                      className="text-[11px] font-semibold px-2 py-0.5 rounded"
+                      style={{ background: 'white', border: '1px solid #fbbf24', color: '#92400e', cursor: 'pointer' }}>全選</button>
+                    <button type="button" onClick={() => setBatchStoreIds([])}
+                      className="text-[11px] font-semibold px-2 py-0.5 rounded"
+                      style={{ background: 'white', border: '1px solid #e4e4e7', color: '#71717a', cursor: 'pointer' }}>清除</button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {stores.map(s => {
+                    const checked = batchStoreIds.includes(s.id)
+                    return (
+                      <button key={s.id} type="button"
+                        onClick={() => setBatchStoreIds(prev => checked ? prev.filter(x => x !== s.id) : [...prev, s.id])}
+                        className="text-xs px-2.5 py-1 rounded-full font-semibold transition-colors"
+                        style={checked
+                          ? { background: '#F59E0B', color: 'white', border: '1.5px solid #F59E0B' }
+                          : { background: 'white', color: '#52525b', border: '1.5px solid #e4e4e7' }}>
+                        {checked ? '✓ ' : ''}{s.name}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-[10px] mt-2" style={{ color: '#a1a1aa' }}>
+                  💡 不勾任何店家 → 建全域預設（所有店繼承）；勾了店家 → 只建到勾選店家的專屬 mapping
+                </p>
+              </div>
+            )}
             <div className="flex gap-2">
               <button onClick={handleAdd} disabled={!newName.trim() || isPending}
                 className="px-4 py-2 rounded-xl text-sm font-semibold text-white"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', opacity: !newName.trim() || isPending ? 0.5 : 1 }}>
-                儲存
+                儲存{!isStorePage && batchStoreIds.length > 0 && `（${batchStoreIds.length} 家）`}
               </button>
               <button onClick={() => setShowAdd(false)}
                 className="px-4 py-2 rounded-xl text-sm font-semibold"
