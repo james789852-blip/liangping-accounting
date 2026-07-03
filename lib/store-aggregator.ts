@@ -13,7 +13,8 @@
  */
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMonthLastDay } from '@/lib/business-date'
-import { getStoreItemsResolved, type ResolvedStoreItem } from '@/lib/store-items-resolver'
+import { type ResolvedStoreItem } from '@/lib/store-items-resolver'
+import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -138,7 +139,7 @@ export async function getRangeStats(
     admin.from('stores')
       .select('id, name, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled')
       .eq('id', storeId).single(),
-    getStoreItemsResolved(storeId),
+    getStoreItemsFromMappings(storeId),  // 跟 xlsx 匯出用同源，確保成本 category 分類一致
     admin.from('daily_closings')
       .select('business_date, status, updated_at, actual_remit, total_revenue, total_cost, revenue_items(channel, account_name, gross_amount), order_items(item_name, total_amount)')
       .eq('store_id', storeId)
