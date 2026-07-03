@@ -658,6 +658,10 @@ export default function ItemMappingsClient({
                       )
                       lastSource = source
                     }
+                    // 若在全域頁，計算此 item_name 有多少 store 專屬 override
+                    const storesUsingIds = !isStorePage
+                      ? mappings.filter(x => x.item_name === m.item_name && x.store_id).map(x => x.store_id as string)
+                      : []
                     rendered.push(
                       <SortableItemRow
                         key={m.id}
@@ -667,6 +671,8 @@ export default function ItemMappingsClient({
                         isStorePage={isStorePage}
                         activeStoreId={activeStoreId}
                         sortMode={sortMode}
+                        storesUsingIds={storesUsingIds}
+                        allStores={stores}
                         editId={editId}
                         editCol={editCol}
                         editCat={editCat}
@@ -731,15 +737,17 @@ function VgDragHandle() {
 
 /** 可拖曳的品項 row（同 vg 內拖曳排序） */
 function SortableItemRow({
-  m, vg, isLast, isStorePage, activeStoreId, sortMode, editId, editCol, editCat, editVendorGroup,
+  m, vg, isLast, isStorePage, activeStoreId, sortMode, storesUsingIds, allStores, editId, editCol, editCat, editVendorGroup,
   setEditCol, setEditCat, setEditVendorGroup, startEdit, handleUpdate, setEditId, handleDelete, displayName,
 }: {
   m: Mapping; vg: string; isLast: boolean; isStorePage: boolean; activeStoreId: string; sortMode: boolean
+  storesUsingIds: string[]; allStores: { id: string; name: string }[]
   editId: string | null; editCol: string; editCat: string; editVendorGroup: string
   setEditCol: (v: string) => void; setEditCat: (v: string) => void; setEditVendorGroup: (v: string) => void
   startEdit: (m: Mapping) => void; handleUpdate: (id: string) => void; setEditId: (v: string | null) => void
   handleDelete: (id: string) => void; displayName: (m: Mapping) => string
 }) {
+  const [showStores, setShowStores] = useState(false)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: m.id })
   const catSt = CAT_STYLE[m.item_category] ?? CAT_STYLE['雜項']
   const style: React.CSSProperties = {
@@ -761,7 +769,7 @@ function SortableItemRow({
           <GripVertical className="h-4 w-4" />
         </button>
       )}
-      <span className="flex-1 text-sm font-semibold flex items-center gap-1.5" style={{ color: '#18181b' }}>
+      <span className="flex-1 text-sm font-semibold flex flex-wrap items-center gap-1.5" style={{ color: '#18181b' }}>
         {displayName(m)}
         {isStorePage && !m.store_id && (
           <span title="來自全域預設（編輯會影響所有店）" className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
@@ -770,6 +778,26 @@ function SortableItemRow({
         {isStorePage && m.store_id === activeStoreId && (
           <span title="此店專屬 override" className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
             style={{ background: '#fef3c7', color: '#92400e' }}>專屬</span>
+        )}
+        {!isStorePage && storesUsingIds.length > 0 && (
+          <button onClick={() => setShowStores(v => !v)}
+            className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-1"
+            style={{ background: '#dcfce7', color: '#166534', border: '1px solid #86efac', cursor: 'pointer' }}
+            title="哪些店有專屬 override">
+            {storesUsingIds.length} 家店 override
+            <span style={{ fontSize: 8 }}>{showStores ? '▲' : '▼'}</span>
+          </button>
+        )}
+        {!isStorePage && showStores && storesUsingIds.length > 0 && (
+          <div className="w-full flex flex-wrap gap-1 mt-1">
+            {storesUsingIds.map(sid => {
+              const s = allStores.find(x => x.id === sid)
+              return s ? (
+                <span key={sid} className="text-[10px] px-1.5 py-0.5 rounded"
+                  style={{ background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>{s.name}</span>
+              ) : null
+            })}
+          </div>
         )}
       </span>
       {editId !== m.id && (
