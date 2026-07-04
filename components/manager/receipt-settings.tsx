@@ -319,6 +319,9 @@ function VendorsDndList({ vendors, onDeleteVendor, onRefresh }: {
   onDeleteVendor: (id: string, name: string) => void
   onRefresh: () => void
 }) {
+  // 用 local state optimistic，避免拖曳後等 refetch 造成慢
+  const [localVendors, setLocalVendors] = useState(vendors)
+  useEffect(() => { setLocalVendors(vendors) }, [vendors])
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 8 } }),
@@ -326,12 +329,13 @@ function VendorsDndList({ vendors, onDeleteVendor, onRefresh }: {
   function handleDrag(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
-    const oldIdx = vendors.findIndex(v => v.id === active.id)
-    const newIdx = vendors.findIndex(v => v.id === over.id)
+    const oldIdx = localVendors.findIndex(v => v.id === active.id)
+    const newIdx = localVendors.findIndex(v => v.id === over.id)
     if (oldIdx < 0 || newIdx < 0) return
-    const reordered = arrayMove(vendors, oldIdx, newIdx)
+    const reordered = arrayMove(localVendors, oldIdx, newIdx)
+    setLocalVendors(reordered)  // optimistic
     reorderVendors(reordered.map(v => v.id))
-      .then(r => { if (r && 'error' in r) toast.error('排序失敗：' + (r as any).error); onRefresh() })
+      .then(r => { if (r && 'error' in r) toast.error('排序失敗：' + (r as any).error) })
       .catch(e => toast.error('排序失敗：' + (e instanceof Error ? e.message : String(e))))
   }
   return (
@@ -341,8 +345,8 @@ function VendorsDndList({ vendors, onDeleteVendor, onRefresh }: {
         return inter.length > 0 ? inter : closestCorners(args)
       }}
       onDragEnd={handleDrag}>
-      <SortableContext items={vendors.map(v => v.id)} strategy={verticalListSortingStrategy}>
-        {vendors.map(v => (
+      <SortableContext items={localVendors.map(v => v.id)} strategy={verticalListSortingStrategy}>
+        {localVendors.map(v => (
           <SortableVendorRow key={v.id} vendor={v} onDelete={() => onDeleteVendor(v.id, v.name)} onRename={onRefresh} />
         ))}
       </SortableContext>
