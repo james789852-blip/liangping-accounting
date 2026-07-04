@@ -3,12 +3,16 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath, revalidateTag } from 'next/cache'
+import { syncMiscVendorsFromMappingChange } from '@/lib/misc-sync'
 
 function revalidate() {
   revalidatePath('/manager/receipts')
+  revalidatePath('/manager/closing')
+  revalidatePath('/manager/settings')
+  revalidatePath('/manager/edit', 'layout')
   revalidatePath('/hq/item-mappings')
+  revalidatePath('/hq/receipt-settings')
   revalidatePath('/hq/food-cost-preview')
-  // 失效 unstable_cache 的店家品項對應
   revalidateTag('item-mappings', 'default')
 }
 
@@ -34,6 +38,11 @@ export async function saveItemMapping(
 
   // 2. 確保 system_items + store_items 也有這品項
   await ensureSystemItemAndEnable(itemName, itemCategory, vendorGroup, storeId)
+
+  // 3. 若品項屬「未分類/雜項」→ 同步到收據雜項下拉
+  if (!vendorGroup || vendorGroup === '雜項' || vendorGroup === '未分類') {
+    await syncMiscVendorsFromMappingChange(storeId ?? null)
+  }
 
   revalidate()
   return { success: true as const }
@@ -119,7 +128,7 @@ export async function deleteItemMapping(id: string) {
 
   // 先撈 mapping 資料，用來反查 system_item + store_item
   const { data: mapping } = await admin.from('item_column_mappings')
-    .select('item_name, store_id').eq('id', id).maybeSingle()
+    .select('item_name, store_id, vendor_group').eq('id', id).maybeSingle()
 
   await admin.from('item_column_mappings').delete().eq('id', id)
 
@@ -135,6 +144,12 @@ export async function deleteItemMapping(id: string) {
     }
   }
 
+  // 若原本屬「未分類/雜項」→ 同步移除收據雜項下拉
+  const oldVg = mapping?.vendor_group
+  if (!oldVg || oldVg === '雜項' || oldVg === '未分類') {
+    await syncMiscVendorsFromMappingChange(mapping?.store_id ?? null)
+  }
+
   revalidate()
   return { success: true }
 }
@@ -145,9 +160,11 @@ export async function updateItemMapping(id: string, excelColumn: string, itemCat
   if (!user) return { error: '未登入' }
   const admin = createAdminClient()
 
-  // 撈原 mapping 拿 item_name + store_id
+  // 撈原 mapping 拿 item_name + store_id + 舊 vg
   const { data: mapping } = await admin.from('item_column_mappings')
-    .select('item_name, store_id').eq('id', id).maybeSingle()
+    .select('item_name, store_id, vendor_group').eq('id', id).maybeSingle()
+  const oldVg = mapping?.vendor_group ?? null
+  const newVg = vendorGroup !== undefined ? (vendorGroup || null) : oldVg
 
   await admin.from('item_column_mappings').update({
     excel_column: excelColumn, item_category: itemCategory,
@@ -171,6 +188,13 @@ export async function updateItemMapping(id: string, excelColumn: string, itemCat
         .eq('store_id', mapping.store_id)
         .eq('system_item_id', sys.id)
     }
+  }
+
+  // 若 vg 涉及「未分類/雜項」（進或出）→ 同步收據雜項下拉
+  const wasMisc = !oldVg || oldVg === '雜項' || oldVg === '未分類'
+  const isMisc = !newVg || newVg === '雜項' || newVg === '未分類'
+  if (wasMisc || isMisc) {
+    await syncMiscVendorsFromMappingChange(mapping?.store_id ?? null)
   }
 
   revalidate()
@@ -203,7 +227,7 @@ export async function batchDeleteItemMappings(ids: string[]) {
 
   // 撈全部 mappings 資料
   const { data: mappings } = await admin.from('item_column_mappings')
-    .select('id, item_name, store_id').in('id', ids)
+    .select('id, item_name, store_id, vendor_group').in('id', ids)
 
   await admin.from('item_column_mappings').delete().in('id', ids)
 
@@ -219,6 +243,15 @@ export async function batchDeleteItemMappings(ids: string[]) {
         .eq('system_item_id', sys.id)
     }
   }
+
+  // 同步收據雜項下拉（僅針對被刪除的「未分類/雜項」品項所屬的店）
+  const affectedStores = new Set<string | null>()
+  for (const m of mappings ?? []) {
+    const vg = (m as any).vendor_group
+    if (!vg || vg === '雜項' || vg === '未分類') affectedStores.add(m.store_id ?? null)
+  }
+  for (const sid of affectedStores) await syncMiscVendorsFromMappingChange(sid)
+
   revalidate()
   return { success: true as const, deleted: mappings?.length ?? 0 }
 }
@@ -227,7 +260,7 @@ export async function batchDeleteItemMappings(ids: string[]) {
 export async function renameItem(mappingId: string, newName: string, syncReceipts = false) {
   const admin = createAdminClient()
   const { data: mapping } = await admin.from('item_column_mappings')
-    .select('id, item_name, store_id, excel_column').eq('id', mappingId).maybeSingle()
+    .select('id, item_name, store_id, excel_column, vendor_group').eq('id', mappingId).maybeSingle()
   if (!mapping) return { error: '找不到品項' }
   const oldName = mapping.item_name as string
   if (!newName.trim()) return { error: '名稱不可空白' }
@@ -253,6 +286,13 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
       .eq('item_name', oldName)
       // 只更新該店的 receipts（透過 receipt_id join → 過濾）— 用 raw filter 較複雜，這裡 update by name 影響全部歷史
   }
+
+  // 若品項屬「未分類/雜項」→ 同步 receipt_vendors 名稱（先刪舊 + 加新 = full re-sync）
+  const vg = (mapping as any).vendor_group
+  if (!vg || vg === '雜項' || vg === '未分類') {
+    await syncMiscVendorsFromMappingChange(mapping.store_id ?? null)
+  }
+
   revalidate()
   return { success: true as const }
 }
@@ -270,7 +310,7 @@ export async function reorderItemMappings(ids: string[]) {
 
   // 2. 同步 system_items / store_items 的 sort_order（xlsx 匯出依這個排）
   const { data: mappings } = await admin.from('item_column_mappings')
-    .select('id, item_name, store_id').in('id', ids)
+    .select('id, item_name, store_id, vendor_group').in('id', ids)
   if (mappings?.length) {
     // 撈所有涉及的 system_items
     const names = mappings.map(m => m.item_name)
@@ -296,6 +336,14 @@ export async function reorderItemMappings(ids: string[]) {
       }
     }))
   }
+
+  // 3. 若排序涉及「未分類/雜項」品項 → 同步 receipt_vendors 排序
+  const affectedStores = new Set<string | null>()
+  for (const m of mappings ?? []) {
+    const vg = (m as any).vendor_group
+    if (!vg || vg === '雜項' || vg === '未分類') affectedStores.add(m.store_id ?? null)
+  }
+  for (const sid of affectedStores) await syncMiscVendorsFromMappingChange(sid)
 
   revalidate()
   return { success: true }
