@@ -451,7 +451,7 @@ export default function ItemMappingsClient({
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 pb-28 flex-1 overflow-y-auto w-full">
+      <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 pb-28 flex-1 overflow-y-auto w-full" id="mappings-scroll">
 
         {/* 教學說明 */}
         <HelpBox title="📖 這頁怎麼用？（直接決定 Excel 匯出）">
@@ -671,6 +671,20 @@ export default function ItemMappingsClient({
                 {hasVgRecord && vg !== '未分類' && (
                   <VgActions vgName={vg} storeId={activeStoreId || null} itemCount={items.length} onDone={() => router.refresh()} />
                 )}
+                {/* 分類內快速新增品項（自動填入該分類） */}
+                <button onClick={() => {
+                  setShowAdd(true); setNewName(''); setNewCol(''); setNewCat('食材')
+                  setNewVendorGroup(vg === '未分類' ? '' : vg)
+                  // 滾到頂部 add form（scroll container = #mappings-scroll）
+                  setTimeout(() => {
+                    document.getElementById('mappings-scroll')?.scrollTo({ top: 0, behavior: 'smooth' })
+                  }, 50)
+                }}
+                  className="ml-auto flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                  style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', cursor: 'pointer' }}
+                  title={`新增品項到「${vg}」`}>
+                  <Plus className="h-3 w-3" /> 加品項
+                </button>
               </div>
               <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                 <SortableContext items={items.map(m => m.id)} strategy={verticalListSortingStrategy}>
