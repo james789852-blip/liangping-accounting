@@ -114,7 +114,7 @@ function CrossCheckRow({ order, ckDailyRecordId, disabled }: {
 interface MemberOrder { store_id: string; store_name: string; amount: number; submitted: boolean; confirmed_amount?: number | null }
 interface ExternalStore { id: string; name: string }
 interface ExternalOrder { name: string; amount: number }
-interface Expense { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string; vendor_group: string; doc_type: string }
+interface Expense { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string; vendor_group: string; doc_type: string; note: string }
 interface ExistingRecord {
   id: string
   payer_name?: string
@@ -164,9 +164,9 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   // 支出明細
   const [expenses, setExpenses] = useState<Expense[]>(existing?.expenses ?? [])
   const [newExpense, setNewExpense] = useState<{
-    category: '食材' | '耗材' | '雜項'; item_name: string; amount: string; payer_name: string; vendor_group: string; doc_type: string
+    category: '食材' | '耗材' | '雜項'; item_name: string; amount: string; payer_name: string; vendor_group: string; doc_type: string; note: string
   }>({
-    category: '食材', item_name: '', amount: '', payer_name: '', vendor_group: '', doc_type: '發票',
+    category: '食材', item_name: '', amount: '', payer_name: '', vendor_group: '', doc_type: '發票', note: '',
   })
   // 支出：類別 → 廠商 → 品項 三層 dropdown（跟店面版一致）
   const [activeCat, setActiveCat] = useState<string>(receiptCategories[0]?.name ?? '廠商類別')
@@ -207,8 +207,9 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       payer_name: newExpense.payer_name.trim(),
       vendor_group: newExpense.vendor_group.trim(),
       doc_type: newExpense.doc_type,
+      note: newExpense.note.trim(),
     }])
-    setNewExpense(p => ({ ...p, item_name: '', amount: '', payer_name: '' }))
+    setNewExpense(p => ({ ...p, item_name: '', amount: '', payer_name: '', note: '' }))
   }
 
   function removeExpense(id: string) {
@@ -252,6 +253,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         payer_name: e.payer_name || undefined,
         vendor_group: e.vendor_group || undefined,
         doc_type: e.doc_type || undefined,
+        note: e.note || undefined,
       })),
       receiptPhotoUrls: photoUrls,
     })
@@ -508,6 +510,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                   <input className={INPUT} style={INPUT_STYLE} placeholder="誰付（選填）"
                     value={newExpense.payer_name} onChange={e => setNewExpense(p => ({ ...p, payer_name: e.target.value }))} />
                 </div>
+                <input className={INPUT} style={INPUT_STYLE} placeholder="備注（選填，會顯示在 Excel 附註）"
+                  value={newExpense.note} onChange={e => setNewExpense(p => ({ ...p, note: e.target.value }))} />
                 <button type="button" onClick={addExpense}
                   className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl"
                   style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white' }}>

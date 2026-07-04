@@ -106,7 +106,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
   note?: string
   status?: 'draft' | 'submitted'
   externalOrders?: { name: string; amount: number }[]
-  expenses?: { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string }[]
+  expenses?: { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string }[]
   receiptPhotoUrls?: string[]
 }) {
   const ctx = await getAuthContext()
@@ -165,6 +165,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
           payer_name: e.payer_name ?? null,
           vendor_group: e.vendor_group ?? null,
           doc_type: e.doc_type ?? null,
+          note: (e as any).note ?? null,
           sort_order: i,
         }))
       )
