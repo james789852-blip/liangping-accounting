@@ -192,10 +192,11 @@ function CategoryCard({ cat, storeId, expanded, isFirst, isLast, onMoveUp, onMov
   }
 
   async function handleDeleteVendor(vendorId: string, vendorName: string) {
+    if (!confirm(`確定刪除廠商「${vendorName}」？`)) return
     const r = await deleteVendor(vendorId)
     if (r.error) { toast.error(r.error); return }
     toast.success(`已刪除「${vendorName}」`)
-    onRefresh()
+    // 不 refresh：local optimistic 已從 UI 移除，避免整頁 refetch 導致排序被 reset
   }
 
   return (
@@ -293,7 +294,7 @@ function VendorsDndList({ vendors, onDeleteVendor, onRefresh }: {
   onDeleteVendor: (id: string, name: string) => void
   onRefresh: () => void
 }) {
-  // 用 local state optimistic，避免拖曳後等 refetch 造成慢
+  // 用 local state optimistic，避免拖曳/刪除後等 refetch 造成慢和順序被 reset
   const [localVendors, setLocalVendors] = useState(vendors)
   useEffect(() => { setLocalVendors(vendors) }, [vendors])
   const sensors = useSensors(
@@ -312,6 +313,11 @@ function VendorsDndList({ vendors, onDeleteVendor, onRefresh }: {
       .then(r => { if (r && 'error' in r) toast.error('排序失敗：' + (r as any).error) })
       .catch(e => toast.error('排序失敗：' + (e instanceof Error ? e.message : String(e))))
   }
+  // Wrapper：先 optimistic 從 local 移除，再呼叫 parent delete；成功後不 refetch（避免順序 reset）
+  function localDelete(id: string, name: string) {
+    setLocalVendors(prev => prev.filter(v => v.id !== id))
+    onDeleteVendor(id, name)
+  }
   return (
     <DndContext sensors={sensors}
       collisionDetection={(args) => {
@@ -321,7 +327,7 @@ function VendorsDndList({ vendors, onDeleteVendor, onRefresh }: {
       onDragEnd={handleDrag}>
       <SortableContext items={localVendors.map(v => v.id)} strategy={verticalListSortingStrategy}>
         {localVendors.map(v => (
-          <SortableVendorRow key={v.id} vendor={v} onDelete={() => onDeleteVendor(v.id, v.name)} onRename={onRefresh} />
+          <SortableVendorRow key={v.id} vendor={v} onDelete={() => localDelete(v.id, v.name)} onRename={onRefresh} />
         ))}
       </SortableContext>
     </DndContext>
