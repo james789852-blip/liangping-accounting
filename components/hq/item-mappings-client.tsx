@@ -81,8 +81,12 @@ export default function ItemMappingsClient({
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
+  // 用 state 保存 vendorGroups，允許 optimistic update
+  const [vgsState, setVgsState] = useState(vendorGroups)
+
   // Sync from server after router.refresh()
   useEffect(() => { setMappings(initial) }, [initial])
+  useEffect(() => { setVgsState(vendorGroups) }, [vendorGroups])
 
   // Drag-and-drop sensors — 桌面觸發距離小 + 手機 delay 縮短
   const sensors = useSensors(
@@ -239,7 +243,7 @@ export default function ItemMappingsClient({
 
   // 排序：優先用 system_vendor_groups.sort_order（對齊各店 Excel 順序），
   //       不在 system_vendor_groups 內的分類往後排
-  const vgSortMap = new Map(vendorGroups.map(v => [v.name, v.sort_order] as const))
+  const vgSortMap = new Map(vgsState.map(v => [v.name, v.sort_order] as const))
   const groupOrder = Object.keys(grouped).sort((a, b) => {
     const sa = vgSortMap.has(a) ? vgSortMap.get(a)! : 99999
     const sb = vgSortMap.has(b) ? vgSortMap.get(b)! : 99999
@@ -256,10 +260,16 @@ export default function ItemMappingsClient({
     if (!name) return
     startTransition(async () => {
       const { createVendorGroup } = await import('@/app/actions/system-config')
-      const r = await createVendorGroup({ name, kind: 'vendor', sort_order: 100 })
+      const maxSort = Math.max(0, ...vgsState.map(v => v.sort_order ?? 0))
+      const sort = maxSort + 10
+      const r = await createVendorGroup({ name, kind: 'vendor', sort_order: sort })
       if ('error' in r && r.error) {
         toast.error(r.error)
         return
+      }
+      // Optimistic：立即把新 vg 加入 local state，UI 立刻有排序 / 單據下拉 / rename
+      if ('id' in r && r.id) {
+        setVgsState(prev => [...prev, { id: r.id!, name, sort_order: sort, doc_type: null }])
       }
       toast.success(`已新增分類「${name}」`)
       setShowAddVg(false)
@@ -275,13 +285,13 @@ export default function ItemMappingsClient({
     if (newIdx < 0 || newIdx >= groupOrder.length) return
     const reordered = [...groupOrder]
     ;[reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]]
-    const ids = reordered.map(name => vendorGroups.find(v => v.name === name)?.id).filter((x): x is string => !!x)
+    const ids = reordered.map(name => vgsState.find(v => v.name === name)?.id).filter((x): x is string => !!x)
     if (ids.length === 0) return
-    // optimistic：更新 local vgSortMap
-    ids.forEach((id, i) => {
-      const vg = vendorGroups.find(v => v.id === id)
-      if (vg) vg.sort_order = (i + 1) * 10
-    })
+    // optimistic：更新 local vgsState.sort_order
+    setVgsState(prev => prev.map(v => {
+      const i = ids.indexOf(v.id)
+      return i >= 0 ? { ...v, sort_order: (i + 1) * 10 } : v
+    }))
     // fire-and-forget server update
     import('@/app/actions/system-config').then(({ reorderVendorGroups }) => {
       reorderVendorGroups(ids)
@@ -292,8 +302,6 @@ export default function ItemMappingsClient({
           toast.error('分類排序失敗：' + (e instanceof Error ? e.message : String(e)))
         })
     })
-    // 強制 re-render（vendorGroups 是 prop 修改但 React 不會察覺，所以手動觸發）
-    setMappings(prev => [...prev])
   }
 
   async function handleBatchDelete() {
@@ -676,7 +684,7 @@ export default function ItemMappingsClient({
                 <span className="text-xs" style={{ color: '#a1a1aa' }}>{items.length} 項</span>
                 {/* 單據類型（doc_type）— Excel Row 2 顯示的內容 */}
                 {(() => {
-                  const vgRec = vendorGroups.find(v => v.name === vg)
+                  const vgRec = vgsState.find(v => v.name === vg)
                   if (!vgRec) return null
                   return (
                     <VgDocTypeSelector vgId={vgRec.id} vgName={vg} currentDoc={vgRec.doc_type ?? null} />
