@@ -32,6 +32,58 @@ interface DayData {
   totalExpense: number
 }
 
+function appendStoreOrdersSheet(
+  wb: ExcelJS.Workbook,
+  days: string[],
+  dataMap: Record<string, DayData>,
+  assignedStoreNames: string[],
+) {
+  const externalNames = [...new Set(
+    Object.values(dataMap).flatMap(d => Object.keys(d.storeRevenues))
+      .filter(name => !assignedStoreNames.includes(name))
+  )]
+  const allStoreNames = [...assignedStoreNames, ...externalNames]
+  if (allStoreNames.length === 0) return
+
+  const sheetName = '各店叫貨'
+  const existing = wb.getWorksheet(sheetName)
+  if (existing) wb.removeWorksheet(existing.id)
+  const ws = wb.addWorksheet(sheetName, { views: [{ state: 'frozen', xSplit: 2, ySplit: 1 }] })
+
+  const headers = ['日期', '星期', ...allStoreNames, '合計']
+  const headerRow = ws.addRow(headers)
+  headerRow.font = { bold: true }
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD966' } }
+
+  for (const date of days) {
+    const d = dataMap[date]
+    const dt = new Date(date + 'T00:00:00+08:00')
+    const cols = allStoreNames.map(name => d?.storeRevenues[name] ?? null)
+    const total = d?.totalRevenue ?? null
+    ws.addRow([date, `星期${WEEKDAYS[dt.getDay()]}`, ...cols, total])
+  }
+
+  // 月合計列
+  const totalsRow: (string | number | null)[] = ['月合計', '']
+  for (const name of allStoreNames) {
+    let sum = 0
+    for (const date of days) sum += dataMap[date]?.storeRevenues[name] ?? 0
+    totalsRow.push(sum || null)
+  }
+  let grand = 0
+  for (const date of days) grand += dataMap[date]?.totalRevenue ?? 0
+  totalsRow.push(grand || null)
+  const trow = ws.addRow(totalsRow)
+  trow.font = { bold: true }
+  trow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }
+
+  ws.getColumn(1).width = 12
+  ws.getColumn(2).width = 7
+  for (let c = 3; c <= headers.length; c++) {
+    ws.getColumn(c).width = Math.max(headers[c - 1].length * 1.8 + 2, 10)
+  }
+}
+
 async function fillTemplate(
   templateBlob: Blob,
   monthNum: number,
@@ -39,6 +91,7 @@ async function fillTemplate(
   days: string[],
   dataMap: Record<string, DayData>,
   ckStoreName: string,
+  assignedStoreNames: string[],
 ): Promise<NextResponse | null> {
   const wb = new ExcelJS.Workbook()
   try {
@@ -129,6 +182,9 @@ async function fillTemplate(
       }
     })
   })
+
+  // 附加「各店叫貨」sheet
+  appendStoreOrdersSheet(wb, days, dataMap, assignedStoreNames)
 
   const filename = encodeURIComponent(`${ckStoreName}_${year}${String(monthNum).padStart(2, '0')}_央廚食耗.xlsx`)
   const buf = await wb.xlsx.writeBuffer()
@@ -224,7 +280,8 @@ export async function GET(req: NextRequest) {
   try {
     const { data: tmpl, error: dlErr } = await admin.storage.from(BUCKET).download(`ck-${ckStoreId}.xlsx`)
     if (!dlErr && tmpl) {
-      const result = await fillTemplate(tmpl, monthNum, year, days, dataMap, ckStore.name as string)
+      const assignedNames = assignedIds.map(id => storeNameMap[id]).filter(Boolean)
+      const result = await fillTemplate(tmpl, monthNum, year, days, dataMap, ckStore.name as string, assignedNames)
       if (result) { result.headers.set('X-Export-Mode', 'template'); return result }
     }
   } catch (e) { console.warn('[ck-export] template failed:', e) }
