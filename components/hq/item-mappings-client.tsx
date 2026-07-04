@@ -75,6 +75,8 @@ export default function ItemMappingsClient({
   const [batchStoreIds, setBatchStoreIds] = useState<string[]>([])
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [inlineAddVg, setInlineAddVg] = useState<string | null>(null)
+  const [inlineAddName, setInlineAddName] = useState('')
   const [newVgName, setNewVgName] = useState('')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
@@ -684,21 +686,50 @@ export default function ItemMappingsClient({
                 {hasVgRecord && vg !== '未分類' && (
                   <VgActions vgName={vg} storeId={activeStoreId || null} itemCount={items.length} onDone={() => router.refresh()} />
                 )}
-                {/* 分類內快速新增品項（自動填入該分類） */}
+                {/* 分類內快速新增品項（inline，就地展開輸入框） */}
                 <button onClick={() => {
-                  setShowAdd(true); setNewName(''); setNewCol(''); setNewCat('食材')
-                  setNewVendorGroup(vg === '未分類' ? '' : vg)
-                  // 滾到頂部 add form（scroll container = #mappings-scroll）
-                  setTimeout(() => {
-                    document.getElementById('mappings-scroll')?.scrollTo({ top: 0, behavior: 'smooth' })
-                  }, 50)
+                  if (inlineAddVg === vg) { setInlineAddVg(null); return }
+                  setInlineAddVg(vg); setInlineAddName('')
                 }}
                   className="ml-auto flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
-                  style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', cursor: 'pointer' }}
+                  style={inlineAddVg === vg
+                    ? { background: '#F59E0B', color: 'white', border: '1px solid #F59E0B', cursor: 'pointer' }
+                    : { background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', cursor: 'pointer' }}
                   title={`新增品項到「${vg}」`}>
                   <Plus className="h-3 w-3" /> 加品項
                 </button>
               </div>
+              {inlineAddVg === vg && (
+                <div className="flex items-center gap-2 mb-2 px-2 py-2 rounded-lg" style={{ background: '#FFFBEB', border: '1.5px solid #FDE68A' }}>
+                  <input autoFocus value={inlineAddName} onChange={e => setInlineAddName(e.target.value)}
+                    placeholder="品項名稱（例：辣椒）"
+                    onKeyDown={e => { if (e.key === 'Escape') { setInlineAddVg(null); setInlineAddName('') } }}
+                    style={{ flex: 1, height: 32, padding: '0 8px', border: '1.5px solid #F59E0B', borderRadius: 6, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+                  <button disabled={!inlineAddName.trim() || isPending}
+                    onClick={() => {
+                      const name = inlineAddName.trim()
+                      if (!name) return
+                      startTransition(async () => {
+                        const targetVg = vg === '未分類' ? undefined : vg
+                        const storeParam = activeStoreId || undefined
+                        const r = await saveItemMapping(name, name, '食材', storeParam, targetVg)
+                        if (r && 'error' in r) { toast.error('新增失敗：' + r.error); return }
+                        toast.success(`已加「${name}」到「${vg}」`)
+                        setInlineAddName('')
+                        router.refresh()
+                      })
+                    }}
+                    className="text-xs font-semibold px-3 py-1 rounded-lg text-white"
+                    style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', cursor: 'pointer', opacity: (!inlineAddName.trim() || isPending) ? 0.5 : 1 }}>
+                    儲存
+                  </button>
+                  <button onClick={() => { setInlineAddVg(null); setInlineAddName('') }}
+                    className="text-xs font-semibold px-2 py-1 rounded-lg"
+                    style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b', cursor: 'pointer' }}>
+                    取消
+                  </button>
+                </div>
+              )}
               <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                 <SortableContext items={items.map(m => m.id)} strategy={verticalListSortingStrategy}>
                 {(() => {
