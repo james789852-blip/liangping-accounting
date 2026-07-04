@@ -221,14 +221,9 @@ export default function ItemMappingsClient({
     })
   }
 
-  // 顯示用：若 item_name 以 vendor_group 開頭就剝離前綴（"翁師傅其他" → "其他"）
-  // 但剝掉後長度需 ≥ 2 字元，避免「麵線」→「線」單字這種誤剝
+  // UI 直接顯示完整 item_name（不剝 vg 前綴），避免「你看到什麼 vs 實際名字」的混淆
+  // xlsx 匯出時另有 displayHeader 邏輯剝離前綴（保持 xlsx layout 整齊）
   function displayName(m: Mapping): string {
-    const vg = m.vendor_group?.trim()
-    if (vg && m.item_name.startsWith(vg) && m.item_name !== vg) {
-      const stripped = m.item_name.slice(vg.length)
-      if (stripped.length >= 2) return stripped
-    }
     return m.item_name
   }
 
