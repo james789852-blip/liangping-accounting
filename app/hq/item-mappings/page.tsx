@@ -53,7 +53,8 @@ export default async function ItemMappingsPage({
   }
 
   const params = await searchParams
-  const storeId = params.storeId ?? ''
+  // 全域已廢除，一律預設第一個店家
+  const storeId = params.storeId ?? stores?.[0]?.id ?? ''
 
   // 幫每個 mapping 加 doc_type_override 資訊
   const sysByName = new Map((sysItems ?? []).map((s: any) => [s.name as string, { id: s.id as string, override: s.doc_type_override as string | null }]))

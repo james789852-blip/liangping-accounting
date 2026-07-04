@@ -410,17 +410,10 @@ export default function ItemMappingsClient({
               </div>
               <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>品項對應管理</h1>
               <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>
-                {isStorePage ? '包含「此店專屬」+「全域繼承」— 即 Excel 匯出實際會用到的品項' : '全域預設對應（適用所有店）'}
+                各店專屬品項對應 — 即 Excel 匯出實際會用到的品項
               </p>
             </div>
             <div className="flex items-center gap-2 mt-1">
-              {isStorePage && globalCount > 0 && (
-                <button onClick={handleCopyGlobal} disabled={isPending}
-                  className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
-                  style={{ background: 'white', border: '1.5px solid #FEF3C7', color: '#92400E' }}>
-                  <Copy className="h-3.5 w-3.5" /> 複製全域
-                </button>
-              )}
               <button onClick={() => { setSortMode(v => !v); setSelectMode(false) }}
                 className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors"
                 style={sortMode
@@ -450,17 +443,9 @@ export default function ItemMappingsClient({
             </div>
           </div>
 
-          {/* Store tabs */}
+          {/* Store tabs（全域已廢除，一律該店專屬） */}
           {stores.length > 0 && (
             <div className="flex gap-2 mt-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-              <button
-                onClick={() => { setActiveStoreId(''); setShowAdd(false); setEditId(null) }}
-                className="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
-                style={activeStoreId === ''
-                  ? { background: '#F59E0B', color: 'white' }
-                  : { background: '#f4f4f5', color: '#52525b' }}>
-                全域預設 ({globalCount})
-              </button>
               {stores.map(s => {
                 const count = mappings.filter(m => m.store_id === s.id).length
                 return (
@@ -911,15 +896,7 @@ function SortableItemRow({
       )}
       <span className="flex-1 text-sm font-semibold flex flex-wrap items-center gap-1.5" style={{ color: '#18181b' }}>
         <InlineItemNameEditor mappingId={m.id} currentName={displayName(m)} fullName={m.item_name} />
-        {isStorePage && !m.store_id && (
-          <span title="來自全域預設（編輯會影響所有店）" className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-            style={{ background: '#e0e7ff', color: '#4338ca' }}>全域</span>
-        )}
-        {isStorePage && m.store_id === activeStoreId && (
-          <span title="此店專屬 override" className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-            style={{ background: '#fef3c7', color: '#92400e' }}>專屬</span>
-        )}
-        {!isStorePage && (
+        {false && (
           <button onClick={() => setShowStores(v => !v)}
             className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-1"
             style={{ background: '#dcfce7', color: '#166534', border: '1px solid #86efac', cursor: 'pointer' }}
