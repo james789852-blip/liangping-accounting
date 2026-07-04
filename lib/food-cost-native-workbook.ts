@@ -500,22 +500,22 @@ export async function addFoodCostSheet(
     }
   }
 
-  // ── 欄寬（加寬避免字體被壓縮） ──
+  // ── 欄寬（依字體大小重新加寬避免字體被擋） ──
   for (const c of cols) {
     // 依 header 中文字數動態決定，但確保最小寬度
-    const baseByKind = c.kind === 'date' ? 14 : c.kind === 'weekday' ? 12 : c.kind === 'income' ? 16 : c.kind === 'stat' ? 16 : 14
+    const baseByKind = c.kind === 'date' ? 16 : c.kind === 'weekday' ? 12 : c.kind === 'income' ? 18 : c.kind === 'stat' ? 18 : 16
     const headerLen = (c.header ?? '').length
-    // 中文字大約每字 2 個寬度單位；取 max(base, headerLen*2 + 2)
-    const width = Math.max(baseByKind, headerLen * 2 + 2)
+    // 中文字（13pt）大約每字 2.6 個寬度單位；含全形括弧預留 padding
+    const width = Math.max(baseByKind, headerLen * 2.6 + 3)
     ws.getColumn(c.index).width = width
     // 取消 shrinkToFit（避免文字自動縮小）
     ws.getColumn(c.index).alignment = { ...(ws.getColumn(c.index).alignment as any), shrinkToFit: false, wrapText: true }
   }
-  // ── Row 高度加大以容納較大字體 ──
-  ws.getRow(1).height = 32
-  ws.getRow(2).height = 26
-  ws.getRow(HEADER_ROW).height = 32
-  ws.getRow(TOTAL_ROW).height = 26
+  // ── Row 高度加大以容納較大字體 + 2 行 wrap ──
+  ws.getRow(1).height = 38
+  ws.getRow(2).height = 30
+  ws.getRow(HEADER_ROW).height = 40
+  ws.getRow(TOTAL_ROW).height = 30
   for (let i = 0; i < daysInMonth; i++) {
     ws.getRow(DATA_START + i).height = 22
   }
