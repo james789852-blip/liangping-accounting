@@ -114,12 +114,8 @@ export default function ReceiptSettingsClient({
         {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
       </select>
 
-      {type === 'store' && currentStoreId && (
+      {currentStoreId && (
         <ReceiptSettings storeId={currentStoreId} initialCategories={initialCategories} />
-      )}
-
-      {type === 'ck' && currentStoreId && (
-        <CKVendorGroupsEditor ckStoreId={currentStoreId} initialGroups={initialCKGroups} />
       )}
     </div>
   )

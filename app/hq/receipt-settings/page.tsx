@@ -37,15 +37,11 @@ export default async function HQReceiptSettingsPage({
     ? await admin.from('stores').select('name').eq('id', storeId).single()
     : { data: null }
 
-  const initialData = storeId && type === 'store'
+  // 央廚也用兩層 receipt_categories/receipt_vendors（跟店面版一致）
+  const initialData = storeId
     ? await getReceiptSettings(storeId)
     : []
-  const initialCKGroups = storeId && type === 'ck'
-    ? (await admin.from('ck_vendor_groups')
-        .select('id, ck_store_id, name, doc_type, sort_order, active')
-        .eq('ck_store_id', storeId).eq('active', true)
-        .order('sort_order').order('name')).data ?? []
-    : []
+  const initialCKGroups: any[] = []
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
