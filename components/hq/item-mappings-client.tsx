@@ -184,6 +184,13 @@ export default function ItemMappingsClient({
         toast.error(`新增失敗：${errors.map(e => e.error).join('；')}`)
         return
       }
+      // Optimistic：若 auto-create 了新 vg，立即加入 vgsState
+      for (const r of results) {
+        const newVg = (r as any)?.newVg as { id: string; name: string; sort_order: number } | null | undefined
+        if (newVg) {
+          setVgsState(prev => prev.some(v => v.id === newVg.id) ? prev : [...prev, { ...newVg, doc_type: null }])
+        }
+      }
       toast.success(`已新增到 ${targets.length} 個位置`)
       setShowAdd(false); setNewName(''); setNewCol(''); setNewCat('食材'); setNewVendorGroup(''); setBatchStoreIds([])
       router.refresh()
@@ -357,7 +364,13 @@ export default function ItemMappingsClient({
               <input value={newVgName} onChange={e => setNewVgName(e.target.value)} autoFocus
                 placeholder="例：豆腐商 / 滷肉廠商 / 蛋商"
                 style={INPUT_STYLE}
-                onKeyDown={e => { if (e.key === 'Enter') handleAddVendorGroup() }} />
+                onKeyDown={e => {
+                  // 中文 IME 組字期間 Enter 是選字用，不能觸發提交
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+                    e.preventDefault()
+                    handleAddVendorGroup()
+                  }
+                }} />
               <p className="text-[11px] mt-1.5" style={{ color: '#a1a1aa' }}>新增後可在分類列表用上下箭頭調整位置（影響 Excel 匯出順序）</p>
             </div>
             <div className="flex gap-2 pt-1">
@@ -722,6 +735,9 @@ export default function ItemMappingsClient({
                         const storeParam = activeStoreId || undefined
                         const r = await saveItemMapping(name, name, '食材', storeParam, targetVg)
                         if (r && 'error' in r) { toast.error('新增失敗：' + r.error); return }
+                        // Optimistic：若 auto-create 新 vg → 加入 vgsState
+                        const newVg = (r as any)?.newVg
+                        if (newVg) setVgsState(prev => prev.some(v => v.id === newVg.id) ? prev : [...prev, { ...newVg, doc_type: null }])
                         toast.success(`已加「${name}」到「${vg}」`)
                         setInlineAddName('')
                         router.refresh()

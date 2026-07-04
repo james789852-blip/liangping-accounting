@@ -37,7 +37,7 @@ export async function saveItemMapping(
   if (insertErr) return { error: `新增失敗：${insertErr.message}` }
 
   // 2. 確保 system_items + store_items 也有這品項
-  await ensureSystemItemAndEnable(itemName, itemCategory, vendorGroup, storeId)
+  const ensured = await ensureSystemItemAndEnable(itemName, itemCategory, vendorGroup, storeId)
 
   // 3. 若品項屬「未分類/雜項」→ 同步到收據雜項下拉
   if (!vendorGroup || vendorGroup === '雜項' || vendorGroup === '未分類') {
@@ -45,29 +45,35 @@ export async function saveItemMapping(
   }
 
   revalidate()
-  return { success: true as const }
+  return { success: true as const, newVg: ensured.newlyCreatedVg }
 }
 
 /** 確保品項在 system_items 存在，且該店的 store_items 啟用 */
 async function ensureSystemItemAndEnable(
   itemName: string, itemCategory: string, vendorGroup?: string, storeId?: string,
-) {
+): Promise<{ newlyCreatedVg: { id: string; name: string; sort_order: number } | null }> {
   const admin = createAdminClient()
   const catValid = (['食材', '耗材', '雜項'] as const).includes(itemCategory as any) ? itemCategory : '雜項'
 
   // 找 vendor_group_id（若 vendorGroup 有值）
   let vendorGroupId: string | null = null
+  let newlyCreatedVg: { id: string; name: string; sort_order: number } | null = null
   if (vendorGroup?.trim()) {
     const { data: vg } = await admin.from('system_vendor_groups')
       .select('id').eq('name', vendorGroup.trim()).eq('active', true).maybeSingle()
     if (vg) {
       vendorGroupId = vg.id
     } else {
-      // 建新的 vendor group
+      // 建新的 vendor group（sort_order 排到現有最大值 +10）
+      const { data: allVgs } = await admin.from('system_vendor_groups')
+        .select('sort_order').eq('active', true)
+      const maxSort = Math.max(0, ...(allVgs ?? []).map((v: any) => v.sort_order ?? 0))
+      const newSort = maxSort + 10
       const { data: newVg } = await admin.from('system_vendor_groups').insert({
-        name: vendorGroup.trim(), sort_order: 100, active: true,
-      }).select('id').single()
+        name: vendorGroup.trim(), kind: 'vendor', sort_order: newSort, active: true,
+      }).select('id, sort_order').single()
       vendorGroupId = newVg?.id ?? null
+      if (newVg?.id) newlyCreatedVg = { id: newVg.id, name: vendorGroup.trim(), sort_order: newVg.sort_order ?? newSort }
     }
   }
 
@@ -102,6 +108,7 @@ async function ensureSystemItemAndEnable(
       })
     }
   }
+  return { newlyCreatedVg }
 }
 
 export async function saveItemMappingsBatch(
