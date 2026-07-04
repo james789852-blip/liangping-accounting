@@ -10,7 +10,7 @@ import { Trash2, Edit2, Check, X, Plus, Tag, Copy, ChevronLeft, ChevronUp, Chevr
 import { toast } from 'sonner'
 import HelpBox from './help-box'
 import {
-  DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors,
+  DndContext, closestCorners, pointerWithin, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
 import {
@@ -630,7 +630,14 @@ export default function ItemMappingsClient({
         ) : null}
 
         {/* Mapping list — 以 vendor_group 為主分類 */}
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext sensors={sensors}
+          collisionDetection={(args) => {
+            // 優先用 pointer 位置判別（比 closestCenter 準確）
+            const p = pointerWithin(args)
+            if (p.length > 0) return p
+            return closestCorners(args)
+          }}
+          onDragEnd={handleDragEnd}>
         {groupOrder.map((vg, vgIdx) => {
           const items = grouped[vg]
           const vgSt = vg === '未分類' ? VG_STYLE_UNCAT : DOC_TYPES.has(vg) ? VG_STYLE_DOC : VG_STYLE
