@@ -42,11 +42,23 @@ export async function getReceiptSettings(storeId: string): Promise<CategoryWithV
   }))
 }
 
+async function nextCatSort(storeId: string): Promise<number> {
+  const admin = createAdminClient()
+  const { data } = await admin.from('receipt_categories').select('sort_order').eq('store_id', storeId)
+  return Math.max(0, ...(data ?? []).map((r: any) => r.sort_order ?? 0)) + 10
+}
+async function nextVendorSort(categoryId: string): Promise<number> {
+  const admin = createAdminClient()
+  const { data } = await admin.from('receipt_vendors').select('sort_order').eq('category_id', categoryId)
+  return Math.max(0, ...(data ?? []).map((r: any) => r.sort_order ?? 0)) + 10
+}
+
 export async function addCategory(storeId: string, name: string) {
   await requireAuth()
   if (!name.trim()) return { error: '請輸入類別名稱' }
   const admin = createAdminClient()
-  const { error } = await admin.from('receipt_categories').insert({ store_id: storeId, name: name.trim() })
+  const sortOrder = await nextCatSort(storeId)
+  const { error } = await admin.from('receipt_categories').insert({ store_id: storeId, name: name.trim(), sort_order: sortOrder })
   if (error) return { error: error.code === '23505' ? '類別已存在' : error.message }
   revalidatePath('/', 'layout')
   return { success: true }
@@ -56,15 +68,16 @@ export async function addCategoryWithVendors(storeId: string, categoryName: stri
   await requireAuth()
   if (!categoryName.trim()) return { error: '請輸入類別名稱' }
   const admin = createAdminClient()
+  const sortOrder = await nextCatSort(storeId)
   const { data: cat, error } = await admin
     .from('receipt_categories')
-    .insert({ store_id: storeId, name: categoryName.trim() })
+    .insert({ store_id: storeId, name: categoryName.trim(), sort_order: sortOrder })
     .select('id').single()
   if (error) return { error: error.code === '23505' ? '類別已存在' : error.message }
   const valid = vendorNames.map(v => v.trim()).filter(Boolean)
   if (valid.length > 0) {
     await admin.from('receipt_vendors').insert(
-      valid.map(name => ({ store_id: storeId, category_id: cat.id, name }))
+      valid.map((name, i) => ({ store_id: storeId, category_id: cat.id, name, sort_order: (i + 1) * 10 }))
     )
   }
   revalidatePath('/', 'layout')
@@ -94,7 +107,8 @@ export async function addVendor(storeId: string, categoryId: string, name: strin
   await requireAuth()
   if (!name.trim()) return { error: '請輸入廠商名稱' }
   const admin = createAdminClient()
-  const { error } = await admin.from('receipt_vendors').insert({ store_id: storeId, category_id: categoryId, name: name.trim() })
+  const sortOrder = await nextVendorSort(categoryId)
+  const { error } = await admin.from('receipt_vendors').insert({ store_id: storeId, category_id: categoryId, name: name.trim(), sort_order: sortOrder })
   if (error) return { error: error.code === '23505' ? '廠商已存在' : error.message }
   revalidatePath('/', 'layout')
   return { success: true }

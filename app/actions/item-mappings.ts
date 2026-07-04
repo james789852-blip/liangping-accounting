@@ -29,10 +29,19 @@ export async function saveItemMapping(
   if (existing) return { error: `品項「${itemName}」已存在對應` }
 
   // 1. 寫 item_column_mappings
+  //    sort_order 排到該 vg 內現有最大值 +10 → 新品項永遠在該分類最下方
+  let peerQuery = admin.from('item_column_mappings').select('sort_order')
+  peerQuery = storeId ? peerQuery.eq('store_id', storeId) : peerQuery.is('store_id', null)
+  peerQuery = vendorGroup ? peerQuery.eq('vendor_group', vendorGroup) : peerQuery.is('vendor_group', null)
+  const { data: peers } = await peerQuery
+  const maxSort = Math.max(0, ...(peers ?? []).map((p: any) => p.sort_order ?? 0))
+  const newSort = maxSort + 10
+
   const { error: insertErr } = await admin.from('item_column_mappings').insert({
     item_name: itemName, excel_column: excelColumn, item_category: itemCategory,
     vendor_group: vendorGroup ?? null,
-    store_id: storeId ?? null, updated_at: new Date().toISOString(),
+    store_id: storeId ?? null, sort_order: newSort,
+    updated_at: new Date().toISOString(),
   })
   if (insertErr) return { error: `新增失敗：${insertErr.message}` }
 
