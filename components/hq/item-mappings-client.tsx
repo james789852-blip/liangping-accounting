@@ -10,7 +10,7 @@ import { Trash2, Edit2, Check, X, Plus, Tag, Copy, ChevronLeft, ChevronUp, Chevr
 import { toast } from 'sonner'
 import HelpBox from './help-box'
 import {
-  DndContext, closestCorners, pointerWithin, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors,
+  DndContext, closestCorners, rectIntersection, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
 import {
@@ -627,9 +627,22 @@ export default function ItemMappingsClient({
         {/* Mapping list — 以 vendor_group 為主分類 */}
         <DndContext sensors={sensors}
           collisionDetection={(args) => {
-            // 優先用 pointer 位置判別（比 closestCenter 準確）
-            const p = pointerWithin(args)
-            if (p.length > 0) return p
+            // rectIntersection 找出所有跟拖曳矩形重疊的目標
+            // 再從中選 y 座標最接近的（拖到哪就對到哪）
+            const intersections = rectIntersection(args)
+            if (intersections.length > 0) {
+              const activeRect = args.active.rect.current.translated
+              if (!activeRect) return intersections
+              const activeCenterY = activeRect.top + activeRect.height / 2
+              intersections.sort((a, b) => {
+                const ra = args.droppableRects.get(a.id)
+                const rb = args.droppableRects.get(b.id)
+                if (!ra || !rb) return 0
+                return Math.abs((ra.top + ra.height / 2) - activeCenterY)
+                     - Math.abs((rb.top + rb.height / 2) - activeCenterY)
+              })
+              return [intersections[0]]
+            }
             return closestCorners(args)
           }}
           onDragEnd={handleDragEnd}>
