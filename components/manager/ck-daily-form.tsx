@@ -131,6 +131,7 @@ const CAT_COLORS: Record<string, { bg: string; text: string }> = {
   '雜項': { bg: '#f4f4f5', text: '#52525b' },
 }
 
+interface MappingItem { item_name: string; vendor_group: string | null; item_category: string; excel_column: string; sort_order: number | null }
 interface Props {
   ckStoreId: string
   ckStoreName: string
@@ -139,9 +140,10 @@ interface Props {
   externalStores: ExternalStore[]
   existing: ExistingRecord | null
   vendorGroups?: { id: string; name: string; doc_type: string | null }[]
+  mappingItems?: MappingItem[]
 }
 
-export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders, externalStores, existing, vendorGroups = [] }: Props) {
+export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders, externalStores, existing, vendorGroups = [], mappingItems = [] }: Props) {
   const router = useRouter()
   const isLocked = existing?.status === 'submitted'
 
@@ -434,22 +436,45 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
                     </button>
                   ))}
                 </div>
-                <input className={INPUT} style={INPUT_STYLE} placeholder="品項名稱（如：順正雞肉）"
-                  value={newExpense.item_name} onChange={e => setNewExpense(p => ({ ...p, item_name: e.target.value }))} />
+                {/* 品項選擇：來自央廚 item_column_mappings（跟店面版一致，可對到 xlsx excel_column） */}
+                <select className={INPUT} style={INPUT_STYLE}
+                  value={newExpense.item_name}
+                  onChange={e => {
+                    const name = e.target.value
+                    const m = mappingItems.find(x => x.item_name === name)
+                    const vg = m?.vendor_group ?? ''
+                    const vgRec = vendorGroups.find(g => g.name === vg)
+                    const cat = (m?.item_category === '食材' || m?.item_category === '耗材' || m?.item_category === '雜項')
+                      ? m.item_category as '食材' | '耗材' | '雜項'
+                      : newExpense.category
+                    setNewExpense(p => ({
+                      ...p,
+                      item_name: name,
+                      vendor_group: vg,
+                      category: cat,
+                      doc_type: vgRec?.doc_type ?? p.doc_type,
+                    }))
+                  }}>
+                  <option value="">— 選擇品項 —</option>
+                  {(() => {
+                    // 按 vendor_group 分組顯示（optgroup）
+                    const byVg = new Map<string, MappingItem[]>()
+                    for (const m of mappingItems) {
+                      const vg = m.vendor_group || '未分類'
+                      if (!byVg.has(vg)) byVg.set(vg, [])
+                      byVg.get(vg)!.push(m)
+                    }
+                    return [...byVg.entries()].map(([vg, items]) => (
+                      <optgroup key={vg} label={vg}>
+                        {items.map(m => <option key={m.item_name} value={m.item_name}>{m.item_name}</option>)}
+                      </optgroup>
+                    ))
+                  })()}
+                </select>
                 <div className="grid grid-cols-2 gap-2">
-                  <input className={INPUT} style={INPUT_STYLE} placeholder="廠商群組（如：雞肉商 / 菜商 / 雜貨 / 退稅）"
-                    list="ck-vendor-groups"
-                    value={newExpense.vendor_group}
-                    onChange={e => {
-                      const v = e.target.value
-                      // 若使用者選了 DB 內的廠商，且該廠商有預設 doc_type → 自動填
-                      const matched = vendorGroups.find(g => g.name === v)
-                      setNewExpense(p => ({
-                        ...p,
-                        vendor_group: v,
-                        doc_type: matched?.doc_type ?? p.doc_type,
-                      }))
-                    }} />
+                  <input className={INPUT} style={{ ...INPUT_STYLE, background: '#f4f4f5', color: '#71717a' }}
+                    placeholder="廠商群組（選品項後自動帶入）"
+                    value={newExpense.vendor_group} readOnly />
                   <select className={INPUT} style={INPUT_STYLE}
                     value={newExpense.doc_type}
                     onChange={e => setNewExpense(p => ({ ...p, doc_type: e.target.value }))}>
@@ -461,18 +486,6 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
                     <option value="">（不指定）</option>
                   </select>
                 </div>
-                <datalist id="ck-vendor-groups">
-                  {/* 從 DB 撈的央廚廠商群組（HQ 設定於 /hq/receipt-settings?type=ck） */}
-                  {vendorGroups.map(vg => (
-                    <option key={vg.id} value={vg.name} />
-                  ))}
-                  {/* 當日已輸入過的（避免重複） */}
-                  {[...new Set(expenses.map(e => e.vendor_group).filter(Boolean))]
-                    .filter(vg => !vendorGroups.find(x => x.name === vg))
-                    .map(vg => (
-                      <option key={vg} value={vg} />
-                    ))}
-                </datalist>
                 <div className="grid grid-cols-2 gap-2">
                   <input type="number" min="0" className={INPUT} style={INPUT_STYLE} placeholder="金額"
                     value={newExpense.amount} onChange={e => setNewExpense(p => ({ ...p, amount: e.target.value }))} />

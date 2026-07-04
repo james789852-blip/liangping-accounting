@@ -49,6 +49,7 @@ export default async function CKPage() {
     { data: ckRecord },
     { data: todayClosings },
     { data: ckVendorGroups },
+    { data: mappings },
   ] = await Promise.all([
     assignedStoreIds.length > 0
       ? admin.from('stores').select('id, name').in('id', assignedStoreIds)
@@ -68,6 +69,11 @@ export default async function CKPage() {
     admin.from('ck_vendor_groups')
       .select('id, name, doc_type').eq('ck_store_id', storeId).eq('active', true)
       .order('sort_order').order('name'),
+    // 央廚品項對應（跟店面版一樣，xlsx 匯出對應 excel_column）
+    admin.from('item_column_mappings')
+      .select('item_name, vendor_group, item_category, excel_column, sort_order')
+      .eq('store_id', storeId)
+      .order('sort_order'),
   ])
 
   // 哪些店已送出今日結帳
@@ -235,6 +241,7 @@ export default async function CKPage() {
         externalStores={externalStores ?? []}
         existing={existing}
         vendorGroups={(ckVendorGroups ?? []) as { id: string; name: string; doc_type: string | null }[]}
+        mappingItems={(mappings ?? []) as { item_name: string; vendor_group: string | null; item_category: string; excel_column: string; sort_order: number | null }[]}
       />
     </div>
   )
