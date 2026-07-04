@@ -492,10 +492,8 @@ function CategoryPicker({ categories, value, onChange }: {
   value: string
   onChange: (v: string) => void
 }) {
-  // 把常用的（PINNED）排前面、其他按字典排
-  const pinned = PINNED_CATEGORIES.map(name => categories.find(c => c.name === name)).filter(Boolean) as CategoryWithVendors[]
-  const rest = categories.filter(c => !PINNED_CATEGORIES.includes(c.name))
-  const sortedAll = [...pinned, ...rest]
+  // 完全依 HQ 收據設定的順序（server 已按 sort_order 排）
+  const sortedAll = categories
 
   return (
     <select
