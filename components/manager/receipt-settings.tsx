@@ -294,9 +294,21 @@ function VendorsDndList({ vendors, onDeleteVendor, onRefresh }: {
   onDeleteVendor: (id: string, name: string) => void
   onRefresh: () => void
 }) {
-  // 用 local state optimistic，避免拖曳/刪除後等 refetch 造成慢和順序被 reset
+  // 用 local state optimistic：完全不 sync from prop，避免 parent re-render 覆蓋順序
+  // 新增廠商時由父層直接 push 進 local（下方 addLocal 函數）
   const [localVendors, setLocalVendors] = useState(vendors)
-  useEffect(() => { setLocalVendors(vendors) }, [vendors])
+  // 只當 vendors 內出現「新 id」（新增品項）或 id 減少（外部刪除）才 sync
+  useEffect(() => {
+    setLocalVendors(prev => {
+      const prevIds = new Set(prev.map(v => v.id))
+      const propIds = new Set(vendors.map(v => v.id))
+      const added = vendors.filter(v => !prevIds.has(v.id))
+      const kept = prev.filter(v => propIds.has(v.id))
+      // 新增品項附加到最後、被刪的移除、既有順序保留
+      if (added.length === 0 && kept.length === prev.length) return prev
+      return [...kept, ...added]
+    })
+  }, [vendors])
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 8 } }),
