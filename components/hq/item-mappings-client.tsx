@@ -124,9 +124,11 @@ export default function ItemMappingsClient({
     const newIdx = vgItems.findIndex(m => m.id === over.id)
     if (oldIdx < 0 || newIdx < 0) return
     const reordered = arrayMove(vgItems, oldIdx, newIdx)
+    // 為 reordered 賦新 sort_order → 讓 displayMappings.sort(sortByOrder) 能反映新順序
+    const withOrder = reordered.map((m, i) => ({ ...m, sort_order: (i + 1) * 10 } as any))
     setMappings(prev => {
       const otherItems = prev.filter(m => !reordered.some(r => r.id === m.id))
-      return [...otherItems, ...reordered]
+      return [...otherItems, ...withOrder]
     })
     reorderItemMappings(reordered.map(i => i.id))
       .then(r => { if (r && 'error' in r) toast.error('排序儲存失敗：' + r.error) })
@@ -135,13 +137,16 @@ export default function ItemMappingsClient({
 
   // 店家 tab 顯示 = 該店 override + 未被 override 的全域繼承（即 xlsx 實際會用到的完整品項清單）
   // 全域 tab 只顯示全域 mapping
+  // 依 sort_order 排序（不分專屬/全域），確保拖曳排序能正確反映
+  const sortByOrder = (a: Mapping, b: Mapping) =>
+    ((a as any).sort_order ?? 999999) - ((b as any).sort_order ?? 999999)
   const displayMappings = activeStoreId === ''
-    ? mappings.filter(m => !m.store_id)
+    ? mappings.filter(m => !m.store_id).sort(sortByOrder)
     : (() => {
         const storeOverride = mappings.filter(m => m.store_id === activeStoreId)
         const overriddenNames = new Set(storeOverride.map(m => m.item_name))
         const globalInherited = mappings.filter(m => !m.store_id && !overriddenNames.has(m.item_name))
-        return [...storeOverride, ...globalInherited]
+        return [...storeOverride, ...globalInherited].sort(sortByOrder)
       })()
 
   const globalCount = mappings.filter(m => !m.store_id).length
