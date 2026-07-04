@@ -5,10 +5,15 @@ import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
 import CKDailyForm from '@/components/manager/ck-daily-form'
 import { sortStores } from '@/lib/store-order'
+import { getReceiptSettings } from '@/app/actions/receipt-settings'
 
 export const dynamic = 'force-dynamic'
 
-export default async function CKPage() {
+export default async function CKPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>
+}) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -40,7 +45,13 @@ export default async function CKPage() {
     redirect('/manager/closing')
   }
 
-  const today = getBusinessDate()
+  const realToday = getBusinessDate()
+  const params = await searchParams
+  const requested = params.date
+  const today = (requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested <= realToday)
+    ? requested
+    : realToday
+  const isBackfill = today !== realToday
   const assignedStoreIds: string[] = (store.assigned_store_ids as string[] | null) ?? []
 
   const [
@@ -75,6 +86,9 @@ export default async function CKPage() {
       .eq('store_id', storeId)
       .order('sort_order'),
   ])
+
+  // 收據類別（跟店面版一致的 UI）
+  const receiptCategories = await getReceiptSettings(storeId)
 
   // 哪些店已送出今日結帳
   const submittedStores = new Set(
@@ -234,14 +248,18 @@ export default async function CKPage() {
       </div>
 
       <CKDailyForm
+        key={`${storeId}-${today}`}
         ckStoreId={storeId}
         ckStoreName={store.name}
         date={today}
+        realToday={realToday}
+        isBackfill={isBackfill}
         memberOrders={memberOrders}
         externalStores={externalStores ?? []}
         existing={existing}
         vendorGroups={(ckVendorGroups ?? []) as { id: string; name: string; doc_type: string | null }[]}
         mappingItems={(mappings ?? []) as { item_name: string; vendor_group: string | null; item_category: string; excel_column: string; sort_order: number | null }[]}
+        receiptCategories={receiptCategories}
       />
     </div>
   )

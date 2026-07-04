@@ -132,18 +132,22 @@ const CAT_COLORS: Record<string, { bg: string; text: string }> = {
 }
 
 interface MappingItem { item_name: string; vendor_group: string | null; item_category: string; excel_column: string; sort_order: number | null }
+interface ReceiptCat { id: string; name: string; vendors: { id: string; name: string }[] }
 interface Props {
   ckStoreId: string
   ckStoreName: string
   date: string
+  realToday?: string
+  isBackfill?: boolean
   memberOrders: MemberOrder[]
   externalStores: ExternalStore[]
   existing: ExistingRecord | null
   vendorGroups?: { id: string; name: string; doc_type: string | null }[]
   mappingItems?: MappingItem[]
+  receiptCategories?: ReceiptCat[]
 }
 
-export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders, externalStores, existing, vendorGroups = [], mappingItems = [] }: Props) {
+export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, isBackfill, memberOrders, externalStores, existing, vendorGroups = [], mappingItems = [], receiptCategories = [] }: Props) {
   const router = useRouter()
   const isLocked = existing?.status === 'submitted'
 
@@ -164,6 +168,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
   }>({
     category: '食材', item_name: '', amount: '', payer_name: '', vendor_group: '', doc_type: '發票',
   })
+  // 支出類別（廠商類別/雜項/其他 — 跟店面版一致）
+  const [activeCat, setActiveCat] = useState<string>(receiptCategories[0]?.name ?? '廠商類別')
 
   // 收據照片
   const [photoUrls, setPhotoUrls] = useState<string[]>(existing?.receiptPhotoUrls ?? [])
@@ -262,6 +268,23 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-28 space-y-4">
       <CKHelp />
+
+      {/* 補帳日期切換 */}
+      {isBackfill && realToday && (
+        <div className="px-3 py-2 text-xs font-medium flex items-center justify-between gap-2 rounded-xl"
+          style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+          <span>📅 你正在補做 <b>{date}</b> 的帳目（非今日）</span>
+          <a href="/manager/ck" className="font-semibold underline shrink-0" style={{ color: '#78350F' }}>回到 {realToday}</a>
+        </div>
+      )}
+      <div className="flex items-center gap-2 text-xs">
+        <span style={{ color: '#71717a' }}>日期</span>
+        <input type="date" value={date} max={realToday ?? date}
+          onChange={e => { const v = e.target.value; if (v) router.push(`/manager/ck?date=${v}`) }}
+          className="px-2 py-1 rounded outline-none"
+          style={{ border: '1px solid #e4e4e7', color: '#52525b', background: 'white' }}
+          title="切換日期（可補做過往帳目）" />
+      </div>
 
       {/* 狀態 banner */}
       {isLocked && (
@@ -423,20 +446,22 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
             ))}
             {!isLocked && (
               <div className="px-4 py-4 space-y-2" style={{ borderTop: expenses.length > 0 ? '1px solid #f4f4f5' : 'none', background: '#fafafa' }}>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['食材', '耗材', '雜項'] as const).map(cat => (
-                    <button key={cat} type="button" onClick={() => setNewExpense(p => ({ ...p, category: cat }))}
+                {/* 類別 tab（廠商類別/雜項/其他） */}
+                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.max(1, receiptCategories.length)}, 1fr)` }}>
+                  {receiptCategories.map(c => (
+                    <button key={c.id} type="button"
+                      onClick={() => { setActiveCat(c.name); setNewExpense(p => ({ ...p, item_name: '', vendor_group: '' })) }}
                       className="py-2 rounded-xl text-sm font-semibold"
                       style={{
-                        background: newExpense.category === cat ? CAT_COLORS[cat].bg : 'white',
-                        color: newExpense.category === cat ? CAT_COLORS[cat].text : '#52525b',
-                        border: `1.5px solid ${newExpense.category === cat ? 'transparent' : '#e4e4e7'}`,
+                        background: activeCat === c.name ? '#FEF3C7' : 'white',
+                        color: activeCat === c.name ? '#92400E' : '#52525b',
+                        border: `1.5px solid ${activeCat === c.name ? 'transparent' : '#e4e4e7'}`,
                       }}>
-                      {cat}
+                      {c.name}
                     </button>
                   ))}
                 </div>
-                {/* 品項選擇：來自央廚 item_column_mappings（跟店面版一致，可對到 xlsx excel_column） */}
+                {/* 品項選擇：依當前類別篩選對應 mapping.vendor_group 的品項 */}
                 <select className={INPUT} style={INPUT_STYLE}
                   value={newExpense.item_name}
                   onChange={e => {
@@ -446,7 +471,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
                     const vgRec = vendorGroups.find(g => g.name === vg)
                     const cat = (m?.item_category === '食材' || m?.item_category === '耗材' || m?.item_category === '雜項')
                       ? m.item_category as '食材' | '耗材' | '雜項'
-                      : newExpense.category
+                      : (activeCat === '雜項' ? '雜項' : '食材') as '食材' | '耗材' | '雜項'
                     setNewExpense(p => ({
                       ...p,
                       item_name: name,
@@ -457,9 +482,18 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
                   }}>
                   <option value="">— 選擇品項 —</option>
                   {(() => {
+                    const catObj = receiptCategories.find(c => c.name === activeCat)
+                    const vendorNames = new Set(catObj?.vendors.map(v => v.name) ?? [])
+                    // 該類別下的品項：mapping.vendor_group ∈ 該類別的廠商名
+                    // 「雜項」類別特別處理：也含 vg IS NULL / '雜項' / '未分類'
+                    const filtered = mappingItems.filter(m => {
+                      const vg = m.vendor_group ?? ''
+                      if (activeCat === '雜項') return !vg || vg === '雜項' || vg === '未分類' || vendorNames.has(vg)
+                      return vendorNames.has(vg)
+                    })
                     // 按 vendor_group 分組顯示（optgroup）
                     const byVg = new Map<string, MappingItem[]>()
-                    for (const m of mappingItems) {
+                    for (const m of filtered) {
                       const vg = m.vendor_group || '未分類'
                       if (!byVg.has(vg)) byVg.set(vg, [])
                       byVg.get(vg)!.push(m)
@@ -471,21 +505,6 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, memberOrders
                     ))
                   })()}
                 </select>
-                <div className="grid grid-cols-2 gap-2">
-                  <input className={INPUT} style={{ ...INPUT_STYLE, background: '#f4f4f5', color: '#71717a' }}
-                    placeholder="廠商群組（選品項後自動帶入）"
-                    value={newExpense.vendor_group} readOnly />
-                  <select className={INPUT} style={INPUT_STYLE}
-                    value={newExpense.doc_type}
-                    onChange={e => setNewExpense(p => ({ ...p, doc_type: e.target.value }))}>
-                    <option value="發票">發票</option>
-                    <option value="收據">收據</option>
-                    <option value="估價單">估價單</option>
-                    <option value="公司開">公司開</option>
-                    <option value="梁鑫開">梁鑫開</option>
-                    <option value="">（不指定）</option>
-                  </select>
-                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <input type="number" min="0" className={INPUT} style={INPUT_STYLE} placeholder="金額"
                     value={newExpense.amount} onChange={e => setNewExpense(p => ({ ...p, amount: e.target.value }))} />
