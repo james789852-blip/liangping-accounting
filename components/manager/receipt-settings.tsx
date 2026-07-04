@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronRight, ChevronUp, Loader2, Pencil, Check, X } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronRight, Loader2, Pencil, Check, X, GripVertical } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
@@ -10,6 +10,12 @@ import {
   addVendor, updateVendor, deleteVendor,
   reorderCategories, reorderVendors,
 } from '@/app/actions/receipt-settings'
+import {
+  DndContext, closestCorners, rectIntersection, PointerSensor, TouchSensor, KeyboardSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 interface Props {
   storeId: string
@@ -61,34 +67,47 @@ export default function ReceiptSettings({ storeId, initialCategories }: Props) {
     router.refresh()
   }
 
-  function moveCategory(idx: number, dir: 'up' | 'down') {
-    const newIdx = dir === 'up' ? idx - 1 : idx + 1
-    if (newIdx < 0 || newIdx >= categories.length) return
-    const arr = [...categories]
-    ;[arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]]
-    setCategories(arr)
-    reorderCategories(arr.map(c => c.id))
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  function handleCategoryDrag(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIdx = categories.findIndex(c => c.id === active.id)
+    const newIdx = categories.findIndex(c => c.id === over.id)
+    if (oldIdx < 0 || newIdx < 0) return
+    const reordered = arrayMove(categories, oldIdx, newIdx)
+    setCategories(reordered)
+    reorderCategories(reordered.map(c => c.id))
       .then(r => { if (r && 'error' in r) toast.error('排序失敗：' + (r as any).error) })
       .catch(e => toast.error('排序失敗：' + (e instanceof Error ? e.message : String(e))))
   }
 
   return (
     <div className="space-y-3">
-      {categories.map((cat, idx) => (
-        <CategoryCard
+      <DndContext sensors={sensors}
+        collisionDetection={(args) => {
+          const intersections = rectIntersection(args)
+          return intersections.length > 0 ? intersections : closestCorners(args)
+        }}
+        onDragEnd={handleCategoryDrag}>
+      <SortableContext items={categories.map(c => c.id)} strategy={verticalListSortingStrategy}>
+      {categories.map(cat => (
+        <SortableCategoryCard
           key={cat.id}
           cat={cat}
           storeId={storeId}
           expanded={!!expanded[cat.id]}
-          isFirst={idx === 0}
-          isLast={idx === categories.length - 1}
-          onMoveUp={() => moveCategory(idx, 'up')}
-          onMoveDown={() => moveCategory(idx, 'down')}
           onToggle={() => toggleExpand(cat.id)}
           onDelete={() => handleDeleteCategory(cat)}
           onRefresh={() => router.refresh()}
         />
       ))}
+      </SortableContext>
+      </DndContext>
 
       {categories.length === 0 && !addingCat && (
         <div className="text-center py-10" style={{ color: '#a1a1aa', fontSize: '14px' }}>
@@ -150,10 +169,27 @@ export default function ReceiptSettings({ storeId, initialCategories }: Props) {
   )
 }
 
-function CategoryCard({ cat, storeId, expanded, isFirst, isLast, onMoveUp, onMoveDown, onToggle, onDelete, onRefresh }: {
+function SortableCategoryCard(props: {
   cat: CategoryWithVendors; storeId: string; expanded: boolean
-  isFirst: boolean; isLast: boolean; onMoveUp: () => void; onMoveDown: () => void
   onToggle: () => void; onDelete: () => void; onRefresh: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.cat.id })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+  return (
+    <div ref={setNodeRef} style={style}>
+      <CategoryCard {...props} dragHandleProps={{ ...attributes, ...listeners }} />
+    </div>
+  )
+}
+
+function CategoryCard({ cat, storeId, expanded, onToggle, onDelete, onRefresh, dragHandleProps }: {
+  cat: CategoryWithVendors; storeId: string; expanded: boolean
+  onToggle: () => void; onDelete: () => void; onRefresh: () => void
+  dragHandleProps?: any
 }) {
   const [editingName, setEditingName] = useState(false)
   const [nameVal, setNameVal] = useState(cat.name)
@@ -196,17 +232,13 @@ function CategoryCard({ cat, storeId, expanded, isFirst, isLast, onMoveUp, onMov
     <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
       {/* 類別 header */}
       <div className="flex items-center gap-3 px-4 py-3.5">
-        {/* 上下箭頭排序 */}
-        <div className="flex flex-col shrink-0" style={{ width: 18 }}>
-          <button onClick={onMoveUp} disabled={isFirst} title="上移"
-            style={{ background: 'none', border: 'none', cursor: isFirst ? 'default' : 'pointer', color: isFirst ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.6 }}>
-            <ChevronUp className="h-3 w-3" />
+        {/* 拖曳 handle */}
+        {dragHandleProps && (
+          <button {...dragHandleProps} title="拖曳排序"
+            style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, padding: 4, cursor: 'grab', color: '#92400e', touchAction: 'none' }}>
+            <GripVertical className="h-4 w-4" />
           </button>
-          <button onClick={onMoveDown} disabled={isLast} title="下移"
-            style={{ background: 'none', border: 'none', cursor: isLast ? 'default' : 'pointer', color: isLast ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.6 }}>
-            <ChevronDown className="h-3 w-3" />
-          </button>
-        </div>
+        )}
         <button onClick={onToggle} className="flex items-center gap-2 flex-1 text-left" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
           {expanded ? <ChevronDown className="h-4 w-4 shrink-0" style={{ color: '#F59E0B' }} /> : <ChevronRight className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />}
           {editingName ? (
@@ -251,28 +283,7 @@ function CategoryCard({ cat, storeId, expanded, isFirst, isLast, onMoveUp, onMov
             <p style={{ fontSize: '13px', color: '#a1a1aa', marginBottom: '10px' }}>尚無廠商，點下方新增</p>
           )}
           <div className="space-y-2 mb-3">
-            {cat.vendors.map((v, idx) => (
-              <VendorRow
-                key={v.id}
-                vendor={v}
-                isFirst={idx === 0}
-                isLast={idx === cat.vendors.length - 1}
-                onMoveUp={() => {
-                  if (idx === 0) return
-                  const arr = [...cat.vendors]
-                  ;[arr[idx], arr[idx - 1]] = [arr[idx - 1], arr[idx]]
-                  reorderVendors(arr.map(x => x.id)).then(() => onRefresh())
-                }}
-                onMoveDown={() => {
-                  if (idx === cat.vendors.length - 1) return
-                  const arr = [...cat.vendors]
-                  ;[arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]]
-                  reorderVendors(arr.map(x => x.id)).then(() => onRefresh())
-                }}
-                onDelete={() => handleDeleteVendor(v.id, v.name)}
-                onRename={onRefresh}
-              />
-            ))}
+            <VendorsDndList vendors={cat.vendors} onDeleteVendor={handleDeleteVendor} onRefresh={onRefresh} />
           </div>
 
           {addingVendor ? (
@@ -303,11 +314,65 @@ function CategoryCard({ cat, storeId, expanded, isFirst, isLast, onMoveUp, onMov
   )
 }
 
-function VendorRow({ vendor, isFirst, isLast, onMoveUp, onMoveDown, onDelete, onRename }: {
+function VendorsDndList({ vendors, onDeleteVendor, onRefresh }: {
+  vendors: { id: string; name: string }[]
+  onDeleteVendor: (id: string, name: string) => void
+  onRefresh: () => void
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 8 } }),
+  )
+  function handleDrag(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIdx = vendors.findIndex(v => v.id === active.id)
+    const newIdx = vendors.findIndex(v => v.id === over.id)
+    if (oldIdx < 0 || newIdx < 0) return
+    const reordered = arrayMove(vendors, oldIdx, newIdx)
+    reorderVendors(reordered.map(v => v.id))
+      .then(r => { if (r && 'error' in r) toast.error('排序失敗：' + (r as any).error); onRefresh() })
+      .catch(e => toast.error('排序失敗：' + (e instanceof Error ? e.message : String(e))))
+  }
+  return (
+    <DndContext sensors={sensors}
+      collisionDetection={(args) => {
+        const inter = rectIntersection(args)
+        return inter.length > 0 ? inter : closestCorners(args)
+      }}
+      onDragEnd={handleDrag}>
+      <SortableContext items={vendors.map(v => v.id)} strategy={verticalListSortingStrategy}>
+        {vendors.map(v => (
+          <SortableVendorRow key={v.id} vendor={v} onDelete={() => onDeleteVendor(v.id, v.name)} onRename={onRefresh} />
+        ))}
+      </SortableContext>
+    </DndContext>
+  )
+}
+
+function SortableVendorRow(props: {
   vendor: { id: string; name: string }
-  isFirst: boolean; isLast: boolean; onMoveUp: () => void; onMoveDown: () => void
   onDelete: () => void
   onRename: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.vendor.id })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+  return (
+    <div ref={setNodeRef} style={style}>
+      <VendorRow {...props} dragHandleProps={{ ...attributes, ...listeners }} />
+    </div>
+  )
+}
+
+function VendorRow({ vendor, onDelete, onRename, dragHandleProps }: {
+  vendor: { id: string; name: string }
+  onDelete: () => void
+  onRename: () => void
+  dragHandleProps?: any
 }) {
   const [editing, setEditing] = useState(false)
   const [nameVal, setNameVal] = useState(vendor.name)
@@ -347,17 +412,12 @@ function VendorRow({ vendor, isFirst, isLast, onMoveUp, onMoveDown, onDelete, on
   return (
     <div className="rounded-xl" style={{ background: 'white', border: '1px solid #e4e4e7' }}>
       <div className="flex items-center px-3 py-2 gap-2">
-        {/* 上下箭頭 */}
-        <div className="flex flex-col shrink-0" style={{ width: 16 }}>
-          <button onClick={onMoveUp} disabled={isFirst} title="上移"
-            style={{ background: 'none', border: 'none', cursor: isFirst ? 'default' : 'pointer', color: isFirst ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.6 }}>
-            <ChevronUp className="h-3 w-3" />
+        {dragHandleProps && (
+          <button {...dragHandleProps} title="拖曳排序"
+            style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, padding: 3, cursor: 'grab', color: '#92400e', touchAction: 'none' }}>
+            <GripVertical className="h-3.5 w-3.5" />
           </button>
-          <button onClick={onMoveDown} disabled={isLast} title="下移"
-            style={{ background: 'none', border: 'none', cursor: isLast ? 'default' : 'pointer', color: isLast ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.6 }}>
-            <ChevronDown className="h-3 w-3" />
-          </button>
-        </div>
+        )}
         <span style={{ flex: 1, fontSize: '14px', color: '#18181b' }}>{vendor.name}</span>
         <button onClick={() => setEditing(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a1a1aa', padding: '2px', flexShrink: 0 }}>
           <Pencil className="h-3.5 w-3.5" />
