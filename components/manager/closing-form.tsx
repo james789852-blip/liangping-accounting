@@ -2756,15 +2756,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               )}
               {handwriteOrders.length > 0 && (
                 <div className="rounded-xl overflow-hidden mb-3" style={{ border: '1px solid #f4f4f5' }}>
-                  <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#f8fafc', borderBottom: '1px solid #f4f4f5' }}>
-                    <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>單號</span>
+                  <div className="flex items-center gap-2 px-3 py-1.5 sticky top-0 z-10" style={{ background: '#f8fafc', borderBottom: '1px solid #f4f4f5' }}>
+                    <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>
+                      單號 <span className="ml-1 normal-case" style={{ color: '#71717a' }}>（{handwriteOrders.length} 筆）</span>
+                    </span>
                     <span className="w-20 text-right text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>金額</span>
                     {!isLocked && <span className="w-8" />}
                     {!isLocked && <span className="w-5" />}
                   </div>
+                  <div style={{ maxHeight: handwriteOrders.length > 8 ? 400 : 'none', overflowY: handwriteOrders.length > 8 ? 'auto' : 'visible' }}>
                   {handwriteOrders.map((o, idx) => (
                     <div key={o.id} style={{ background: o.voided ? '#fff8f8' : 'white', borderBottom: idx !== handwriteOrders.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
-                      <div className="flex items-center gap-2 px-3 py-2">
+                      <div className="flex items-center gap-2 px-3 py-1">
                         <span className="flex-1 text-sm min-w-0 truncate"
                           style={{ fontFamily: 'monospace', color: o.voided ? '#a1a1aa' : '#52525b', textDecoration: o.voided ? 'line-through' : 'none' }}>
                           {o.order_number}
@@ -2807,6 +2810,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       )}
                     </div>
                   ))}
+                  </div>
                 </div>
               )}
               {!isLocked && (
