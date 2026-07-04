@@ -53,7 +53,7 @@ export async function syncMiscVendorsAllStores() {
   const admin = createAdminClient()
   const { data: stores } = await admin
     .from('stores').select('id')
-    .eq('active', true).neq('type', '央廚')
+    .eq('active', true)
   await Promise.all((stores ?? []).map(s => syncMiscVendorsForStore(s.id)))
 }
 
