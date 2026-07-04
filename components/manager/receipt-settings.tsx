@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronRight, Loader2, Pencil, Check, X } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronRight, ChevronUp, Loader2, Pencil, Check, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
 import {
   addCategoryWithVendors, deleteCategory, updateCategoryName,
   addVendor, updateVendor, deleteVendor,
+  reorderCategories, reorderVendors,
 } from '@/app/actions/receipt-settings'
 
 interface Props {
@@ -60,14 +61,29 @@ export default function ReceiptSettings({ storeId, initialCategories }: Props) {
     router.refresh()
   }
 
+  function moveCategory(idx: number, dir: 'up' | 'down') {
+    const newIdx = dir === 'up' ? idx - 1 : idx + 1
+    if (newIdx < 0 || newIdx >= categories.length) return
+    const arr = [...categories]
+    ;[arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]]
+    setCategories(arr)
+    reorderCategories(arr.map(c => c.id))
+      .then(r => { if (r && 'error' in r) toast.error('排序失敗：' + (r as any).error) })
+      .catch(e => toast.error('排序失敗：' + (e instanceof Error ? e.message : String(e))))
+  }
+
   return (
     <div className="space-y-3">
-      {categories.map(cat => (
+      {categories.map((cat, idx) => (
         <CategoryCard
           key={cat.id}
           cat={cat}
           storeId={storeId}
           expanded={!!expanded[cat.id]}
+          isFirst={idx === 0}
+          isLast={idx === categories.length - 1}
+          onMoveUp={() => moveCategory(idx, 'up')}
+          onMoveDown={() => moveCategory(idx, 'down')}
           onToggle={() => toggleExpand(cat.id)}
           onDelete={() => handleDeleteCategory(cat)}
           onRefresh={() => router.refresh()}
@@ -134,8 +150,9 @@ export default function ReceiptSettings({ storeId, initialCategories }: Props) {
   )
 }
 
-function CategoryCard({ cat, storeId, expanded, onToggle, onDelete, onRefresh }: {
+function CategoryCard({ cat, storeId, expanded, isFirst, isLast, onMoveUp, onMoveDown, onToggle, onDelete, onRefresh }: {
   cat: CategoryWithVendors; storeId: string; expanded: boolean
+  isFirst: boolean; isLast: boolean; onMoveUp: () => void; onMoveDown: () => void
   onToggle: () => void; onDelete: () => void; onRefresh: () => void
 }) {
   const [editingName, setEditingName] = useState(false)
@@ -179,6 +196,17 @@ function CategoryCard({ cat, storeId, expanded, onToggle, onDelete, onRefresh }:
     <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
       {/* 類別 header */}
       <div className="flex items-center gap-3 px-4 py-3.5">
+        {/* 上下箭頭排序 */}
+        <div className="flex flex-col shrink-0" style={{ width: 18 }}>
+          <button onClick={onMoveUp} disabled={isFirst} title="上移"
+            style={{ background: 'none', border: 'none', cursor: isFirst ? 'default' : 'pointer', color: isFirst ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.6 }}>
+            <ChevronUp className="h-3 w-3" />
+          </button>
+          <button onClick={onMoveDown} disabled={isLast} title="下移"
+            style={{ background: 'none', border: 'none', cursor: isLast ? 'default' : 'pointer', color: isLast ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.6 }}>
+            <ChevronDown className="h-3 w-3" />
+          </button>
+        </div>
         <button onClick={onToggle} className="flex items-center gap-2 flex-1 text-left" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
           {expanded ? <ChevronDown className="h-4 w-4 shrink-0" style={{ color: '#F59E0B' }} /> : <ChevronRight className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />}
           {editingName ? (
@@ -223,10 +251,24 @@ function CategoryCard({ cat, storeId, expanded, onToggle, onDelete, onRefresh }:
             <p style={{ fontSize: '13px', color: '#a1a1aa', marginBottom: '10px' }}>尚無廠商，點下方新增</p>
           )}
           <div className="space-y-2 mb-3">
-            {cat.vendors.map(v => (
+            {cat.vendors.map((v, idx) => (
               <VendorRow
                 key={v.id}
                 vendor={v}
+                isFirst={idx === 0}
+                isLast={idx === cat.vendors.length - 1}
+                onMoveUp={() => {
+                  if (idx === 0) return
+                  const arr = [...cat.vendors]
+                  ;[arr[idx], arr[idx - 1]] = [arr[idx - 1], arr[idx]]
+                  reorderVendors(arr.map(x => x.id)).then(() => onRefresh())
+                }}
+                onMoveDown={() => {
+                  if (idx === cat.vendors.length - 1) return
+                  const arr = [...cat.vendors]
+                  ;[arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]]
+                  reorderVendors(arr.map(x => x.id)).then(() => onRefresh())
+                }}
                 onDelete={() => handleDeleteVendor(v.id, v.name)}
                 onRename={onRefresh}
               />
@@ -261,8 +303,9 @@ function CategoryCard({ cat, storeId, expanded, onToggle, onDelete, onRefresh }:
   )
 }
 
-function VendorRow({ vendor, onDelete, onRename }: {
+function VendorRow({ vendor, isFirst, isLast, onMoveUp, onMoveDown, onDelete, onRename }: {
   vendor: { id: string; name: string }
+  isFirst: boolean; isLast: boolean; onMoveUp: () => void; onMoveDown: () => void
   onDelete: () => void
   onRename: () => void
 }) {
@@ -304,6 +347,17 @@ function VendorRow({ vendor, onDelete, onRename }: {
   return (
     <div className="rounded-xl" style={{ background: 'white', border: '1px solid #e4e4e7' }}>
       <div className="flex items-center px-3 py-2 gap-2">
+        {/* 上下箭頭 */}
+        <div className="flex flex-col shrink-0" style={{ width: 16 }}>
+          <button onClick={onMoveUp} disabled={isFirst} title="上移"
+            style={{ background: 'none', border: 'none', cursor: isFirst ? 'default' : 'pointer', color: isFirst ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.6 }}>
+            <ChevronUp className="h-3 w-3" />
+          </button>
+          <button onClick={onMoveDown} disabled={isLast} title="下移"
+            style={{ background: 'none', border: 'none', cursor: isLast ? 'default' : 'pointer', color: isLast ? '#e4e4e7' : '#a1a1aa', padding: 0, lineHeight: 0.6 }}>
+            <ChevronDown className="h-3 w-3" />
+          </button>
+        </div>
         <span style={{ flex: 1, fontSize: '14px', color: '#18181b' }}>{vendor.name}</span>
         <button onClick={() => setEditing(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a1a1aa', padding: '2px', flexShrink: 0 }}>
           <Pencil className="h-3.5 w-3.5" />

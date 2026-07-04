@@ -112,3 +112,27 @@ export async function deleteVendor(vendorId: string) {
   return { success: true }
 }
 
+/** 重新排序類別（依傳入 ids 順序賦 sort_order） */
+export async function reorderCategories(ids: string[]) {
+  await requireAuth()
+  const admin = createAdminClient()
+  for (let i = 0; i < ids.length; i++) {
+    await admin.from('receipt_categories').update({ sort_order: (i + 1) * 10 }).eq('id', ids[i])
+  }
+  revalidatePath('/manager/settings')
+  revalidatePath('/hq/receipt-settings')
+  return { success: true }
+}
+
+/** 重新排序類別內廠商 */
+export async function reorderVendors(ids: string[]) {
+  await requireAuth()
+  const admin = createAdminClient()
+  for (let i = 0; i < ids.length; i++) {
+    await admin.from('receipt_vendors').update({ sort_order: (i + 1) * 10 }).eq('id', ids[i])
+  }
+  revalidatePath('/manager/settings')
+  revalidatePath('/hq/receipt-settings')
+  return { success: true }
+}
+
