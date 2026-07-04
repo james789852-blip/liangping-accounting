@@ -6,6 +6,9 @@ import { getMonthLastDay } from '@/lib/business-date'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 const BUCKET = 'excel-templates'
+const FONT_FAMILY = 'Microsoft JhengHei'
+const HEADER_FONT_SIZE = 14
+const DATA_FONT_SIZE = 13
 
 const norm = (s: string) => s.replace(/[\s　（）()]/g, '').toLowerCase()
 
@@ -52,15 +55,31 @@ function appendStoreOrdersSheet(
 
   const headers = ['日期', '星期', ...allStoreNames, '合計']
   const headerRow = ws.addRow(headers)
-  headerRow.font = { bold: true }
-  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD966' } }
+  headerRow.height = 28
+  headerRow.eachCell(cell => {
+    cell.font = { name: FONT_FAMILY, size: HEADER_FONT_SIZE, bold: true, color: { argb: 'FF7C2D12' } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }
+    cell.alignment = { horizontal: 'center', vertical: 'middle' }
+    cell.border = { top: { style: 'thin', color: { argb: 'FFB8B8B8' } }, bottom: { style: 'thin', color: { argb: 'FFB8B8B8' } }, left: { style: 'thin', color: { argb: 'FFB8B8B8' } }, right: { style: 'thin', color: { argb: 'FFB8B8B8' } } }
+  })
 
   for (const date of days) {
     const d = dataMap[date]
     const dt = new Date(date + 'T00:00:00+08:00')
     const cols = allStoreNames.map(name => d?.storeRevenues[name] ?? null)
     const total = d?.totalRevenue ?? null
-    ws.addRow([date, `星期${WEEKDAYS[dt.getDay()]}`, ...cols, total])
+    const isWeekend = dt.getDay() === 0 || dt.getDay() === 6
+    const row = ws.addRow([date, `星期${WEEKDAYS[dt.getDay()]}`, ...cols, total])
+    row.height = 22
+    row.eachCell({ includeEmpty: true }, (cell, col) => {
+      cell.font = {
+        name: FONT_FAMILY, size: DATA_FONT_SIZE,
+        color: isWeekend && col <= 2 ? { argb: dt.getDay() === 0 ? 'FFDC2626' : 'FF0369A1' } : { argb: 'FF18181B' },
+        bold: isWeekend && col <= 2,
+      }
+      cell.alignment = { horizontal: col <= 2 ? 'center' : 'right', vertical: 'middle' }
+      if (typeof cell.value === 'number') cell.numFmt = '#,##0;-#,##0;"-"'
+    })
   }
 
   // 月合計列
@@ -74,13 +93,18 @@ function appendStoreOrdersSheet(
   for (const date of days) grand += dataMap[date]?.totalRevenue ?? 0
   totalsRow.push(grand || null)
   const trow = ws.addRow(totalsRow)
-  trow.font = { bold: true }
-  trow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }
+  trow.height = 26
+  trow.eachCell({ includeEmpty: true }, cell => {
+    cell.font = { name: FONT_FAMILY, size: DATA_FONT_SIZE + 1, bold: true, color: { argb: 'FF7C2D12' } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } }
+    cell.alignment = { horizontal: 'right', vertical: 'middle' }
+    if (typeof cell.value === 'number') cell.numFmt = '#,##0;-#,##0;"-"'
+  })
 
-  ws.getColumn(1).width = 12
-  ws.getColumn(2).width = 7
+  ws.getColumn(1).width = 14
+  ws.getColumn(2).width = 9
   for (let c = 3; c <= headers.length; c++) {
-    ws.getColumn(c).width = Math.max(headers[c - 1].length * 1.8 + 2, 10)
+    ws.getColumn(c).width = Math.max(headers[c - 1].length * 2.2 + 3, 12)
   }
 }
 
@@ -303,14 +327,20 @@ export async function GET(req: NextRequest) {
 
   const headers = ['日期', '星期', ...allStoreNames, '營業額', '食材', '耗材', '雜項', '總支出']
   const headerRow = ws.addRow(headers)
-  headerRow.font = { bold: true }
-  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD966' } }
+  headerRow.height = 30
+  headerRow.eachCell(cell => {
+    cell.font = { name: FONT_FAMILY, size: HEADER_FONT_SIZE, bold: true, color: { argb: 'FF7C2D12' } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }
+    cell.alignment = { horizontal: 'center', vertical: 'middle' }
+    cell.border = { top: { style: 'thin', color: { argb: 'FFB8B8B8' } }, bottom: { style: 'thin', color: { argb: 'FFB8B8B8' } }, left: { style: 'thin', color: { argb: 'FFB8B8B8' } }, right: { style: 'thin', color: { argb: 'FFB8B8B8' } } }
+  })
 
   for (const date of days) {
     const d = dataMap[date]
     const dt = new Date(date + 'T00:00:00+08:00')
     const storeRevCols = allStoreNames.map(name => d?.storeRevenues[name] ?? null)
-    ws.addRow([
+    const isWeekend = dt.getDay() === 0 || dt.getDay() === 6
+    const row = ws.addRow([
       date,
       `星期${WEEKDAYS[dt.getDay()]}`,
       ...storeRevCols,
@@ -320,12 +350,22 @@ export async function GET(req: NextRequest) {
       d?.miscTotal || null,
       d?.totalExpense || null,
     ])
+    row.height = 22
+    row.eachCell({ includeEmpty: true }, (cell, col) => {
+      cell.font = {
+        name: FONT_FAMILY, size: DATA_FONT_SIZE,
+        color: isWeekend && col <= 2 ? { argb: dt.getDay() === 0 ? 'FFDC2626' : 'FF0369A1' } : { argb: 'FF18181B' },
+        bold: isWeekend && col <= 2,
+      }
+      cell.alignment = { horizontal: col <= 2 ? 'center' : 'right', vertical: 'middle' }
+      if (typeof cell.value === 'number') cell.numFmt = '#,##0;-#,##0;"-"'
+    })
   }
 
-  ws.getColumn(1).width = 12
-  ws.getColumn(2).width = 7
+  ws.getColumn(1).width = 14
+  ws.getColumn(2).width = 9
   for (let c = 3; c <= headers.length; c++) {
-    ws.getColumn(c).width = Math.max(headers[c - 1].length * 1.8 + 2, 8)
+    ws.getColumn(c).width = Math.max(headers[c - 1].length * 2.2 + 3, 10)
   }
 
   const filename = encodeURIComponent(`${ckStore.name}_${year}${String(monthNum).padStart(2, '0')}_央廚食耗.xlsx`)

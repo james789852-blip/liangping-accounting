@@ -154,15 +154,19 @@ function colLetter(colNum: number): string {
   return s
 }
 
-function fillHeaderCell(cell: ExcelJS.Cell, text: string, fillArgb?: string, fontColor = 'FF000000', bold = false, size = 12) {
+const FONT_FAMILY = 'Microsoft JhengHei'
+const HEADER_DEFAULT_SIZE = 14
+const DATA_DEFAULT_SIZE = 13
+
+function fillHeaderCell(cell: ExcelJS.Cell, text: string, fillArgb?: string, fontColor = 'FF000000', bold = false, size = HEADER_DEFAULT_SIZE) {
   cell.value = text
   cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
-  cell.font = { name: 'Calibri', size, bold, color: { argb: fontColor } }
+  cell.font = { name: FONT_FAMILY, size, bold, color: { argb: fontColor } }
   cell.border = {
-    top: { style: 'thin', color: { argb: 'FFD0D0D0' } },
-    bottom: { style: 'thin', color: { argb: 'FFD0D0D0' } },
-    left: { style: 'thin', color: { argb: 'FFD0D0D0' } },
-    right: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+    top: { style: 'thin', color: { argb: 'FFB8B8B8' } },
+    bottom: { style: 'thin', color: { argb: 'FFB8B8B8' } },
+    left: { style: 'thin', color: { argb: 'FFB8B8B8' } },
+    right: { style: 'thin', color: { argb: 'FFB8B8B8' } },
   }
   if (fillArgb) {
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillArgb } }
@@ -337,7 +341,7 @@ export async function addFoodCostSheet(
       cellRefund.value = { formula: `SUMIFS(${totalRange},${docRow2Range},"發票",${vgRow1Range},"退稅")` } as any
     }
     cellRefund.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFCC' } }
-    cellRefund.font = { name: 'Calibri', size: 10, bold: true }
+    cellRefund.font = { name: FONT_FAMILY, size: 12, bold: true }
     cellRefund.alignment = { horizontal: 'center', vertical: 'middle' }
     cellRefund.numFmt = '#,##0;-#,##0;"-"'
 
@@ -401,7 +405,7 @@ export async function addFoodCostSheet(
     const formula = `SUM(${letter}${DATA_START}:${letter}${DATA_START + daysInMonth - 1})`
     const cell = ws.getRow(TOTAL_ROW).getCell(c.index)
     cell.value = { formula } as any
-    cell.font = { name: 'Calibri', size: 12, bold: true, italic: true }
+    cell.font = { name: FONT_FAMILY, size: 13, bold: true }
     cell.alignment = { horizontal: 'right', vertical: 'middle' }
     cell.numFmt = '#,##0;-#,##0;"-"'
     if (c.kind === 'stat') {
@@ -442,7 +446,7 @@ export async function addFoodCostSheet(
       const cell = excelRow.getCell(c.index)
       // Data row 統一字體大小
       if (c.kind !== 'spacer') {
-        cell.font = { name: 'Calibri', size: 12,
+        cell.font = { name: FONT_FAMILY, size: DATA_DEFAULT_SIZE,
           color: isWeekend && (c.kind === 'date' || c.kind === 'weekday')
             ? { argb: dow === 0 ? 'FFDC2626' : 'FF0369A1' }
             : { argb: 'FF000000' },
