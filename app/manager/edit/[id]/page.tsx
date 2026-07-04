@@ -11,6 +11,7 @@ import { ArrowLeft } from 'lucide-react'
 import { getStoreItemsResolved, toMappingColumns } from '@/lib/store-items-resolver'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
+export const dynamic = 'force-dynamic'
 
 export default async function EditClosingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
