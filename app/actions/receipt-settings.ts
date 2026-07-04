@@ -23,15 +23,22 @@ export async function getReceiptSettings(storeId: string): Promise<CategoryWithV
     .from('receipt_categories')
     .select(`
       id, name, sort_order,
-      receipt_vendors(id, name, sort_order)
+      receipt_vendors(id, name, sort_order, created_at)
     `)
     .eq('store_id', storeId)
     .order('sort_order')
-    .order('created_at', { referencedTable: 'receipt_vendors' })
+  // 廠商按 sort_order 排（NULL 排最後 fallback 到 created_at）
   return (data ?? []).map((c: any) => ({
     id: c.id,
     name: c.name,
-    vendors: (c.receipt_vendors ?? []).map((v: any) => ({ id: v.id, name: v.name })),
+    vendors: (c.receipt_vendors ?? [])
+      .sort((a: any, b: any) => {
+        const sa = a.sort_order ?? 999999
+        const sb = b.sort_order ?? 999999
+        if (sa !== sb) return sa - sb
+        return (a.created_at ?? '').localeCompare(b.created_at ?? '')
+      })
+      .map((v: any) => ({ id: v.id, name: v.name })),
   }))
 }
 
