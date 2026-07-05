@@ -2213,21 +2213,27 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         })()}
 
                         {/* 備註（品項之後） */}
-                        <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            備註（可空）
-                            {form.vendor_name === '其他購買' && (
-                              <span style={{ fontSize: '10px', color: '#B45309', background: '#FEF3C7', padding: '1px 8px', borderRadius: '8px', fontWeight: 700 }}>
-                                💡 記得備注購買的東西
-                              </span>
-                            )}
-                          </label>
-                          <textarea
-                            placeholder={form.vendor_name === '其他購買' ? '請寫下購買的東西（例：燈泡、清潔劑…）' : ''}
-                            style={{ padding: '8px 10px', border: `1.5px solid ${form.vendor_name === '其他購買' && !form.notes?.trim() ? '#FBBF24' : '#e4e4e7'}`, borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', resize: 'none', minHeight: '64px' }}
-                            value={form.notes}
-                            onChange={e => updateReceiptForm(form.id, 'notes', e.target.value)} />
-                        </div>
+                        {(() => {
+                          const NEED_NOTE_VENDORS = ['其他購買', '發票', '收據', '估價單', '其他']
+                          const needNote = NEED_NOTE_VENDORS.includes(form.vendor_name ?? '')
+                          return (
+                            <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                備註（可空）
+                                {needNote && (
+                                  <span style={{ fontSize: '10px', color: '#B45309', background: '#FEF3C7', padding: '1px 8px', borderRadius: '8px', fontWeight: 700 }}>
+                                    💡 記得備注購買的東西
+                                  </span>
+                                )}
+                              </label>
+                              <textarea
+                                placeholder={needNote ? '請寫下購買的東西（例：燈泡、清潔劑…）' : ''}
+                                style={{ padding: '8px 10px', border: `1.5px solid ${needNote && !form.notes?.trim() ? '#FBBF24' : '#e4e4e7'}`, borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', resize: 'none', minHeight: '64px' }}
+                                value={form.notes}
+                                onChange={e => updateReceiptForm(form.id, 'notes', e.target.value)} />
+                            </div>
+                          )
+                        })()}
 
                         {/* 金額（最下） */}
                         {(() => {
