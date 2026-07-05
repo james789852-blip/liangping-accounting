@@ -2054,34 +2054,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           })()}
                         </div>
 
-                        {/* 金額 */}
-                        {(() => {
-                          const itemsTotal = (form.items ?? []).filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
-                          const hasItemsTotal = itemsTotal !== 0
-                          return (
-                            <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                金額 *
-                                {hasItemsTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
-                              </label>
-                              <input type="number" min="0" inputMode="numeric" placeholder="0" readOnly={hasItemsTotal}
-                                style={{ padding: '8px 10px', border: `1.5px solid ${hasItemsTotal ? '#FDE68A' : form.total_amount > 0 ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: hasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: '#18181b', cursor: hasItemsTotal ? 'default' : 'text' }}
-                                value={form.total_amount || ''}
-                                onChange={e => { if (!hasItemsTotal) updateReceiptForm(form.id, 'total_amount', parseInt(e.target.value) || 0) }} />
-                            </div>
-                          )
-                        })()}
-                        {/* 稅外加 UI 已移除 — 稅金請直接選稅金品項輸入金額（例：豆腐稅金） */}
-
-                        {/* 備註 */}
-                        <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>備註（可空）</label>
-                          <textarea placeholder=""
-                            style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', resize: 'none', minHeight: '64px' }}
-                            value={form.notes}
-                            onChange={e => updateReceiptForm(form.id, 'notes', e.target.value)} />
-                        </div>
-
                         {/* 品項 — 若廠商下沒子品項（廠商本身就是品項，例：瓦斯/水費/電費）→ 隱藏 */}
                         {(() => {
                           const vendorHasSubItems = !!form.vendor_name && mappingColumns.some(c => c.vendor_group === form.vendor_name)
@@ -2236,6 +2208,41 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   </div>
                                 ))}
                               </div>
+                            </div>
+                          )
+                        })()}
+
+                        {/* 備註（品項之後） */}
+                        <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            備註（可空）
+                            {form.vendor_name === '其他購買' && (
+                              <span style={{ fontSize: '10px', color: '#B45309', background: '#FEF3C7', padding: '1px 8px', borderRadius: '8px', fontWeight: 700 }}>
+                                💡 記得備注購買的東西
+                              </span>
+                            )}
+                          </label>
+                          <textarea
+                            placeholder={form.vendor_name === '其他購買' ? '請寫下購買的東西（例：燈泡、清潔劑…）' : ''}
+                            style={{ padding: '8px 10px', border: `1.5px solid ${form.vendor_name === '其他購買' && !form.notes?.trim() ? '#FBBF24' : '#e4e4e7'}`, borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', resize: 'none', minHeight: '64px' }}
+                            value={form.notes}
+                            onChange={e => updateReceiptForm(form.id, 'notes', e.target.value)} />
+                        </div>
+
+                        {/* 金額（最下） */}
+                        {(() => {
+                          const itemsTotal = (form.items ?? []).filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
+                          const hasItemsTotal = itemsTotal !== 0
+                          return (
+                            <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                金額 *
+                                {hasItemsTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
+                              </label>
+                              <input type="number" min="0" inputMode="numeric" placeholder="0" readOnly={hasItemsTotal}
+                                style={{ padding: '8px 10px', border: `1.5px solid ${hasItemsTotal ? '#FDE68A' : form.total_amount > 0 ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: hasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: '#18181b', cursor: hasItemsTotal ? 'default' : 'text' }}
+                                value={form.total_amount || ''}
+                                onChange={e => { if (!hasItemsTotal) updateReceiptForm(form.id, 'total_amount', parseInt(e.target.value) || 0) }} />
                             </div>
                           )
                         })()}
