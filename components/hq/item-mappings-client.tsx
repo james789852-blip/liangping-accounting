@@ -395,25 +395,25 @@ export default function ItemMappingsClient({
       )}
 
       {/* Header (固定不滑動) */}
-      <div className="bg-white px-6 py-5 shrink-0" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', zIndex: 40 }}>
+      <div className="bg-white px-4 md:px-6 py-4 md:py-5 shrink-0" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', zIndex: 40 }}>
         <div className="max-w-2xl mx-auto">
           <button onClick={() => router.back()}
             className="flex items-center gap-1 text-sm font-medium mb-3"
             style={{ color: '#a1a1aa', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
             <ChevronLeft className="h-4 w-4" />上一頁
           </button>
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
             <div>
               <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
                 <Tag className="h-3.5 w-3.5" />
                 品項對應
               </div>
               <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>品項對應管理</h1>
-              <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>
-                各店專屬品項對應 — 即 Excel 匯出實際會用到的品項
+              <p className="text-xs md:text-sm mt-0.5" style={{ color: '#a1a1aa' }}>
+                各店專屬品項對應 — Excel 匯出實際會用到的品項
               </p>
             </div>
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => { setSortMode(v => !v); setSelectMode(false) }}
                 className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors"
                 style={sortMode
@@ -464,7 +464,7 @@ export default function ItemMappingsClient({
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 pb-28 flex-1 overflow-y-auto w-full" id="mappings-scroll">
+      <div className="max-w-2xl mx-auto px-2 md:px-4 py-3 md:py-5 space-y-4 md:space-y-5 pb-28 flex-1 overflow-y-auto w-full" id="mappings-scroll">
 
         {false && (
         <HelpBox title="📖 這頁怎麼用？（直接決定 Excel 匯出）">
@@ -879,7 +879,7 @@ function SortableItemRow({
     background: isDragging ? '#fef3c7' : undefined,
   }
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-2 px-3 py-2.5">
+    <div ref={setNodeRef} style={style} className="flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-2 md:py-2.5">
       {/* 選取模式：checkbox */}
       {selectMode && (
         <input type="checkbox" checked={isSelected} onChange={onToggleSelect}
@@ -939,7 +939,7 @@ function SortableItemRow({
           <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
             style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
           <RefundToggle mappingId={m.id} isRefund={!!m.is_refund} />
-          <span className="text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
+          <span className="hidden md:inline text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
           <button onClick={() => startEdit(m)} style={{ color: '#d4d4d8' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#F59E0B')}
             onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
