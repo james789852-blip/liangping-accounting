@@ -856,13 +856,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (!raw) return
       const bk = JSON.parse(raw)
       if (!bk?.ts || Date.now() - bk.ts > 86400000) { localStorage.removeItem(saveBkKey); return }
-      // Only prompt if this is an existing closing with potential data loss (not brand new)
-      if (!existingClosing?.id) return
-      const hasNoChildData =
-        (existingClosing?.revenue_items?.length ?? 0) === 0 &&
-        (existingClosing?.expense_items?.length ?? 0) === 0
-      if (!hasNoChildData) return
-      toast('上次儲存未完成，偵測到備份資料', {
+      // 若 backup 比 DB updated_at 新 → prompt restore（不再限 hasNoChildData）
+      const dbUpdatedAt = (existingClosing as any)?.updated_at ? new Date((existingClosing as any).updated_at).getTime() : 0
+      if (bk.ts <= dbUpdatedAt + 3000) return  // DB 較新（含 3 秒容差） → 不 prompt
+      toast('上次未儲存的資料還在（切頁/關閉前的自動備份）', {
         duration: 15000,
         action: {
           label: '恢復資料',
@@ -970,6 +967,44 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     // 任何會寫進 handleSave payload 的 state 都要列依賴，否則 60 秒定時器拿到的是 stale closure
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, expenses, handwriteOrders, adjustments, reserves, channelPhotos, ckPhotoUrl, envelopePhotoUrl, voidInvoicePhotos, notePhotoUrl, ckQuantities, isLocked, isDisputed, submitDone])
+
+  // 主要 state 變動 debounced 寫 localStorage backup（每 500ms）— 切頁前一定有最新 snapshot
+  useEffect(() => {
+    if (isLocked || submitDone) return
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(saveBkKey, JSON.stringify({
+          data, expenses, handwriteOrders, adjustments, reserves,
+          ckQuantities: ckQuantitiesRef.current, ts: Date.now(),
+        }))
+      } catch {}
+    }, 500)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, expenses, handwriteOrders, adjustments, reserves])
+
+  // 頁面切換 / 關閉前立即 flush，避免 500ms debounced 未完成就切走
+  useEffect(() => {
+    if (isLocked || submitDone) return
+    function flush() {
+      try {
+        localStorage.setItem(saveBkKey, JSON.stringify({
+          data: dataRef.current, expenses, handwriteOrders, adjustments, reserves,
+          ckQuantities: ckQuantitiesRef.current, ts: Date.now(),
+        }))
+      } catch {}
+    }
+    function onVisibilityChange() { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('pagehide', flush)
+    window.addEventListener('beforeunload', flush)
+    return () => {
+      window.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('pagehide', flush)
+      window.removeEventListener('beforeunload', flush)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenses, handwriteOrders, adjustments, reserves, isLocked, submitDone])
 
   useEffect(() => {
     const fromQty = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * effectiveCKPrice(p), 0)
