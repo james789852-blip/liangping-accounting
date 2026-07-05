@@ -44,7 +44,15 @@ export default async function ManagerLayout({ children }: { children: React.Reac
       storeType = (currentStore as any)?.type ?? '店面'
     }
   } else {
-    storeId = profile?.store_ids?.[0] ?? null
+    // 一般店家角色：優先用主店 (primary_store_id)，其次 store_ids 第一個
+    const cookieStore = await cookies()
+    const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
+    const primary = (profile as any)?.primary_store_id as string | undefined
+    const storeIds = profile?.store_ids ?? []
+    if (cookieStoreId && storeIds.includes(cookieStoreId)) storeId = cookieStoreId
+    else if (primary && storeIds.includes(primary)) storeId = primary
+    else storeId = storeIds[0] ?? null
+
     if (storeId) {
       const store = await getCachedStoreById(storeId)
       storeName = (store as any)?.name ?? ''
