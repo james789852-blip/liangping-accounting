@@ -19,7 +19,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 
 interface Mapping {
-  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean
+  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; vg_sort_order?: number
 }
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
@@ -83,6 +83,8 @@ export default function ItemMappingsClient({
 
   // 用 state 保存 vendorGroups，允許 optimistic update
   const [vgsState, setVgsState] = useState(vendorGroups)
+  // 剛新增、尚無品項的空類別（不在 displayMappings 裡），用來讓 UI 立即顯示空分類
+  const [pendingVgs, setPendingVgs] = useState<string[]>([])
 
   // Sync from server after router.refresh()
   useEffect(() => { setMappings(initial) }, [initial])
@@ -252,6 +254,10 @@ export default function ItemMappingsClient({
     acc[vg].push(m)
     return acc
   }, {})
+  // 新增後尚無品項的空類別也要顯示
+  for (const vg of pendingVgs) {
+    if (!grouped[vg]) grouped[vg] = []
+  }
 
   // 排序：優先用 system_vendor_groups.sort_order（對齊各店 Excel 順序），
   //       不在 system_vendor_groups 內的分類往後排
@@ -281,12 +287,14 @@ export default function ItemMappingsClient({
       }
       // Optimistic：立即把新 vg 加入 local state，UI 立刻有排序 / 單據下拉 / rename
       if ('id' in r && r.id) {
-        setVgsState(prev => [...prev, { id: r.id!, name, sort_order: sort, doc_type: null }])
+        setVgsState(prev => prev.some(v => v.name === name) ? prev : [...prev, { id: r.id!, name, sort_order: sort, doc_type: null }])
       }
-      toast.success(`已新增分類「${name}」`)
+      // 讓這個「還沒品項」的空類別在該店立即顯示，使用者才能在底下加品項
+      setPendingVgs(prev => prev.includes(name) ? prev : [...prev, name])
+      toast.success(`已新增分類「${name}」，可在底下「加品項」`)
       setShowAddVg(false)
       setNewVgName('')
-      router.refresh()
+      // 不 router.refresh()：避免整頁重載造成畫面亂跳；空類別已由 pendingVgs 即時顯示
     })
   }
 
@@ -430,6 +438,7 @@ export default function ItemMappingsClient({
                 title={selectMode ? '取消選取' : '進入選取模式（可批次刪除）'}>
                 {selectMode ? <><X className="h-3.5 w-3.5" /> 取消</> : <><Check className="h-3.5 w-3.5" /> 選取</>}
               </button>
+              <CopyToStoreButton fromStoreId={activeStoreId} stores={stores} />
               <button onClick={() => setShowAddVg(true)}
                 className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold"
                 style={{ background: 'white', border: '1.5px solid #E0F2FE', color: '#0369A1' }}>
@@ -665,7 +674,8 @@ export default function ItemMappingsClient({
           const vgSt = vg === '未分類' ? VG_STYLE_UNCAT : DOC_TYPES.has(vg) ? VG_STYLE_DOC : VG_STYLE
           const isVgFirst = vgIdx === 0
           const isVgLast = vgIdx === groupOrder.length - 1
-          const hasVgRecord = vgSortMap.has(vg)
+          // 每店獨立：所有真實類別（非「未分類」）都可改名/排序，不再依賴全域 system_vendor_groups record
+          const hasVgRecord = vg !== '未分類'
           return (
             <div key={vg}>
               <div className="flex items-center gap-2 mb-2 px-1">
@@ -1147,7 +1157,11 @@ function VgActions({ vgName, storeId, itemCount, onDone }: { vgName: string; sto
     return (
       <div className="flex items-center gap-1">
         <input value={newName} onChange={e => setNewName(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') handleRename(); if (e.key === 'Escape') setEditing(false) }}
+          onKeyDown={e => {
+            // 中文 IME 組字期間 Enter 是選字用，不能觸發提交
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); handleRename() }
+            if (e.key === 'Escape') setEditing(false)
+          }}
           autoFocus
           style={{ height: 22, padding: '0 6px', fontSize: 11, borderRadius: 4, border: '1.5px solid #F59E0B', outline: 'none' }} />
         <button onClick={handleRename} disabled={saving}
@@ -1198,6 +1212,8 @@ function ItemDocOverrideSelector({ itemName, storeId, currentOverride, extraOpti
 }) {
   const [doc, setDoc] = useState(currentOverride ?? '')
   const [saving, setSaving] = useState(false)
+  // refresh 後（server 傳回新 currentOverride）同步 local state，避免顯示回舊值
+  useEffect(() => { setDoc(currentOverride ?? '') }, [currentOverride])
   // 合併：built-in + 目前 value + 自訂 extraOptions（去重）
   const allOptions = Array.from(new Set([...BUILTIN_DOC_TYPES, ...extraOptions, ...(doc && !BUILTIN_DOC_TYPES.includes(doc) ? [doc] : [])]))
   async function save(next: string) {
@@ -1234,10 +1250,73 @@ function ItemDocOverrideSelector({ itemName, storeId, currentOverride, extraOpti
   )
 }
 
+/** 把目前店的品項對應手動複製到另一店（單次操作，不自動連動） */
+function CopyToStoreButton({ fromStoreId, stores }: { fromStoreId: string; stores: { id: string; name: string }[] }) {
+  const [open, setOpen] = useState(false)
+  const [toStoreId, setToStoreId] = useState('')
+  const [copying, setCopying] = useState(false)
+
+  const targets = stores.filter(s => s.id !== fromStoreId)
+  if (targets.length === 0) return null
+
+  async function handleCopy() {
+    if (!toStoreId) return
+    const target = targets.find(s => s.id === toStoreId)
+    if (!confirm(`確定要把目前店的品項設定覆蓋到「${target?.name}」嗎？\n\n此操作無法復原，會清除「${target?.name}」的現有品項對應。`)) return
+    setCopying(true)
+    try {
+      const { copyStoreMappingsToStore } = await import('@/app/actions/item-mappings')
+      const r = await copyStoreMappingsToStore(fromStoreId, toStoreId)
+      if ('error' in r) { toast.error(String(r.error)); return }
+      toast.success(`已複製到「${target?.name}」（${(r as any).count} 筆）`)
+      setOpen(false)
+    } finally {
+      setCopying(false)
+    }
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+        style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}
+        title="把目前店的品項設定複製到另一店（手動一次性操作）">
+        複製到其他店…
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '110%', right: 0, zIndex: 50, minWidth: 220,
+          background: 'white', border: '1px solid #e4e4e7', borderRadius: 12,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.10)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10,
+        }}>
+          <p style={{ fontSize: 12, color: '#71717a', margin: 0 }}>選擇目標店家（會覆蓋該店現有對應）</p>
+          <select value={toStoreId} onChange={e => setToStoreId(e.target.value)}
+            style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #e4e4e7', fontSize: 13, width: '100%' }}>
+            <option value="">選擇店家…</option>
+            {targets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setOpen(false)} disabled={copying}
+              style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: '1px solid #e4e4e7', background: 'white', fontSize: 13, cursor: 'pointer' }}>
+              取消
+            </button>
+            <button onClick={handleCopy} disabled={!toStoreId || copying}
+              style={{ flex: 1, padding: '7px 0', borderRadius: 8, background: toStoreId ? '#F59E0B' : '#e4e4e7', color: toStoreId ? 'white' : '#a1a1aa', border: 'none', fontSize: 13, fontWeight: 600, cursor: toStoreId ? 'pointer' : 'default' }}>
+              {copying ? '複製中…' : '確認複製'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** 廠商群組的單據類型（doc_type）快速編輯 */
 function VgDocTypeSelector({ vgId, vgName, currentDoc }: { vgId: string; vgName: string; currentDoc: string | null }) {
   const [doc, setDoc] = useState(currentDoc ?? '')
   const [saving, setSaving] = useState(false)
+  // refresh 後同步 server 傳回的新值
+  useEffect(() => { setDoc(currentDoc ?? '') }, [currentDoc])
 
   async function save(next: string) {
     setDoc(next)

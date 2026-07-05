@@ -89,7 +89,7 @@ export default async function ManagerDashboard() {
   const cfg = STATUS_DESC[statusKey] ?? STATUS_DESC.none
 
   const actionHref = !todayClosing || todayClosing.status === 'draft' ? '/manager/closing'
-    : todayClosing.status === 'disputed' ? `/manager/edit/${todayClosing.id}` : '/manager/summary'
+    : todayClosing.status === 'disputed' ? `/manager/edit/${todayClosing.id}` : '/manager/closing'
 
   const isDisputed = todayClosing?.status === 'disputed'
   const ctaGradient = isDisputed

@@ -21,13 +21,12 @@ export default async function ItemMappingsPage({
   if (!profile?.is_hq && profile?.role !== '老闆') redirect('/manager/dashboard')
 
   const admin = createAdminClient()
-  const [{ data: stores }, mappings, { data: vgsInitial }, sysItems, storeItems] = await Promise.all([
+  const [{ data: stores }, mappings, { data: vgsInitial }] = await Promise.all([
     admin.from('stores').select('id, name').eq('active', true).order('name'),
     // 分頁撈：mapping 表總筆數可能 > 1000（PostgREST 預設 max-rows）
+    // doc_type_override 已在 migration 042 直接存於本表，不再 join system_items / store_items
     fetchAllPaged<any>(() => admin.from('item_column_mappings').select('*').order('sort_order').order('item_category').order('item_name')),
     admin.from('system_vendor_groups').select('id, name, sort_order, doc_type').eq('active', true).order('sort_order'),
-    fetchAllPaged<any>(() => admin.from('system_items').select('id, name, doc_type_override').eq('active', true)),
-    fetchAllPaged<any>(() => admin.from('store_items').select('store_id, system_item_id, doc_type_override').eq('enabled', true)),
   ])
 
   // 自動同步 orphan vg：mapping 用到但 system_vendor_groups 沒 record 的 → 補建
@@ -56,25 +55,9 @@ export default async function ItemMappingsPage({
   // 全域已廢除，一律預設第一個店家
   const storeId = params.storeId ?? stores?.[0]?.id ?? ''
 
-  // 幫每個 mapping 加 doc_type_override 資訊
-  const sysByName = new Map((sysItems ?? []).map((s: any) => [s.name as string, { id: s.id as string, override: s.doc_type_override as string | null }]))
-  const storeOverrideMap = new Map<string, string | null>()
-  for (const si of storeItems ?? []) {
-    storeOverrideMap.set(`${si.store_id}||${si.system_item_id}`, si.doc_type_override ?? null)
-  }
-  const enrichedMappings = (mappings ?? []).map((m: any) => {
-    const sys = sysByName.get(m.item_name)
-    let override: string | null = sys?.override ?? null
-    if (m.store_id && sys) {
-      const storeOverride = storeOverrideMap.get(`${m.store_id}||${sys.id}`)
-      if (storeOverride !== undefined) override = storeOverride
-    }
-    return { ...m, doc_type_override: override }
-  })
-
   return (
     <ItemMappingsClient
-      mappings={enrichedMappings}
+      mappings={mappings ?? []}
       stores={sortStores(stores ?? [])}
       vendorGroups={vgs ?? []}
       selectedStoreId={storeId}

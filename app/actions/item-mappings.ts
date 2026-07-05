@@ -25,6 +25,12 @@ function revalidate() {
   revalidateTag('item-mappings', 'default')
 }
 
+// 單據類型異動只需刷新品項管理頁，不需觸及店長端
+function revalidateLight() {
+  revalidatePath('/hq/item-mappings')
+  revalidateTag('item-mappings', 'default')
+}
+
 export async function saveItemMapping(
   itemName: string, excelColumn: string, itemCategory: string, storeId?: string, vendorGroup?: string
 ) {
@@ -39,17 +45,30 @@ export async function saveItemMapping(
 
   // 1. 寫 item_column_mappings
   //    sort_order 排到該 vg 內現有最大值 +10 → 新品項永遠在該分類最下方
-  let peerQuery = admin.from('item_column_mappings').select('sort_order')
+  let peerQuery = admin.from('item_column_mappings').select('sort_order, vg_sort_order')
   peerQuery = storeId ? peerQuery.eq('store_id', storeId) : peerQuery.is('store_id', null)
   peerQuery = vendorGroup ? peerQuery.eq('vendor_group', vendorGroup) : peerQuery.is('vendor_group', null)
   const { data: peers } = await peerQuery
   const maxSort = Math.max(0, ...(peers ?? []).map((p: any) => p.sort_order ?? 0))
   const newSort = maxSort + 10
 
+  // 每店獨立：vg_sort_order（類別排序）繼承該店該類別現有品項的值（同類別須一致）；
+  //           若是全新類別，排到該店所有類別的最後。
+  let vgSort: number
+  const existingVgSort = (peers ?? []).map((p: any) => p.vg_sort_order).find((v: any) => v != null)
+  if (existingVgSort != null) {
+    vgSort = existingVgSort
+  } else {
+    let allVgQuery = admin.from('item_column_mappings').select('vg_sort_order')
+    allVgQuery = storeId ? allVgQuery.eq('store_id', storeId) : allVgQuery.is('store_id', null)
+    const { data: allVg } = await allVgQuery
+    vgSort = Math.max(0, ...(allVg ?? []).map((v: any) => v.vg_sort_order ?? 0)) + 10
+  }
+
   const { error: insertErr } = await admin.from('item_column_mappings').insert({
     item_name: itemName, excel_column: excelColumn, item_category: itemCategory,
     vendor_group: vendorGroup ?? null,
-    store_id: storeId ?? null, sort_order: newSort,
+    store_id: storeId ?? null, sort_order: newSort, vg_sort_order: vgSort,
     updated_at: new Date().toISOString(),
   })
   if (insertErr) return { error: `新增失敗：${insertErr.message}` }
@@ -380,36 +399,15 @@ export async function reorderItemMappings(ids: string[]) {
  * 若沒 storeId → 存到 system_items.doc_type_override（全域）
  */
 export async function setItemDocOverride(itemName: string, storeId: string | null, docOverride: string | null) {
+  // 每店獨立：單據類型直接寫該店那筆 item_column_mappings.doc_type_override（明確值、無 fallback）。
+  // 空值 = 明確「無單據」，不會再回退到類別預設。
+  if (!storeId) return { error: '缺少店家 ID' }
   const admin = createAdminClient()
-  let { data: sys } = await admin.from('system_items')
-    .select('id').eq('name', itemName).eq('active', true).maybeSingle()
-  // 若品項對應管理有這品項但 system_items 沒 → 自動建立（避免無法設 override）
-  if (!sys) {
-    const { data: newSys, error: insertErr } = await admin.from('system_items')
-      .insert({ name: itemName, category: '雜項', active: true, default_enabled: false, sort_order: 999 })
-      .select('id').single()
-    if (insertErr || !newSys) return { error: '無法建立 system_item：' + (insertErr?.message ?? '未知') }
-    sys = newSys
-  }
-  if (storeId) {
-    const { data: existing } = await admin.from('store_items')
-      .select('id').eq('store_id', storeId).eq('system_item_id', sys.id).maybeSingle()
-    if (existing) {
-      await admin.from('store_items').update({
-        doc_type_override: docOverride || null, updated_at: new Date().toISOString(),
-      }).eq('id', existing.id)
-    } else {
-      await admin.from('store_items').insert({
-        store_id: storeId, system_item_id: sys.id, enabled: true,
-        doc_type_override: docOverride || null, sort_order: 200,
-      })
-    }
-  } else {
-    await admin.from('system_items').update({
-      doc_type_override: docOverride || null, updated_at: new Date().toISOString(),
-    }).eq('id', sys.id)
-  }
-  revalidate()
+  const { error } = await admin.from('item_column_mappings')
+    .update({ doc_type_override: docOverride || null, updated_at: new Date().toISOString() })
+    .eq('item_name', itemName).eq('store_id', storeId)
+  if (error) return { error: error.message }
+  revalidateLight()
   return { success: true as const }
 }
 
@@ -492,6 +490,34 @@ export async function deleteVendorGroupWithItems(vgName: string, storeId?: strin
 
   revalidate()
   return { success: true as const, mappingsRemoved: mappings?.length ?? 0, itemsAffected: itemNames.length }
+}
+
+/** 把 fromStoreId 的整份品項對應複製到 toStoreId（會清除目標店的現有對應）。 */
+export async function copyStoreMappingsToStore(fromStoreId: string, toStoreId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+  const { data: profile } = await supabase
+    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
+  if (!profile?.is_hq && profile?.role !== '老闆') return { error: '權限不足' }
+
+  const admin = createAdminClient()
+  const { data: src } = await admin
+    .from('item_column_mappings').select('*')
+    .eq('store_id', fromStoreId)
+  if (!src?.length) return { error: '來源店家無品項對應' }
+
+  await admin.from('item_column_mappings').delete().eq('store_id', toStoreId)
+  const { error } = await admin.from('item_column_mappings').insert(
+    src.map(({ id: _id, created_at: _c, ...rest }) => ({
+      ...rest,
+      store_id: toStoreId,
+      updated_at: new Date().toISOString(),
+    }))
+  )
+  if (error) return { error: error.message }
+  revalidate()
+  return { success: true, count: src.length }
 }
 
 export async function copyGlobalMappingsToStore(storeId: string) {

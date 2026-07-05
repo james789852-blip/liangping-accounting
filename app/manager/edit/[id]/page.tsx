@@ -129,6 +129,8 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
         todayReceipts={todayReceipts ?? []}
         receiptCategories={receiptCategories}
         mappingColumns={mappingColumns}
+        isBackfill={closing.business_date !== getBusinessDate()}
+        realToday={getBusinessDate()}
       />
     </>
   )

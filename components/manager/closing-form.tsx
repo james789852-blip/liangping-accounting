@@ -832,13 +832,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     } else {
       const saved = parseInt(localStorage.getItem(stepLsKey) ?? '0') || 0
       if (saved > 0) {
-        if (saved >= pettyIdx && pettyDone) {
-          setCurrentStep(resultIdx)
-        } else {
-          setCurrentStep(saved)
-        }
+        // 零用金完成後：維持在零用金步驟（使用者要看的就是那頁），不再強制跳回摘要
+        setCurrentStep(saved)
       } else if (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified') {
-        setCurrentStep(pettyDone ? resultIdx : 99)
+        // 全新開啟已送出帳目：有做過零用金 → 零用金頁；尚未做 → 送出後步驟
+        setCurrentStep(pettyDone ? pettyIdx : 99)
       }
     }
     setStepMounted(true)
@@ -855,10 +853,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       const raw = localStorage.getItem(saveBkKey)
       if (!raw) return
       const bk = JSON.parse(raw)
-      if (!bk?.ts || Date.now() - bk.ts > 86400000) { localStorage.removeItem(saveBkKey); return }
-      // 若 backup 比 DB updated_at 新 → prompt restore（不再限 hasNoChildData）
+      // 退回帳目延長備份保留至 7 天；一般草稿 24 小時
+      const maxAge = existingClosing?.status === 'disputed' ? 7 * 86400000 : 86400000
+      if (!bk?.ts || Date.now() - bk.ts > maxAge) { localStorage.removeItem(saveBkKey); return }
       const dbUpdatedAt = (existingClosing as any)?.updated_at ? new Date((existingClosing as any).updated_at).getTime() : 0
-      if (bk.ts <= dbUpdatedAt + 3000) return  // DB 較新（含 3 秒容差） → 不 prompt
+      // 退回帳目：若 DB 現金清點全為 0（total公司 dispute 只改 status，不影響 cash_counts）
+      // 且備份有現金資料 → 一律彈出恢復（不受 timestamp 比較限制）
+      const dbCashEmpty = CASH_KEYS.every(k => ((existingClosing?.cash_counts as any)?.[0]?.[k] ?? 0) === 0)
+      const bkHasCash = bk.data && CASH_KEYS.some(k => (bk.data[k] ?? 0) > 0)
+      const isDisputedWithLostCash = existingClosing?.status === 'disputed' && dbCashEmpty && bkHasCash
+      if (!isDisputedWithLostCash && bk.ts <= dbUpdatedAt + 3000) return  // DB 較新（含 3 秒容差） → 不 prompt
       toast('上次未儲存的資料還在（切頁/關閉前的自動備份）', {
         duration: 15000,
         action: {
@@ -983,7 +987,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, expenses, handwriteOrders, adjustments, reserves])
 
-  // 頁面切換 / 關閉前立即 flush，避免 500ms debounced 未完成就切走
+  // 頁面切換 / 關閉前立即 flush + 離頁警告
   useEffect(() => {
     if (isLocked || submitDone) return
     function flush() {
@@ -995,13 +999,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       } catch {}
     }
     function onVisibilityChange() { if (document.visibilityState === 'hidden') flush() }
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      flush()
+      // 彈出離頁確認（瀏覽器內建對話框，文字無法自訂）
+      e.preventDefault()
+      e.returnValue = '做帳尚未送出，確定要離開？資料已自動備份，下次進入可恢復。'
+    }
     window.addEventListener('visibilitychange', onVisibilityChange)
     window.addEventListener('pagehide', flush)
-    window.addEventListener('beforeunload', flush)
+    window.addEventListener('beforeunload', onBeforeUnload)
     return () => {
       window.removeEventListener('visibilitychange', onVisibilityChange)
       window.removeEventListener('pagehide', flush)
-      window.removeEventListener('beforeunload', flush)
+      window.removeEventListener('beforeunload', onBeforeUnload)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expenses, handwriteOrders, adjustments, reserves, isLocked, submitDone])
@@ -1821,9 +1831,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             <div className="flex items-center" style={{ minWidth: 'max-content' }}>
               {STEPS.map((s, i) => (
                 <div key={s.id} className="flex items-center">
-                  <button onClick={() => { if (i <= step) goToStep(i) }}
+                  <button
+                    onClick={() => {
+                      if (i === step) return
+                      // 跳步前儲存目前內容，讓資料不遺失
+                      handleSave(true)
+                      goToStep(i)
+                    }}
                     className="flex flex-col items-center gap-1 px-1.5"
-                    style={{ cursor: i <= step ? 'pointer' : 'default' }}>
+                    style={{ cursor: i === step ? 'default' : 'pointer' }}>
                     <div className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold transition-all"
                       style={{
                         background: i === step ? 'linear-gradient(135deg,#F59E0B,#F97316)' : i < step ? '#10b981' : '#f4f4f5',
@@ -4013,15 +4029,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           style={{ visibility: stepMounted ? 'visible' : 'hidden' }}>
           <div className="max-w-xl mx-auto flex gap-3">
 
-            {/* Step 8: 零用金核對 → 完成結束 */}
+            {/* Step 8: 零用金核對 → 完成結束（留在零用金頁，不跳轉） */}
             {stepId === 'petty' && (
               <button onClick={() => {
                 try {
                   localStorage.setItem(`petty_done_${store.id}_${today}`, '1')
-                  // 把 stepLsKey 改成 result，避免下次回來又跳回零用金
-                  localStorage.setItem(stepLsKey, String(Math.max(0, totalSteps - 2)))
+                  // 記住使用者在零用金步驟（下次回來仍顯示此頁）
+                  localStorage.setItem(stepLsKey, String(totalSteps - 1))
                 } catch {}
-                router.push('/manager/summary')
+                // 不 router.push：留在目前頁面，讓使用者繼續看零用金核對結果
+                router.refresh()
               }}
                 className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-base font-bold text-white"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 8px 20px rgba(245,158,11,0.3)' }}>

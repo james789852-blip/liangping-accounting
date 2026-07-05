@@ -29,23 +29,15 @@ export async function syncMiscVendorsForStore(storeId: string) {
   }
 
   const existingByName = new Map(existing.map(v => [v.name, v]))
-  const toDelete = existing.filter(v => !shouldBe.has(v.name))
   const toAdd = [...shouldBe.entries()].filter(([n]) => !existingByName.has(n))
 
-  if (toDelete.length > 0) {
-    await admin.from('receipt_vendors').delete().in('id', toDelete.map(v => v.id))
-  }
+  // 每店獨立 / 尊重使用者改動：只「補新增」缺少的品項到收據雜項下拉，
+  // 絕不刪除、不改名、不覆蓋既有 receipt_vendors —— 避免把使用者改過的名稱或排序蓋回。
   if (toAdd.length > 0) {
     await admin.from('receipt_vendors').insert(
       toAdd.map(([n, s]) => ({ category_id: cat.id, store_id: storeId, name: n, sort_order: s }))
     )
   }
-  // sync sort_order（現有廠商更新到 mapping 的 sort_order）
-  const toReorder = existing.filter(v => shouldBe.has(v.name) && v.sort_order !== shouldBe.get(v.name))
-  await Promise.all(
-    toReorder.map(v => admin.from('receipt_vendors')
-      .update({ sort_order: shouldBe.get(v.name)! }).eq('id', v.id))
-  )
 }
 
 /** 全域 mapping 變更時，同步所有店家。 */

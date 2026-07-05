@@ -43,3 +43,6 @@ next-env.d.ts
 # 臨時分析腳本（一次性工具、含本機 Supabase 連線資訊，不進 repo）
 /analyze-columns*.js
 /scripts/
+
+# 資料庫備份（含營運資料，絕不進 repo）
+/backups/
