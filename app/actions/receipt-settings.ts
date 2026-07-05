@@ -4,6 +4,14 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+/** 精準 revalidate 只清跟收據設定相關的頁面（不 nuke 整站） */
+function revalidateReceipt() {
+  revalidatePath('/manager/settings')
+  revalidatePath('/manager/closing')
+  revalidatePath('/manager/edit', 'layout')
+  revalidatePath('/hq/receipt-settings')
+}
+
 export interface CategoryWithVendors {
   id: string
   name: string
@@ -60,7 +68,7 @@ export async function addCategory(storeId: string, name: string) {
   const sortOrder = await nextCatSort(storeId)
   const { error } = await admin.from('receipt_categories').insert({ store_id: storeId, name: name.trim(), sort_order: sortOrder })
   if (error) return { error: error.code === '23505' ? '類別已存在' : error.message }
-  revalidatePath('/', 'layout')
+  revalidateReceipt()
   return { success: true }
 }
 
@@ -80,7 +88,7 @@ export async function addCategoryWithVendors(storeId: string, categoryName: stri
       valid.map((name, i) => ({ store_id: storeId, category_id: cat.id, name, sort_order: (i + 1) * 10 }))
     )
   }
-  revalidatePath('/', 'layout')
+  revalidateReceipt()
   return { success: true }
 }
 
@@ -90,7 +98,7 @@ export async function updateCategoryName(categoryId: string, name: string) {
   const admin = createAdminClient()
   const { error } = await admin.from('receipt_categories').update({ name: name.trim() }).eq('id', categoryId)
   if (error) return { error: error.code === '23505' ? '類別已存在' : error.message }
-  revalidatePath('/', 'layout')
+  revalidateReceipt()
   return { success: true }
 }
 
@@ -99,7 +107,7 @@ export async function deleteCategory(categoryId: string) {
   const admin = createAdminClient()
   const { error } = await admin.from('receipt_categories').delete().eq('id', categoryId)
   if (error) return { error: error.message }
-  revalidatePath('/', 'layout')
+  revalidateReceipt()
   return { success: true }
 }
 
@@ -110,7 +118,7 @@ export async function addVendor(storeId: string, categoryId: string, name: strin
   const sortOrder = await nextVendorSort(categoryId)
   const { error } = await admin.from('receipt_vendors').insert({ store_id: storeId, category_id: categoryId, name: name.trim(), sort_order: sortOrder })
   if (error) return { error: error.code === '23505' ? '廠商已存在' : error.message }
-  revalidatePath('/', 'layout')
+  revalidateReceipt()
   return { success: true }
 }
 
@@ -120,7 +128,7 @@ export async function updateVendor(vendorId: string, name: string) {
   const admin = createAdminClient()
   const { error } = await admin.from('receipt_vendors').update({ name: name.trim() }).eq('id', vendorId)
   if (error) return { error: error.code === '23505' ? '廠商已存在' : error.message }
-  revalidatePath('/', 'layout')
+  revalidateReceipt()
   return { success: true }
 }
 
@@ -129,7 +137,7 @@ export async function deleteVendor(vendorId: string) {
   const admin = createAdminClient()
   const { error } = await admin.from('receipt_vendors').delete().eq('id', vendorId)
   if (error) return { error: error.message }
-  revalidatePath('/', 'layout')
+  revalidateReceipt()
   return { success: true }
 }
 
@@ -140,7 +148,7 @@ export async function reorderCategories(ids: string[]) {
   for (let i = 0; i < ids.length; i++) {
     await admin.from('receipt_categories').update({ sort_order: (i + 1) * 10 }).eq('id', ids[i])
   }
-  revalidatePath('/', 'layout')
+  revalidateReceipt()
   return { success: true }
 }
 
@@ -151,7 +159,7 @@ export async function reorderVendors(ids: string[]) {
   for (let i = 0; i < ids.length; i++) {
     await admin.from('receipt_vendors').update({ sort_order: (i + 1) * 10 }).eq('id', ids[i])
   }
-  revalidatePath('/', 'layout')
+  revalidateReceipt()
   return { success: true }
 }
 

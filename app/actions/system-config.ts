@@ -4,6 +4,16 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath, revalidateTag } from 'next/cache'
 
+/** 精準 revalidate 只清跟 system-config 相關的頁面（不 nuke 整站） */
+function revalidateSysConfig() {
+  revalidatePath('/hq/system-config')
+  revalidatePath('/hq/item-mappings')
+  revalidatePath('/hq/receipt-settings')
+  revalidatePath('/manager/closing')
+  revalidatePath('/manager/edit', 'layout')
+  revalidatePath('/hq/food-cost-preview')
+}
+
 async function requireHQManager() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -32,7 +42,7 @@ export async function createVendorGroup(input: { name: string; kind: string; sor
     description: input.description,
   }).select('id').single()
   if (error) return { error: error.message }
-  revalidatePath('/', 'layout')
+  revalidateSysConfig()
   return { success: true, id: data.id }
 }
 
@@ -50,7 +60,7 @@ export async function updateVendorGroup(id: string, patch: { name?: string; kind
   if (patch.tax_mode !== undefined) cleanPatch.tax_mode = patch.tax_mode
   const { error } = await admin.from('system_vendor_groups').update(cleanPatch).eq('id', id)
   if (error) return { error: error.message }
-  revalidatePath('/', 'layout')
+  revalidateSysConfig()
   return { success: true }
 }
 
@@ -63,7 +73,7 @@ export async function deleteVendorGroup(id: string) {
   if ((count ?? 0) > 0) return { error: `此分類下還有 ${count} 個品項，請先移除或改分類` }
   const { error } = await admin.from('system_vendor_groups').delete().eq('id', id)
   if (error) return { error: error.message }
-  revalidatePath('/', 'layout')
+  revalidateSysConfig()
   return { success: true }
 }
 
@@ -74,7 +84,7 @@ export async function reorderVendorGroups(ids: string[]) {
   for (let i = 0; i < ids.length; i++) {
     await admin.from('system_vendor_groups').update({ sort_order: (i + 1) * 10 }).eq('id', ids[i])
   }
-  revalidatePath('/', 'layout')
+  revalidateSysConfig()
   return { success: true }
 }
 
@@ -95,7 +105,7 @@ export async function createSystemItem(input: { name: string; category: string; 
     sort_order: input.sort_order ?? 100,
   }).select('id').single()
   if (error) return { error: error.message }
-  revalidatePath('/', 'layout')
+  revalidateSysConfig()
   return { success: true, id: data.id }
 }
 
@@ -113,7 +123,7 @@ export async function updateSystemItem(id: string, patch: { name?: string; categ
   if (patch.doc_type_override !== undefined) cleanPatch.doc_type_override = patch.doc_type_override
   const { error } = await admin.from('system_items').update(cleanPatch).eq('id', id)
   if (error) return { error: error.message }
-  revalidatePath('/', 'layout')
+  revalidateSysConfig()
   return { success: true }
 }
 
@@ -130,7 +140,7 @@ export async function deleteSystemItem(id: string) {
   }
   const { error } = await admin.from('system_items').delete().eq('id', id)
   if (error) return { error: error.message }
-  revalidatePath('/', 'layout')
+  revalidateSysConfig()
   return { success: true }
 }
 

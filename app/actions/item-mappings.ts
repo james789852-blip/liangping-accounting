@@ -3,7 +3,16 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath, revalidateTag } from 'next/cache'
+import { after } from 'next/server'
 import { syncMiscVendorsFromMappingChange } from '@/lib/misc-sync'
+
+// 用 defer 執行 sync：response 送回 client 後才跑，不阻塞使用者
+function deferSyncMisc(storeId: string | null | undefined) {
+  after(async () => {
+    try { await syncMiscVendorsFromMappingChange(storeId) }
+    catch (e) { console.warn('[misc-sync] defer failed:', e) }
+  })
+}
 
 function revalidate() {
   revalidatePath('/manager/receipts')
@@ -50,7 +59,7 @@ export async function saveItemMapping(
 
   // 3. 若品項屬「未分類/雜項」→ 同步到收據雜項下拉
   if (!vendorGroup || vendorGroup === '雜項' || vendorGroup === '未分類') {
-    await syncMiscVendorsFromMappingChange(storeId ?? null)
+    deferSyncMisc(storeId ?? null)
   }
 
   revalidate()
@@ -163,7 +172,7 @@ export async function deleteItemMapping(id: string) {
   // 若原本屬「未分類/雜項」→ 同步移除收據雜項下拉
   const oldVg = mapping?.vendor_group
   if (!oldVg || oldVg === '雜項' || oldVg === '未分類') {
-    await syncMiscVendorsFromMappingChange(mapping?.store_id ?? null)
+    deferSyncMisc(mapping?.store_id ?? null)
   }
 
   revalidate()
@@ -210,7 +219,7 @@ export async function updateItemMapping(id: string, excelColumn: string, itemCat
   const wasMisc = !oldVg || oldVg === '雜項' || oldVg === '未分類'
   const isMisc = !newVg || newVg === '雜項' || newVg === '未分類'
   if (wasMisc || isMisc) {
-    await syncMiscVendorsFromMappingChange(mapping?.store_id ?? null)
+    deferSyncMisc(mapping?.store_id ?? null)
   }
 
   revalidate()
@@ -266,7 +275,7 @@ export async function batchDeleteItemMappings(ids: string[]) {
     const vg = (m as any).vendor_group
     if (!vg || vg === '雜項' || vg === '未分類') affectedStores.add(m.store_id ?? null)
   }
-  for (const sid of affectedStores) await syncMiscVendorsFromMappingChange(sid)
+  for (const sid of affectedStores) deferSyncMisc(sid)
 
   revalidate()
   return { success: true as const, deleted: mappings?.length ?? 0 }
@@ -306,7 +315,7 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
   // 若品項屬「未分類/雜項」→ 同步 receipt_vendors 名稱（先刪舊 + 加新 = full re-sync）
   const vg = (mapping as any).vendor_group
   if (!vg || vg === '雜項' || vg === '未分類') {
-    await syncMiscVendorsFromMappingChange(mapping.store_id ?? null)
+    deferSyncMisc(mapping.store_id ?? null)
   }
 
   revalidate()
@@ -359,7 +368,7 @@ export async function reorderItemMappings(ids: string[]) {
     const vg = (m as any).vendor_group
     if (!vg || vg === '雜項' || vg === '未分類') affectedStores.add(m.store_id ?? null)
   }
-  for (const sid of affectedStores) await syncMiscVendorsFromMappingChange(sid)
+  for (const sid of affectedStores) deferSyncMisc(sid)
 
   revalidate()
   return { success: true }
