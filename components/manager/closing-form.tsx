@@ -2214,8 +2214,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                         {/* 備註（品項之後） */}
                         {(() => {
-                          const NEED_NOTE_VENDORS = ['發票', '收據', '估價單', '其他']
-                          const needNote = NEED_NOTE_VENDORS.includes(form.vendor_name ?? '')
+                          const NEED_NOTE_NAMES = ['發票', '收據', '估價單', '其他']
+                          const needNote =
+                            NEED_NOTE_NAMES.includes(form.vendor_name ?? '') ||
+                            (form.items ?? []).some(i => NEED_NOTE_NAMES.includes(i.item_name))
                           return (
                             <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
