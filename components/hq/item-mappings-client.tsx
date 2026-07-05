@@ -1178,6 +1178,20 @@ function VgActions({ vgName, storeId, itemCount, onDone }: { vgName: string; sto
 }
 
 const BUILTIN_DOC_TYPES = ['發票', '收據', '估價單', '公司開', '梁鑫開', '府中開']
+/** doc_type → 色碼 mapping（背景色 / 文字色 / 邊框色） */
+function docColor(doc: string): { bg: string; fg: string; bd: string } {
+  switch (doc) {
+    case '發票': return { bg: '#DBEAFE', fg: '#1E40AF', bd: '#93C5FD' }  // 藍
+    case '收據': return { bg: '#DCFCE7', fg: '#166534', bd: '#86EFAC' }  // 綠
+    case '估價單': return { bg: '#EDE9FE', fg: '#6D28D9', bd: '#C4B5FD' } // 紫
+    case '公司開': return { bg: '#FFEDD5', fg: '#9A3412', bd: '#FDBA74' } // 橘
+    case '梁鑫開': return { bg: '#FCE7F3', fg: '#9F1239', bd: '#F9A8D4' } // 粉
+    case '府中開': return { bg: '#FEF3C7', fg: '#92400E', bd: '#FCD34D' } // 黃
+    default:
+      if (doc) return { bg: '#F1F5F9', fg: '#334155', bd: '#CBD5E1' }    // 灰（自訂）
+      return { bg: 'transparent', fg: '#a1a1aa', bd: '#E4E4E7' }         // 空
+  }
+}
 /** 品項層級 doc_type override（覆蓋 vg 預設） */
 function ItemDocOverrideSelector({ itemName, storeId, currentOverride, extraOptions = [] }: {
   itemName: string; storeId: string | null; currentOverride: string | null; extraOptions?: string[]
@@ -1209,8 +1223,9 @@ function ItemDocOverrideSelector({ itemName, storeId, currentOverride, extraOpti
       title={`「${itemName}」的單據 override（覆蓋廠商群組預設）`}
       style={{
         height: 22, padding: '0 4px', fontSize: 10, borderRadius: 4,
-        border: '1px solid #E0E7FF', background: doc ? '#DBEAFE' : 'transparent',
-        color: doc ? '#1E40AF' : '#a1a1aa', fontFamily: 'inherit', outline: 'none',
+        border: `1px solid ${docColor(doc).bd}`,
+        background: docColor(doc).bg, color: docColor(doc).fg,
+        fontFamily: 'inherit', outline: 'none', fontWeight: doc ? 600 : 400,
       }}>
       <option value="">單據 (預設)</option>
       {allOptions.map(o => <option key={o} value={o}>{o}</option>)}
@@ -1251,8 +1266,10 @@ function VgDocTypeSelector({ vgId, vgName, currentDoc }: { vgId: string; vgName:
       title={`「${vgName}」的預設單據類型（會顯示在 Excel Row 2）`}
       style={{
         height: 22, padding: '0 4px', fontSize: 11, borderRadius: 4,
-        border: '1px solid #DBEAFE', background: doc ? '#DBEAFE' : 'white',
-        color: doc ? '#1E40AF' : '#a1a1aa', fontFamily: 'inherit', outline: 'none',
+        border: `1px solid ${docColor(doc).bd}`,
+        background: doc ? docColor(doc).bg : 'white',
+        color: docColor(doc).fg,
+        fontFamily: 'inherit', outline: 'none', fontWeight: doc ? 600 : 400,
       }}>
       <option value="">單據類型…</option>
       {allOptions.map(o => <option key={o} value={o}>{o}</option>)}
