@@ -84,6 +84,7 @@ export async function updateUser(userId: string, formData: {
   is_hq?: boolean
   active?: boolean
   primary_store_id?: string | null
+  can_manage_users?: boolean
 }) {
   const caller = await getCallerProfile()
   if (!caller || !MANAGE_ROLES.includes(caller.role)) return { error: '權限不足' }
@@ -104,6 +105,7 @@ export async function updateUser(userId: string, formData: {
   if (formData.employee_id !== undefined) patch.employee_id = formData.employee_id
   if (formData.store_ids !== undefined) patch.store_ids = [...new Set(formData.store_ids)]
   if (formData.is_hq !== undefined) patch.is_hq = formData.is_hq
+  if (formData.can_manage_users !== undefined) patch.can_manage_users = formData.can_manage_users
   if (formData.active !== undefined) patch.active = formData.active
 
   // primary_store_id：若 store_ids 一起更新，要確保 primary 在 store_ids 內

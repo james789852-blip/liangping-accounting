@@ -43,6 +43,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
     employee_id: user.employee_id ?? '',
     is_hq: user.is_hq ?? false,
     active: user.active ?? true,
+    can_manage_users: (user as any).can_manage_users ?? false,
   })
   const [selectedStores, setSelectedStores] = useState<string[]>(
     [...new Set(user.store_ids ?? [])]
@@ -92,6 +93,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
       store_ids: isOwner ? [] : selectedStores,
       primary_store_id: isOwner ? null : primaryStoreId,
       is_hq: isOwner ? true : form.is_hq,
+      can_manage_users: isOwner ? true : form.can_manage_users,
       active: form.active,
     })
     if (result.error) toast.error('更新失敗：' + result.error)
@@ -220,6 +222,29 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                       }} />
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* 帳號管理權限 */}
+              {!isOwner && (
+                <div className="flex items-center justify-between rounded-xl px-3 py-2.5"
+                  style={{ border: '1px solid #f4f4f5', background: '#fafafa' }}>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: '#18181b' }}>可管理帳號</p>
+                    <p className="text-[10px]" style={{ color: '#a1a1aa' }}>開啟後此人能看到「帳號管理」頁面</p>
+                  </div>
+                  <button type="button" onClick={() => setForm(p => ({ ...p, can_manage_users: !p.can_manage_users }))}
+                    style={{
+                      position: 'relative', width: '36px', height: '20px', borderRadius: '10px',
+                      background: form.can_manage_users ? '#F59E0B' : '#d4d4d8', border: 'none', cursor: 'pointer',
+                      transition: 'background 0.2s', flexShrink: 0,
+                    }}>
+                    <span style={{
+                      position: 'absolute', top: '2px', left: '2px', width: '16px', height: '16px',
+                      background: 'white', borderRadius: '50%',
+                      transform: form.can_manage_users ? 'translateX(16px)' : 'translateX(0)', transition: 'transform 0.2s',
+                    }} />
+                  </button>
                 </div>
               )}
 

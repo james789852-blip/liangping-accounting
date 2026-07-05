@@ -45,6 +45,7 @@ export default async function HQLayout({ children }: { children: React.ReactNode
         role={profile?.role ?? ''}
         allStores={allStores}
         currentStoreId={currentStoreId}
+        canManageUsers={!!(profile as any)?.can_manage_users}
       />
       <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
         {children}

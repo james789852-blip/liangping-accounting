@@ -24,15 +24,16 @@ export default async function UsersPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role').eq('user_id', user.id).single()
+    .from('user_profiles').select('role, can_manage_users').eq('user_id', user.id).single()
 
-  if (!profile || !['經理', '總監', '老闆'].includes(profile.role)) {
-    return <div className="p-6" style={{ color: '#be123c' }}>權限不足，僅限經理以上查看</div>
+  const canAccess = profile?.role === '老闆' || (profile as any)?.can_manage_users === true
+  if (!canAccess) {
+    return <div className="p-6" style={{ color: '#be123c' }}>權限不足，需要老闆或帳號管理權限</div>
   }
 
   const { data: users } = await supabase
     .from('user_profiles')
-    .select('user_id, name, role, title, employee_id, store_ids, primary_store_id, is_hq, active, created_at')
+    .select('user_id, name, role, title, employee_id, store_ids, primary_store_id, is_hq, active, created_at, can_manage_users')
     .order('created_at', { ascending: false })
 
   const { data: storesRaw } = await supabase

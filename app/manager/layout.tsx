@@ -68,6 +68,7 @@ export default async function ManagerLayout({ children }: { children: React.Reac
           role={profile?.role ?? ''}
           allStores={allStores}
           currentStoreId={storeId ?? ''}
+          canManageUsers={!!(profile as any)?.can_manage_users}
         />
         <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
           {children}

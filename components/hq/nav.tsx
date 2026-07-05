@@ -106,9 +106,10 @@ interface Props {
   role: string
   allStores?: { id: string; name: string; type?: string }[]
   currentStoreId?: string
+  canManageUsers?: boolean
 }
 
-export default function HQNav({ userName, role, allStores = [], currentStoreId = '' }: Props) {
+export default function HQNav({ userName, role, allStores = [], currentStoreId = '', canManageUsers = false }: Props) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -144,7 +145,15 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const mobileTabs = isManagerPath ? mobileManagerTabs : mobileHQTabs
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false)
 
-  const activeSections = isManagerPath ? managerSections : hqSections
+  // 依權限過濾：非老闆且沒 can_manage_users → 不顯示帳號管理
+  const canSeeUsers = role === '老闆' || canManageUsers
+  const filteredHqSections = canSeeUsers
+    ? hqSections
+    : hqSections.map(sec => ({
+        ...sec,
+        items: sec.items.filter(it => it.href !== '/hq/users'),
+      }))
+  const activeSections = isManagerPath ? managerSections : filteredHqSections
   const activeColor = isManagerPath ? '#b45309' : '#92400E'
   const activeBg = isManagerPath ? '#fef3c7' : '#FFFBEB'
   const mobileActiveColor = isManagerPath ? '#d97706' : '#D97706'
