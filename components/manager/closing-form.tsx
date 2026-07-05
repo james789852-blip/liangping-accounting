@@ -1815,9 +1815,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
       <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-32" style={{ visibility: stepMounted ? 'visible' : 'hidden' }}>
 
-        {/* 教學（新店長第一次用會展開） */}
-        <ClosingHelp />
-
         {/* 退回提示 */}
         {isDisputed && (
           <div className="rounded-2xl px-4 py-3.5 flex items-start gap-2.5"

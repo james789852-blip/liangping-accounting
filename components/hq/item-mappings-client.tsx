@@ -466,7 +466,7 @@ export default function ItemMappingsClient({
 
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 pb-28 flex-1 overflow-y-auto w-full" id="mappings-scroll">
 
-        {/* 教學說明 */}
+        {false && (
         <HelpBox title="📖 這頁怎麼用？（直接決定 Excel 匯出）">
           <p className="font-semibold" style={{ color: '#7c2d12' }}>此頁決定「食耗成本 Excel」的每一欄！設錯 → 數字對不上原檔。</p>
 
@@ -524,6 +524,7 @@ export default function ItemMappingsClient({
             <p className="mt-1">💡 若想把「娃娃菜」的金額**合併**到既有欄（例：「大陸妹」），把 Excel 欄位選成「大陸妹」即可。</p>
           </div>
         </HelpBox>
+        )}
 
         {/* Add form */}
         {showAdd && (

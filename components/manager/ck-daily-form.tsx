@@ -270,7 +270,6 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-28 space-y-4">
-      <CKHelp />
 
       {/* 補帳日期切換 */}
       {isBackfill && realToday && (
