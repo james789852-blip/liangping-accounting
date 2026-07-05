@@ -466,19 +466,37 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                     </button>
                   ))}
                 </div>
-                {/* 廠商 dropdown（依當前類別動態） */}
+                {/* 廠商 dropdown（依當前類別動態）—— 雜項/其他：廠商=品項，選完自動帶 item_name */}
                 <select className={INPUT} style={INPUT_STYLE}
                   value={activeVendor}
                   onChange={e => {
-                    setActiveVendor(e.target.value)
-                    setNewExpense(p => ({ ...p, item_name: '', vendor_group: e.target.value }))
+                    const v = e.target.value
+                    setActiveVendor(v)
+                    const vgRec = vendorGroups.find(g => g.name === v)
+                    if (activeCat === '雜項' || activeCat === '其他') {
+                      // 雜項/其他：廠商本身就是品項，直接帶入 item_name
+                      const m = mappingItems.find(x => x.item_name === v)
+                      const cat = (m?.item_category === '食材' || m?.item_category === '耗材' || m?.item_category === '雜項')
+                        ? m.item_category as '食材' | '耗材' | '雜項'
+                        : (activeCat === '雜項' ? '雜項' : '食材') as '食材' | '耗材' | '雜項'
+                      setNewExpense(p => ({
+                        ...p,
+                        item_name: v,
+                        vendor_group: v,
+                        category: cat,
+                        doc_type: vgRec?.doc_type ?? p.doc_type,
+                      }))
+                    } else {
+                      setNewExpense(p => ({ ...p, item_name: '', vendor_group: v, doc_type: vgRec?.doc_type ?? p.doc_type }))
+                    }
                   }}>
-                  <option value="">— 選擇廠商 —</option>
+                  <option value="">— 選擇{activeCat === '雜項' || activeCat === '其他' ? '品項' : '廠商'} —</option>
                   {(receiptCategories.find(c => c.name === activeCat)?.vendors ?? []).map(v => (
                     <option key={v.id} value={v.name}>{v.name}</option>
                   ))}
                 </select>
-                {/* 品項選擇：依當前廠商篩選 mapping.item_name */}
+                {/* 品項選擇：只有「廠商類別」需要（雜項/其他 已跳過此步） */}
+                {activeCat !== '雜項' && activeCat !== '其他' && (
                 <select className={INPUT} style={INPUT_STYLE}
                   value={newExpense.item_name}
                   disabled={!activeVendor}
@@ -488,7 +506,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                     const vgRec = vendorGroups.find(g => g.name === activeVendor)
                     const cat = (m?.item_category === '食材' || m?.item_category === '耗材' || m?.item_category === '雜項')
                       ? m.item_category as '食材' | '耗材' | '雜項'
-                      : (activeCat === '雜項' ? '雜項' : '食材') as '食材' | '耗材' | '雜項'
+                      : '食材' as '食材' | '耗材' | '雜項'
                     setNewExpense(p => ({
                       ...p,
                       item_name: name,
@@ -503,6 +521,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                     .map(m => <option key={m.item_name} value={m.item_name}>{m.item_name}</option>)
                   }
                 </select>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <input type="number" min="0" className={INPUT} style={INPUT_STYLE} placeholder="金額"
                     value={newExpense.amount} onChange={e => setNewExpense(p => ({ ...p, amount: e.target.value }))} />
