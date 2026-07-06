@@ -35,10 +35,27 @@ function colLetter(colNum: number): string {
   return s
 }
 
-function fillHeader(cell: ExcelJS.Cell, text: string, fill?: string, bold = false, fontColor = 'FF000000') {
+const CK_FONT = 'Microsoft JhengHei'
+const CK_VG_PALETTE = [
+  'FFFDE9D9', 'FFDCEBF3', 'FFE2EFDA', 'FFFFF2CC',
+  'FFF4CCCC', 'FFEAD1DC', 'FFC9DAF8', 'FFD9EAD3',
+  'FFFCE5CD', 'FFEFEFEF', 'FFFDEBD0', 'FFD5E8D4',
+]
+function ckVgColor(name: string): string {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return CK_VG_PALETTE[h % CK_VG_PALETTE.length]
+}
+const CK_DOC_COLOR: Record<string, string> = {
+  '發票': 'FFD9E2F3', '收據': 'FFFCE4D6', '估價單': 'FFE2EFDA',
+  '公司開': 'FFD9E2F3', '梁鑫開': 'FFEAD1DC', '府中開': 'FFFFF2CC',
+}
+function ckDocColor(doc: string): string { return CK_DOC_COLOR[doc] ?? 'FFF2F2F2' }
+
+function fillHeader(cell: ExcelJS.Cell, text: string, fill?: string, bold = false, fontColor = 'FF000000', size = 13) {
   cell.value = text
-  cell.alignment = { horizontal: 'center', vertical: 'middle' }
-  cell.font = { name: 'Calibri', size: 10, bold, color: { argb: fontColor } }
+  cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false }
+  cell.font = { name: CK_FONT, size, bold, color: { argb: fontColor } }
   cell.border = {
     top: { style: 'thin', color: { argb: 'FFD0D0D0' } },
     bottom: { style: 'thin', color: { argb: 'FFD0D0D0' } },
@@ -167,7 +184,7 @@ export async function addCKSheet(
       else vgRanges.push({ vg: c.vendorGroup ?? '', start: c.index, end: c.index })
     }
     for (const r of vgRanges) {
-      fillHeader(ws.getRow(1).getCell(r.start), r.vg || '未分類', 'FFFDE9D9', true)
+      fillHeader(ws.getRow(1).getCell(r.start), r.vg || '未分類', ckVgColor(r.vg || ''), true, 'FF000000', 14)
       if (r.end > r.start) ws.mergeCells(1, r.start, 1, r.end)
     }
     // Row 2: 單據類型（doc_type），同 vg 內連續相同就 merge
@@ -181,7 +198,7 @@ export async function addCKSheet(
     }
     for (const r of docRanges) {
       if (!r.doc) continue
-      fillHeader(ws.getRow(2).getCell(r.start), r.doc, 'FFC6D9F0', true)
+      fillHeader(ws.getRow(2).getCell(r.start), r.doc, ckDocColor(r.doc), true, 'FF000000', 12)
       if (r.end > r.start) ws.mergeCells(2, r.start, 2, r.end)
     }
   }
@@ -349,11 +366,12 @@ export async function addCKSheet(
     ws.getColumn(c.index).width = w
     ws.getColumn(c.index).alignment = { ...(ws.getColumn(c.index).alignment as any), shrinkToFit: false, wrapText: true }
   }
-  // Row 高度加大
-  ws.getRow(1).height = 32
-  ws.getRow(2).height = 26
-  ws.getRow(3).height = 32
-  ws.getRow(4).height = 26
+  // Row 高度（與店面 xlsx 一致）
+  ws.getRow(1).height = 38
+  ws.getRow(2).height = 30
+  ws.getRow(3).height = 40
+  ws.getRow(4).height = 30
+  for (let i = 1; i <= daysInMonth; i++) ws.getRow(DATA_START + i - 1).height = 22
 }
 
 /** 產出「央廚食耗成本」workbook（單月） */

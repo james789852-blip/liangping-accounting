@@ -120,12 +120,11 @@ function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAcco
       return (a.vendor_group_sort_order - b.vendor_group_sort_order)
         || a.vendor_group.localeCompare(b.vendor_group)
     }
-    // 排序：category → vg_sort_order → vg name → item.sort_order → name
-    // vg name 是必要 tiebreaker：若不同 vg 有相同 sort_order（例：小雲/麵都 30），
-    // 沒 vg name 排就會 fallback 到 item.sort_order → 造成不同 vg 品項交錯
-    return ((catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3))
-      || (a.vendor_group_sort_order - b.vendor_group_sort_order)
+    // 排序：vg_sort_order → vg name → category → item.sort_order → name
+    // vg 優先確保同一廠商群組的品項永遠連續（不被 category 邊界拆散）
+    return (a.vendor_group_sort_order - b.vendor_group_sort_order)
       || a.vendor_group.localeCompare(b.vendor_group)
+      || (catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3)
       || (a.sort_order - b.sort_order)
       || a.name.localeCompare(b.name)
   })
