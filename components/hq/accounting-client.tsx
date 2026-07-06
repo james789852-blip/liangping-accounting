@@ -458,12 +458,8 @@ function StoreDetail({
       setLoading(false)
       return
     }
-    if (!quickClosing) {
-      loadDetail()
-      return
-    }
-    setLoading(false)
-  }, [cachedDetail, quickClosing, loadDetail])
+    loadDetail()
+  }, [cachedDetail, loadDetail])
 
   return (
     <div className="space-y-4">
