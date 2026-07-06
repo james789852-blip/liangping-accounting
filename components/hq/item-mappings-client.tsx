@@ -976,12 +976,19 @@ function InlineItemNameEditor({ mappingId, currentName, fullName }: { mappingId:
 
   async function save() {
     if (value.trim() === fullName) { setEditing(false); return }
+    const syncHistorical = confirm(
+      `要把既有帳目中的品項名稱一起改掉嗎？\n\n` +
+      `舊名稱：${fullName}\n` +
+      `新名稱：${value.trim()}\n\n` +
+      `按「確定」：同步覆蓋既有收據/叫貨明細，讓舊帳目也對到新名稱。\n` +
+      `按「取消」：只改品項管理名稱，舊帳目保留舊名稱。`
+    )
     setSaving(true)
     try {
       const { renameItem } = await import('@/app/actions/item-mappings')
-      const r = await renameItem(mappingId, value.trim())
+      const r = await renameItem(mappingId, value.trim(), syncHistorical)
       if (r && 'error' in r) { toast.error(r.error); return }
-      toast.success('已改名')
+      toast.success(syncHistorical ? '已改名，並同步既有帳目' : '已改名')
       setEditing(false)
       router.refresh()
     } finally { setSaving(false) }

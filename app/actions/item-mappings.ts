@@ -311,9 +311,10 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
   if (newName.trim() === oldName) return { success: true as const }
 
   // 檢查同 store 是否已有同名
-  const { data: dup } = await admin.from('item_column_mappings')
+  let dupQuery = admin.from('item_column_mappings')
     .select('id').eq('item_name', newName.trim())
-    .eq('store_id', mapping.store_id ?? null).maybeSingle()
+  dupQuery = mapping.store_id ? dupQuery.eq('store_id', mapping.store_id) : dupQuery.is('store_id', null)
+  const { data: dup } = await dupQuery.maybeSingle()
   if (dup) return { error: `已有同名品項「${newName.trim()}」` }
 
   // 更新 mapping
@@ -324,11 +325,19 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
     updated_at: new Date().toISOString(),
   }).eq('id', mappingId)
 
-  // 選擇性同步 receipt_items（歷史資料重新命名）
-  if (syncReceipts && mapping.store_id) {
-    await admin.from('receipt_items').update({ item_name: newName.trim() })
-      .eq('item_name', oldName)
-      // 只更新該店的 receipts（透過 receipt_id join → 過濾）— 用 raw filter 較複雜，這裡 update by name 影響全部歷史
+  // 同步 system_items 名稱，讓 store_items / doc override 仍能接到同一品項。
+  const { data: sys } = await admin.from('system_items')
+    .select('id').eq('name', oldName).eq('active', true).maybeSingle()
+  if (sys) {
+    await admin.from('system_items').update({
+      name: newName.trim(),
+      updated_at: new Date().toISOString(),
+    }).eq('id', sys.id)
+  }
+
+  // 選擇性同步既有帳目資料，避免改名後舊資料因名稱不同而對不到。
+  if (syncReceipts) {
+    await syncHistoricalItemNames(oldName, newName.trim(), mapping.store_id ?? null)
   }
 
   // 若品項屬「未分類/雜項」→ 同步 receipt_vendors 名稱（先刪舊 + 加新 = full re-sync）
@@ -339,6 +348,46 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
 
   revalidate()
   return { success: true as const }
+}
+
+async function syncHistoricalItemNames(oldName: string, newName: string, storeId: string | null) {
+  const admin = createAdminClient()
+
+  if (storeId) {
+    const [{ data: receiptRows }, { data: closingRows }] = await Promise.all([
+      admin.from('receipts').select('id').eq('store_id', storeId),
+      admin.from('daily_closings').select('id').eq('store_id', storeId),
+    ])
+
+    const receiptIds = (receiptRows ?? []).map((r: any) => r.id as string)
+    for (let i = 0; i < receiptIds.length; i += 200) {
+      const ids = receiptIds.slice(i, i + 200)
+      if (ids.length) {
+        await admin.from('receipt_items')
+          .update({ item_name: newName })
+          .eq('item_name', oldName)
+          .in('receipt_id', ids)
+      }
+    }
+
+    const closingIds = (closingRows ?? []).map((c: any) => c.id as string)
+    for (let i = 0; i < closingIds.length; i += 200) {
+      const ids = closingIds.slice(i, i + 200)
+      if (ids.length) {
+        await admin.from('order_items')
+          .update({ item_name: newName, excel_column: newName })
+          .eq('item_name', oldName)
+          .in('closing_id', ids)
+      }
+    }
+    return
+  }
+
+  // 全域 mapping 沒有店家範圍可限制，使用者確認覆蓋時才更新全系統舊名稱。
+  await Promise.all([
+    admin.from('receipt_items').update({ item_name: newName }).eq('item_name', oldName),
+    admin.from('order_items').update({ item_name: newName, excel_column: newName }).eq('item_name', oldName),
+  ])
 }
 
 export async function reorderItemMappings(ids: string[]) {
