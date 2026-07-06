@@ -357,7 +357,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
         )}
 
         {/* 操作按鈕 */}
-        {(canReview && closing.status === 'submitted') || (canDispute && closing.status === 'verified') ? (
+        {canReview || (canDispute && closing.status === 'verified') ? (
           <ReviewActions closingId={closing.id} currentStatus={closing.status} onProcessed={onProcessed} />
         ) : null}
       </div>

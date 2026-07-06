@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays } from 'lucide-react'
@@ -327,12 +327,14 @@ function ExportButtons({ kind, storeId, storeName, date }: { kind: 'store' | 'ck
 
 /* ─────────── 店家詳情 ─────────── */
 function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName: string; date: string }) {
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<DailyStats | null>(null)
   const [detail, setDetail] = useState<{ closing: any; receipts: any[] } | null>(null)
   const [showHolidays, setShowHolidays] = useState(false)
   const [y, m] = date.split('-').map(Number)
-  useEffect(() => {
+
+  const loadDetail = useCallback(() => {
     setLoading(true); setStats(null); setDetail(null)
     Promise.all([
       fetchDailyStats(storeId, date),
@@ -345,6 +347,10 @@ function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName:
       .catch(e => toast.error('載入失敗：' + (e instanceof Error ? e.message : String(e))))
       .finally(() => setLoading(false))
   }, [storeId, date])
+
+  useEffect(() => {
+    loadDetail()
+  }, [loadDetail])
 
   if (loading) return <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" style={{ color: '#a1a1aa' }} /></div>
 
@@ -381,9 +387,8 @@ function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName:
             canReview={true}
             canDispute={true}
             onProcessed={() => {
-              fetchDailyClosingWithReceipts(storeId, date).then(r => {
-                if ('success' in r) setDetail({ closing: r.closing, receipts: r.receipts ?? [] })
-              })
+              router.refresh()
+              loadDetail()
             }}
           />
         </div>

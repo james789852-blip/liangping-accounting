@@ -23,14 +23,14 @@ type ClosingForDelete = {
   business_date: string
 }
 
-async function cleanupClosingRelations(admin: ReturnType<typeof createAdminClient>, closingId: string) {
-  const [{ data: receipts }, { data: orderItems }, { data: screenshots }] = await Promise.all([
-    admin.from('receipts').select('id').eq('closing_id', closingId),
-    admin.from('order_items').select('id').eq('closing_id', closingId),
-    admin.from('platform_screenshots').select('id').eq('closing_id', closingId),
+async function cleanupClosingRelations(admin: ReturnType<typeof createAdminClient>, closing: ClosingForDelete) {
+  const [{ data: receiptsByDate }, { data: orderItems }, { data: screenshots }] = await Promise.all([
+    admin.from('receipts').select('id').eq('store_id', closing.store_id).eq('business_date', closing.business_date),
+    admin.from('order_items').select('id').eq('closing_id', closing.id),
+    admin.from('platform_screenshots').select('id').eq('closing_id', closing.id),
   ])
 
-  const receiptIds = (receipts ?? []).map((r: any) => r.id as string)
+  const receiptIds = (receiptsByDate ?? []).map((r: any) => r.id as string)
   const orderItemIds = (orderItems ?? []).map((o: any) => o.id as string)
   const screenshotIds = (screenshots ?? []).map((s: any) => s.id as string)
 
@@ -48,16 +48,20 @@ async function cleanupClosingRelations(admin: ReturnType<typeof createAdminClien
   }
 
   await Promise.all([
-    admin.from('audit_logs').delete().eq('closing_id', closingId),
-    admin.from('revenue_items').delete().eq('closing_id', closingId),
-    admin.from('cash_counts').delete().eq('closing_id', closingId),
-    admin.from('expense_items').delete().eq('closing_id', closingId),
-    admin.from('handwrite_orders').delete().eq('closing_id', closingId),
-    admin.from('platform_screenshots').delete().eq('closing_id', closingId),
-    admin.from('menu_videos').delete().eq('closing_id', closingId),
-    admin.from('receipts').delete().eq('closing_id', closingId),
-    admin.from('order_items').delete().eq('closing_id', closingId),
+    admin.from('audit_logs').delete().eq('closing_id', closing.id),
+    admin.from('revenue_items').delete().eq('closing_id', closing.id),
+    admin.from('cash_counts').delete().eq('closing_id', closing.id),
+    admin.from('expense_items').delete().eq('closing_id', closing.id),
+    admin.from('handwrite_orders').delete().eq('closing_id', closing.id),
+    admin.from('platform_screenshots').delete().eq('closing_id', closing.id),
+    admin.from('menu_videos').delete().eq('closing_id', closing.id),
+    admin.from('menu_videos').delete().eq('store_id', closing.store_id).eq('business_date', closing.business_date),
+    admin.from('order_items').delete().eq('closing_id', closing.id),
   ])
+
+  if (receiptIds.length > 0) {
+    await admin.from('receipts').delete().in('id', receiptIds)
+  }
 }
 
 async function cleanupLinkedCKOrder(admin: ReturnType<typeof createAdminClient>, closing: ClosingForDelete) {
@@ -91,10 +95,16 @@ function revalidateClosingDeletePaths() {
   revalidatePath('/manager/dashboard')
   revalidatePath('/manager/closing')
   revalidatePath('/manager/history')
+  revalidatePath('/manager/order')
+  revalidatePath('/manager/receipts')
+  revalidatePath('/manager/summary')
+  revalidatePath('/manager/cash')
   revalidatePath('/manager/ck')
+  revalidatePath('/hq/dashboard')
   revalidatePath('/hq/reviews')
   revalidatePath('/hq/closings')
   revalidatePath('/hq/accounting')
+  revalidatePath('/hq/food-cost-preview')
   revalidatePath('/hq/ck')
   revalidatePath('/hq/ck-overview')
   revalidatePath('/hq/store-overview')
@@ -224,7 +234,7 @@ export async function deleteClosingDraft(closingId: string) {
   if (closing.status !== 'draft') return { error: '只能刪除草稿狀態的帳目' }
 
   const admin = createAdminClient()
-  await cleanupClosingRelations(admin, closingId)
+  await cleanupClosingRelations(admin, closing as ClosingForDelete)
   await cleanupLinkedCKOrder(admin, closing as ClosingForDelete)
 
   const { error } = await admin.from('daily_closings').delete().eq('id', closingId)
@@ -251,7 +261,7 @@ export async function deleteClosing(closingId: string) {
     .maybeSingle()
   if (!closing) return { error: '找不到此帳目' }
 
-  await cleanupClosingRelations(admin, closingId)
+  await cleanupClosingRelations(admin, closing as ClosingForDelete)
   await cleanupLinkedCKOrder(admin, closing as ClosingForDelete)
 
   const { error } = await admin

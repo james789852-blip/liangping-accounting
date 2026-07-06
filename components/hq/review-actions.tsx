@@ -17,6 +17,7 @@ export default function ReviewActions({ closingId, currentStatus, onProcessed }:
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [note, setNote] = useState('')
   const [done, setDone] = useState(false)
+  const canDispute = currentStatus === 'submitted' || currentStatus === 'verified'
 
   if (done) return null
 
@@ -114,12 +115,14 @@ export default function ReviewActions({ closingId, currentStatus, onProcessed }:
           核准
         </button>
       )}
-      <button type="button" disabled={loading} onClick={() => setShowDisputeForm(true)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
-        style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
-        <RotateCcw className="h-3.5 w-3.5" />
-        {currentStatus === 'verified' ? '重新退回修改' : '退回修改'}
-      </button>
+      {canDispute && (
+        <button type="button" disabled={loading} onClick={() => setShowDisputeForm(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+          style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
+          <RotateCcw className="h-3.5 w-3.5" />
+          {currentStatus === 'verified' ? '重新退回修改' : '退回修改'}
+        </button>
+      )}
       <button type="button" disabled={loading} onClick={() => setShowDeleteConfirm(true)}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
         style={{ background: '#fff8f8', color: '#be123c', border: '1px solid #fecdd3' }}>
