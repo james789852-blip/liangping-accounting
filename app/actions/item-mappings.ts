@@ -308,36 +308,42 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
   if (!mapping) return { error: '找不到品項' }
   const oldName = mapping.item_name as string
   if (!newName.trim()) return { error: '名稱不可空白' }
-  if (newName.trim() === oldName) return { success: true as const }
+  const trimmedName = newName.trim()
+  const nextExcelColumn = (mapping.excel_column === oldName || syncExcelColumn) ? trimmedName : mapping.excel_column
+  if (trimmedName === oldName && nextExcelColumn === mapping.excel_column) return { success: true as const }
 
   // 檢查同 store 是否已有同名
-  let dupQuery = admin.from('item_column_mappings')
-    .select('id').eq('item_name', newName.trim())
-  dupQuery = mapping.store_id ? dupQuery.eq('store_id', mapping.store_id) : dupQuery.is('store_id', null)
-  const { data: dup } = await dupQuery.maybeSingle()
-  if (dup) return { error: `已有同名品項「${newName.trim()}」` }
+  if (trimmedName !== oldName) {
+    let dupQuery = admin.from('item_column_mappings')
+      .select('id').eq('item_name', trimmedName)
+    dupQuery = mapping.store_id ? dupQuery.eq('store_id', mapping.store_id) : dupQuery.is('store_id', null)
+    const { data: dup } = await dupQuery.maybeSingle()
+    if (dup) return { error: `已有同名品項「${trimmedName}」` }
+  }
 
   // 更新 mapping
   await admin.from('item_column_mappings').update({
-    item_name: newName.trim(),
+    item_name: trimmedName,
     // 若 excel_column 跟舊名字一樣，或使用者明確選擇同步，就一起更新。
-    excel_column: (mapping.excel_column === oldName || syncExcelColumn) ? newName.trim() : mapping.excel_column,
+    excel_column: nextExcelColumn,
     updated_at: new Date().toISOString(),
   }).eq('id', mappingId)
 
   // 同步 system_items 名稱，讓 store_items / doc override 仍能接到同一品項。
-  const { data: sys } = await admin.from('system_items')
-    .select('id').eq('name', oldName).eq('active', true).maybeSingle()
-  if (sys) {
-    await admin.from('system_items').update({
-      name: newName.trim(),
-      updated_at: new Date().toISOString(),
-    }).eq('id', sys.id)
+  if (trimmedName !== oldName) {
+    const { data: sys } = await admin.from('system_items')
+      .select('id').eq('name', oldName).eq('active', true).maybeSingle()
+    if (sys) {
+      await admin.from('system_items').update({
+        name: trimmedName,
+        updated_at: new Date().toISOString(),
+      }).eq('id', sys.id)
+    }
   }
 
   // 選擇性同步既有帳目資料，避免改名後舊資料因名稱不同而對不到。
-  if (syncReceipts) {
-    await syncHistoricalItemNames(oldName, newName.trim(), mapping.store_id ?? null)
+  if (syncReceipts && trimmedName !== oldName) {
+    await syncHistoricalItemNames(oldName, trimmedName, mapping.store_id ?? null)
   }
 
   // 若品項屬「未分類/雜項」→ 同步 receipt_vendors 名稱（先刪舊 + 加新 = full re-sync）

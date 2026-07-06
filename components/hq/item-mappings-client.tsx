@@ -1056,27 +1056,33 @@ function InlineItemNameEditor({ mappingId, currentName, fullName, excelColumn }:
   useEffect(() => { setValue(fullName) }, [fullName])
 
   async function save() {
-    if (value.trim() === fullName) { setEditing(false); return }
-    const syncHistorical = confirm(
-      `要把既有帳目中的品項名稱一起改掉嗎？\n\n` +
-      `舊名稱：${fullName}\n` +
-      `新名稱：${value.trim()}\n\n` +
-      `按「確定」：同步覆蓋既有收據/叫貨明細，讓舊帳目也對到新名稱。\n` +
-      `按「取消」：只改品項管理名稱，舊帳目保留舊名稱。`
-    )
-    const syncExcelColumn = excelColumn !== fullName
+    const trimmedValue = value.trim()
+    const nameChanged = trimmedValue !== fullName
+    const excelDiffersFromName = excelColumn !== trimmedValue
+    if (!nameChanged && !excelDiffersFromName) { setEditing(false); return }
+    const syncHistorical = nameChanged
       ? confirm(
-          `Excel 對應欄位目前是「${excelColumn}」，也要一起改成「${value.trim()}」嗎？\n\n` +
+          `要把既有帳目中的品項名稱一起改掉嗎？\n\n` +
+          `舊名稱：${fullName}\n` +
+          `新名稱：${trimmedValue}\n\n` +
+          `按「確定」：同步覆蓋既有收據/叫貨明細，讓舊帳目也對到新名稱。\n` +
+          `按「取消」：只改品項管理名稱，舊帳目保留舊名稱。`
+        )
+      : false
+    const syncExcelColumn = excelDiffersFromName
+      ? confirm(
+          `Excel 對應欄位目前是「${excelColumn}」，也要一起改成「${trimmedValue}」嗎？\n\n` +
           `按「確定」：品項名稱與 Excel 欄位一起改。\n` +
-          `按「取消」：只改品項名稱，Excel 欄位維持「${excelColumn}」。`
+          `按「取消」：Excel 欄位維持「${excelColumn}」。`
         )
       : true
+    if (!nameChanged && !syncExcelColumn) { setEditing(false); return }
     setSaving(true)
     try {
       const { renameItem } = await import('@/app/actions/item-mappings')
-      const r = await renameItem(mappingId, value.trim(), syncHistorical, syncExcelColumn)
+      const r = await renameItem(mappingId, trimmedValue, syncHistorical, syncExcelColumn)
       if (r && 'error' in r) { toast.error(r.error); return }
-      toast.success(syncHistorical ? '已改名，並同步既有帳目' : '已改名')
+      toast.success(syncHistorical ? '已改名，並同步既有帳目' : '已儲存')
       setEditing(false)
       router.refresh()
     } finally { setSaving(false) }
