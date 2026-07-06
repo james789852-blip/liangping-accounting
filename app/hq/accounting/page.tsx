@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { sortStores } from '@/lib/store-order'
 import AccountingClient from '@/components/hq/accounting-client'
+import { resolveHQStoreId } from '@/lib/hq-store-selection'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +35,8 @@ export default async function AccountingPage({
   const params = await searchParams
   const today = getTaipeiDate()
   const date = params.date ?? today
+  const initialStoreId = await resolveHQStoreId(stores, params.storeId)
+  const initialCkStoreId = await resolveHQStoreId(ckStores, params.ckStoreId)
 
   // 撈當日所有店家 closings 狀態 + 央廚 records 狀態
   const [{ data: closings }, { data: ckRecords }, { data: holidays }] = await Promise.all([
@@ -53,8 +56,8 @@ export default async function AccountingPage({
       stores={stores}
       ckStores={ckStores}
       date={date}
-      initialStoreId={params.storeId ?? ''}
-      initialCkStoreId={params.ckStoreId ?? ''}
+      initialStoreId={initialStoreId}
+      initialCkStoreId={initialCkStoreId}
       initialTab={(params.tab as 'store' | 'ck') ?? 'store'}
       closings={(closings ?? []) as any[]}
       ckRecords={(ckRecords ?? []) as any[]}

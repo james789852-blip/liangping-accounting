@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronRight, CheckCircle2, AlertCircle, Download, FileBarChart2, Upload } from 'lucide-react'
 import { setItemMapping } from '@/app/actions/item-mappings'
+import { setManagerStore } from '@/app/actions/store-select'
 
 function fmt(n: number) {
   return n.toLocaleString('zh-TW')
@@ -81,6 +82,7 @@ export default function FoodCostPreviewClient({
   }
 
   function changeStore(id: string) {
+    setManagerStore(id).catch(() => {})
     router.push(`/hq/food-cost-preview?storeId=${id}&month=${month}`)
   }
   function changeMonth(m: string) {

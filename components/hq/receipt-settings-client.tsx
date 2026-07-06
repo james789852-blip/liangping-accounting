@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Trash2, Plus, Loader2, Pencil, Check, X } from 'lucide-react'
 import ReceiptSettings from '@/components/manager/receipt-settings'
+import { setManagerStore } from '@/app/actions/store-select'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
 import {
   createCKVendorGroup, updateCKVendorGroup, deleteCKVendorGroup,
@@ -29,6 +30,7 @@ export default function ReceiptSettingsClient({
     router.push(`/hq/receipt-settings?type=${nextType}`)
   }
   function changeStore(storeId: string) {
+    setManagerStore(storeId).catch(() => {})
     router.push(`/hq/receipt-settings?type=${type}&storeId=${storeId}`)
   }
 

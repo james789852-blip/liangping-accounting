@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays } from 'lucide-react'
 import { fetchDailyStats, fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
 import { fetchCKDailyStats, fetchCKDailyDetail } from '@/app/actions/ck-overview'
+import { setManagerStore } from '@/app/actions/store-select'
 import type { DailyStats } from '@/lib/store-aggregator'
 import type { CKDailyStats } from '@/lib/ck-aggregator'
 import ReviewCard from './review-card'
@@ -71,6 +72,9 @@ export default function AccountingClient({
   const [selectedStoreId, setSelectedStoreId] = useState<string>(initialStoreId)
   const [selectedCkStoreId, setSelectedCkStoreId] = useState<string>(initialCkStoreId)
 
+  useEffect(() => { setSelectedStoreId(initialStoreId) }, [initialStoreId])
+  useEffect(() => { setSelectedCkStoreId(initialCkStoreId) }, [initialCkStoreId])
+
   const closingByStore = useMemo(
     () => Object.fromEntries(closings.map(c => [c.store_id, c])),
     [closings],
@@ -92,6 +96,37 @@ export default function AccountingClient({
     if (selectedStoreId) params.set('storeId', selectedStoreId)
     if (selectedCkStoreId) params.set('ckStoreId', selectedCkStoreId)
     router.push(`/hq/accounting?${params.toString()}`)
+  }
+
+  function replaceSelectionUrl(next: { tab?: 'store' | 'ck'; storeId?: string; ckStoreId?: string }) {
+    const nextTab = next.tab ?? tab
+    const params = new URLSearchParams()
+    params.set('date', date)
+    params.set('tab', nextTab)
+    const storeId = next.storeId ?? selectedStoreId
+    const ckStoreId = next.ckStoreId ?? selectedCkStoreId
+    if (storeId) params.set('storeId', storeId)
+    if (ckStoreId) params.set('ckStoreId', ckStoreId)
+    window.history.replaceState(null, '', `/hq/accounting?${params.toString()}`)
+  }
+
+  function selectTab(nextTab: 'store' | 'ck') {
+    setTab(nextTab)
+    replaceSelectionUrl({ tab: nextTab })
+  }
+
+  function selectStoreCard(storeId: string) {
+    const nextStoreId = selectedStoreId === storeId ? '' : storeId
+    setSelectedStoreId(nextStoreId)
+    if (nextStoreId) setManagerStore(nextStoreId).catch(() => {})
+    replaceSelectionUrl({ tab: 'store', storeId: nextStoreId })
+  }
+
+  function selectCkStoreCard(storeId: string) {
+    const nextStoreId = selectedCkStoreId === storeId ? '' : storeId
+    setSelectedCkStoreId(nextStoreId)
+    if (nextStoreId) setManagerStore(nextStoreId).catch(() => {})
+    replaceSelectionUrl({ tab: 'ck', ckStoreId: nextStoreId })
   }
 
   const isToday = date === new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
@@ -133,7 +168,7 @@ export default function AccountingClient({
         </div>
         {/* Tabs */}
         <div className="max-w-4xl mx-auto mt-3 flex gap-2">
-          <button onClick={() => setTab('store')}
+          <button onClick={() => selectTab('store')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold"
             style={tab === 'store'
               ? { background: '#F59E0B', color: 'white' }
@@ -146,7 +181,7 @@ export default function AccountingClient({
               </span>
             )}
           </button>
-          <button onClick={() => setTab('ck')}
+          <button onClick={() => selectTab('ck')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold"
             style={tab === 'ck'
               ? { background: '#F59E0B', color: 'white' }
@@ -175,7 +210,7 @@ export default function AccountingClient({
               const meta = storeStatusMeta(c?.status ?? 'none', c?.variance ?? 0, isHoliday)
               const isActive = selectedStoreId === s.id
               return (
-                <button key={s.id} onClick={() => setSelectedStoreId(isActive ? '' : s.id)}
+                <button key={s.id} onClick={() => selectStoreCard(s.id)}
                   className="text-left p-3 rounded-xl transition-all"
                   style={isActive
                     ? { background: 'white', border: '2px solid #F59E0B', boxShadow: '0 4px 12px rgba(245,158,11,0.15)' }
@@ -190,7 +225,7 @@ export default function AccountingClient({
               const meta = ckStatusMeta(r?.status ?? 'none', r?.hq_paid ?? false)
               const isActive = selectedCkStoreId === s.id
               return (
-                <button key={s.id} onClick={() => setSelectedCkStoreId(isActive ? '' : s.id)}
+                <button key={s.id} onClick={() => selectCkStoreCard(s.id)}
                   className="text-left p-3 rounded-xl transition-all"
                   style={isActive
                     ? { background: 'white', border: '2px solid #F59E0B', boxShadow: '0 4px 12px rgba(245,158,11,0.15)' }

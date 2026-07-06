@@ -6,6 +6,7 @@ import FoodCostPreviewClient from '@/components/hq/food-cost-preview-client'
 import CKTemplateClient from '@/components/hq/ck-template-client'
 import { getMonthLastDay } from '@/lib/business-date'
 import { sortStores } from '@/lib/store-order'
+import { resolveHQStoreId } from '@/lib/hq-store-selection'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,7 +36,7 @@ export default async function FoodCostPreviewPage({
     .filter('type', isCK ? 'eq' : 'neq', '央廚')
   const stores = sortStores(storesRaw ?? [])
 
-  const storeId = params.storeId ?? stores[0]?.id ?? ''
+  const storeId = await resolveHQStoreId(stores, params.storeId)
   const now = new Date()
   const month = params.month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 

@@ -5,6 +5,7 @@ import { getReceiptSettings } from '@/app/actions/receipt-settings'
 import { sortStores } from '@/lib/store-order'
 import { Settings } from 'lucide-react'
 import ReceiptSettingsClient from '@/components/hq/receipt-settings-client'
+import { resolveHQStoreId } from '@/lib/hq-store-selection'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,7 +31,7 @@ export default async function HQReceiptSettingsPage({
     : await admin.from('stores').select('id, name').eq('active', true).neq('type', '央廚')
   const stores = sortStores(storesRaw ?? [])
 
-  const storeId = params.storeId ?? stores[0]?.id ?? ''
+  const storeId = await resolveHQStoreId(stores, params.storeId)
 
   // 店面模式撈 receipt categories；央廚模式撈 ck_vendor_groups
   const { data: store } = storeId

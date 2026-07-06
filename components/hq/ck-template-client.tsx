@@ -4,6 +4,7 @@ import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { FileSpreadsheet, Upload, Download, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { setManagerStore } from '@/app/actions/store-select'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -40,6 +41,7 @@ export default function CKTemplateClient({
   const currentStore = stores.find(s => s.id === storeId)
 
   function handleStoreChange(newId: string) {
+    setManagerStore(newId).catch(() => {})
     const params = new URLSearchParams()
     params.set('storeId', newId)
     params.set('month', month)

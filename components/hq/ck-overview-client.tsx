@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Loader2, ChevronLeft, ChevronRight, Download, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { fetchCKDailyStats, fetchCKMonthlyStats, fetchCKDailyDetail } from '@/app/actions/ck-overview'
 import { fetchCKReconciliation, type ReconciliationRow } from '@/app/actions/ck-reconciliation'
+import { setManagerStore } from '@/app/actions/store-select'
 import type { CKDailyStats, CKMonthlyStats } from '@/lib/ck-aggregator'
 import CKOverview from './ck-overview'
 
@@ -63,6 +64,19 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
   const yearOptions = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i)
   const [downloading, setDownloading] = useState(false)
 
+  useEffect(() => {
+    if (initialStoreId && initialStoreId !== storeId) setStoreId(initialStoreId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialStoreId])
+
+  function selectStore(nextStoreId: string) {
+    setStoreId(nextStoreId)
+    setManagerStore(nextStoreId).catch(() => {})
+    const url = new URL(window.location.href)
+    url.searchParams.set('storeId', nextStoreId)
+    window.history.replaceState(null, '', url.toString())
+  }
+
   async function handleExport(mode: 'xlsx' | 'year' | 'csv') {
     if (!storeId) { toast.error('請選店家'); return }
     setDownloading(true)
@@ -109,18 +123,18 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
         <div className="flex items-center gap-2">
           <button onClick={() => {
             const i = stores.findIndex(s => s.id === storeId)
-            if (i > 0) setStoreId(stores[i - 1].id)
+            if (i > 0) selectStore(stores[i - 1].id)
           }} disabled={stores.findIndex(s => s.id === storeId) <= 0}
             className="shrink-0 h-10 w-10 flex items-center justify-center rounded-lg"
             style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b', cursor: 'pointer' }}>
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <select value={storeId} onChange={e => setStoreId(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
+          <select value={storeId} onChange={e => selectStore(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
             {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           <button onClick={() => {
             const i = stores.findIndex(s => s.id === storeId)
-            if (i >= 0 && i < stores.length - 1) setStoreId(stores[i + 1].id)
+            if (i >= 0 && i < stores.length - 1) selectStore(stores[i + 1].id)
           }} disabled={stores.findIndex(s => s.id === storeId) >= stores.length - 1}
             className="shrink-0 h-10 w-10 flex items-center justify-center rounded-lg"
             style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b', cursor: 'pointer' }}>

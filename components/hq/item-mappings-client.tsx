@@ -5,6 +5,7 @@ import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import {
   deleteItemMapping, updateItemMapping, saveItemMapping, copyGlobalMappingsToStore, reorderItemMappings,
 } from '@/app/actions/item-mappings'
+import { setManagerStore } from '@/app/actions/store-select'
 import { useRouter } from 'next/navigation'
 import { Trash2, Edit2, Check, X, Plus, Tag, Copy, ChevronLeft, ChevronUp, ChevronDown, GripVertical } from 'lucide-react'
 import { toast } from 'sonner'
@@ -89,6 +90,17 @@ export default function ItemMappingsClient({
   // Sync from server after router.refresh()
   useEffect(() => { setMappings(initial) }, [initial])
   useEffect(() => { setVgsState(vendorGroups) }, [vendorGroups])
+  useEffect(() => { setActiveStoreId(initStoreId) }, [initStoreId])
+
+  function selectStore(storeId: string) {
+    setActiveStoreId(storeId)
+    setShowAdd(false)
+    setEditId(null)
+    startTransition(async () => {
+      await setManagerStore(storeId)
+      router.push(`/hq/item-mappings?storeId=${storeId}`)
+    })
+  }
 
   // Drag-and-drop sensors — 桌面觸發距離小 + 手機 delay 縮短
   const sensors = useSensors(
@@ -459,7 +471,7 @@ export default function ItemMappingsClient({
                 const count = mappings.filter(m => m.store_id === s.id).length
                 return (
                   <button key={s.id}
-                    onClick={() => { setActiveStoreId(s.id); setShowAdd(false); setEditId(null) }}
+                    onClick={() => selectStore(s.id)}
                     className="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
                     style={activeStoreId === s.id
                       ? { background: '#F59E0B', color: 'white' }

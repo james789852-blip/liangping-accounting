@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import ItemMappingsClient from '@/components/hq/item-mappings-client'
 import { sortStores } from '@/lib/store-order'
 import { fetchAllPaged } from '@/lib/supabase-paged'
+import { resolveHQStoreId } from '@/lib/hq-store-selection'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,13 +53,14 @@ export default async function ItemMappingsPage({
   }
 
   const params = await searchParams
-  // 全域已廢除，一律預設第一個店家
-  const storeId = params.storeId ?? stores?.[0]?.id ?? ''
+  // 沒有 URL storeId 時，跟隨總公司左側「切換店家」目前選擇，避免每次回第一家店。
+  const sortedStores = sortStores(stores ?? [])
+  const storeId = await resolveHQStoreId(sortedStores, params.storeId)
 
   return (
     <ItemMappingsClient
       mappings={mappings ?? []}
-      stores={sortStores(stores ?? [])}
+      stores={sortedStores}
       vendorGroups={vgs ?? []}
       selectedStoreId={storeId}
     />

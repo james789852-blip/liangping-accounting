@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { sortStores } from '@/lib/store-order'
 import StoreOverviewClient from '@/components/hq/store-overview-client'
+import { resolveHQStoreId } from '@/lib/hq-store-selection'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +26,7 @@ export default async function StoreOverviewPage({
   const stores = sortStores(storesRaw ?? [])
 
   const params = await searchParams
-  const initialStoreId = params.storeId ?? ''
+  const initialStoreId = await resolveHQStoreId(stores, params.storeId)
 
   return <StoreOverviewClient stores={stores} initialStoreId={initialStoreId} />
 }

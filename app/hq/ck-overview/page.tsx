@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { sortStores } from '@/lib/store-order'
 import CKOverviewClient from '@/components/hq/ck-overview-client'
+import { resolveHQStoreId } from '@/lib/hq-store-selection'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +26,7 @@ export default async function CKOverviewPage({
   const ckStores = sortStores(storesRaw ?? [])
 
   const params = await searchParams
-  const initialStoreId = params.storeId ?? ''
+  const initialStoreId = await resolveHQStoreId(ckStores, params.storeId)
 
   return <CKOverviewClient stores={ckStores} initialStoreId={initialStoreId} />
 }

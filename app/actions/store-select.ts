@@ -10,4 +10,5 @@ export async function setManagerStore(storeId: string) {
     path: '/',
   })
   revalidatePath('/manager', 'layout')
+  revalidatePath('/hq', 'layout')
 }

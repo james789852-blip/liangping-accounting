@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { Boxes } from 'lucide-react'
 import StoreItemsClient from '@/components/store-items-client'
 import { sortStores } from '@/lib/store-order'
+import { resolveHQStoreId } from '@/lib/hq-store-selection'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,7 +28,7 @@ export default async function HQStoreItemsPage({
   const { data: storesRaw } = await admin
     .from('stores').select('id, name, type').eq('active', true)
   const stores = sortStores(storesRaw ?? []).filter((s: any) => s.type !== '央廚')
-  const storeId = params.storeId ?? stores[0]?.id ?? ''
+  const storeId = await resolveHQStoreId(stores, params.storeId)
 
   if (!storeId) {
     return <div className="p-6" style={{ color: '#a1a1aa' }}>尚無店家</div>

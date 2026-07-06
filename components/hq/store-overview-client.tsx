@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { Loader2, Download, ChevronLeft, ChevronRight } from 'lucide-react'
 import { fetchDailyStats, fetchMonthlyStats, fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
+import { setManagerStore } from '@/app/actions/store-select'
 import type { DailyStats, MonthlyStats } from '@/lib/store-aggregator'
 import HolidaysEditor from './holidays-editor'
 import ReviewCard from './review-card'
@@ -58,6 +59,19 @@ export default function StoreOverviewClient({ stores, initialStoreId }: { stores
   const [downloading, setDownloading] = useState(false)
   const [showHolidays, setShowHolidays] = useState(false)
 
+  useEffect(() => {
+    if (initialStoreId && initialStoreId !== storeId) setStoreId(initialStoreId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialStoreId])
+
+  function selectStore(nextStoreId: string) {
+    setStoreId(nextStoreId)
+    setManagerStore(nextStoreId).catch(() => {})
+    const url = new URL(window.location.href)
+    url.searchParams.set('storeId', nextStoreId)
+    window.history.replaceState(null, '', url.toString())
+  }
+
   async function handleExport(mode: 'month' | 'year' | 'csv' = 'month') {
     if (!storeId) { toast.error('請選店家'); return }
     setDownloading(true)
@@ -99,18 +113,18 @@ export default function StoreOverviewClient({ stores, initialStoreId }: { stores
         <div className="flex items-center gap-2">
           <button onClick={() => {
             const i = stores.findIndex(s => s.id === storeId)
-            if (i > 0) setStoreId(stores[i - 1].id)
+            if (i > 0) selectStore(stores[i - 1].id)
           }} disabled={stores.findIndex(s => s.id === storeId) <= 0}
             className="shrink-0 h-10 w-10 flex items-center justify-center rounded-lg"
             style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b', cursor: 'pointer' }}>
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <select value={storeId} onChange={e => setStoreId(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
+          <select value={storeId} onChange={e => selectStore(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
             {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           <button onClick={() => {
             const i = stores.findIndex(s => s.id === storeId)
-            if (i >= 0 && i < stores.length - 1) setStoreId(stores[i + 1].id)
+            if (i >= 0 && i < stores.length - 1) selectStore(stores[i + 1].id)
           }} disabled={stores.findIndex(s => s.id === storeId) >= stores.length - 1}
             className="shrink-0 h-10 w-10 flex items-center justify-center rounded-lg"
             style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b', cursor: 'pointer' }}>

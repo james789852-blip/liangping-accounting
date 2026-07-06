@@ -2,18 +2,34 @@
 
 import { useTransition } from 'react'
 import { setManagerStore } from '@/app/actions/store-select'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 interface Store { id: string; name: string; type?: string }
 
 export default function StoreSwitcher({ stores, currentStoreId, className, style }: { stores: Store[]; currentStoreId: string; className?: string; style?: React.CSSProperties }) {
   const [pending, startTransition] = useTransition()
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
 
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const nextStoreId = e.target.value
     startTransition(async () => {
-      await setManagerStore(e.target.value)
-      router.refresh()
+      await setManagerStore(nextStoreId)
+      if (pathname.startsWith('/hq')) {
+        const nextStore = stores.find(s => s.id === nextStoreId)
+        const params = new URLSearchParams(searchParams.toString())
+        if (pathname === '/hq/accounting' && nextStore?.type === '央廚') {
+          params.set('tab', 'ck')
+          params.set('ckStoreId', nextStoreId)
+        } else {
+          if (pathname === '/hq/accounting') params.set('tab', 'store')
+          params.set('storeId', nextStoreId)
+        }
+        router.replace(`${pathname}?${params.toString()}`)
+      } else {
+        router.refresh()
+      }
     })
   }
 
