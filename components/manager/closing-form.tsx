@@ -598,6 +598,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [reviewIndex, setReviewIndex] = useState<number | null>(null)
   const [stepMounted, setStepMounted] = useState(false)
   const [finishingToday, setFinishingToday] = useState(false)
+  const [finishError, setFinishError] = useState('')
   const categories = receiptCategories
   const [ckQuantities, setCkQuantities] = useState<Record<string, number>>(() => {
     const result: Record<string, number> = {}
@@ -1841,6 +1842,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           <p className="text-xs mt-1" style={{ color: '#a1a1aa' }}>
             {finishingToday ? '完成後會直接前往結帳結果' : '請稍候'}
           </p>
+          {finishError && (
+            <div className="mt-4 rounded-2xl px-4 py-3 text-left" style={{ background: '#fff1f2', border: '1px solid #fda4af' }}>
+              <p className="text-sm font-bold" style={{ color: '#be123c' }}>零用金儲存失敗</p>
+              <p className="text-xs mt-1" style={{ color: '#881337' }}>{finishError}</p>
+              <button
+                type="button"
+                onClick={() => { setFinishingToday(false); setFinishError('') }}
+                className="mt-3 px-4 py-2 rounded-xl text-sm font-bold"
+                style={{ background: 'white', color: '#be123c', border: '1px solid #fda4af' }}>
+                返回重試
+              </button>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -4210,19 +4224,20 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
             {/* Step 8: 零用金核對 → 完成結束並前往結帳結果 */}
             {stepId === 'petty' && (
-              <button onClick={() => {
+              <button onClick={async () => {
                 setFinishingToday(true)
+                setFinishError('')
                 try {
                   const cid = existingClosing?.id ?? closingId
+                  if (!cid) throw new Error('找不到今日帳目，請重新整理後再試一次')
+                  const r = await savePettyCounts(cid, pettyCounts, pettyLumps)
+                  if (r && 'error' in r) throw new Error(r.error)
                   localStorage.setItem(`petty_done_${store.id}_${today}`, '1')
                   localStorage.removeItem(stepLsKey)
-                  if (cid) {
-                    void savePettyCounts(cid, pettyCounts, pettyLumps).then(r => {
-                      if (r && 'error' in r) toast.error('零用金核對儲存失敗：' + r.error)
-                    }).catch(e => toast.error('零用金核對儲存失敗：' + (e instanceof Error ? e.message : String(e))))
-                  }
-                } catch {}
-                router.replace('/manager/summary')
+                  router.replace('/manager/summary')
+                } catch (e) {
+                  setFinishError(e instanceof Error ? e.message : String(e))
+                }
               }}
                 className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-base font-bold text-white"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 8px 20px rgba(245,158,11,0.3)' }}>
