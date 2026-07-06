@@ -54,11 +54,13 @@ export default function ItemMappingsClient({
   stores,
   vendorGroups = [],
   selectedStoreId: initStoreId,
+  storeMappingCounts = {},
 }: {
   mappings: Mapping[]
   stores: { id: string; name: string }[]
   vendorGroups?: { id: string; name: string; sort_order: number; doc_type?: string | null }[]
   selectedStoreId: string
+  storeMappingCounts?: Record<string, number>
 }) {
   const [mappings, setMappings] = useState(initial)
   const [activeStoreId, setActiveStoreId] = useState(initStoreId)
@@ -508,7 +510,7 @@ export default function ItemMappingsClient({
           {stores.length > 0 && (
             <div className="flex gap-2 mt-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
               {stores.map(s => {
-                const count = mappings.filter(m => m.store_id === s.id).length
+                const count = storeMappingCounts[s.id] ?? mappings.filter(m => m.store_id === s.id).length
                 return (
                   <button key={s.id}
                     onClick={() => selectStore(s.id)}

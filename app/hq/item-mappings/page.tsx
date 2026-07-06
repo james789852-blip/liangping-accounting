@@ -22,15 +22,26 @@ export default async function ItemMappingsPage({
   if (!profile?.is_hq && profile?.role !== '老闆') redirect('/manager/dashboard')
 
   const admin = createAdminClient()
-  const [{ data: stores }, mappings, { data: vgsInitial }] = await Promise.all([
+  const [{ data: stores }, { data: vgsInitial }] = await Promise.all([
     admin.from('stores').select('id, name').eq('active', true).order('name'),
-    // 分頁撈：mapping 表總筆數可能 > 1000（PostgREST 預設 max-rows）
-    // doc_type_override 已在 migration 042 直接存於本表，不再 join system_items / store_items
-    fetchAllPaged<any>(() => admin.from('item_column_mappings').select('*').order('sort_order').order('item_category').order('item_name')),
     admin.from('system_vendor_groups').select('id, name, sort_order, doc_type').eq('active', true).order('sort_order'),
   ])
 
-  // 自動同步 orphan vg：mapping 用到但 system_vendor_groups 沒 record 的 → 補建
+  const params = await searchParams
+  // 沒有 URL storeId 時，跟隨總公司左側「切換店家」目前選擇，避免每次回第一家店。
+  const sortedStores = sortStores(stores ?? [])
+  const storeId = await resolveHQStoreId(sortedStores, params.storeId)
+  const mappings = await fetchAllPaged<any>(() => {
+    const query = admin.from('item_column_mappings')
+      .select('*')
+      .order('sort_order')
+      .order('item_category')
+      .order('item_name')
+    return storeId
+      ? query.or(`store_id.is.null,store_id.eq.${storeId}`)
+      : query.is('store_id', null)
+  })
+  // 自動同步 orphan vg：目前載入範圍內 mapping 用到但 system_vendor_groups 沒 record 的 → 補建
   const knownVgNames = new Set((vgsInitial ?? []).map(v => v.name as string))
   const orphanVgs = new Set<string>()
   for (const m of mappings ?? []) {
@@ -51,11 +62,13 @@ export default async function ItemMappingsPage({
       .order('sort_order')
     vgs = refetched
   }
-
-  const params = await searchParams
-  // 沒有 URL storeId 時，跟隨總公司左側「切換店家」目前選擇，避免每次回第一家店。
-  const sortedStores = sortStores(stores ?? [])
-  const storeId = await resolveHQStoreId(sortedStores, params.storeId)
+  const mappingCountsRaw = await fetchAllPaged<{ store_id: string | null }>(() =>
+    admin.from('item_column_mappings').select('store_id').not('store_id', 'is', null)
+  )
+  const storeMappingCounts = mappingCountsRaw.reduce<Record<string, number>>((acc, row) => {
+    if (row.store_id) acc[row.store_id] = (acc[row.store_id] ?? 0) + 1
+    return acc
+  }, {})
 
   return (
     <ItemMappingsClient
@@ -63,6 +76,7 @@ export default async function ItemMappingsPage({
       stores={sortedStores}
       vendorGroups={vgs ?? []}
       selectedStoreId={storeId}
+      storeMappingCounts={storeMappingCounts}
     />
   )
 }
