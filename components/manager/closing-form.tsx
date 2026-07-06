@@ -292,6 +292,13 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
+function displayItemName(name: string, vendorGroup?: string | null) {
+  const vg = vendorGroup?.trim()
+  if (!vg || !name.startsWith(vg) || name === vg) return name
+  const rest = name.slice(vg.length)
+  return /^[\s　\-－—–_]/.test(rest) ? name : rest
+}
+
 const DENOMINATIONS = [
   { label: '千元鈔', countKey: 'bills_1000' as const, lumpKey: 'lump_1000' as const, unit: 1000, unitLabel: '張' },
   { label: '五百元', countKey: 'bills_500'  as const, lumpKey: 'lump_500'  as const, unit: 500,  unitLabel: '張' },
@@ -2247,9 +2254,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             dropdownGroupRank(a.group) - dropdownGroupRank(b.group)
                                             || a.group.localeCompare(b.group, 'zh-Hant'),
                                           )
-                                          // 顯示時剝離 vendor_group 前綴（"翁師傅其他" → "其他"）
+                                          // 顯示時剝離直接相連的 vendor_group 前綴；有分隔符的名稱保留完整（例：免洗-稅金）
                                           const stripVg = (n: string, vg?: string) =>
-                                            (vg && n.startsWith(vg) && n !== vg) ? n.slice(vg.length) : n
+                                            displayItemName(n, vg)
                                           // 偵測「同名品項出現在多個分組」— 若有，value 用「{vg}|{name}」確保唯一
                                           const nameCount = new Map<string, number>()
                                           for (const c of base) nameCount.set(c.name, (nameCount.get(c.name) ?? 0) + 1)
@@ -2564,7 +2571,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                                 || a.group.localeCompare(b.group, 'zh-Hant'),
                                               )
                                               const stripVg = (n: string, vg?: string) =>
-                                                (vg && n.startsWith(vg) && n !== vg) ? n.slice(vg.length) : n
+                                                displayItemName(n, vg)
                                               return groups.map(({ group, items }) => (
                                                 <optgroup key={group} label={group}>
                                                   {items.map(c => <option key={c.name} value={c.name}>{stripVg(c.name, c.vendor_group)}</option>)}

@@ -9,6 +9,13 @@ function fmt(n: number) {
   return n.toLocaleString('zh-TW')
 }
 
+function displayItemName(name: string, vendorGroup?: string | null) {
+  const vg = vendorGroup?.trim()
+  if (!vg || !name.startsWith(vg) || name === vg) return name
+  const rest = name.slice(vg.length)
+  return /^[\s　\-－—–_]/.test(rest) ? name : rest
+}
+
 interface MappedItem {
   vendor: string; item_name: string; excel_column: string; category: string; vendor_group: string | null; amount: number
 }
@@ -344,10 +351,7 @@ export default function FoodCostPreviewClient({
                                     {it.vendor_group || it.category}
                                   </span>
                                   <span style={{ color: '#a1a1aa', flexShrink: 0, fontSize: '11px' }}>{it.vendor}</span>
-                                  <span style={{ color: '#18181b' }}>{(() => {
-                                    const vg = it.vendor_group?.trim()
-                                    return vg && it.item_name.startsWith(vg) && it.item_name !== vg ? it.item_name.slice(vg.length) : it.item_name
-                                  })()}</span>
+                                  <span style={{ color: '#18181b' }}>{displayItemName(it.item_name, it.vendor_group)}</span>
                                   <span style={{ color: '#F59E0B', fontSize: '11px' }}>→ {it.excel_column}</span>
                                   <span style={{ marginLeft: 'auto', fontWeight: 600, color: '#18181b', fontVariantNumeric: 'tabular-nums' }}>${fmt(it.amount)}</span>
                                 </div>

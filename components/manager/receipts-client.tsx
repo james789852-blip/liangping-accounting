@@ -33,6 +33,13 @@ const STATUS_LABEL: Record<string, string> = {
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
+function displayItemName(name: string, vendorGroup?: string | null) {
+  const vg = vendorGroup?.trim()
+  if (!vg || !name.startsWith(vg) || name === vg) return name
+  const rest = name.slice(vg.length)
+  return /^[\s　\-－—–_]/.test(rest) ? name : rest
+}
+
 function formatDate(d: string) {
   const dt = new Date(d + 'T00:00:00+08:00')
   return `${dt.getMonth() + 1}/${dt.getDate()}（${['日','一','二','三','四','五','六'][dt.getDay()]}）`
@@ -208,10 +215,9 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
                     gridTemplateColumns: '1fr 3rem 2.5rem 4rem 4rem', gap: '8px',
                     borderBottom: idx !== receipt.receipt_items.length - 1 ? '1px solid #f4f4f5' : 'none'
                   }}>
-                    <span className="text-xs font-medium" style={{ color: '#18181b' }}>{(() => {
-                      const vg = mappings[item.item_name]?.vendor_group?.trim()
-                      return vg && item.item_name.startsWith(vg) && item.item_name !== vg ? item.item_name.slice(vg.length) : item.item_name
-                    })()}</span>
+                    <span className="text-xs font-medium" style={{ color: '#18181b' }}>
+                      {displayItemName(item.item_name, mappings[item.item_name]?.vendor_group)}
+                    </span>
                     <span className="text-xs text-right tabular-nums" style={{ color: '#52525b' }}>{(item.quantity ?? 0) > 0 ? item.quantity : '—'}</span>
                     <span className="text-xs text-right" style={{ color: '#71717a' }}>{item.unit || '—'}</span>
                     <span className="text-xs text-right tabular-nums" style={{ color: '#52525b' }}>{(item.unit_price ?? 0) > 0 ? `$${fmt(item.unit_price ?? 0)}` : '—'}</span>
@@ -299,10 +305,9 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
                       const allNames = Object.keys(mappings).filter(n =>
                         mappings[n]?.vendor_group !== '央廚配送' && mappings[n]?.vendor_group !== '退稅'
                       )
-                      // 顯示時剝離 vendor_group 前綴 → 比對也包含剝離後字串
+                      // 顯示時剝離直接相連的 vendor_group 前綴；有分隔符的名稱保留完整（例：免洗-稅金）
                       const stripVg = (n: string) => {
-                        const vg = mappings[n]?.vendor_group?.trim()
-                        return vg && n.startsWith(vg) && n !== vg ? n.slice(vg.length) : n
+                        return displayItemName(n, mappings[n]?.vendor_group)
                       }
                       const filtered = q ? allNames.filter(n => n.includes(q) || stripVg(n).includes(q)) : allNames
                       if (filtered.length === 0) return null
