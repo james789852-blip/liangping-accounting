@@ -63,6 +63,8 @@ export interface DailyStats {
   taxRefund: number      // 梁平退稅：doc_type=發票 且 vendor_group 含「退稅」
   // ── 品項明細 (item_name → amount) 對應到啟用品項 ──
   items: Record<string, number>
+  // ── 品項備註 (item_name → note text)；同日同品項多筆備註以換行合併 ──
+  notes: Record<string, string>
   // ── 廠商群組小計 (vg_name → doc_type → amount) ──
   vendorGroupBreakdown: Record<string, Record<string, number>>
   // ── 收據原始資料 ──
@@ -115,7 +117,7 @@ function newEmptyDay(date: string): DailyStats {
     revenue: 0, totalRevenue: 0,
     food: 0, pack: 0, misc: 0, totalCost: 0,
     invoiceTotal: 0, receiptTotal: 0, estimateTotal: 0, taxRefund: 0,
-    items: {}, vendorGroupBreakdown: {}, receipts: [],
+    items: {}, notes: {}, vendorGroupBreakdown: {}, receipts: [],
     closingStatus: 'none', isHoliday: false, holidayNote: null,
   }
 }
@@ -205,6 +207,8 @@ export async function getRangeStats(
   // 收據併入
   for (const r of (receipts ?? []) as any[]) {
     const dd = byDate[r.business_date] ?? (byDate[r.business_date] = newEmptyDay(r.business_date))
+    const noteText = (r.notes as string | null | undefined)?.trim() ?? ''
+    const notedItemNames = new Set<string>()
     dd.receipts.push({
       vendor_name: r.vendor_name ?? '',
       total_amount: r.total_amount ?? 0,
@@ -216,6 +220,12 @@ export async function getRangeStats(
     for (const it of (r.receipt_items ?? []) as any[]) {
       if (!it.amount) continue
       dd.items[it.item_name] = (dd.items[it.item_name] ?? 0) + it.amount
+      if (noteText && !notedItemNames.has(it.item_name)) {
+        dd.notes[it.item_name] = dd.notes[it.item_name]
+          ? `${dd.notes[it.item_name]}\n${noteText}`
+          : noteText
+        notedItemNames.add(it.item_name)
+      }
     }
     // 稅金分流：receipt 內有耗材品項 → 稅算「免洗稅金」；否則歸雜項
     const tax = (r.tax_amount ?? 0) as number

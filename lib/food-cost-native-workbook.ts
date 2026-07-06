@@ -497,6 +497,8 @@ export async function addFoodCostSheet(
         const key = c.nameKey ?? c.header
         const v = dd.items[key] ?? dd.items[key.replace(/-/g, '')] ?? 0
         if (v !== 0) cell.value = v
+        const note = dd.notes[key] ?? dd.notes[key.replace(/-/g, '')]
+        if (note?.trim()) cell.note = note
         cell.numFmt = '#,##0;-#,##0;'
         // 負數用紅色（折扣/退貨/退費類）
         if (v < 0) cell.font = { ...(cell.font as any), color: { argb: 'FFDC2626' }, bold: true }
