@@ -493,7 +493,9 @@ export async function addFoodCostSheet(
         cell.numFmt = '#,##0;-#,##0;'
       } else if (c.kind === 'item' && dd) {
         // nameKey = 完整 item_name（aggregator items 用），header 可能剝過前綴
-        const v = dd.items[c.nameKey ?? c.header] ?? 0
+        // 先精確比對，再去掉連字號再比（處理「小雲-稅金」↔「小雲稅金」等改名差異）
+        const key = c.nameKey ?? c.header
+        const v = dd.items[key] ?? dd.items[key.replace(/-/g, '')] ?? 0
         if (v !== 0) cell.value = v
         cell.numFmt = '#,##0;-#,##0;'
         // 負數用紅色（折扣/退貨/退費類）
