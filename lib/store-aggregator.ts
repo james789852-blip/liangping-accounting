@@ -171,7 +171,10 @@ export async function getRangeStats(
     const best = arr.sort((a, b) => (STATUS_PRIORITY[b.status] ?? 0) - (STATUS_PRIORITY[a.status] ?? 0))[0]
     const dd = newEmptyDay(date)
     dd.actual = best.actual_remit ?? 0
-    dd.ck = best.total_cost ?? 0
+    const ckFromOrders = (best.order_items ?? [])
+      .filter((oi: any) => oi.item_name !== '央廚配送')
+      .reduce((s: number, oi: any) => s + (oi.total_amount ?? 0), 0)
+    dd.ck = (best.total_cost ?? 0) > 0 ? (best.total_cost ?? 0) : ckFromOrders
     dd.totalRevenue = best.total_revenue ?? 0
     dd.closingStatus = (best.status ?? 'none') as DailyStats['closingStatus']
     for (const rv of (best.revenue_items ?? []) as any[]) {

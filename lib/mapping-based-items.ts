@@ -47,8 +47,8 @@ export async function getStoreItemsFromMappings(storeId: string): Promise<Resolv
     const sys = sysByName.get(m.item_name)
     const store = sys ? storeBySysId.get(sys.id) : null
 
-    // doc_type 優先序：store_items.doc_type_override > system_items.doc_type_override > vg.doc_type
-    const effectiveDocType = store?.doc_type_override ?? sys?.doc_type_override ?? vg?.doc_type ?? null
+    // doc_type 優先序：item_column_mappings.doc_type_override > store_items > system_items > vg.doc_type
+    const effectiveDocType = (m.doc_type_override ?? store?.doc_type_override ?? sys?.doc_type_override ?? vg?.doc_type) ?? null
 
     items.push({
       id: m.id as string,

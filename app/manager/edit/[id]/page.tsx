@@ -41,27 +41,11 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     return <div className="p-6 text-slate-500">找不到此帳目或無權限</div>
   }
 
-  // 已送出/已審核的帳目：若是今日帳目 → 轉去 /manager/closing 走零用金核對流程
-  // （/manager/closing 已能處理 submitted/verified 並顯示零用金步驟）
+  // 已送出/已審核的帳目：一律導回 /manager/closing（含零用金步驟）
+  // 過往日期加 ?date 參數，讓 closing form 正確載入該日帳目
   if (!['draft', 'disputed'].includes(closing.status)) {
     const today = getBusinessDate()
-    if (closing.business_date === today) {
-      redirect('/manager/closing')
-    }
-    return (
-      <div className="p-6 max-w-md mx-auto text-center space-y-3">
-        <p className="text-slate-600">此帳目狀態為「{closing.status}」，無法編輯內容</p>
-        <p className="text-xs" style={{ color: '#a1a1aa' }}>但你仍可補做零用金核對</p>
-        <div className="flex flex-col gap-2 items-center pt-1">
-          <a href={`/manager/cash?date=${closing.business_date}`}
-            className="inline-block px-4 py-2 rounded-xl text-sm font-semibold text-white"
-            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
-            核對零用金
-          </a>
-          <a href="/manager/history" className="text-blue-600 text-sm underline">返回歷史紀錄</a>
-        </div>
-      </div>
-    )
+    redirect(closing.business_date !== today ? `/manager/closing?date=${closing.business_date}` : '/manager/closing')
   }
 
   const admin2 = createAdminClient()

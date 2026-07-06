@@ -889,6 +889,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const dbPettyCounts = (existingClosing as { petty_counts?: { counts?: Record<string, number>; lumps?: Record<string, number> } } | null)?.petty_counts
   const [pettyCounts, setPettyCounts] = useState<Record<string, number>>(() => dbPettyCounts?.counts ?? {})
   const [pettyLumps, setPettyLumps] = useState<Record<string, number>>(() => dbPettyCounts?.lumps ?? {})
+  const [pettyFinished, setPettyFinished] = useState(false)
   useEffect(() => {
     if (dbPettyCounts?.counts || dbPettyCounts?.lumps) return  // 已從 DB 初始化
     try {
@@ -1479,9 +1480,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const d = dataRef.current
     try {
       let cid = closingId
+      // 直接從 ref 計算最新 CK 金額，避免 useEffect 延遲造成 data.ck_total stale
+      const ckTotalLive = ckPrices.reduce(
+        (sum, p) => sum + (ckQuantitiesRef.current[p.id] || 0) * (ckPriceOverridesRef.current[p.id] ?? p.unit_price), 0
+      )
       const payload = {
         store_id: store.id, manager_id: userId, business_date: today, status: isDisputed ? 'disputed' : 'draft',
-        total_revenue: s.totalRevenue, total_cost: s.deliveryFee, total_expenses: totalExpenses,
+        total_revenue: s.totalRevenue, total_cost: ckTotalLive > 0 ? ckTotalLive : s.deliveryFee, total_expenses: totalExpenses,
         expected_remit: s.netToHQ, actual_remit: s.actualRemit,
         should_include_delivery: s.shouldEnvelope, variance: s.variance, note: d.note,
         remittance_adjustments: adjustments,
@@ -3902,6 +3907,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             <GradientTitle step={stepNum} total={totalSteps} title="零用金核對"
               desc="包好信封後，請清點店內剩餘零用金是否等於備付額。" />
 
+            {/* 完成後顯示成功卡片 */}
+            {pettyFinished && (
+              <div className="rounded-3xl p-8 text-center mb-4"
+                style={{ background: 'linear-gradient(135deg,#d1fae5,#ecfdf5)', border: '1.5px solid #6ee7b7' }}>
+                <div style={{ fontSize: 48 }}>✅</div>
+                <p className="text-2xl font-extrabold mt-3" style={{ color: '#047857' }}>今日結帳完成！</p>
+                <p className="text-sm mt-1" style={{ color: '#065f46' }}>零用金核對已記錄</p>
+                <a href="/manager/dashboard"
+                  className="inline-block mt-5 px-6 py-3 rounded-2xl font-bold text-white text-sm"
+                  style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+                  返回首頁
+                </a>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <div className="px-5 pt-5 pb-4" style={{ borderBottom: '1px solid #f4f4f5' }}>
                 <p className="text-sm font-semibold mb-0.5">零用金最終核對</p>
@@ -4034,11 +4054,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               <button onClick={() => {
                 try {
                   localStorage.setItem(`petty_done_${store.id}_${today}`, '1')
-                  // 記住使用者在零用金步驟（下次回來仍顯示此頁）
                   localStorage.setItem(stepLsKey, String(totalSteps - 1))
                 } catch {}
-                // 不 router.push：留在目前頁面，讓使用者繼續看零用金核對結果
-                router.refresh()
+                setPettyFinished(true)
               }}
                 className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-base font-bold text-white"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 8px 20px rgba(245,158,11,0.3)' }}>
