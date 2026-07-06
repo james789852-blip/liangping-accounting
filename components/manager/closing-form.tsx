@@ -597,6 +597,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [verifyItems, setVerifyItems] = useState<VerifyItem[]>([])
   const [reviewIndex, setReviewIndex] = useState<number | null>(null)
   const [stepMounted, setStepMounted] = useState(false)
+  const [finishingToday, setFinishingToday] = useState(false)
   const categories = receiptCategories
   const [ckQuantities, setCkQuantities] = useState<Record<string, number>>(() => {
     const result: Record<string, number> = {}
@@ -876,7 +877,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       localStorage.removeItem(stepLsKey)
       if (pettyDone) {
         router.replace('/manager/summary')
-        setStepMounted(true)
         return
       }
       setCurrentStep(resultIdx)
@@ -1830,6 +1830,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const pettyOk = pettyDiff === 0
 
   // ── Main wizard return ────────────────────────────────────────────────────
+  if (!stepMounted || finishingToday) {
+    return (
+      <div className="min-h-full flex items-center justify-center px-6" style={{ background: '#fafafa' }}>
+        <div className="rounded-3xl px-8 py-10 text-center bg-white" style={{ boxShadow: '0 18px 50px rgba(15,23,42,0.08)' }}>
+          <Loader2 className="h-9 w-9 mx-auto mb-4 animate-spin" style={{ color: '#F59E0B' }} />
+          <p className="text-base font-bold" style={{ color: '#18181b' }}>
+            {finishingToday ? '正在完成今日結帳' : '正在準備今日結帳'}
+          </p>
+          <p className="text-xs mt-1" style={{ color: '#a1a1aa' }}>
+            {finishingToday ? '完成後會直接前往結帳結果' : '請稍候'}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
 
@@ -4194,15 +4210,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
             {/* Step 8: 零用金核對 → 完成結束並前往結帳結果 */}
             {stepId === 'petty' && (
-              <button onClick={async () => {
+              <button onClick={() => {
+                setFinishingToday(true)
                 try {
                   const cid = existingClosing?.id ?? closingId
-                  if (cid) await savePettyCounts(cid, pettyCounts, pettyLumps)
                   localStorage.setItem(`petty_done_${store.id}_${today}`, '1')
                   localStorage.removeItem(stepLsKey)
+                  if (cid) {
+                    void savePettyCounts(cid, pettyCounts, pettyLumps).then(r => {
+                      if (r && 'error' in r) toast.error('零用金核對儲存失敗：' + r.error)
+                    }).catch(e => toast.error('零用金核對儲存失敗：' + (e instanceof Error ? e.message : String(e))))
+                  }
                 } catch {}
-                setPettyFinished(true)
-                router.push('/manager/summary')
+                router.replace('/manager/summary')
               }}
                 className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-base font-bold text-white"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 8px 20px rgba(245,158,11,0.3)' }}>
