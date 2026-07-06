@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, memo } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, memo, startTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
@@ -961,6 +961,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [newOrderAmt, setNewOrderAmt] = useState(0)
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)  // mutex 防止並發 handleSave 衝突（自動存 + 手動下一步）
+  const backgroundSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (backgroundSaveTimerRef.current) clearTimeout(backgroundSaveTimerRef.current)
+  }, [])
   const [submitting, setSubmitting] = useState(false)
   const [closingId, setClosingId] = useState<string | null>(existingClosing?.id ?? null)
   // DB 寫入零用金清點：debounced 1.5 秒（放在 closingId 宣告後）
@@ -1679,6 +1683,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
   }
 
+  function scheduleBackgroundSave() {
+    if (isLocked || submitDone || status === 'submitted' || status === 'verified') return
+    if (backgroundSaveTimerRef.current) clearTimeout(backgroundSaveTimerRef.current)
+    backgroundSaveTimerRef.current = setTimeout(() => {
+      backgroundSaveTimerRef.current = null
+      void handleSave(true)
+    }, 250)
+  }
+
   async function handleSubmit() {
     // 先擋住雙擊：submitting 標記必須在所有 async 之前
     if (submitting) return
@@ -1800,11 +1813,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       }
     }
     if (step >= submitStepIdx) { goToStep(step + 1); return }
-    if (step < totalSteps - 1) { handleSave(true); goToStep(step + 1) }
+    if (step < totalSteps - 1) {
+      goToStep(step + 1)
+      scheduleBackgroundSave()
+    }
   }
   function goToStep(n: number) {
-    setCurrentStep(n)
-    localStorage.setItem(stepLsKey, String(n))
+    startTransition(() => setCurrentStep(n))
+    try { localStorage.setItem(stepLsKey, String(n)) } catch {}
   }
   function goPrev() { if (step > 0) goToStep(step - 1) }
 
@@ -1900,9 +1916,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   <button
                     onClick={() => {
                       if (i === step) return
-                      // 跳步前儲存目前內容，讓資料不遺失
-                      handleSave(true)
                       goToStep(i)
+                      scheduleBackgroundSave()
                     }}
                     className="flex flex-col items-center gap-1 px-1.5"
                     style={{ cursor: i === step ? 'default' : 'pointer' }}>
