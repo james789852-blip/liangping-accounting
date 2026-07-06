@@ -1133,7 +1133,7 @@ function VgActions({ vgName, storeId, itemCount, onDone }: { vgName: string; sto
     setSaving(true)
     try {
       const { renameVendorGroup } = await import('@/app/actions/item-mappings')
-      const r = await renameVendorGroup(vgName, newName.trim())
+      const r = await renameVendorGroup(vgName, newName.trim(), storeId ?? undefined)
       if ('error' in r) { toast.error(String(r.error)); return }
       toast.success('已改名')
       onDone()

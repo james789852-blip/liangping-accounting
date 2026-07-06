@@ -423,7 +423,7 @@ export async function setItemRefundFlag(id: string, isRefund: boolean) {
 }
 
 /** 修改廠商群組名稱（同步更新 system_vendor_groups + item_column_mappings） */
-export async function renameVendorGroup(oldName: string, newName: string) {
+export async function renameVendorGroup(oldName: string, newName: string, storeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '未登入' }
@@ -435,12 +435,22 @@ export async function renameVendorGroup(oldName: string, newName: string) {
   if (trimmed === oldName) return { success: true as const }
 
   const admin = createAdminClient()
-  // 檢查新名字有沒重複
-  const { data: dup } = await admin.from('system_vendor_groups').select('id').eq('name', trimmed).eq('active', true).maybeSingle()
-  if (dup) return { error: `已有廠商群組叫「${trimmed}」` }
 
-  await admin.from('system_vendor_groups').update({ name: trimmed, updated_at: new Date().toISOString() }).eq('name', oldName)
-  await admin.from('item_column_mappings').update({ vendor_group: trimmed, updated_at: new Date().toISOString() }).eq('vendor_group', oldName)
+  if (storeId) {
+    // 各店獨立：只改該店的 item_column_mappings，不動全域 system_vendor_groups
+    const { data: dup } = await admin.from('item_column_mappings')
+      .select('id').eq('store_id', storeId).eq('vendor_group', trimmed).limit(1).maybeSingle()
+    if (dup) return { error: `本店已有類別叫「${trimmed}」` }
+    await admin.from('item_column_mappings')
+      .update({ vendor_group: trimmed, updated_at: new Date().toISOString() })
+      .eq('store_id', storeId).eq('vendor_group', oldName)
+  } else {
+    // 全域模式（無 storeId）：維持舊行為，改全域 system_vendor_groups + 所有 mappings
+    const { data: dup } = await admin.from('system_vendor_groups').select('id').eq('name', trimmed).eq('active', true).maybeSingle()
+    if (dup) return { error: `已有廠商群組叫「${trimmed}」` }
+    await admin.from('system_vendor_groups').update({ name: trimmed, updated_at: new Date().toISOString() }).eq('name', oldName)
+    await admin.from('item_column_mappings').update({ vendor_group: trimmed, updated_at: new Date().toISOString() }).eq('vendor_group', oldName)
+  }
 
   revalidate()
   return { success: true as const }
