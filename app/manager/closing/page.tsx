@@ -6,11 +6,22 @@ import { Store, CKPrice } from '@/lib/types'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
-import { getCachedUserProfile, getCachedStoreFull, getCachedActiveCKPrices, getCachedStoreMappings, getCachedItemOrder } from '@/lib/cached-queries'
+import { getCachedUserProfile, getCachedStoreFull, getCachedStoreMappings, getCachedItemOrder } from '@/lib/cached-queries'
 import { getStoreItemsResolved, toMappingColumns } from '@/lib/store-items-resolver'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 export const dynamic = 'force-dynamic'
+
+async function getFreshActiveCKPrices(): Promise<CKPrice[]> {
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from('central_kitchen_prices')
+    .select('id, item_name, unit_price, unit, excel_column')
+    .eq('active', true)
+    .order('sort_order')
+    .order('item_name')
+  return (data ?? []) as CKPrice[]
+}
 
 export default async function ClosingPage({
   searchParams,
@@ -56,7 +67,7 @@ export default async function ClosingPage({
     mappingBasedItems,
   ] = await Promise.all([
     getCachedStoreFull(storeId),
-    getCachedActiveCKPrices(),
+    getFreshActiveCKPrices(),
     supabase
       .from('daily_closings')
       .select('*, revenue_items(*), order_items(*), expense_items(*), handwrite_orders(*), cash_counts(*)')

@@ -614,15 +614,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   })
   const ckQuantitiesRef = useRef(ckQuantities)
   ckQuantitiesRef.current = ckQuantities
-  // 央廚單價覆寫：補做過往帳目時，店長可以填當天的實際單價
+  // 央廚單價覆寫：只有補做過往帳目時才保留舊帳目單價。
+  // 今日草稿重新整理時要跟上總公司最新單價，避免舊草稿把新價蓋掉。
   // key = ckPrice.id, value = 覆寫單價（沒覆寫就用 ckPrice.unit_price）
   const [ckPriceOverrides, setCkPriceOverrides] = useState<Record<string, number>>(() => {
     const result: Record<string, number> = {}
-    if (existingClosing) {
+    if (existingClosing && isBackfill) {
       const items = existingClosing.order_items ?? []
       ckPrices.forEach(p => {
         const found = items.find((i: any) => i.vendor === '央廚' && i.item_name === p.item_name)
-        // 儲存於 order_items 的單價與目前的 central_kitchen_prices 不同 → 視為覆寫
+        // 補做歷史帳目時，儲存於 order_items 的單價與目前總公司單價不同 → 視為覆寫。
         if (found && typeof found.unit_price === 'number' && found.unit_price !== p.unit_price) {
           result[p.id] = found.unit_price
         }
