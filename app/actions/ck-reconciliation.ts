@@ -77,20 +77,21 @@ export async function fetchCKReconciliation(ckStoreId: string, year: number, mon
     : { data: [] }
 
   // 組合 key = `${date}||${store_id}`
+  const storeMap: Record<string, number> = {}
+  for (const c of closings ?? []) {
+    const key = `${c.business_date}||${c.store_id}`
+    storeMap[key] = (storeMap[key] ?? 0) + ((c.total_cost as number) ?? 0)
+  }
   const ckMap: Record<string, { reported: number; confirmed: number | null }> = {}
   for (const o of ckOrders ?? []) {
     const date = recordDateById[(o.ck_daily_record_id as string)]
     if (!date || !o.store_id) continue
     const key = `${date}||${o.store_id}`
+    if (!(key in storeMap)) continue
     ckMap[key] = {
       reported: (o.amount as number) ?? 0,
       confirmed: o.ck_confirmed_amount as number | null,
     }
-  }
-  const storeMap: Record<string, number> = {}
-  for (const c of closings ?? []) {
-    const key = `${c.business_date}||${c.store_id}`
-    storeMap[key] = (storeMap[key] ?? 0) + ((c.total_cost as number) ?? 0)
   }
 
   const keys = new Set([...Object.keys(ckMap), ...Object.keys(storeMap)])

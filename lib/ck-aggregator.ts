@@ -116,16 +116,25 @@ export async function getCKRangeStats(
   }
 
   const recordIds = (records ?? []).map(r => r.id)
-  const [{ data: orders }, { data: expenses }] = await Promise.all([
+  const [{ data: orders }, { data: expenses }, { data: validClosings }] = await Promise.all([
     recordIds.length > 0
       ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount').in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
       ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type').in('ck_daily_record_id', recordIds).order('sort_order')
       : Promise.resolve({ data: [] }),
+    assignedIds.length > 0
+      ? admin.from('daily_closings')
+          .select('store_id, business_date')
+          .in('store_id', assignedIds)
+          .gte('business_date', firstDay).lte('business_date', lastDay)
+      : Promise.resolve({ data: [] }),
   ])
 
   const recordByDate = new Map((records ?? []).map(r => [r.business_date as string, r] as const))
+  const validClosingKeys = new Set(
+    (validClosings ?? []).map((c: any) => `${c.business_date}||${c.store_id}`)
+  )
 
   // 補齊日曆
   const startDate = new Date(firstDay + 'T12:00:00+08:00')
@@ -147,6 +156,7 @@ export async function getCKRangeStats(
       const ords = (orders ?? []).filter((o: any) => o.ck_daily_record_id === rec.id)
       for (const o of ords) {
         if (o.store_id) {
+          if (!validClosingKeys.has(`${date}||${o.store_id}`)) continue
           dd.memberOrders.push({ store_id: o.store_id, store_name: memberStoreMap[o.store_id] ?? o.store_id, amount: o.amount ?? 0 })
           dd.memberRevenue += o.amount ?? 0
         } else {

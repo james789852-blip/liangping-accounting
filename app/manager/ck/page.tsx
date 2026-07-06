@@ -96,6 +96,7 @@ export default async function CKPage({
       .filter((c: any) => ['submitted', 'verified'].includes(c.status))
       .map((c: any) => c.store_id as string)
   )
+  const validClosingStores = new Set((todayClosings ?? []).map((c: any) => c.store_id as string))
 
   // 體系內叫貨 + 支出，從 ck_daily_record 載入
   let memberOrderMap: Record<string, number> = {}
@@ -124,7 +125,10 @@ export default async function CKPage({
         .eq('ck_daily_record_id', ckRecord.id).order('sort_order'),
     ])
 
-    for (const o of (storeOrders ?? []) as any[]) {
+    const validStoreOrders = ((storeOrders ?? []) as any[])
+      .filter((o: any) => !o.store_id || validClosingStores.has(o.store_id as string))
+
+    for (const o of validStoreOrders) {
       if (o.store_id) {
         memberOrderMap[o.store_id] = o.amount
         memberConfirmedMap[o.store_id] = (o.ck_confirmed_amount as number | null) ?? null
@@ -165,13 +169,30 @@ export default async function CKPage({
   // 過去 7 天該央廚下旗下店家的對帳異常（不一致）+ 待對帳統計
   const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
   const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10)
-  const { data: recentCkOrders } = await admin
-    .from('ck_store_orders')
-    .select('amount, ck_confirmed_amount, store_id, ck_daily_records!inner(business_date, ck_store_id)')
-    .eq('ck_daily_records.ck_store_id', storeId)
-    .gte('ck_daily_records.business_date', sevenDaysAgoStr)
+  const [{ data: recentCkOrders }, { data: recentClosings }] = await Promise.all([
+    admin
+      .from('ck_store_orders')
+      .select('amount, ck_confirmed_amount, store_id, ck_daily_records!inner(business_date, ck_store_id)')
+      .eq('ck_daily_records.ck_store_id', storeId)
+      .gte('ck_daily_records.business_date', sevenDaysAgoStr),
+    assignedStoreIds.length > 0
+      ? admin.from('daily_closings')
+          .select('store_id, business_date')
+          .in('store_id', assignedStoreIds)
+          .gte('business_date', sevenDaysAgoStr)
+          .lte('business_date', today)
+      : Promise.resolve({ data: [] }),
+  ])
+  const validRecentClosingKeys = new Set(
+    (recentClosings ?? []).map((c: any) => `${c.business_date}||${c.store_id}`)
+  )
+  const recentValidCkOrders = (recentCkOrders ?? []).filter((o: any) => {
+    const date = (o.ck_daily_records as any)?.business_date as string | undefined
+    const sid = o.store_id as string | null
+    return !sid || (!!date && validRecentClosingKeys.has(`${date}||${sid}`))
+  })
   const storeNameMap = new Map((assignedStores ?? []).map((s: any) => [s.id as string, s.name as string]))
-  const recentMismatches = (recentCkOrders ?? [])
+  const recentMismatches = recentValidCkOrders
     .filter((o: any) => o.ck_confirmed_amount != null && Number(o.ck_confirmed_amount) !== Number(o.amount))
     .map((o: any) => ({
       business_date: (o.ck_daily_records as any)?.business_date as string,
@@ -181,7 +202,7 @@ export default async function CKPage({
       ck_confirmed_amount: Number(o.ck_confirmed_amount),
     }))
     .sort((a, b) => b.business_date.localeCompare(a.business_date))
-  const recentPending = (recentCkOrders ?? [])
+  const recentPending = recentValidCkOrders
     .filter((o: any) => o.ck_confirmed_amount == null && Number(o.amount) > 0)
     .length
 

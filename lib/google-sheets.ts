@@ -833,14 +833,24 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
     .gte('business_date', firstDay)
     .lte('business_date', lastDay)
   const recordIds = (records ?? []).map(r => r.id)
-  const [{ data: storeOrders }, { data: expenseItems }] = await Promise.all([
+  const [{ data: storeOrders }, { data: expenseItems }, { data: validClosings }] = await Promise.all([
     recordIds.length > 0
       ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount').in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
       ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount').in('ck_daily_record_id', recordIds).order('sort_order')
       : Promise.resolve({ data: [] }),
+    assignedIds.length > 0
+      ? admin.from('daily_closings')
+          .select('store_id, business_date')
+          .in('store_id', assignedIds)
+          .gte('business_date', firstDay)
+          .lte('business_date', lastDay)
+      : Promise.resolve({ data: [] }),
   ])
+  const validClosingKeys = new Set(
+    (validClosings ?? []).map((c: AnyRecord) => `${c.business_date}||${c.store_id}`)
+  )
 
   // Build dataMap (mirrors /api/export/ck)
   // 預先 group by ck_daily_record_id 避免 O(N×M) 線性掃描
@@ -865,6 +875,7 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
 
     const storeRevenues: Record<string, number> = {}
     for (const o of orders) {
+      if ((o as AnyRecord).store_id && !validClosingKeys.has(`${date}||${(o as AnyRecord).store_id}`)) continue
       const name = (o as AnyRecord).store_id
         ? storeNameMap[(o as AnyRecord).store_id] ?? (o as AnyRecord).store_id
         : (o as AnyRecord).external_store_name

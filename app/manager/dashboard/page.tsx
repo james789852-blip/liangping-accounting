@@ -55,7 +55,7 @@ export default async function ManagerDashboard() {
     const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10)
 
     const admin = createAdminClient()
-    const [storeData, closingRes, recentRes, ckMismatchRes] = await Promise.all([
+    const [storeData, closingRes, recentRes, ckMismatchRes, validClosingRes] = await Promise.all([
       getCachedStoreById(storeId),
       supabase.from('daily_closings')
         .select('id, status, total_revenue, should_include_delivery, actual_remit, total_cost, variance')
@@ -69,13 +69,20 @@ export default async function ManagerDashboard() {
         .eq('store_id', storeId)
         .not('ck_confirmed_amount', 'is', null)
         .gte('ck_daily_records.business_date', sevenDaysAgoStr),
+      admin.from('daily_closings')
+        .select('business_date')
+        .eq('store_id', storeId)
+        .gte('business_date', sevenDaysAgoStr)
+        .lte('business_date', today),
     ])
     storeName = (storeData as any)?.name ?? ''
     if ((storeData as any)?.type === '央廚') redirect('/manager/ck')
     todayClosing = closingRes.data
     recentClosings = (recentRes.data ?? []).filter((c: any) => c.business_date !== today).slice(0, 7)
 
+    const validClosingDates = new Set((validClosingRes.data ?? []).map((c: any) => c.business_date as string))
     ckMismatches = (ckMismatchRes.data ?? [])
+      .filter((o: any) => validClosingDates.has((o.ck_daily_records as any)?.business_date as string))
       .filter((o: any) => o.ck_confirmed_amount != null && Number(o.ck_confirmed_amount) !== Number(o.amount))
       .map((o: any) => ({
         business_date: (o.ck_daily_records as any)?.business_date as string,

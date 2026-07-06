@@ -55,20 +55,31 @@ export default async function FoodCostPreviewPage({
 
   // ─── 央廚模式：撈 ck_daily_records 系列資料 ───────────────────────────
   if (isCK) {
-    const [{ data: records }, tmplCheck, tmplMetaRes] = await Promise.all([
+    const [{ data: records }, { data: ckStore }, tmplCheck, tmplMetaRes] = await Promise.all([
       admin.from('ck_daily_records').select('id, business_date').eq('ck_store_id', storeId).gte('business_date', firstDay).lte('business_date', lastDay),
+      admin.from('stores').select('assigned_store_ids').eq('id', storeId).maybeSingle(),
       admin.storage.from('excel-templates').list('', { search: `ck-${storeId}` }),
       admin.storage.from('excel-templates').download(`ck-${storeId}-meta.json`).then(r => r.data).catch(() => null),
     ])
+    const assignedIds: string[] = ((ckStore as any)?.assigned_store_ids as string[] | null) ?? []
     const recordIds = (records ?? []).map(r => r.id)
-    const [{ data: storeOrders }, { data: expenseItems }] = await Promise.all([
+    const [{ data: storeOrders }, { data: expenseItems }, { data: validClosings }] = await Promise.all([
       recordIds.length > 0
-        ? admin.from('ck_store_orders').select('ck_daily_record_id, amount').in('ck_daily_record_id', recordIds)
+        ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, amount').in('ck_daily_record_id', recordIds)
         : Promise.resolve({ data: [] }),
       recordIds.length > 0
         ? admin.from('ck_expense_items').select('ck_daily_record_id, category, amount').in('ck_daily_record_id', recordIds)
         : Promise.resolve({ data: [] }),
+      assignedIds.length > 0
+        ? admin.from('daily_closings')
+            .select('store_id, business_date')
+            .in('store_id', assignedIds)
+            .gte('business_date', firstDay).lte('business_date', lastDay)
+        : Promise.resolve({ data: [] }),
     ])
+    const validClosingKeys = new Set(
+      (validClosings ?? []).map((c: any) => `${c.business_date}||${c.store_id}`)
+    )
 
     const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
     const daysInMonth = new Date(year, monthNum, 0).getDate()
@@ -101,6 +112,7 @@ export default async function FoodCostPreviewPage({
       const row = byDate[date]
       if (!row) continue
       for (const o of (ordersByRecord[record.id as string] ?? [])) {
+        if (o.store_id && !validClosingKeys.has(`${date}||${o.store_id}`)) continue
         row.revenueTotal += (o.amount as number) ?? 0
       }
       for (const e of (expsByRecord[record.id as string] ?? [])) {
