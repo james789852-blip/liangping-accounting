@@ -17,6 +17,89 @@ interface CashCountsPayload {
   large_expenses?: { id: string; description: string; amount: number }[]
 }
 
+type ClosingForDelete = {
+  id: string
+  store_id: string
+  business_date: string
+}
+
+async function cleanupClosingRelations(admin: ReturnType<typeof createAdminClient>, closingId: string) {
+  const [{ data: receipts }, { data: orderItems }, { data: screenshots }] = await Promise.all([
+    admin.from('receipts').select('id').eq('closing_id', closingId),
+    admin.from('order_items').select('id').eq('closing_id', closingId),
+    admin.from('platform_screenshots').select('id').eq('closing_id', closingId),
+  ])
+
+  const receiptIds = (receipts ?? []).map((r: any) => r.id as string)
+  const orderItemIds = (orderItems ?? []).map((o: any) => o.id as string)
+  const screenshotIds = (screenshots ?? []).map((s: any) => s.id as string)
+
+  if (receiptIds.length > 0) {
+    await Promise.all([
+      admin.from('review_logs').delete().in('receipt_id', receiptIds),
+      admin.from('receipt_items').delete().in('receipt_id', receiptIds),
+    ])
+  }
+  if (orderItemIds.length > 0) {
+    await admin.from('review_logs').delete().in('order_item_id', orderItemIds)
+  }
+  if (screenshotIds.length > 0) {
+    await admin.from('review_logs').delete().in('screenshot_id', screenshotIds)
+  }
+
+  await Promise.all([
+    admin.from('audit_logs').delete().eq('closing_id', closingId),
+    admin.from('revenue_items').delete().eq('closing_id', closingId),
+    admin.from('cash_counts').delete().eq('closing_id', closingId),
+    admin.from('expense_items').delete().eq('closing_id', closingId),
+    admin.from('handwrite_orders').delete().eq('closing_id', closingId),
+    admin.from('platform_screenshots').delete().eq('closing_id', closingId),
+    admin.from('menu_videos').delete().eq('closing_id', closingId),
+    admin.from('receipts').delete().eq('closing_id', closingId),
+    admin.from('order_items').delete().eq('closing_id', closingId),
+  ])
+}
+
+async function cleanupLinkedCKOrder(admin: ReturnType<typeof createAdminClient>, closing: ClosingForDelete) {
+  const { data: ckStores } = await admin
+    .from('stores')
+    .select('id')
+    .eq('type', '央廚')
+    .eq('active', true)
+    .contains('assigned_store_ids', [closing.store_id])
+
+  const ckStoreIds = (ckStores ?? []).map((s: any) => s.id as string)
+  if (ckStoreIds.length === 0) return
+
+  const { data: ckRecords } = await admin
+    .from('ck_daily_records')
+    .select('id')
+    .eq('business_date', closing.business_date)
+    .in('ck_store_id', ckStoreIds)
+
+  const recordIds = (ckRecords ?? []).map((r: any) => r.id as string)
+  if (recordIds.length === 0) return
+
+  await admin
+    .from('ck_store_orders')
+    .delete()
+    .eq('store_id', closing.store_id)
+    .in('ck_daily_record_id', recordIds)
+}
+
+function revalidateClosingDeletePaths() {
+  revalidatePath('/manager/dashboard')
+  revalidatePath('/manager/closing')
+  revalidatePath('/manager/history')
+  revalidatePath('/manager/ck')
+  revalidatePath('/hq/reviews')
+  revalidatePath('/hq/closings')
+  revalidatePath('/hq/accounting')
+  revalidatePath('/hq/ck')
+  revalidatePath('/hq/ck-overview')
+  revalidatePath('/hq/store-overview')
+}
+
 export async function saveCashCounts(closingId: string, counts: CashCountsPayload) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -133,7 +216,7 @@ export async function deleteClosingDraft(closingId: string) {
   // RLS 確保只能讀取自己店的資料；再驗證狀態為草稿
   const { data: closing } = await supabase
     .from('daily_closings')
-    .select('id, status')
+    .select('id, store_id, business_date, status')
     .eq('id', closingId)
     .single()
 
@@ -141,20 +224,13 @@ export async function deleteClosingDraft(closingId: string) {
   if (closing.status !== 'draft') return { error: '只能刪除草稿狀態的帳目' }
 
   const admin = createAdminClient()
-  await Promise.all([
-    admin.from('audit_logs').delete().eq('closing_id', closingId),
-    admin.from('revenue_items').delete().eq('closing_id', closingId),
-    admin.from('cash_counts').delete().eq('closing_id', closingId),
-    admin.from('order_items').delete().eq('closing_id', closingId),
-    admin.from('expense_items').delete().eq('closing_id', closingId),
-    admin.from('handwrite_orders').delete().eq('closing_id', closingId),
-  ])
+  await cleanupClosingRelations(admin, closingId)
+  await cleanupLinkedCKOrder(admin, closing as ClosingForDelete)
 
   const { error } = await admin.from('daily_closings').delete().eq('id', closingId)
   if (error) return { error: error.message }
 
-  revalidatePath('/manager/history')
-  revalidatePath('/manager/dashboard')
+  revalidateClosingDeletePaths()
   return { success: true }
 }
 
@@ -168,21 +244,21 @@ export async function deleteClosing(closingId: string) {
   if (!profile || (!profile.is_hq && profile.role !== '老闆')) return { error: '權限不足' }
 
   const admin = createAdminClient()
-  await Promise.all([
-    admin.from('audit_logs').delete().eq('closing_id', closingId),
-    admin.from('revenue_items').delete().eq('closing_id', closingId),
-    admin.from('cash_counts').delete().eq('closing_id', closingId),
-    admin.from('order_items').delete().eq('closing_id', closingId),
-    admin.from('expense_items').delete().eq('closing_id', closingId),
-    admin.from('handwrite_orders').delete().eq('closing_id', closingId),
-  ])
+  const { data: closing } = await admin
+    .from('daily_closings')
+    .select('id, store_id, business_date')
+    .eq('id', closingId)
+    .maybeSingle()
+  if (!closing) return { error: '找不到此帳目' }
+
+  await cleanupClosingRelations(admin, closingId)
+  await cleanupLinkedCKOrder(admin, closing as ClosingForDelete)
 
   const { error } = await admin
     .from('daily_closings').delete().eq('id', closingId)
 
   if (error) return { error: error.message }
-  revalidatePath('/hq/reviews')
-  revalidatePath('/manager/history')
+  revalidateClosingDeletePaths()
   return { success: true }
 }
 

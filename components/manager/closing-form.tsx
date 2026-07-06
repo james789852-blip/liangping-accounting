@@ -819,6 +819,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const submitDoneSsKey = `submit_done_${store.id}_${today}`
   const saveBkKey = `save_bk_${store.id}_${today}`
   const [currentStep, setCurrentStep] = useState(0)
+  const [hqDeletedReset, setHqDeletedReset] = useState(false)
   // useLayoutEffect runs synchronously before browser paint → user never sees step-0 flash
   // On SSR it's silently skipped (no window), so no hydration mismatch
   useLayoutEffect(() => {
@@ -846,19 +847,25 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     try { submitFlag = localStorage.getItem(`submit_done_${store.id}_${today}`) === '1' } catch {}
     const pettyDone = dbPettyDone || lsPettyDone || donePressed
     const wasFinishedBefore = submitFlag || donePressed
+    const stale = [
+      stepLsKey, submitDoneSsKey,
+      `petty_counts_${store.id}_${today}`,
+      `petty_done_${store.id}_${today}`,
+      cashLsKey, adjLsKey, reserveLsKey,
+      ckPhotoLsKey, channelPhotoLsKey, envelopePhotoLsKey,
+      extraPhotosLsKey, voidInvoiceLsKey, notePhotoLsKey,
+      receiptFormsDraftKey, saveBkKey,
+    ]
+    let hasLocalDraftTrace = false
+    try { hasLocalDraftTrace = stale.some(k => localStorage.getItem(k) != null) } catch {}
 
-    // 偵測「HQ 刪除帳目」情境：本地有完成 flag，但 DB 卻沒有 closing 記錄
+    // 偵測「HQ 刪除帳目」情境：本地有該日暫存/完成 flag，但 DB 卻沒有 closing 記錄
     // → 表示總公司把帳目刪了，店長需要重新做帳，清掉所有 localStorage 殘留並重置步驟
-    if (!existingClosing && wasFinishedBefore) {
-      const stale = [
-        stepLsKey, submitDoneSsKey,
-        `petty_counts_${store.id}_${today}`,
-        `petty_done_${store.id}_${today}`,
-        cashLsKey, adjLsKey, reserveLsKey,
-        ckPhotoLsKey, channelPhotoLsKey, envelopePhotoLsKey,
-        voidInvoiceLsKey, notePhotoLsKey, receiptFormsDraftKey, saveBkKey,
-      ]
+    if (!existingClosing && (wasFinishedBefore || hasLocalDraftTrace)) {
       for (const k of stale) try { localStorage.removeItem(k) } catch {}
+      setCurrentStep(0)
+      setHqDeletedReset(true)
+      toast.warning('總公司已刪除此日帳目，請重新完成今日帳目')
       setStepMounted(true)
       return
     }
@@ -1924,6 +1931,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       </div>
 
       <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-32" style={{ visibility: stepMounted ? 'visible' : 'hidden' }}>
+
+        {/* HQ 刪除後重做提示 */}
+        {hqDeletedReset && (
+          <div className="rounded-2xl px-4 py-3.5 flex items-start gap-2.5"
+            style={{ background: '#FEF3C7', border: '1px solid #FDE68A' }}>
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: '#B45309' }} />
+            <div>
+              <p className="text-sm font-semibold" style={{ color: '#92400E' }}>總公司已刪除此日帳目，請重新完成</p>
+              <p className="text-xs mt-0.5" style={{ color: '#B45309' }}>系統已清除本機暫存，請從第一步重新輸入並送出。</p>
+            </div>
+          </div>
+        )}
 
         {/* 退回提示 */}
         {isDisputed && (
