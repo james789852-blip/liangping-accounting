@@ -41,6 +41,12 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     return <div className="p-6 text-slate-500">找不到此帳目或無權限</div>
   }
 
+  const { data: cashCounts } = await admin1
+    .from('cash_counts')
+    .select('*')
+    .eq('closing_id', closing.id)
+  ;(closing as any).cash_counts = cashCounts ?? closing.cash_counts ?? []
+
   // 已送出/已審核的帳目：一律導回 /manager/closing（含零用金步驟）
   // 過往日期加 ?date 參數，讓 closing form 正確載入該日帳目
   if (!['draft', 'disputed'].includes(closing.status)) {

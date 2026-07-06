@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import ClosingForm from '@/components/manager/closing-form'
 import { Store, CKPrice } from '@/lib/types'
@@ -84,6 +85,15 @@ export default async function ClosingPage({
     // 也撈 mapping-based items（跟 xlsx 匯出同源，確保下拉品項齊全）
     getStoreItemsFromMappings(storeId),
   ] as const)
+
+  if (existingClosing) {
+    const admin = createAdminClient()
+    const { data: cashCounts } = await admin
+      .from('cash_counts')
+      .select('*')
+      .eq('closing_id', existingClosing.id)
+    ;(existingClosing as any).cash_counts = cashCounts ?? existingClosing.cash_counts ?? []
+  }
 
   // 央廚店家使用專屬流程
   if ((store as any)?.type === '央廚') redirect('/manager/ck')

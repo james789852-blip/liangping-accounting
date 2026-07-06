@@ -868,6 +868,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
     if (existingClosing?.status === 'disputed') {
       localStorage.removeItem(stepLsKey)
+      localStorage.removeItem(submitDoneSsKey)
     } else {
       const saved = parseInt(localStorage.getItem(stepLsKey) ?? '0') || 0
       if (saved > 0) {
@@ -884,6 +885,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     // Treat already-submitted/verified closings as submitDone regardless of localStorage,
     // so navigation (tabs, bottom bar, petty step) is always accessible across sessions/devices
     if (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified') return true
+    if (existingClosing?.status === 'draft' || existingClosing?.status === 'disputed') return false
     try { return localStorage.getItem(`submit_done_${store.id}_${today}`) === '1' } catch { return false }
   })
   // On mount: if a previous save was interrupted, offer to restore backed-up form data
@@ -1044,7 +1046,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
           data: dataRef.current, expenses, handwriteOrders, adjustments, reserves,
-          ckQuantities: ckQuantitiesRef.current, ts: Date.now(),
+          largeCashExpenses, ckQuantities: ckQuantitiesRef.current, ts: Date.now(),
         }))
       } catch {}
     }
@@ -1064,7 +1066,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       window.removeEventListener('beforeunload', onBeforeUnload)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expenses, handwriteOrders, adjustments, reserves, isLocked, submitDone])
+  }, [expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, isLocked, submitDone])
 
   useEffect(() => {
     const fromQty = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * effectiveCKPrice(p), 0)
