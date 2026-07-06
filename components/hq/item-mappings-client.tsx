@@ -987,7 +987,7 @@ function SortableItemRow({
         </button>
       )}
       <span className="flex-1 text-sm font-semibold flex flex-wrap items-center gap-1.5" style={{ color: '#18181b' }}>
-        <InlineItemNameEditor mappingId={m.id} currentName={displayName(m)} fullName={m.item_name} />
+        <InlineItemNameEditor mappingId={m.id} currentName={displayName(m)} fullName={m.item_name} excelColumn={m.excel_column} />
         {false && (
           <button onClick={() => setShowStores(v => !v)}
             className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-1"
@@ -1048,7 +1048,7 @@ function SortableItemRow({
 }
 
 /** 點名稱直接編輯 — Enter 儲存、Esc 取消 */
-function InlineItemNameEditor({ mappingId, currentName, fullName }: { mappingId: string; currentName: string; fullName: string }) {
+function InlineItemNameEditor({ mappingId, currentName, fullName, excelColumn }: { mappingId: string; currentName: string; fullName: string; excelColumn: string }) {
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(fullName)
   const [saving, setSaving] = useState(false)
@@ -1064,10 +1064,17 @@ function InlineItemNameEditor({ mappingId, currentName, fullName }: { mappingId:
       `按「確定」：同步覆蓋既有收據/叫貨明細，讓舊帳目也對到新名稱。\n` +
       `按「取消」：只改品項管理名稱，舊帳目保留舊名稱。`
     )
+    const syncExcelColumn = excelColumn !== fullName
+      ? confirm(
+          `Excel 對應欄位目前是「${excelColumn}」，也要一起改成「${value.trim()}」嗎？\n\n` +
+          `按「確定」：品項名稱與 Excel 欄位一起改。\n` +
+          `按「取消」：只改品項名稱，Excel 欄位維持「${excelColumn}」。`
+        )
+      : true
     setSaving(true)
     try {
       const { renameItem } = await import('@/app/actions/item-mappings')
-      const r = await renameItem(mappingId, value.trim(), syncHistorical)
+      const r = await renameItem(mappingId, value.trim(), syncHistorical, syncExcelColumn)
       if (r && 'error' in r) { toast.error(r.error); return }
       toast.success(syncHistorical ? '已改名，並同步既有帳目' : '已改名')
       setEditing(false)

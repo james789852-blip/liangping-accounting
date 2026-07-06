@@ -301,7 +301,7 @@ export async function batchDeleteItemMappings(ids: string[]) {
 }
 
 /** 改品項名稱：同步更新 mapping.item_name + 選擇性同步 receipt_items 舊資料 */
-export async function renameItem(mappingId: string, newName: string, syncReceipts = false) {
+export async function renameItem(mappingId: string, newName: string, syncReceipts = false, syncExcelColumn = false) {
   const admin = createAdminClient()
   const { data: mapping } = await admin.from('item_column_mappings')
     .select('id, item_name, store_id, excel_column, vendor_group').eq('id', mappingId).maybeSingle()
@@ -320,8 +320,8 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
   // 更新 mapping
   await admin.from('item_column_mappings').update({
     item_name: newName.trim(),
-    // 若 excel_column 跟舊名字一樣，同步更新（新名字）
-    excel_column: mapping.excel_column === oldName ? newName.trim() : mapping.excel_column,
+    // 若 excel_column 跟舊名字一樣，或使用者明確選擇同步，就一起更新。
+    excel_column: (mapping.excel_column === oldName || syncExcelColumn) ? newName.trim() : mapping.excel_column,
     updated_at: new Date().toISOString(),
   }).eq('id', mappingId)
 
