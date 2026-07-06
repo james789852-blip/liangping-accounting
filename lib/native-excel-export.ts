@@ -2,7 +2,7 @@
  * 原生 Excel 匯出
  *
  * 兩種輸出：
- *   buildNativeWorkbook  → 單月，2 分頁：[月度總覽] [N月食耗成本]
+ *   buildNativeWorkbook  → 單月，1 分頁：[月度總覽]
  *   buildAnnualWorkbook  → 年度，13 分頁：[年度總覽] [1月] [2月] … [12月]
  *
  * 版型自動依店家模式：
@@ -20,41 +20,41 @@ import ExcelJS from 'exceljs'
 import { getMonthLastDay } from '@/lib/business-date'
 
 // ────────────────────────────────────────────────
-// 配色（沿用原本 Excel 模板）
+// 配色（乾淨報表風格）
 // ────────────────────────────────────────────────
 const C = {
-  yellow:        'FFFFFF00',   // 強黃：月份合計 / 配送(月底結)
-  yellowSoft:    'FFFFFFC0',
-  cream:         'FFFFFFCC',   // 米黃：資料列
-  yellowSofter:  'FFFFFCDD',
-  orange:        'FFFFC000',   // 橘：計算欄表頭
-  orangeFaint:   'FFFFF2CC',   // 淡橘：計算欄資料
-  greyHeader:    'FFBFBFBF',   // 表頭灰（Row 3）
-  grey:          'FFD9D9D9',
-  greyDark:      'FFA6A6A6',
-  greyLine:      'FFBFBFBF',
-  greySoft:      'FFF2F2F2',
-  blueLight:     'FFD9E1F2',
-  pink:          'FFFFD6D6',
-  pinkSoft:      'FFFCE4E4',
-  platformRed:   'FFDA9694',   // 平台 1
-  platformPink:  'FFF030ED',   // 平台 2
-  platformGreen: 'FF00B050',   // 平台 3、4（店家自有）
-  vendorOrange:  'FFFBD4B4',
-  docInvoice:    'FF00B0F0',
-  docReceipt:    'FFE36C09',
-  ink:           'FF000000',
-  body:          'FF404040',
-  muted:         'FF808080',
-  faint:         'FFB0B0B0',
-  red:           'FFFF0000',
-  redText:       'FFC00000',
+  yellow:        'FFEFF6FF',   // 重點區塊：柔和藍
+  yellowSoft:    'FFF8FAFC',
+  cream:         'FFFFFBEB',
+  yellowSofter:  'FFF9FAFB',
+  orange:        'FFFFF7ED',   // 計算欄：柔和橘
+  orangeFaint:   'FFFFFBEB',
+  greyHeader:    'FFE5E7EB',
+  grey:          'FFF3F4F6',
+  greyDark:      'FF9CA3AF',
+  greyLine:      'FFE5E7EB',
+  greySoft:      'FFF8FAFC',
+  blueLight:     'FFE0F2FE',
+  pink:          'FFFFE4E6',
+  pinkSoft:      'FFFFF1F2',
+  platformRed:   'FFFFE4E6',
+  platformPink:  'FFFCE7F3',
+  platformGreen: 'FFDCFCE7',
+  vendorOrange:  'FFFFEDD5',
+  docInvoice:    'FFE0F2FE',
+  docReceipt:    'FFFFEDD5',
+  ink:           'FF111827',
+  body:          'FF374151',
+  muted:         'FF6B7280',
+  faint:         'FF9CA3AF',
+  red:           'FFDC2626',
+  redText:       'FFB91C1C',
   white:         'FFFFFFFF',
-  black:         'FF000000',
-  border:        'FF7F7F7F',
+  black:         'FFD1D5DB',
+  border:        'FFE5E7EB',
 }
-// 兩種字體：資料 PMingLiU 12pt、計算欄表頭 MS JhengHei 18pt
-const FONT_DATA = 'PMingLiU'
+// 匯出統一使用 Windows / macOS 都容易閱讀的中文字體。
+const FONT_DATA = 'Microsoft JhengHei'
 const FONT_CALC = 'Microsoft JhengHei'
 const FONT = FONT_CALC   // 月度總覽 / 年度總覽沿用
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
@@ -181,7 +181,7 @@ export function aggregateMonthStats(items: ItemDef[], dataByDate: Record<string,
 }
 
 // ────────────────────────────────────────────────
-// 總覽分頁：單月（傳統 Excel 表格風格 — 對齊原本模板）
+// 總覽分頁：單月（清爽管理報表）
 // ────────────────────────────────────────────────
 function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
   year: number
@@ -190,8 +190,8 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
   stats: MonthStats
 }) {
   const { year, monthNum, store, stats } = opts
-  const ws = wb.addWorksheet('月度總覽', { properties: { defaultRowHeight: 22 } })
-  ws.views = [{ showGridLines: true, state: 'normal' }]
+  const ws = wb.addWorksheet('月度總覽', { properties: { defaultRowHeight: 21 } })
+  ws.views = [{ showGridLines: false, state: 'frozen', ySplit: 3 }]
 
   for (let i = 1; i <= 8; i++) ws.getColumn(i).width = 27
 
@@ -199,16 +199,16 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
   ws.mergeCells('A1:H1')
   const title = ws.getCell('A1')
   title.value = `${store.name}　${year} 年 ${monthNum} 月　月度成本報告`
-  title.font = { name: FONT, bold: true, size: 16, color: { argb: C.ink } }
+  title.font = { name: FONT, bold: true, size: 15, color: { argb: C.ink } }
   title.alignment = { horizontal: 'center', vertical: 'middle' }
   title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.yellow } }
   title.border = {
-    top:    { style: 'medium', color: { argb: C.black } },
-    bottom: { style: 'medium', color: { argb: C.black } },
-    left:   { style: 'medium', color: { argb: C.black } },
-    right:  { style: 'medium', color: { argb: C.black } },
+    top:    { style: 'thin', color: { argb: C.border } },
+    bottom: { style: 'thin', color: { argb: C.border } },
+    left:   { style: 'thin', color: { argb: C.border } },
+    right:  { style: 'thin', color: { argb: C.border } },
   }
-  ws.getRow(1).height = 32
+  ws.getRow(1).height = 30
 
   ws.getRow(2).height = 8  // 留白
 
@@ -230,49 +230,49 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
   for (let i = 0; i < kpiHeaders.length; i++) {
     const c = ws.getCell(3, i + 1)
     c.value = kpiHeaders[i].name
-    c.font = { name: FONT, bold: true, size: 14, color: { argb: C.ink } }
+    c.font = { name: FONT, bold: true, size: 11, color: { argb: C.body } }
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: kpiHeaders[i].bg } }
     c.alignment = { horizontal: 'center', vertical: 'middle' }
     c.border = {
-      top:    { style: 'medium', color: { argb: C.black } },
-      bottom: { style: 'thin',   color: { argb: C.black } },
-      left:   { style: 'thin',   color: { argb: C.black } },
-      right:  { style: 'thin',   color: { argb: C.black } },
+      top:    { style: 'thin', color: { argb: C.border } },
+      bottom: { style: 'thin', color: { argb: C.border } },
+      left:   { style: 'thin', color: { argb: C.border } },
+      right:  { style: 'thin', color: { argb: C.border } },
     }
   }
-  ws.getRow(3).height = 28
+  ws.getRow(3).height = 24
 
   // 數字列
   const kpiValues = [stats.revenue, stats.ck, stats.food, stats.pack, stats.misc, totalCost, remit]
   for (let i = 0; i < kpiValues.length; i++) {
     const c = ws.getCell(4, i + 1)
     c.value = kpiValues[i]
-    c.font = { name: FONT, bold: true, size: 17, color: { argb: i === 0 || i === 6 ? C.red : C.ink } }
+    c.font = { name: FONT, bold: true, size: 13, color: { argb: i === 0 || i === 6 ? C.redText : C.ink } }
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i === 0 || i === 6 ? C.yellowSoft : C.yellowSofter } }
     c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
     c.numFmt = '$#,##0'
     c.border = {
-      top:    { style: 'thin',   color: { argb: C.black } },
-      bottom: { style: 'thin',   color: { argb: C.black } },
-      left:   { style: 'thin',   color: { argb: C.black } },
-      right:  { style: 'thin',   color: { argb: C.black } },
+      top:    { style: 'thin', color: { argb: C.border } },
+      bottom: { style: 'thin', color: { argb: C.border } },
+      left:   { style: 'thin', color: { argb: C.border } },
+      right:  { style: 'thin', color: { argb: C.border } },
     }
   }
-  ws.getRow(4).height = 36
+  ws.getRow(4).height = 30
 
   // 占比列
   const ratioValues = ['—', safePct(stats.ck, stats.revenue), safePct(stats.food, stats.revenue), safePct(stats.pack, stats.revenue), safePct(stats.misc, stats.revenue), safePct(totalCost, stats.revenue), safePct(remit, stats.revenue)]
   for (let i = 0; i < ratioValues.length; i++) {
     const c = ws.getCell(5, i + 1)
     c.value = i === 0 ? '占營業額' : ratioValues[i]
-    c.font = { name: FONT, bold: true, size: 17, color: { argb: C.muted } }
+    c.font = { name: FONT, bold: true, size: 11, color: { argb: C.muted } }
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.greySoft } }
     c.alignment = { horizontal: i === 0 ? 'center' : 'right', vertical: 'middle', indent: i === 0 ? 0 : 1 }
     c.border = {
-      top:    { style: 'thin',   color: { argb: C.black } },
-      bottom: { style: 'medium', color: { argb: C.black } },
-      left:   { style: 'thin',   color: { argb: C.black } },
-      right:  { style: 'thin',   color: { argb: C.black } },
+      top:    { style: 'thin', color: { argb: C.border } },
+      bottom: { style: 'thin', color: { argb: C.border } },
+      left:   { style: 'thin', color: { argb: C.border } },
+      right:  { style: 'thin', color: { argb: C.border } },
     }
   }
   ws.getRow(5).height = 22
@@ -283,14 +283,14 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
   ws.mergeCells('A7:H7')
   const sec = ws.getCell('A7')
   sec.value = '各廠商當月小計'
-  sec.font = { name: FONT, bold: true, size: 17, color: { argb: C.ink } }
+  sec.font = { name: FONT, bold: true, size: 12, color: { argb: C.ink } }
   sec.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 }
   sec.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.grey } }
   sec.border = {
-    top:    { style: 'medium', color: { argb: C.black } },
-    bottom: { style: 'medium', color: { argb: C.black } },
-    left:   { style: 'medium', color: { argb: C.black } },
-    right:  { style: 'medium', color: { argb: C.black } },
+    top:    { style: 'thin', color: { argb: C.border } },
+    bottom: { style: 'thin', color: { argb: C.border } },
+    left:   { style: 'thin', color: { argb: C.border } },
+    right:  { style: 'thin', color: { argb: C.border } },
   }
   ws.getRow(7).height = 26
 
@@ -299,14 +299,14 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
   for (let i = 0; i < tHeaders.length; i++) {
     const c = ws.getCell(8, i + 1)
     c.value = tHeaders[i]
-    c.font = { name: FONT, bold: true, size: 17, color: { argb: C.ink } }
+    c.font = { name: FONT, bold: true, size: 11, color: { argb: C.body } }
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.grey } }
     c.alignment = { horizontal: 'center', vertical: 'middle' }
     c.border = {
-      top:    { style: 'thin', color: { argb: C.black } },
-      bottom: { style: 'thin', color: { argb: C.black } },
-      left:   { style: 'thin', color: { argb: C.black } },
-      right:  { style: 'thin', color: { argb: C.black } },
+        top:    { style: 'thin', color: { argb: C.border } },
+        bottom: { style: 'thin', color: { argb: C.border } },
+        left:   { style: 'thin', color: { argb: C.border } },
+        right:  { style: 'thin', color: { argb: C.border } },
     }
   }
   ws.getRow(8).height = 24
@@ -338,22 +338,22 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
         right:  { style: 'thin', color: { argb: C.greyLine } },
       }
       if (j <= 1) {
-        c.font = { name: FONT, bold: j === 0, size: 17, color: { argb: isTax ? C.red : C.ink } }
+        c.font = { name: FONT, bold: j === 0, size: 11, color: { argb: isTax ? C.redText : C.ink } }
         c.alignment = { horizontal: 'center', vertical: 'middle' }
       } else if (j === 5) {
-        c.font = { name: FONT, bold: true, size: 14, color: { argb: isTax ? C.red : C.ink } }
+        c.font = { name: FONT, bold: true, size: 11, color: { argb: isTax ? C.redText : C.ink } }
         c.numFmt = '#,##0'
         c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
         c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.yellowSoft } }
       } else if (j === 6) {
-        c.font = { name: FONT, size: 17, color: { argb: C.muted } }
+        c.font = { name: FONT, size: 11, color: { argb: C.muted } }
         c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
       } else if (j === 7) {
-        c.font = { name: FONT, size: 17, color: { argb: C.muted } }
+        c.font = { name: FONT, size: 11, color: { argb: C.muted } }
         c.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 }
       } else {
         const v = values[j] as number
-        c.font = { name: FONT, size: 17, color: { argb: v === 0 ? C.faint : (isTax ? C.red : C.ink) } }
+        c.font = { name: FONT, size: 11, color: { argb: v === 0 ? C.faint : (isTax ? C.redText : C.ink) } }
         c.numFmt = '#,##0'
         c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
       }
@@ -369,12 +369,12 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
     const c = ws.getCell(totalR, j + 1)
     c.value = totalRow[j]
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.yellow } }
-    c.font = { name: FONT, bold: true, size: 17, color: { argb: j === 5 ? C.red : C.ink } }
+    c.font = { name: FONT, bold: true, size: 12, color: { argb: j === 5 ? C.redText : C.ink } }
     c.border = {
-      top:    { style: 'medium', color: { argb: C.black } },
-      bottom: { style: 'medium', color: { argb: C.black } },
-      left:   { style: 'thin',   color: { argb: C.black } },
-      right:  { style: 'thin',   color: { argb: C.black } },
+      top:    { style: 'thin', color: { argb: C.border } },
+      bottom: { style: 'thin', color: { argb: C.border } },
+      left:   { style: 'thin', color: { argb: C.border } },
+      right:  { style: 'thin', color: { argb: C.border } },
     }
     if (j <= 1) {
       c.alignment = { horizontal: 'center', vertical: 'middle' }
@@ -397,7 +397,7 @@ function addMonthlyOverviewSheet(wb: ExcelJS.Workbook, opts: {
 }
 
 // ────────────────────────────────────────────────
-// 總覽分頁：年度（傳統 Excel 表格風格，仿 2026鑫營明細）
+// 總覽分頁：年度（清爽管理報表）
 // ────────────────────────────────────────────────
 function addAnnualOverviewSheet(wb: ExcelJS.Workbook, opts: {
   year: number
@@ -405,23 +405,23 @@ function addAnnualOverviewSheet(wb: ExcelJS.Workbook, opts: {
   monthlyStats: MonthStats[]
 }) {
   const { year, store, monthlyStats } = opts
-  const ws = wb.addWorksheet('年度總覽', { properties: { defaultRowHeight: 22 } })
-  ws.views = [{ showGridLines: true, state: 'normal' }]
+  const ws = wb.addWorksheet('年度總覽', { properties: { defaultRowHeight: 21 } })
+  ws.views = [{ showGridLines: false, state: 'frozen', ySplit: 3 }]
 
   // 標題列
   ws.mergeCells('A1:I1')
   const title = ws.getCell('A1')
   title.value = `${store.name}　${year} 年度成本報告`
-  title.font = { name: FONT, bold: true, size: 16, color: { argb: C.ink } }
+  title.font = { name: FONT, bold: true, size: 15, color: { argb: C.ink } }
   title.alignment = { horizontal: 'center', vertical: 'middle' }
   title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.yellow } }
   title.border = {
-    top:    { style: 'medium', color: { argb: C.black } },
-    bottom: { style: 'medium', color: { argb: C.black } },
-    left:   { style: 'medium', color: { argb: C.black } },
-    right:  { style: 'medium', color: { argb: C.black } },
+    top:    { style: 'thin', color: { argb: C.border } },
+    bottom: { style: 'thin', color: { argb: C.border } },
+    left:   { style: 'thin', color: { argb: C.border } },
+    right:  { style: 'thin', color: { argb: C.border } },
   }
-  ws.getRow(1).height = 32
+  ws.getRow(1).height = 30
 
   ws.getRow(2).height = 8
 
@@ -431,17 +431,17 @@ function addAnnualOverviewSheet(wb: ExcelJS.Workbook, opts: {
   for (let i = 0; i < hdrs.length; i++) {
     const c = ws.getCell(3, i + 1)
     c.value = hdrs[i]
-    c.font = { name: FONT, bold: true, size: 14, color: { argb: C.ink } }
+    c.font = { name: FONT, bold: true, size: 11, color: { argb: C.body } }
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: hdrBgs[i] } }
     c.alignment = { horizontal: 'center', vertical: 'middle' }
     c.border = {
-      top:    { style: 'medium', color: { argb: C.black } },
-      bottom: { style: 'thin',   color: { argb: C.black } },
-      left:   { style: 'thin',   color: { argb: C.black } },
-      right:  { style: 'thin',   color: { argb: C.black } },
+      top:    { style: 'thin', color: { argb: C.border } },
+      bottom: { style: 'thin', color: { argb: C.border } },
+      left:   { style: 'thin', color: { argb: C.border } },
+      right:  { style: 'thin', color: { argb: C.border } },
     }
   }
-  ws.getRow(3).height = 28
+  ws.getRow(3).height = 24
 
   // 12 個月資料列
   for (let m = 0; m < 12; m++) {
@@ -464,24 +464,24 @@ function addAnnualOverviewSheet(wb: ExcelJS.Workbook, opts: {
         right:  { style: 'thin', color: { argb: C.greyLine } },
       }
       if (j === 0) {
-        c.font = { name: FONT, bold: true, size: 14, color: { argb: C.ink } }
+        c.font = { name: FONT, bold: true, size: 11, color: { argb: C.ink } }
         c.alignment = { horizontal: 'center', vertical: 'middle' }
       } else if (j === 7) {
-        c.font = { name: FONT, bold: true, size: 14, color: { argb: C.red } }
+        c.font = { name: FONT, bold: true, size: 11, color: { argb: C.redText } }
         c.numFmt = '#,##0'
         c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
         c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.yellowSoft } }
       } else if (j === 8) {
-        c.font = { name: FONT, bold: true, size: 17, color: { argb: C.muted } }
+        c.font = { name: FONT, bold: true, size: 11, color: { argb: C.muted } }
         c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
       } else {
         const v = values[j] as number
-        c.font = { name: FONT, size: 17, color: { argb: v === 0 ? C.faint : C.ink } }
+        c.font = { name: FONT, size: 11, color: { argb: v === 0 ? C.faint : C.ink } }
         c.numFmt = '#,##0'
         c.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
       }
     }
-    ws.getRow(r).height = 24
+    ws.getRow(r).height = 22
   }
 
   // 全年合計
@@ -500,13 +500,13 @@ function addAnnualOverviewSheet(wb: ExcelJS.Workbook, opts: {
   for (let j = 0; j < totalRow.length; j++) {
     const c = ws.getCell(totalR, j + 1)
     c.value = totalRow[j]
-    c.font = { name: FONT, bold: true, size: 17, color: { argb: j === 7 ? C.red : C.ink } }
+    c.font = { name: FONT, bold: true, size: 12, color: { argb: j === 7 ? C.redText : C.ink } }
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.yellow } }
     c.border = {
-      top:    { style: 'medium', color: { argb: C.black } },
-      bottom: { style: 'medium', color: { argb: C.black } },
-      left:   { style: 'thin',   color: { argb: C.black } },
-      right:  { style: 'thin',   color: { argb: C.black } },
+      top:    { style: 'thin', color: { argb: C.border } },
+      bottom: { style: 'thin', color: { argb: C.border } },
+      left:   { style: 'thin', color: { argb: C.border } },
+      right:  { style: 'thin', color: { argb: C.border } },
     }
     if (j === 0 || j === 8) c.alignment = { horizontal: j === 0 ? 'center' : 'right', vertical: 'middle', indent: j === 0 ? 0 : 1 }
     else {
