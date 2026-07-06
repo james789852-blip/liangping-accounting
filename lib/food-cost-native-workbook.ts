@@ -48,7 +48,8 @@ interface ColumnDef {
 function displayHeader(name: string, vg?: string): string {
   if (vg && name.startsWith(vg) && name !== vg) {
     const stripped = name.slice(vg.length)
-    if (stripped.length >= 2) return stripped
+    // 不裁切「-稅金」這類以連字號開頭的名稱，避免顯示殘缺
+    if (stripped.length >= 2 && !stripped.startsWith('-')) return stripped
   }
   return name
 }
