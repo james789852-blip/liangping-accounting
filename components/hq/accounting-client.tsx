@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays } from 'lucide-react'
-import { fetchDailyAccountingDetail } from '@/app/actions/store-overview'
+import { fetchDailyAccountingDetail, fetchDailyAccountingDetailsBatch } from '@/app/actions/store-overview'
 import { fetchCKDailyStats, fetchCKDailyDetail } from '@/app/actions/ck-overview'
 import { setManagerStore } from '@/app/actions/store-select'
 import type { DailyStats } from '@/lib/store-aggregator'
@@ -30,6 +30,11 @@ interface ClosingRow {
   should_include_delivery?: number
 }
 interface CKRow { ck_store_id: string; status: string; hq_paid: boolean }
+type StoreDetailState = {
+  stats: DailyStats | null
+  detail: { closing: any; receipts: any[] } | null
+}
+type StoreDetailCache = Record<string, StoreDetailState>
 
 interface Props {
   stores: Store[]
@@ -85,6 +90,9 @@ export default function AccountingClient({
   const [tab, setTab] = useState<'store' | 'ck'>(initialTab)
   const [selectedStoreId, setSelectedStoreId] = useState<string>(initialStoreId)
   const [selectedCkStoreId, setSelectedCkStoreId] = useState<string>(initialCkStoreId)
+  const [storeDetailCache, setStoreDetailCache] = useState<StoreDetailCache>({})
+  const preloadKeyRef = useRef('')
+  const preloadRunRef = useRef(0)
 
   useEffect(() => { setSelectedStoreId(initialStoreId) }, [initialStoreId])
   useEffect(() => { setSelectedCkStoreId(initialCkStoreId) }, [initialCkStoreId])
@@ -98,10 +106,43 @@ export default function AccountingClient({
     [ckRecords],
   )
   const holidaySet = useMemo(() => new Set(holidayStoreIds), [holidayStoreIds])
+  const preloadStoreIds = useMemo(
+    () => closings.filter(c => c.store_id && c.status !== 'none').map(c => c.store_id),
+    [closings],
+  )
 
   // 待審核總數（給 badge 用）
   const pendingCount = closings.filter(c => c.status === 'submitted' || c.status === 'disputed').length
   const ckPendingCount = ckRecords.filter(r => r.status === 'submitted' && !r.hq_paid).length
+
+  useEffect(() => {
+    setStoreDetailCache({})
+    preloadKeyRef.current = ''
+    preloadRunRef.current += 1
+  }, [date])
+
+  useEffect(() => {
+    const ids = [...new Set(preloadStoreIds)]
+    if (ids.length === 0) return
+
+    const key = `${date}:${ids.join(',')}`
+    if (preloadKeyRef.current === key) return
+    preloadKeyRef.current = key
+
+    const runId = ++preloadRunRef.current
+    fetchDailyAccountingDetailsBatch(ids, date)
+      .then(result => {
+        if (runId !== preloadRunRef.current) return
+        if ('error' in result) return
+        if (!('success' in result)) return
+        setStoreDetailCache(prev => ({ ...prev, ...(result.details as StoreDetailCache) }))
+      })
+      .catch(() => {})
+  }, [date, preloadStoreIds])
+
+  const rememberStoreDetail = useCallback((storeId: string, detail: StoreDetailState) => {
+    setStoreDetailCache(prev => ({ ...prev, [storeId]: detail }))
+  }, [])
 
   function goDate(d: string) {
     const params = new URLSearchParams()
@@ -256,10 +297,13 @@ export default function AccountingClient({
         {/* 選中詳情 */}
         {tab === 'store' && selectedStoreId && (
           <StoreDetail
+            key={`${selectedStoreId}-${date}`}
             storeId={selectedStoreId}
             storeName={stores.find(s => s.id === selectedStoreId)?.name ?? ''}
             date={date}
             quickClosing={closingByStore[selectedStoreId] ?? null}
+            cachedDetail={storeDetailCache[selectedStoreId] ?? null}
+            onDetailLoaded={rememberStoreDetail}
           />
         )}
         {tab === 'ck' && selectedCkStoreId && (
@@ -344,22 +388,20 @@ function ExportButtons({ kind, storeId, storeName, date }: { kind: 'store' | 'ck
   )
 }
 
-/* ─────────── 店家詳情 ─────────── */
-type StoreDetailState = {
-  stats: DailyStats | null
-  detail: { closing: any; receipts: any[] } | null
-}
-
 function StoreDetail({
   storeId,
   storeName,
   date,
   quickClosing,
+  cachedDetail,
+  onDetailLoaded,
 }: {
   storeId: string
   storeName: string
   date: string
   quickClosing: ClosingRow | null
+  cachedDetail: StoreDetailState | null
+  onDetailLoaded: (storeId: string, detail: StoreDetailState) => void
 }) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -367,18 +409,17 @@ function StoreDetail({
   const [detail, setDetail] = useState<{ closing: any; receipts: any[] } | null>(null)
   const [showHolidays, setShowHolidays] = useState(false)
   const hasLoadedRef = useRef(false)
-  const cacheRef = useRef<Map<string, StoreDetailState>>(new Map())
   const requestIdRef = useRef(0)
   const [y, m] = date.split('-').map(Number)
+  const visibleStats = cachedDetail?.stats ?? stats
+  const visibleDetail = cachedDetail?.detail ?? detail
 
-  const loadDetail = useCallback(() => {
-    const key = `${storeId}:${date}`
+  const loadDetail = useCallback((force = false) => {
     const requestId = ++requestIdRef.current
-    const cached = cacheRef.current.get(key)
-    if (cached) {
-      setStats(cached.stats)
-      setDetail(cached.detail)
+    if (cachedDetail && !force) {
       setLoading(false)
+      hasLoadedRef.current = true
+      return
     } else if (hasLoadedRef.current) {
       setStats(null)
       setDetail(null)
@@ -398,9 +439,9 @@ function StoreDetail({
           stats: result.stats ?? null,
           detail: { closing: result.closing, receipts: result.receipts ?? [] },
         }
-        cacheRef.current.set(key, next)
         setStats(next.stats)
         setDetail(next.detail)
+        onDetailLoaded(storeId, next)
         hasLoadedRef.current = true
       })
       .catch(e => {
@@ -410,11 +451,19 @@ function StoreDetail({
         if (requestId !== requestIdRef.current) return
         setLoading(false)
       })
-  }, [storeId, date])
+  }, [cachedDetail, storeId, date, onDetailLoaded])
 
   useEffect(() => {
-    loadDetail()
-  }, [loadDetail])
+    if (cachedDetail) {
+      setLoading(false)
+      return
+    }
+    if (!quickClosing) {
+      loadDetail()
+      return
+    }
+    setLoading(false)
+  }, [cachedDetail, quickClosing, loadDetail])
 
   return (
     <div className="space-y-4">
@@ -434,8 +483,8 @@ function StoreDetail({
         {showHolidays && (
           <HolidaysEditor storeId={storeId} storeName={storeName} year={y} monthNum={m} onClose={() => setShowHolidays(false)} />
         )}
-        {stats ? (
-          <StoreStatsGrid data={stats} />
+        {visibleStats ? (
+          <StoreStatsGrid data={visibleStats} />
         ) : quickClosing ? (
           <QuickClosingSummary closing={quickClosing} />
         ) : loading ? (
@@ -446,27 +495,22 @@ function StoreDetail({
           </div>
         )}
       </div>
-      {detail?.closing && (
+      {visibleDetail?.closing && (
         <div>
           <h3 className="text-sm font-bold mb-2 px-1" style={{ color: '#18181b' }}>📋 帳目審核</h3>
           <ReviewCard
-            closing={{ ...detail.closing, stores: { name: storeName } } as any}
-            receipts={detail.receipts as any}
+            closing={{ ...visibleDetail.closing, stores: { name: storeName } } as any}
+            receipts={visibleDetail.receipts as any}
             canReview={true}
             canDispute={true}
             onProcessed={() => {
               router.refresh()
-              loadDetail()
+              loadDetail(true)
             }}
           />
         </div>
       )}
-      {!detail?.closing && quickClosing && ['submitted', 'disputed', 'verified'].includes(quickClosing.status) && (
-        <div className="bg-white rounded-2xl p-4 text-center text-sm" style={{ color: '#a1a1aa', border: '1px solid #f4f4f5' }}>
-          審核明細載入中…
-        </div>
-      )}
-      {!detail?.closing && stats && !quickClosing && (
+      {!visibleDetail?.closing && visibleStats && !quickClosing && (
         <div className="bg-white rounded-2xl p-4 text-center text-sm" style={{ color: '#a1a1aa', border: '1px solid #f4f4f5' }}>
           當日尚無帳目提交
         </div>

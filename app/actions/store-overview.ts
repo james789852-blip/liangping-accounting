@@ -226,12 +226,7 @@ function buildDailyAccountingStats({
   return day
 }
 
-export async function fetchDailyAccountingDetail(storeId: string, date: string) {
-  const auth = await checkHqAuth()
-  if ('error' in auth) return auth
-  if (!storeId || !date) return { error: '缺少參數' as const }
-
-  const admin = createAdminClient()
+async function loadDailyAccountingDetail(admin: ReturnType<typeof createAdminClient>, storeId: string, date: string) {
   const [storeRes, closingsRes, receiptsRes, holidayRes, itemMeta] = await Promise.all([
     admin.from('stores')
       .select('id, name, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled')
@@ -285,6 +280,38 @@ export async function fetchDailyAccountingDetail(storeId: string, date: string) 
   }
 
   return { success: true as const, stats, closing, receipts, submitterName }
+}
+
+export async function fetchDailyAccountingDetail(storeId: string, date: string) {
+  const auth = await checkHqAuth()
+  if ('error' in auth) return auth
+  if (!storeId || !date) return { error: '缺少參數' as const }
+
+  return loadDailyAccountingDetail(createAdminClient(), storeId, date)
+}
+
+export async function fetchDailyAccountingDetailsBatch(storeIds: string[], date: string) {
+  const auth = await checkHqAuth()
+  if ('error' in auth) return auth
+  if (!date) return { error: '缺少日期' as const }
+
+  const uniqueStoreIds = [...new Set(storeIds)].filter(Boolean)
+  if (uniqueStoreIds.length === 0) return { success: true as const, details: {}, errors: {} }
+
+  const admin = createAdminClient()
+  const entries = await Promise.all(uniqueStoreIds.map(async storeId => {
+    const result = await loadDailyAccountingDetail(admin, storeId, date)
+    return [storeId, result] as const
+  }))
+
+  const details: Record<string, any> = {}
+  const errors: Record<string, string> = {}
+  for (const [storeId, result] of entries) {
+    if ('error' in result && result.error) errors[storeId] = result.error
+    else details[storeId] = result
+  }
+
+  return { success: true as const, details, errors }
 }
 
 /** 撈當日 closing + receipts（給店家總覽 daily panel 內嵌審核卡用） */
