@@ -823,6 +823,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const saveBkKey = `save_bk_${store.id}_${today}`
   const [currentStep, setCurrentStep] = useState(0)
   const [hqDeletedReset, setHqDeletedReset] = useState(false)
+  const stepButtonRefs = useRef<(HTMLButtonElement | null)[]>([])
   // useLayoutEffect runs synchronously before browser paint → user never sees step-0 flash
   // On SSR it's silently skipped (no window), so no hydration mismatch
   useLayoutEffect(() => {
@@ -1766,6 +1767,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const stepId = STEPS[step]?.id
   const stepNum = step + 1
 
+  useEffect(() => {
+    if (!stepMounted) return
+    const button = stepButtonRefs.current[step]
+    if (!button) return
+    requestAnimationFrame(() => {
+      button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+    })
+  }, [step, stepMounted])
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (stepId === 'ai_verify') buildVerifyItems()
@@ -1945,6 +1955,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               {STEPS.map((s, i) => (
                 <div key={s.id} className="flex items-center">
                   <button
+                    ref={el => { stepButtonRefs.current[i] = el }}
                     onClick={() => {
                       if (i === step) return
                       goToStep(i)

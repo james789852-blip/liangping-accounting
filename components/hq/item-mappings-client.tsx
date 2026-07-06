@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect, createContext, useContext } from 'react'
+import { useState, useTransition, useEffect, useRef, createContext, useContext } from 'react'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import {
   deleteItemMapping, updateItemMapping, saveItemMapping, copyGlobalMappingsToStore, reorderItemMappings, setItemDocOverride,
@@ -86,6 +86,7 @@ export default function ItemMappingsClient({
   const [newVgName, setNewVgName] = useState('')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
+  const storeTabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
   // 用 state 保存 vendorGroups，允許 optimistic update
   const [vgsState, setVgsState] = useState(vendorGroups)
@@ -125,6 +126,14 @@ export default function ItemMappingsClient({
     resetStoreScopedUi()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initStoreId])
+
+  useEffect(() => {
+    const tab = storeTabRefs.current[activeStoreId]
+    if (!tab) return
+    requestAnimationFrame(() => {
+      tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+    })
+  }, [activeStoreId, stores.length])
 
   function selectStore(storeId: string) {
     if (storeId === activeStoreId) return
@@ -513,6 +522,7 @@ export default function ItemMappingsClient({
                 const count = storeMappingCounts[s.id] ?? mappings.filter(m => m.store_id === s.id).length
                 return (
                   <button key={s.id}
+                    ref={el => { storeTabRefs.current[s.id] = el }}
                     onClick={() => selectStore(s.id)}
                     className="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
                     style={activeStoreId === s.id
