@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays } from 'lucide-react'
-import { fetchDailyStats, fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
+import { fetchDailyAccountingDetail } from '@/app/actions/store-overview'
 import { fetchCKDailyStats, fetchCKDailyDetail } from '@/app/actions/ck-overview'
 import { setManagerStore } from '@/app/actions/store-select'
 import type { DailyStats } from '@/lib/store-aggregator'
@@ -329,23 +329,32 @@ function ExportButtons({ kind, storeId, storeName, date }: { kind: 'store' | 'ck
 function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName: string; date: string }) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [stats, setStats] = useState<DailyStats | null>(null)
   const [detail, setDetail] = useState<{ closing: any; receipts: any[] } | null>(null)
   const [showHolidays, setShowHolidays] = useState(false)
+  const hasLoadedRef = useRef(false)
   const [y, m] = date.split('-').map(Number)
 
   const loadDetail = useCallback(() => {
-    setLoading(true); setStats(null); setDetail(null)
-    Promise.all([
-      fetchDailyStats(storeId, date),
-      fetchDailyClosingWithReceipts(storeId, date),
-    ])
-      .then(([sR, dR]) => {
-        if ('stats' in sR) setStats(sR.stats ?? null)
-        if ('success' in dR) setDetail({ closing: dR.closing, receipts: dR.receipts ?? [] })
+    if (hasLoadedRef.current) setRefreshing(true)
+    else setLoading(true)
+    fetchDailyAccountingDetail(storeId, date)
+      .then(result => {
+        if ('error' in result) {
+          toast.error(result.error)
+          return
+        }
+        if (!('success' in result)) return
+        setStats(result.stats ?? null)
+        setDetail({ closing: result.closing, receipts: result.receipts ?? [] })
+        hasLoadedRef.current = true
       })
       .catch(e => toast.error('載入失敗：' + (e instanceof Error ? e.message : String(e))))
-      .finally(() => setLoading(false))
+      .finally(() => {
+        setLoading(false)
+        setRefreshing(false)
+      })
   }, [storeId, date])
 
   useEffect(() => {
@@ -356,7 +365,13 @@ function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName:
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
+      <div className="bg-white rounded-2xl p-4 relative" style={{ border: '1px solid #f4f4f5', opacity: refreshing ? 0.88 : 1 }}>
+        {refreshing && (
+          <div className="absolute top-3 right-3 flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full"
+            style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+            <Loader2 className="h-3 w-3 animate-spin" /> 更新中
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2">
             <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{storeName} · {date}</h2>

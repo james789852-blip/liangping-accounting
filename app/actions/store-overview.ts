@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRangeStats, getMonthlyStats, type DailyStats, type MonthlyStats } from '@/lib/store-aggregator'
+import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 async function checkHqAuth() {
   const supabase = await createClient()
@@ -28,6 +29,221 @@ export async function fetchDailyStats(storeId: string, date: string) {
   const prev = days.find(d => d.date === yStr) ?? null
   const cur = days.find(d => d.date === date) ?? null
   return { success: true as const, stats: cur as DailyStats | null, prev: prev as DailyStats | null }
+}
+
+const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
+
+function emptyAccountingDay(date: string): DailyStats {
+  const dt = new Date(date + 'T12:00:00+08:00')
+  return {
+    date,
+    weekday: `星期${WEEKDAYS[dt.getDay()]}`,
+    pos: 0, twpay: 0, panda: 0, online: 0, online_cash: 0,
+    uber: {}, handwrite: {}, handwriteTotal: 0,
+    actual: 0, ck: 0, onsite: 0, variance: 0, after_deduct: 0,
+    revenue: 0, totalRevenue: 0,
+    food: 0, pack: 0, misc: 0, totalCost: 0,
+    invoiceTotal: 0, receiptTotal: 0, estimateTotal: 0, taxRefund: 0,
+    items: {}, notes: {}, vendorGroupBreakdown: {}, receipts: [],
+    closingStatus: 'none', isHoliday: false, holidayNote: null,
+  }
+}
+
+function buildDailyAccountingStats({
+  date,
+  store,
+  closing,
+  receipts,
+  itemMeta,
+  holidayNote,
+}: {
+  date: string
+  store: any
+  closing: any | null
+  receipts: any[]
+  itemMeta: Map<string, any>
+  holidayNote: string | null
+}): DailyStats | null {
+  if (!closing && receipts.length === 0 && holidayNote === null) return null
+
+  const day = emptyAccountingDay(date)
+  day.channels = {
+    twpay: !!store?.twpay_enabled,
+    panda: !!store?.panda_enabled,
+    online: !!store?.online_enabled,
+    online_cash: !!store?.online_cash_enabled,
+    uber: !!store?.uber_enabled || (((store?.uber_accounts ?? []) as string[]).length > 0),
+  }
+  if (holidayNote !== null) {
+    day.isHoliday = true
+    day.holidayNote = holidayNote
+  }
+
+  if (closing) {
+    day.actual = closing.actual_remit ?? 0
+    const ckFromOrders = (closing.order_items ?? [])
+      .filter((oi: any) => oi.item_name !== '央廚配送')
+      .reduce((sum: number, oi: any) => sum + (oi.total_amount ?? 0), 0)
+    day.ck = (closing.total_cost ?? 0) > 0 ? (closing.total_cost ?? 0) : ckFromOrders
+    day.totalRevenue = closing.total_revenue ?? 0
+    day.closingStatus = (closing.status ?? 'none') as DailyStats['closingStatus']
+
+    for (const rv of (closing.revenue_items ?? []) as any[]) {
+      const amt = rv.gross_amount ?? 0
+      if (rv.channel === 'pos') day.pos += amt
+      else if (rv.channel === 'twpay') day.twpay += amt
+      else if (rv.channel === 'panda') day.panda += amt
+      else if (rv.channel === 'online') day.online += amt
+      else if (rv.channel === 'online_cash') day.online_cash += amt
+      else if (rv.channel === 'uber') {
+        const key = rv.account_name ?? 'uber'
+        day.uber[key] = (day.uber[key] ?? 0) + amt
+      } else if (rv.channel === 'handwrite') {
+        const key = rv.account_name ?? '手寫'
+        day.handwrite[key] = (day.handwrite[key] ?? 0) + amt
+        day.handwriteTotal += amt
+      }
+    }
+
+    for (const oi of (closing.order_items ?? []) as any[]) {
+      if (oi.item_name === '央廚配送') continue
+      const amt = oi.total_amount ?? 0
+      if (!amt) continue
+      day.items[oi.item_name] = (day.items[oi.item_name] ?? 0) + amt
+    }
+  }
+
+  for (const receipt of receipts) {
+    const noteText = (receipt.notes as string | null | undefined)?.trim() ?? ''
+    const notedItemNames = new Set<string>()
+    day.receipts.push({
+      vendor_name: receipt.vendor_name ?? '',
+      total_amount: receipt.total_amount ?? 0,
+      tax_amount: receipt.tax_amount ?? 0,
+      notes: receipt.notes ?? null,
+      receipt_type: receipt.receipt_type ?? null,
+      items: (receipt.receipt_items ?? []).map((it: any) => ({ item_name: it.item_name, amount: it.amount ?? 0 })),
+    })
+
+    for (const item of (receipt.receipt_items ?? []) as any[]) {
+      const amt = item.amount ?? 0
+      if (!amt) continue
+      day.items[item.item_name] = (day.items[item.item_name] ?? 0) + amt
+      if (noteText && !notedItemNames.has(item.item_name)) {
+        day.notes[item.item_name] = day.notes[item.item_name]
+          ? `${day.notes[item.item_name]}\n${noteText}`
+          : noteText
+        notedItemNames.add(item.item_name)
+      }
+    }
+
+    const tax = (receipt.tax_amount ?? 0) as number
+    if (tax > 0) {
+      const hasPack = (receipt.receipt_items ?? []).some((it: any) => itemMeta.get(it.item_name)?.category === '耗材')
+      if (hasPack) {
+        day.items['免洗稅金'] = (day.items['免洗稅金'] ?? 0) + tax
+      } else {
+        const firstItem = (receipt.receipt_items ?? [])[0]
+        const meta = firstItem ? itemMeta.get(firstItem.item_name) : null
+        const taxKey = meta?.vendor_group ? `${meta.vendor_group}稅金` : '雜項稅金'
+        day.items[taxKey] = (day.items[taxKey] ?? 0) + tax
+      }
+    }
+  }
+
+  for (const [itemName, amount] of Object.entries(day.items)) {
+    const meta = itemMeta.get(itemName)
+    if (!meta) {
+      day.misc += amount
+      continue
+    }
+    if (meta.category === '食材') day.food += amount
+    else if (meta.category === '耗材') day.pack += amount
+    else day.misc += amount
+
+    const vendorGroup = meta.vendor_group
+    const docType = meta.doc_type ?? ''
+    if (!day.vendorGroupBreakdown[vendorGroup]) day.vendorGroupBreakdown[vendorGroup] = {}
+    day.vendorGroupBreakdown[vendorGroup][docType] = (day.vendorGroupBreakdown[vendorGroup][docType] ?? 0) + amount
+    if (docType === '發票') day.invoiceTotal += amount
+    else if (docType === '收據') day.receiptTotal += amount
+    else if (docType === '估價單') day.estimateTotal += amount
+    if (meta.is_refund) day.taxRefund += amount
+  }
+
+  day.totalCost = day.food + day.pack + day.misc
+  const uberTotal = Object.values(day.uber).reduce((sum, amount) => sum + amount, 0)
+  day.onsite = (store?.ichef_uber_linked
+    ? (day.pos - uberTotal - day.twpay - day.panda - day.online)
+    : day.pos
+  ) + day.handwriteTotal
+  day.after_deduct = day.onsite - day.totalCost
+  day.variance = day.actual - day.after_deduct - day.ck
+  day.revenue = day.onsite > 0 ? day.variance + day.onsite : 0
+
+  return day
+}
+
+export async function fetchDailyAccountingDetail(storeId: string, date: string) {
+  const auth = await checkHqAuth()
+  if ('error' in auth) return auth
+  if (!storeId || !date) return { error: '缺少參數' as const }
+
+  const admin = createAdminClient()
+  const [storeRes, closingsRes, receiptsRes, holidayRes, items] = await Promise.all([
+    admin.from('stores')
+      .select('id, name, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled')
+      .eq('id', storeId)
+      .maybeSingle(),
+    admin.from('daily_closings')
+      .select(`
+        id, business_date, status, note, dispute_note, submitted_by,
+        total_revenue, total_cost, total_expenses, expected_remit, variance,
+        actual_remit, should_include_delivery, remittance_adjustments,
+        ck_delivery_photo_url, channel_photo_urls,
+        envelope_photo_url, void_invoice_photo_urls, note_photo_url, extra_photo_urls,
+        stores(id, name),
+        revenue_items(channel, account_name, gross_amount),
+        order_items(item_name, quantity, unit_price, total_amount),
+        handwrite_orders(order_number, amount, voided, void_reason),
+        expense_items(description, amount)
+      `)
+      .eq('store_id', storeId)
+      .eq('business_date', date),
+    admin.from('receipts')
+      .select('id, vendor_name, receipt_type, total_amount, tax_amount, notes, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
+      .eq('store_id', storeId)
+      .eq('business_date', date)
+      .order('created_at'),
+    admin.from('store_holidays').select('note').eq('store_id', storeId).eq('holiday_date', date).maybeSingle(),
+    getStoreItemsFromMappings(storeId),
+  ])
+
+  if (!storeRes.data) return { error: '找不到店家' as const }
+
+  const closing = closingsRes.data?.[0] ?? null
+  const receipts = receiptsRes.data ?? []
+  const itemMeta = new Map(items.map(item => [item.name, item] as const))
+  const stats = buildDailyAccountingStats({
+    date,
+    store: storeRes.data,
+    closing,
+    receipts,
+    itemMeta,
+    holidayNote: holidayRes.data ? ((holidayRes.data.note as string | null) ?? '') : null,
+  })
+
+  let submitterName: string | null = null
+  if (closing?.submitted_by) {
+    const { data: prof } = await admin
+      .from('user_profiles')
+      .select('name')
+      .eq('user_id', closing.submitted_by)
+      .maybeSingle()
+    submitterName = prof?.name ?? null
+  }
+
+  return { success: true as const, stats, closing, receipts, submitterName }
 }
 
 /** 撈當日 closing + receipts（給店家總覽 daily panel 內嵌審核卡用） */
