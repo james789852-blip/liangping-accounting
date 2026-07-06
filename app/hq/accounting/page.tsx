@@ -41,7 +41,11 @@ export default async function AccountingPage({
   // 撈當日所有店家 closings 狀態 + 央廚 records 狀態
   const [{ data: closings }, { data: ckRecords }, { data: holidays }] = await Promise.all([
     admin.from('daily_closings')
-      .select('store_id, status, variance, dispute_note, submitted_by, updated_at')
+      .select(`
+        id, store_id, business_date, status, note, dispute_note, submitted_by, updated_at,
+        total_revenue, total_cost, total_expenses, expected_remit,
+        actual_remit, should_include_delivery, variance
+      `)
       .eq('business_date', date),
     admin.from('ck_daily_records')
       .select('ck_store_id, status, hq_paid, updated_at')

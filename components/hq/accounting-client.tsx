@@ -14,7 +14,21 @@ import CKOverview from './ck-overview'
 import HolidaysEditor from './holidays-editor'
 
 interface Store { id: string; name: string }
-interface ClosingRow { store_id: string; status: string; variance: number; dispute_note?: string | null }
+interface ClosingRow {
+  id?: string
+  store_id: string
+  business_date?: string
+  status: string
+  note?: string | null
+  variance: number
+  dispute_note?: string | null
+  total_revenue?: number
+  total_cost?: number
+  total_expenses?: number
+  expected_remit?: number
+  actual_remit?: number
+  should_include_delivery?: number
+}
 interface CKRow { ck_store_id: string; status: string; hq_paid: boolean }
 
 interface Props {
@@ -241,7 +255,12 @@ export default function AccountingClient({
 
         {/* 選中詳情 */}
         {tab === 'store' && selectedStoreId && (
-          <StoreDetail storeId={selectedStoreId} storeName={stores.find(s => s.id === selectedStoreId)?.name ?? ''} date={date} />
+          <StoreDetail
+            storeId={selectedStoreId}
+            storeName={stores.find(s => s.id === selectedStoreId)?.name ?? ''}
+            date={date}
+            quickClosing={closingByStore[selectedStoreId] ?? null}
+          />
         )}
         {tab === 'ck' && selectedCkStoreId && (
           <CKDetail ckStoreId={selectedCkStoreId} storeName={ckStores.find(s => s.id === selectedCkStoreId)?.name ?? ''} date={date} />
@@ -331,10 +350,19 @@ type StoreDetailState = {
   detail: { closing: any; receipts: any[] } | null
 }
 
-function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName: string; date: string }) {
+function StoreDetail({
+  storeId,
+  storeName,
+  date,
+  quickClosing,
+}: {
+  storeId: string
+  storeName: string
+  date: string
+  quickClosing: ClosingRow | null
+}) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [stats, setStats] = useState<DailyStats | null>(null)
   const [detail, setDetail] = useState<{ closing: any; receipts: any[] } | null>(null)
   const [showHolidays, setShowHolidays] = useState(false)
@@ -351,12 +379,10 @@ function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName:
       setStats(cached.stats)
       setDetail(cached.detail)
       setLoading(false)
-      setRefreshing(true)
     } else if (hasLoadedRef.current) {
       setStats(null)
       setDetail(null)
       setLoading(false)
-      setRefreshing(true)
     } else {
       setLoading(true)
     }
@@ -383,7 +409,6 @@ function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName:
       .finally(() => {
         if (requestId !== requestIdRef.current) return
         setLoading(false)
-        setRefreshing(false)
       })
   }, [storeId, date])
 
@@ -391,17 +416,9 @@ function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName:
     loadDetail()
   }, [loadDetail])
 
-  if (loading) return <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" style={{ color: '#a1a1aa' }} /></div>
-
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl p-4 relative" style={{ border: '1px solid #f4f4f5', opacity: refreshing ? 0.88 : 1 }}>
-        {refreshing && (
-          <div className="absolute top-3 right-3 flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full"
-            style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
-            <Loader2 className="h-3 w-3 animate-spin" /> 更新中
-          </div>
-        )}
+      <div className="bg-white rounded-2xl p-4 relative" style={{ border: '1px solid #f4f4f5' }}>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2">
             <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{storeName} · {date}</h2>
@@ -419,9 +436,13 @@ function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName:
         )}
         {stats ? (
           <StoreStatsGrid data={stats} />
+        ) : quickClosing ? (
+          <QuickClosingSummary closing={quickClosing} />
+        ) : loading ? (
+          <SummarySkeleton />
         ) : (
           <div className="rounded-xl p-4 text-sm" style={{ color: '#a1a1aa', background: '#fafafa', border: '1px solid #f4f4f5' }}>
-            {refreshing ? '正在載入這家店的資料…' : '當日尚無資料'}
+            當日尚無資料
           </div>
         )}
       </div>
@@ -440,11 +461,66 @@ function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName:
           />
         </div>
       )}
-      {!detail?.closing && stats && (
+      {!detail?.closing && quickClosing && ['submitted', 'disputed', 'verified'].includes(quickClosing.status) && (
+        <div className="bg-white rounded-2xl p-4 text-center text-sm" style={{ color: '#a1a1aa', border: '1px solid #f4f4f5' }}>
+          審核明細載入中…
+        </div>
+      )}
+      {!detail?.closing && stats && !quickClosing && (
         <div className="bg-white rounded-2xl p-4 text-center text-sm" style={{ color: '#a1a1aa', border: '1px solid #f4f4f5' }}>
           當日尚無帳目提交
         </div>
       )}
+    </div>
+  )
+}
+
+function QuickClosingSummary({ closing }: { closing: ClosingRow }) {
+  const revenue = Number(closing.total_revenue ?? 0)
+  const expenses = Number(closing.total_expenses ?? 0)
+  const ck = Number(closing.total_cost ?? 0)
+  const actual = Number(closing.actual_remit ?? 0)
+  const variance = Number(closing.variance ?? 0)
+  const expected = Number(closing.should_include_delivery ?? closing.expected_remit ?? 0)
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>快速摘要</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          <Stat label="總收入" value={revenue} color="#16a34a" />
+          <Stat label="現金支出" value={expenses} color="#be123c" />
+          <Stat label="央廚配送" value={ck} color="#f97316" />
+          <Stat label="應包金額" value={expected} color="#0369a1" />
+          <Stat label="實際包入" value={actual} color="#dc2626" />
+          <Stat label="誤差" value={variance} color={Math.abs(variance) > 200 ? '#be123c' : '#0369a1'} />
+        </div>
+      </div>
+      {closing.note && (
+        <p className="text-xs rounded-xl px-3 py-2" style={{ background: '#f8fafc', color: '#52525b' }}>
+          備註：{closing.note}
+        </p>
+      )}
+      {closing.status === 'disputed' && closing.dispute_note && (
+        <p className="text-xs rounded-xl px-3 py-2" style={{ background: '#fff7ed', color: '#c2410c' }}>
+          退回原因：{closing.dispute_note}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function SummarySkeleton() {
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>快速摘要</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-[62px] rounded-xl animate-pulse" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }} />
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
@@ -516,7 +592,6 @@ type CKDetailState = {
 
 function CKDetail({ ckStoreId, storeName, date }: { ckStoreId: string; storeName: string; date: string }) {
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [stats, setStats] = useState<CKDailyStats | null>(null)
   const [detail, setDetail] = useState<any | null>(null)
   const hasLoadedRef = useRef(false)
@@ -531,12 +606,10 @@ function CKDetail({ ckStoreId, storeName, date }: { ckStoreId: string; storeName
       setStats(cached.stats)
       setDetail(cached.detail)
       setLoading(false)
-      setRefreshing(true)
     } else if (hasLoadedRef.current) {
       setStats(null)
       setDetail(null)
       setLoading(false)
-      setRefreshing(true)
     } else {
       setLoading(true)
     }
@@ -561,21 +634,12 @@ function CKDetail({ ckStoreId, storeName, date }: { ckStoreId: string; storeName
       .finally(() => {
         if (requestId !== requestIdRef.current) return
         setLoading(false)
-        setRefreshing(false)
       })
   }, [ckStoreId, date])
 
-  if (loading) return <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" style={{ color: '#a1a1aa' }} /></div>
-
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl p-4 relative" style={{ border: '1px solid #f4f4f5', opacity: refreshing ? 0.88 : 1 }}>
-        {refreshing && (
-          <div className="absolute top-3 right-3 flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full"
-            style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
-            <Loader2 className="h-3 w-3 animate-spin" /> 更新中
-          </div>
-        )}
+      <div className="bg-white rounded-2xl p-4 relative" style={{ border: '1px solid #f4f4f5' }}>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{storeName} · {date}</h2>
           <ExportButtons kind="ck" storeId={ckStoreId} storeName={storeName} date={date} />
@@ -600,9 +664,11 @@ function CKDetail({ ckStoreId, storeName, date }: { ckStoreId: string; storeName
               </div>
             </div>
           </div>
+        ) : loading ? (
+          <SummarySkeleton />
         ) : (
           <div className="rounded-xl p-4 text-sm" style={{ color: '#a1a1aa', background: '#fafafa', border: '1px solid #f4f4f5' }}>
-            {refreshing ? '正在載入這間央廚的資料…' : '當日尚無資料'}
+            當日尚無資料
           </div>
         )}
       </div>

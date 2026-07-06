@@ -31,16 +31,13 @@ export default async function ItemMappingsPage({
   // 沒有 URL storeId 時，跟隨總公司左側「切換店家」目前選擇，避免每次回第一家店。
   const sortedStores = sortStores(stores ?? [])
   const storeId = await resolveHQStoreId(sortedStores, params.storeId)
-  const mappings = await fetchAllPaged<any>(() => {
-    const query = admin.from('item_column_mappings')
+  const mappings = await fetchAllPaged<any>(() =>
+    admin.from('item_column_mappings')
       .select('*')
       .order('sort_order')
       .order('item_category')
       .order('item_name')
-    return storeId
-      ? query.or(`store_id.is.null,store_id.eq.${storeId}`)
-      : query.is('store_id', null)
-  })
+  )
   // 自動同步 orphan vg：目前載入範圍內 mapping 用到但 system_vendor_groups 沒 record 的 → 補建
   const knownVgNames = new Set((vgsInitial ?? []).map(v => v.name as string))
   const orphanVgs = new Set<string>()
@@ -62,10 +59,7 @@ export default async function ItemMappingsPage({
       .order('sort_order')
     vgs = refetched
   }
-  const mappingCountsRaw = await fetchAllPaged<{ store_id: string | null }>(() =>
-    admin.from('item_column_mappings').select('store_id').not('store_id', 'is', null)
-  )
-  const storeMappingCounts = mappingCountsRaw.reduce<Record<string, number>>((acc, row) => {
+  const storeMappingCounts = (mappings ?? []).reduce<Record<string, number>>((acc, row) => {
     if (row.store_id) acc[row.store_id] = (acc[row.store_id] ?? 0) + 1
     return acc
   }, {})
