@@ -825,7 +825,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   useLayoutEffect(() => {
     const totalStepsEstimate = (store.mode !== 'ichef') ? 10 : 9
     const resultIdx = totalStepsEstimate - 2
-    const pettyIdx = totalStepsEstimate - 1
 
     // 偵測零用金是否已完成
     const dbPetty = (existingClosing as { petty_counts?: { counts?: Record<string, number>; lumps?: Record<string, number> } } | null)?.petty_counts
@@ -870,20 +869,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return
     }
 
-    // 過往：pettyDone + submitted/verified 會強制 router.replace 到 summary，
-    // 導致店長想重新核對零用金時被擋。改成不強制 redirect，讓 stepper / 底部 bar 自由 navigate。
-
     if (existingClosing?.status === 'disputed') {
       localStorage.removeItem(stepLsKey)
       localStorage.removeItem(submitDoneSsKey)
+    } else if (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified') {
+      localStorage.removeItem(stepLsKey)
+      if (pettyDone) {
+        router.replace('/manager/summary')
+        setStepMounted(true)
+        return
+      }
+      setCurrentStep(resultIdx)
     } else {
       const saved = parseInt(localStorage.getItem(stepLsKey) ?? '0') || 0
       if (saved > 0) {
-        // 零用金完成後：維持在零用金步驟（使用者要看的就是那頁），不再強制跳回摘要
         setCurrentStep(saved)
-      } else if (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified') {
-        // 全新開啟已送出帳目：有做過零用金 → 零用金頁；尚未做 → 送出後步驟
-        setCurrentStep(pettyDone ? pettyIdx : 99)
       }
     }
     setStepMounted(true)
@@ -4177,14 +4177,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           style={{ visibility: stepMounted ? 'visible' : 'hidden' }}>
           <div className="max-w-xl mx-auto flex gap-3">
 
-            {/* Step 8: 零用金核對 → 完成結束（留在零用金頁，不跳轉） */}
+            {/* Step 8: 零用金核對 → 完成結束並前往結帳結果 */}
             {stepId === 'petty' && (
-              <button onClick={() => {
+              <button onClick={async () => {
                 try {
+                  const cid = existingClosing?.id ?? closingId
+                  if (cid) await savePettyCounts(cid, pettyCounts, pettyLumps)
                   localStorage.setItem(`petty_done_${store.id}_${today}`, '1')
-                  localStorage.setItem(stepLsKey, String(totalSteps - 1))
+                  localStorage.removeItem(stepLsKey)
                 } catch {}
                 setPettyFinished(true)
+                router.push('/manager/summary')
               }}
                 className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-base font-bold text-white"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 8px 20px rgba(245,158,11,0.3)' }}>
