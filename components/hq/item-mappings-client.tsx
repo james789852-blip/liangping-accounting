@@ -90,12 +90,38 @@ export default function ItemMappingsClient({
   // Sync from server after router.refresh()
   useEffect(() => { setMappings(initial) }, [initial])
   useEffect(() => { setVgsState(vendorGroups) }, [vendorGroups])
-  useEffect(() => { setActiveStoreId(initStoreId) }, [initStoreId])
+
+  function resetStoreScopedUi() {
+    setEditId(null)
+    setEditCol('')
+    setEditCat('')
+    setEditVendorGroup('')
+    setNewName('')
+    setNewCol('')
+    setNewCat('食材')
+    setNewVendorGroup('')
+    setShowAdd(false)
+    setShowAddVg(false)
+    setSortMode(false)
+    setBatchStoreIds([])
+    setSelectMode(false)
+    setSelectedIds(new Set())
+    setInlineAddVg(null)
+    setInlineAddName('')
+    setNewVgName('')
+  }
+
+  useEffect(() => {
+    if (initStoreId === activeStoreId) return
+    setActiveStoreId(initStoreId)
+    resetStoreScopedUi()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initStoreId])
 
   function selectStore(storeId: string) {
+    if (storeId === activeStoreId) return
     setActiveStoreId(storeId)
-    setShowAdd(false)
-    setEditId(null)
+    resetStoreScopedUi()
     startTransition(async () => {
       await setManagerStore(storeId)
       router.push(`/hq/item-mappings?storeId=${storeId}`)
