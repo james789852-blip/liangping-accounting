@@ -87,6 +87,7 @@ export default function ItemMappingsClient({
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const storeTabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const [pendingStoreId, setPendingStoreId] = useState<string | null>(null)
 
   // 用 state 保存 vendorGroups，允許 optimistic update
   const [vgsState, setVgsState] = useState(vendorGroups)
@@ -121,6 +122,7 @@ export default function ItemMappingsClient({
   }
 
   useEffect(() => {
+    setPendingStoreId(current => (current === initStoreId ? null : current))
     if (initStoreId === activeStoreId) return
     setActiveStoreId(initStoreId)
     resetStoreScopedUi()
@@ -128,17 +130,16 @@ export default function ItemMappingsClient({
   }, [initStoreId])
 
   useEffect(() => {
-    const tab = storeTabRefs.current[activeStoreId]
+    const tab = storeTabRefs.current[pendingStoreId ?? activeStoreId]
     if (!tab) return
     requestAnimationFrame(() => {
       tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
     })
-  }, [activeStoreId, stores.length])
+  }, [activeStoreId, pendingStoreId, stores.length])
 
   function selectStore(storeId: string) {
-    if (storeId === activeStoreId) return
-    setActiveStoreId(storeId)
-    resetStoreScopedUi()
+    if (storeId === activeStoreId || storeId === pendingStoreId) return
+    setPendingStoreId(storeId)
     startTransition(async () => {
       await setManagerStore(storeId)
       router.push(`/hq/item-mappings?storeId=${storeId}`)
@@ -520,15 +521,19 @@ export default function ItemMappingsClient({
             <div className="flex gap-2 mt-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
               {stores.map(s => {
                 const count = storeMappingCounts[s.id] ?? mappings.filter(m => m.store_id === s.id).length
+                const isActive = activeStoreId === s.id
+                const isSwitchingTo = pendingStoreId === s.id
                 return (
                   <button key={s.id}
                     ref={el => { storeTabRefs.current[s.id] = el }}
                     onClick={() => selectStore(s.id)}
                     className="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
-                    style={activeStoreId === s.id
+                    style={isActive
                       ? { background: '#F59E0B', color: 'white' }
+                      : isSwitchingTo
+                      ? { background: '#FFFBEB', color: '#92400E', boxShadow: 'inset 0 0 0 1.5px #F59E0B' }
                       : { background: '#f4f4f5', color: '#52525b' }}>
-                    {s.name} ({count})
+                    {s.name} ({count}){isSwitchingTo ? '…' : ''}
                   </button>
                 )
               })}
