@@ -431,7 +431,15 @@ export async function savePettyCounts(
     updated_at: new Date().toISOString(),
   }
   const { error } = await admin.from('daily_closings').update(payload).eq('id', closingId)
-  if (error) return { error: error.message }
+  if (error) {
+    const missingPettyColumn = error.message.includes("'petty_counts' column") ||
+      error.message.includes('petty_counts') && error.message.includes('schema cache')
+    if (missingPettyColumn) {
+      console.warn('[savePettyCounts] petty_counts column is missing; allowing closing flow to continue until migration is applied.')
+      return { success: true, warning: 'petty_counts column missing' }
+    }
+    return { error: error.message }
+  }
   return { success: true }
 }
 
