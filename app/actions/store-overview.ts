@@ -3,7 +3,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRangeStats, getMonthlyStats, type DailyStats, type MonthlyStats } from '@/lib/store-aggregator'
-import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
+
+type AccountingItemMeta = {
+  category: '食材' | '耗材' | '雜項'
+  vendor_group: string
+  doc_type: string | null
+  is_refund: boolean
+}
 
 async function checkHqAuth() {
   const supabase = await createClient()
@@ -49,6 +55,42 @@ function emptyAccountingDay(date: string): DailyStats {
   }
 }
 
+async function getAccountingItemMeta(storeId: string): Promise<Map<string, AccountingItemMeta>> {
+  const admin = createAdminClient()
+  const [{ data: mappings }, { data: vendorGroups }] = await Promise.all([
+    admin.from('item_column_mappings')
+      .select('item_name, item_category, vendor_group, doc_type_override, is_refund, store_id')
+      .or(`store_id.is.null,store_id.eq.${storeId}`),
+    admin.from('system_vendor_groups')
+      .select('name, doc_type')
+      .eq('active', true),
+  ])
+
+  const docByVendorGroup = new Map(
+    (vendorGroups ?? []).map((group: any) => [group.name as string, (group.doc_type as string | null) ?? null]),
+  )
+  const byName = new Map<string, any>()
+
+  for (const mapping of (mappings ?? []) as any[]) {
+    const existing = byName.get(mapping.item_name)
+    if (!existing || (mapping.store_id === storeId && existing.store_id !== storeId)) {
+      byName.set(mapping.item_name, mapping)
+    }
+  }
+
+  return new Map(
+    [...byName.values()].map((mapping: any) => {
+      const vendorGroup = (mapping.vendor_group ?? '未分類') as string
+      return [mapping.item_name as string, {
+        category: (mapping.item_category ?? '雜項') as AccountingItemMeta['category'],
+        vendor_group: vendorGroup,
+        doc_type: (mapping.doc_type_override ?? docByVendorGroup.get(vendorGroup) ?? null) as string | null,
+        is_refund: !!mapping.is_refund,
+      }]
+    }),
+  )
+}
+
 function buildDailyAccountingStats({
   date,
   store,
@@ -61,7 +103,7 @@ function buildDailyAccountingStats({
   store: any
   closing: any | null
   receipts: any[]
-  itemMeta: Map<string, any>
+  itemMeta: Map<string, AccountingItemMeta>
   holidayNote: string | null
 }): DailyStats | null {
   if (!closing && receipts.length === 0 && holidayNote === null) return null
@@ -190,7 +232,7 @@ export async function fetchDailyAccountingDetail(storeId: string, date: string) 
   if (!storeId || !date) return { error: '缺少參數' as const }
 
   const admin = createAdminClient()
-  const [storeRes, closingsRes, receiptsRes, holidayRes, items] = await Promise.all([
+  const [storeRes, closingsRes, receiptsRes, holidayRes, itemMeta] = await Promise.all([
     admin.from('stores')
       .select('id, name, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled')
       .eq('id', storeId)
@@ -216,14 +258,13 @@ export async function fetchDailyAccountingDetail(storeId: string, date: string) 
       .eq('business_date', date)
       .order('created_at'),
     admin.from('store_holidays').select('note').eq('store_id', storeId).eq('holiday_date', date).maybeSingle(),
-    getStoreItemsFromMappings(storeId),
+    getAccountingItemMeta(storeId),
   ])
 
   if (!storeRes.data) return { error: '找不到店家' as const }
 
   const closing = closingsRes.data?.[0] ?? null
   const receipts = receiptsRes.data ?? []
-  const itemMeta = new Map(items.map(item => [item.name, item] as const))
   const stats = buildDailyAccountingStats({
     date,
     store: storeRes.data,
