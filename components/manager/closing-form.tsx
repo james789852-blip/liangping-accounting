@@ -29,6 +29,12 @@ interface ReserveItem {
   total_bill?: number  // total bill amount (optional), for showing remaining across days
 }
 
+interface LargeCashExpense {
+  id: string
+  description: string
+  amount: number
+}
+
 interface TodayReceipt {
   id: string
   vendor_name: string
@@ -230,7 +236,22 @@ function initHandwriteOrders(existing: any): HandwriteOrder[] {
   }))
 }
 
-function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExpenses: number, handwriteTotal: number, adjustments: RemittanceAdjustment[], reserves: ReserveItem[]) {
+function initLargeCashExpenses(existing: any): LargeCashExpense[] {
+  const saved = existing?.cash_counts?.[0]?.large_expenses
+  if (!Array.isArray(saved)) return []
+  return saved
+    .map((item: unknown) => {
+      const row = item as Partial<LargeCashExpense>
+      return {
+        id: typeof row.id === 'string' ? row.id : crypto.randomUUID(),
+        description: typeof row.description === 'string' ? row.description : '',
+        amount: Math.abs(Number(row.amount) || 0),
+      }
+    })
+    .filter(item => item.amount > 0 || item.description.trim())
+}
+
+function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExpenses: number, handwriteTotal: number, adjustments: RemittanceAdjustment[], reserves: ReserveItem[], largeCashExpenses: LargeCashExpense[]) {
   const uberTotal = Object.values(data.uber_amounts).reduce((a, b) => a + b, 0)
   // platformTotal = 全部平台名目金額（含線上點餐的「現金部分」），算進總營業額
   const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount
@@ -247,7 +268,7 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
   const shouldEnvelope = totalRevenue - platformPaid - totalExpenses
   const netToHQ = shouldEnvelope - deliveryFee
 
-  const cashTotal =
+  const cashSubtotal =
     (data.bills_1000 * 1000 + data.lump_1000) +
     (data.bills_500  * 500  + data.lump_500)  +
     (data.bills_100  * 100  + data.lump_100)  +
@@ -255,6 +276,8 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
     (data.coins_10   * 10   + data.lump_10)   +
     (data.coins_5    * 5    + data.lump_5)    +
     (data.coins_1    * 1    + data.lump_1)
+  const largeExpenseTotal = largeCashExpenses.reduce((sum, item) => sum + Math.abs(item.amount || 0), 0)
+  const cashTotal = cashSubtotal - largeExpenseTotal
 
   const actualRemit = cashTotal - store.petty_cash
   const variance = actualRemit - shouldEnvelope
@@ -264,7 +287,7 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
   const netVariance = finalRemit - shouldEnvelope
   const totalReserved = reserves.reduce((sum, r) => sum + r.amount, 0)
   const remitToHQ = finalRemit - totalReserved
-  return { totalRevenue, platformTotal, platformPaid, storeRevenue, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashTotal, actualRemit, variance, adjustmentTotal, finalRemit, netVariance, totalReserved, remitToHQ }
+  return { totalRevenue, platformTotal, platformPaid, storeRevenue, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashSubtotal, largeExpenseTotal, cashTotal, actualRemit, variance, adjustmentTotal, finalRemit, netVariance, totalReserved, remitToHQ }
 }
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -518,6 +541,7 @@ function CategoryPicker({ categories, value, onChange }: {
 export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], prevDayReserves, isBackfill = false, realToday }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
+  const [largeCashExpenses, setLargeCashExpenses] = useState<LargeCashExpense[]>(() => initLargeCashExpenses(existingClosing))
   const [localReceipts, setLocalReceipts] = useState<TodayReceipt[]>(todayReceipts)
   const [syncing, setSyncing] = useState(false)
   const channelPhotoLsKey = `channel_photos_${store.id}_${today}`
@@ -731,11 +755,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const CASH_KEYS = ['bills_1000','bills_500','bills_100','coins_50','coins_10','coins_5','coins_1','lump_1000','lump_500','lump_100','lump_50','lump_10','lump_5','lump_1'] as const
   useEffect(() => {
     const dbTotal = CASH_KEYS.reduce((s, k) => s + ((existingClosing?.cash_counts?.[0]?.[k] ?? 0) as number), 0)
-    if (dbTotal > 0) return
+    const dbLargeExpenses = existingClosing?.cash_counts?.[0]?.large_expenses
+    if (dbTotal > 0 || (Array.isArray(dbLargeExpenses) && dbLargeExpenses.length > 0)) return
     try {
       const stored = JSON.parse(localStorage.getItem(cashLsKey) ?? 'null')
       if (stored && typeof stored === 'object') {
         setData(prev => ({ ...prev, ...Object.fromEntries(CASH_KEYS.map(k => [k, stored[k] ?? 0])) }))
+        if (Array.isArray(stored.large_expenses)) setLargeCashExpenses(stored.large_expenses)
       }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -743,13 +769,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   useEffect(() => {
     const h = setTimeout(() => {
       try {
-        const cashData = Object.fromEntries(CASH_KEYS.map(k => [k, data[k]]))
+        const normalizedLargeExpenses = largeCashExpenses
+          .map(item => ({ ...item, description: item.description.trim(), amount: Math.abs(item.amount || 0) }))
+          .filter(item => item.amount > 0 || item.description)
+        const cashData = {
+          ...Object.fromEntries(CASH_KEYS.map(k => [k, data[k]])),
+          large_expenses: normalizedLargeExpenses,
+        }
         const total = CASH_KEYS.reduce((s, k) => s + (data[k] as number), 0)
-        if (total > 0) localStorage.setItem(cashLsKey, JSON.stringify(cashData))
+        if (total > 0 || normalizedLargeExpenses.length > 0) localStorage.setItem(cashLsKey, JSON.stringify(cashData))
       } catch {}
     }, 300)
     return () => clearTimeout(h)
-  }, [...CASH_KEYS.map(k => data[k])])
+  }, [...CASH_KEYS.map(k => data[k]), largeCashExpenses])
   // Bug fix: 需在 restore 完成後才允許 persist
   //   原因：receiptForms 初始 []，persist useEffect on mount 會先執行→把 localStorage 清空
   //   再 restore 就找不到 draft → 類別/廠商全消失
@@ -874,6 +906,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               if (Array.isArray(bk.handwriteOrders)) setHandwriteOrders(bk.handwriteOrders)
               if (Array.isArray(bk.adjustments)) setAdjustments(bk.adjustments)
               if (Array.isArray(bk.reserves)) setReserves(bk.reserves)
+              if (Array.isArray(bk.largeCashExpenses)) setLargeCashExpenses(bk.largeCashExpenses)
               if (bk.ckQuantities && typeof bk.ckQuantities === 'object') setCkQuantities(bk.ckQuantities)
               toast.success('資料已從備份恢復，請確認後重新儲存')
               localStorage.removeItem(saveBkKey)
@@ -940,8 +973,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const totalExpenses = useMemo(() => expenses.reduce((sum, e) => sum + (e.amount || 0), 0), [expenses])
   const handwriteTotal = useMemo(() => handwriteOrders.reduce((sum, o) => sum + (o.voided ? 0 : (o.amount || 0)), 0), [handwriteOrders])
   const s = useMemo(
-    () => calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves),
-    [data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves],
+    () => calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, largeCashExpenses),
+    [data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, largeCashExpenses],
   )
   const isLocked = (status === 'submitted' || status === 'verified') && !submitDone
   const isDisputed = status === 'disputed'
@@ -964,6 +997,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const set = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) => {
     setData(prev => ({ ...prev, [key]: value }))
   }, [])
+  const addLargeCashExpense = useCallback(() => {
+    setLargeCashExpenses(prev => [...prev, { id: crypto.randomUUID(), description: '', amount: 0 }])
+  }, [])
+  const updateLargeCashExpense = useCallback(<K extends keyof LargeCashExpense>(id: string, key: K, value: LargeCashExpense[K]) => {
+    setLargeCashExpenses(prev => prev.map(item => item.id === id ? { ...item, [key]: value } : item))
+  }, [])
+  const removeLargeCashExpense = useCallback((id: string) => {
+    setLargeCashExpenses(prev => prev.filter(item => item.id !== id))
+  }, [])
 
   useEffect(() => {
     if (isLocked || submitDone) return
@@ -971,7 +1013,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     return () => clearInterval(t)
     // 任何會寫進 handleSave payload 的 state 都要列依賴，否則 60 秒定時器拿到的是 stale closure
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, expenses, handwriteOrders, adjustments, reserves, channelPhotos, ckPhotoUrl, envelopePhotoUrl, voidInvoicePhotos, notePhotoUrl, ckQuantities, isLocked, isDisputed, submitDone])
+  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, channelPhotos, ckPhotoUrl, envelopePhotoUrl, voidInvoicePhotos, notePhotoUrl, ckQuantities, isLocked, isDisputed, submitDone])
 
   // 主要 state 變動 debounced 寫 localStorage backup（每 500ms）— 切頁前一定有最新 snapshot
   useEffect(() => {
@@ -979,14 +1021,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const t = setTimeout(() => {
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
-          data, expenses, handwriteOrders, adjustments, reserves,
+          data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses,
           ckQuantities: ckQuantitiesRef.current, ts: Date.now(),
         }))
       } catch {}
     }, 500)
     return () => clearTimeout(t)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, expenses, handwriteOrders, adjustments, reserves])
+  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses])
 
   // 頁面切換 / 關閉前立即 flush + 離頁警告
   useEffect(() => {
@@ -1528,7 +1570,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       // Backup full form state before destructive delete-then-insert operations
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
-          data: d, expenses, handwriteOrders, adjustments, reserves,
+          data: d, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses,
           ckQuantities: ckQuantitiesRef.current, ts: Date.now(),
         }))
       } catch {}
@@ -1553,11 +1595,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         coins_50: d.coins_50, coins_10: d.coins_10, coins_5: d.coins_5, coins_1: d.coins_1,
         lump_1000: d.lump_1000, lump_500: d.lump_500, lump_100: d.lump_100,
         lump_50: d.lump_50, lump_10: d.lump_10, lump_5: d.lump_5, lump_1: d.lump_1,
+        large_expenses: largeCashExpenses
+          .map(item => ({ ...item, description: item.description.trim(), amount: Math.abs(item.amount || 0) }))
+          .filter(item => item.amount > 0 || item.description),
       }
       // 只有 cash 加總 > 0 才寫入，避免 autoSave 把店長尚未輸入的現金（全 0）覆蓋既有資料
       // （HQ 退回後店長重新打開，舊現金清點仍保留，等使用者進 cash step 填寫才更新）
-      const cashTotal = Object.values(cashPayload).reduce((s, v) => s + (v as number), 0)
-      if (cashTotal > 0) {
+      const cashTotal = CASH_KEYS.reduce((s, k) => s + (cashPayload[k] as number), 0)
+      if (cashTotal > 0 || cashPayload.large_expenses.length > 0) {
         const cashResult = await saveCashCounts(cid, cashPayload)
         if (cashResult.error) throw new Error('現金清點儲存失敗：' + cashResult.error)
       }
@@ -3069,7 +3114,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         {(stepId === 'cash' || (isLocked && !submitDone)) && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="現金清點"
-              desc="輸入各幣值張數，系統自動加總計算現金總額。" />}
+              desc="輸入各幣值張數；若有房租、營業稅等大額支出，可在下方登記扣除。" />}
 
             <SectionCard icon={<Calculator className="h-4 w-4" />} title="現金清點" iconColor="#10b981">
               <div className="space-y-2.5">
@@ -3103,7 +3148,62 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   )
                 })}
               </div>
+              <div className="mt-4 rounded-2xl p-3 space-y-3" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: '#9a3412' }}>大額支出</p>
+                    <p className="text-[11px]" style={{ color: '#c2410c' }}>例如房租、營業稅。輸入正數，系統會自動以負數扣除。</p>
+                  </div>
+                  {!isLocked && (
+                    <button type="button" onClick={addLargeCashExpense}
+                      className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+                      style={{ background: 'white', border: '1px solid #fed7aa', color: '#c2410c', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      <Plus className="h-3.5 w-3.5" /> 新增
+                    </button>
+                  )}
+                </div>
+                {largeCashExpenses.length === 0 ? (
+                  <p className="text-xs" style={{ color: '#a1a1aa' }}>沒有大額支出</p>
+                ) : (
+                  <div className="space-y-2">
+                    {largeCashExpenses.map(item => (
+                      <div key={item.id} className="grid items-center gap-2" style={{ gridTemplateColumns: isLocked ? '1fr 7rem' : '1fr 7rem 2rem' }}>
+                        <input
+                          type="text"
+                          value={item.description}
+                          placeholder="項目，例如房租"
+                          disabled={isLocked}
+                          onChange={e => updateLargeCashExpense(item.id, 'description', e.target.value)}
+                          style={{
+                            padding: '10px 12px', border: '1.5px solid #fed7aa', borderRadius: '10px',
+                            fontSize: '14px', background: isLocked ? '#fafafa' : 'white', outline: 'none',
+                            fontFamily: 'inherit', width: '100%', color: '#18181b', opacity: isLocked ? 0.5 : 1,
+                          }}
+                        />
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: '#dc2626' }}>-</span>
+                          <SInput value={item.amount} onChange={v => updateLargeCashExpense(item.id, 'amount', Math.abs(v || 0))} disabled={isLocked} />
+                        </div>
+                        {!isLocked && (
+                          <button type="button" onClick={() => removeLargeCashExpense(item.id)}
+                            className="h-10 w-8 rounded-lg inline-flex items-center justify-center"
+                            style={{ border: '1px solid #fecaca', background: 'white', color: '#ef4444', cursor: 'pointer' }}>
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {s.largeExpenseTotal > 0 && (
+                  <div className="flex justify-between text-sm font-semibold tabular-nums pt-2" style={{ borderTop: '1px solid #fed7aa', color: '#dc2626' }}>
+                    <span>大額支出小計</span>
+                    <span>-${fmt(s.largeExpenseTotal)}</span>
+                  </div>
+                )}
+              </div>
               <div className="mt-3 space-y-2">
+                {s.largeExpenseTotal > 0 && <SummaryBlock label="現金清點小計" value={`$${fmt(s.cashSubtotal)}`} />}
                 <SummaryBlock label="現金總額" value={`$${fmt(s.cashTotal)}`} />
                 <SummaryBlock label={`扣零用金（$${fmt(store.petty_cash)}）= 實匯入`} value={`$${fmt(s.actualRemit)}`} />
               </div>

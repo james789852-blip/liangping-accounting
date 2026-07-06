@@ -14,6 +14,26 @@ export const dynamic = 'force-dynamic'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
+interface LargeCashExpense {
+  id: string
+  description: string
+  amount: number
+}
+
+function parseLargeCashExpenses(value: unknown): LargeCashExpense[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item: unknown) => {
+      const row = item as Partial<LargeCashExpense>
+      return {
+        id: typeof row.id === 'string' ? row.id : `${row.description ?? 'expense'}-${row.amount ?? 0}`,
+        description: typeof row.description === 'string' && row.description.trim() ? row.description.trim() : '大額支出',
+        amount: Math.abs(Number(row.amount) || 0),
+      }
+    })
+    .filter(item => item.amount > 0)
+}
+
 const STATUS_CFG: Record<string, { label: string; bg: string; color: string }> = {
   draft:     { label: '草稿',    bg: '#f1f5f9', color: '#475569' },
   submitted: { label: '已送出',  bg: '#FFFBEB', color: '#92400E' },
@@ -78,6 +98,11 @@ export default async function SummaryPage() {
   const orders = closing.order_items ?? []
   const expenseItems = closing.expense_items ?? []
   const handwriteOrders = closing.handwrite_orders ?? []
+  const cashRow = cash as { large_expenses?: unknown; cash_total?: number | string } | undefined
+  const largeCashExpenses = parseLargeCashExpenses(cashRow?.large_expenses)
+  const largeCashExpenseTotal = largeCashExpenses.reduce((sum, item) => sum + item.amount, 0)
+  const countedCashTotal = Number(cashRow?.cash_total ?? 0)
+  const adjustedCashTotal = countedCashTotal - largeCashExpenseTotal
 
   const st = STATUS_CFG[closing.status] ?? STATUS_CFG.draft
   const platformTotal = rev
@@ -204,7 +229,7 @@ export default async function SummaryPage() {
             <div>
               <p className="text-sm font-medium" style={{ color: '#18181b' }}>實際包進信封</p>
               <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
-                現金 ${fmt(cash?.cash_total ?? 0)} − 零用金 ${fmt(store?.petty_cash ?? 0)}
+                現金 ${fmt(adjustedCashTotal)} − 零用金 ${fmt(store?.petty_cash ?? 0)}
               </p>
             </div>
             <span className="text-lg font-bold tabular-nums" style={{ color: '#18181b' }}>
@@ -365,9 +390,21 @@ export default async function SummaryPage() {
                 )
               })}
               <div className="flex justify-between items-center pt-2" style={{ borderTop: '1px solid #f4f4f5' }}>
-                <span className="text-sm font-bold" style={{ color: '#18181b' }}>現金總額</span>
-                <span className="text-sm font-bold tabular-nums" style={{ color: '#18181b' }}>${fmt(cash.cash_total)}</span>
+                <span className="text-sm font-bold" style={{ color: '#18181b' }}>{largeCashExpenseTotal > 0 ? '現金清點小計' : '現金總額'}</span>
+                <span className="text-sm font-bold tabular-nums" style={{ color: '#18181b' }}>${fmt(countedCashTotal)}</span>
               </div>
+              {largeCashExpenses.map(item => (
+                <div key={item.id} className="flex justify-between items-center py-1">
+                  <span className="text-xs" style={{ color: '#c2410c' }}>{item.description}</span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color: '#dc2626' }}>-${fmt(item.amount)}</span>
+                </div>
+              ))}
+              {largeCashExpenseTotal > 0 && (
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-sm font-bold" style={{ color: '#18181b' }}>現金總額</span>
+                  <span className="text-sm font-bold tabular-nums" style={{ color: '#18181b' }}>${fmt(adjustedCashTotal)}</span>
+                </div>
+              )}
               <div className="flex justify-between items-center py-1">
                 <span className="text-xs" style={{ color: '#a1a1aa' }}>扣零用金（${fmt(store?.petty_cash ?? 0)}）</span>
                 <span className="text-sm font-semibold tabular-nums" style={{ color: '#92400E' }}>${fmt(closing.actual_remit)}</span>

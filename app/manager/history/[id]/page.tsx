@@ -14,6 +14,26 @@ import PhotoGrid from '@/components/manager/photo-grid'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
+interface LargeCashExpense {
+  id: string
+  description: string
+  amount: number
+}
+
+function parseLargeCashExpenses(value: unknown): LargeCashExpense[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item: unknown) => {
+      const row = item as Partial<LargeCashExpense>
+      return {
+        id: typeof row.id === 'string' ? row.id : `${row.description ?? 'expense'}-${row.amount ?? 0}`,
+        description: typeof row.description === 'string' && row.description.trim() ? row.description.trim() : '大額支出',
+        amount: Math.abs(Number(row.amount) || 0),
+      }
+    })
+    .filter(item => item.amount > 0)
+}
+
 function fmtTs(iso: string) {
   return new Date(iso).toLocaleString('zh-TW', {
     timeZone: 'Asia/Taipei',
@@ -75,6 +95,11 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
   const orders = closing.order_items ?? []
   const expenseItems = closing.expense_items ?? []
   const handwriteOrders = closing.handwrite_orders ?? []
+  const cashRow = cash as { large_expenses?: unknown; cash_total?: number | string } | undefined
+  const largeCashExpenses = parseLargeCashExpenses(cashRow?.large_expenses)
+  const largeCashExpenseTotal = largeCashExpenses.reduce((sum, item) => sum + item.amount, 0)
+  const countedCashTotal = Number(cashRow?.cash_total ?? 0)
+  const adjustedCashTotal = countedCashTotal - largeCashExpenseTotal
   const st = statusMap[closing.status] ?? statusMap.draft
 
   const varColor = Math.abs(closing.variance) === 0 ? 'text-green-600' :
@@ -399,9 +424,21 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
             })}
             <Separator />
             <div className="flex justify-between font-medium">
-              <span>現金總額</span>
-              <span className="tabular-nums">${fmt(cash.cash_total)}</span>
+              <span>{largeCashExpenseTotal > 0 ? '現金清點小計' : '現金總額'}</span>
+              <span className="tabular-nums">${fmt(countedCashTotal)}</span>
             </div>
+            {largeCashExpenses.map(item => (
+              <div key={item.id} className="flex justify-between text-xs text-red-600">
+                <span>{item.description}</span>
+                <span className="tabular-nums font-medium">-${fmt(item.amount)}</span>
+              </div>
+            ))}
+            {largeCashExpenseTotal > 0 && (
+              <div className="flex justify-between font-medium">
+                <span>現金總額</span>
+                <span className="tabular-nums">${fmt(adjustedCashTotal)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-slate-400 text-xs">
               <span>扣零用金（${fmt(store?.petty_cash ?? 0)}）</span>
               <span className="tabular-nums">${fmt(closing.actual_remit)}</span>
