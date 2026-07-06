@@ -73,7 +73,8 @@ export default async function ManagerDashboard() {
         .select('business_date')
         .eq('store_id', storeId)
         .gte('business_date', sevenDaysAgoStr)
-        .lte('business_date', today),
+        .lte('business_date', today)
+        .in('status', ['submitted', 'verified']),
     ])
     storeName = (storeData as any)?.name ?? ''
     if ((storeData as any)?.type === '央廚') redirect('/manager/ck')

@@ -76,6 +76,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     admin.from('ck_external_stores').select('id, ck_store_id, name').in('ck_store_id', ckStoreIds),
     uniqueAssignedIds.length > 0
       ? admin.from('daily_closings').select('store_id').in('store_id', uniqueAssignedIds).eq('business_date', date)
+          .in('status', ['submitted', 'verified'])
       : Promise.resolve({ data: [] }),
   ])
   const validClosingStores = new Set((validClosings ?? []).map((c: any) => c.store_id as string))
@@ -165,6 +166,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
           .in('store_id', uniqueAssignedIds)
           .gte('business_date', sevenDaysAgoStr)
           .lte('business_date', date)
+          .in('status', ['submitted', 'verified'])
       : Promise.resolve({ data: [] }),
   ])
   const weekValidClosingKeys = new Set(

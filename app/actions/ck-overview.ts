@@ -47,6 +47,7 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
     rec ? admin.from('ck_expense_items').select('category, item_name, amount, payer_name').eq('ck_daily_record_id', rec.id).order('sort_order') : Promise.resolve({ data: [] }),
     assignedIds.length > 0
       ? admin.from('daily_closings').select('store_id').in('store_id', assignedIds).eq('business_date', date)
+          .in('status', ['submitted', 'verified'])
       : Promise.resolve({ data: [] }),
   ])
 

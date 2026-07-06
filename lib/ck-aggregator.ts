@@ -128,6 +128,7 @@ export async function getCKRangeStats(
           .select('store_id, business_date')
           .in('store_id', assignedIds)
           .gte('business_date', firstDay).lte('business_date', lastDay)
+          .in('status', ['submitted', 'verified'])
       : Promise.resolve({ data: [] }),
   ])
 

@@ -96,7 +96,11 @@ export default async function CKPage({
       .filter((c: any) => ['submitted', 'verified'].includes(c.status))
       .map((c: any) => c.store_id as string)
   )
-  const validClosingStores = new Set((todayClosings ?? []).map((c: any) => c.store_id as string))
+  const submittedClosingStores = new Set(
+    (todayClosings ?? [])
+      .filter((c: any) => ['submitted', 'verified'].includes(c.status))
+      .map((c: any) => c.store_id as string)
+  )
 
   // 體系內叫貨 + 支出，從 ck_daily_record 載入
   let memberOrderMap: Record<string, number> = {}
@@ -126,7 +130,7 @@ export default async function CKPage({
     ])
 
     const validStoreOrders = ((storeOrders ?? []) as any[])
-      .filter((o: any) => !o.store_id || validClosingStores.has(o.store_id as string))
+      .filter((o: any) => !o.store_id || submittedClosingStores.has(o.store_id as string))
 
     for (const o of validStoreOrders) {
       if (o.store_id) {
@@ -181,6 +185,7 @@ export default async function CKPage({
           .in('store_id', assignedStoreIds)
           .gte('business_date', sevenDaysAgoStr)
           .lte('business_date', today)
+          .in('status', ['submitted', 'verified'])
       : Promise.resolve({ data: [] }),
   ])
   const validRecentClosingKeys = new Set(

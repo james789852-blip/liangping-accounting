@@ -270,6 +270,7 @@ export async function GET(req: NextRequest) {
           .in('store_id', assignedIds)
           .gte('business_date', firstDay)
           .lte('business_date', lastDay)
+          .in('status', ['submitted', 'verified'])
       : Promise.resolve({ data: [] }),
   ])
   const validClosingKeys = new Set(

@@ -74,6 +74,7 @@ export async function fetchCKReconciliation(ckStoreId: string, year: number, mon
         .select('business_date, store_id, total_cost')
         .in('store_id', assignedIds)
         .gte('business_date', firstDay).lte('business_date', lastDay)
+        .in('status', ['submitted', 'verified'])
     : { data: [] }
 
   // 組合 key = `${date}||${store_id}`
