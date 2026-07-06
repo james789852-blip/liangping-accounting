@@ -276,7 +276,8 @@ export async function getRangeStats(
     // Step 1: 食/耗/雜 by category + vendor group breakdown + 依單據類型加總
     for (const [itemName, amt] of Object.entries(dd.items)) {
       const meta = itemMeta.get(itemName)
-      if (!meta) continue
+      // 沒有 mapping 的品項歸入雜項，避免遺漏導致「結果」與「誤差」不一致
+      if (!meta) { dd.misc += amt; continue }
       if (meta.category === '食材') dd.food += amt
       else if (meta.category === '耗材') dd.pack += amt
       else dd.misc += amt
