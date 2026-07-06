@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect, createContext, useContext } from 'react'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import {
-  deleteItemMapping, updateItemMapping, saveItemMapping, copyGlobalMappingsToStore, reorderItemMappings,
+  deleteItemMapping, updateItemMapping, saveItemMapping, copyGlobalMappingsToStore, reorderItemMappings, setItemDocOverride,
 } from '@/app/actions/item-mappings'
 import { setManagerStore } from '@/app/actions/store-select'
 import { useRouter } from 'next/navigation'
@@ -70,6 +70,7 @@ export default function ItemMappingsClient({
   const [newCol, setNewCol] = useState('')
   const [newCat, setNewCat] = useState('食材')
   const [newVendorGroup, setNewVendorGroup] = useState('')
+  const [newDocType, setNewDocType] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [showAddVg, setShowAddVg] = useState(false)
   const [sortMode, setSortMode] = useState(false)
@@ -78,6 +79,8 @@ export default function ItemMappingsClient({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [inlineAddVg, setInlineAddVg] = useState<string | null>(null)
   const [inlineAddName, setInlineAddName] = useState('')
+  const [inlineAddCat, setInlineAddCat] = useState('食材')
+  const [inlineAddDocType, setInlineAddDocType] = useState('')
   const [newVgName, setNewVgName] = useState('')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
@@ -100,6 +103,7 @@ export default function ItemMappingsClient({
     setNewCol('')
     setNewCat('食材')
     setNewVendorGroup('')
+    setNewDocType('')
     setShowAdd(false)
     setShowAddVg(false)
     setSortMode(false)
@@ -108,6 +112,8 @@ export default function ItemMappingsClient({
     setSelectedIds(new Set())
     setInlineAddVg(null)
     setInlineAddName('')
+    setInlineAddCat('食材')
+    setInlineAddDocType('')
     setNewVgName('')
   }
 
@@ -191,6 +197,11 @@ export default function ItemMappingsClient({
 
   const globalCount = mappings.filter(m => !m.store_id).length
   const isStorePage = activeStoreId !== ''
+  const docTypeOptions = Array.from(new Set([
+    ...BUILTIN_DOC_TYPES,
+    ...vgsState.map(v => v.doc_type).filter((v): v is string => !!v),
+    ...mappings.map(m => m.doc_type_override).filter((v): v is string => !!v),
+  ]))
 
   function startEdit(m: Mapping) { setEditId(m.id); setEditCol(m.excel_column); setEditCat(m.item_category); setEditVendorGroup(m.vendor_group ?? '') }
 
@@ -229,6 +240,9 @@ export default function ItemMappingsClient({
         toast.error(`新增失敗：${errors.map(e => e.error).join('；')}`)
         return
       }
+      if (newDocType.trim()) {
+        await Promise.all(targets.map(sid => setItemDocOverride(newName.trim(), sid ?? null, newDocType.trim())))
+      }
       // Optimistic：若 auto-create 了新 vg，立即加入 vgsState
       for (const r of results) {
         const newVg = (r as any)?.newVg as { id: string; name: string; sort_order: number } | null | undefined
@@ -237,7 +251,7 @@ export default function ItemMappingsClient({
         }
       }
       toast.success(`已新增到 ${targets.length} 個位置`)
-      setShowAdd(false); setNewName(''); setNewCol(''); setNewCat('食材'); setNewVendorGroup(''); setBatchStoreIds([])
+      setShowAdd(false); setNewName(''); setNewCol(''); setNewCat('食材'); setNewVendorGroup(''); setNewDocType(''); setBatchStoreIds([])
       router.refresh()
     })
   }
@@ -482,7 +496,7 @@ export default function ItemMappingsClient({
                 style={{ background: 'white', border: '1.5px solid #E0F2FE', color: '#0369A1' }}>
                 <Tag className="h-3.5 w-3.5" /> 新增分類
               </button>
-              <button onClick={() => { setShowAdd(!showAdd); setNewName(''); setNewCol(''); setNewCat('食材') }}
+              <button onClick={() => { setShowAdd(!showAdd); setNewName(''); setNewCol(''); setNewCat('食材'); setNewDocType('') }}
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-white text-sm font-semibold"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
                 <Plus className="h-4 w-4" /> 新增品項
@@ -618,6 +632,13 @@ export default function ItemMappingsClient({
                   <option>食材</option><option>耗材</option><option>雜項</option>
                 </select>
               </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: '#52525b' }}>單據類型（可空白）</label>
+                <select style={SELECT_ADD_STYLE} value={newDocType} onChange={e => setNewDocType(e.target.value)}>
+                  <option value="">不指定</option>
+                  {docTypeOptions.map(doc => <option key={doc} value={doc}>{doc}</option>)}
+                </select>
+              </div>
             </div>
             {/* 全域頁專屬：批次選店 */}
             {!isStorePage && (
@@ -749,7 +770,7 @@ export default function ItemMappingsClient({
                 {/* 分類內快速新增品項（inline，就地展開輸入框） */}
                 <button onClick={() => {
                   if (inlineAddVg === vg) { setInlineAddVg(null); return }
-                  setInlineAddVg(vg); setInlineAddName('')
+                  setInlineAddVg(vg); setInlineAddName(''); setInlineAddCat('食材'); setInlineAddDocType(vgsState.find(v => v.name === vg)?.doc_type ?? '')
                 }}
                   className="ml-auto flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
                   style={inlineAddVg === vg
@@ -760,11 +781,29 @@ export default function ItemMappingsClient({
                 </button>
               </div>
               {inlineAddVg === vg && (
-                <div className="flex items-center gap-2 mb-2 px-2 py-2 rounded-lg" style={{ background: '#FFFBEB', border: '1.5px solid #FDE68A' }}>
-                  <input autoFocus value={inlineAddName} onChange={e => setInlineAddName(e.target.value)}
-                    placeholder="品項名稱（例：辣椒）"
-                    onKeyDown={e => { if (e.key === 'Escape') { setInlineAddVg(null); setInlineAddName('') } }}
-                    style={{ flex: 1, height: 32, padding: '0 8px', border: '1.5px solid #F59E0B', borderRadius: 6, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+                <div className="grid grid-cols-1 md:grid-cols-[1fr_130px_150px_auto_auto] items-end gap-2 mb-2 px-2 py-2 rounded-lg" style={{ background: '#FFFBEB', border: '1.5px solid #FDE68A' }}>
+                  <div>
+                    <label className="block text-[11px] font-semibold mb-1" style={{ color: '#92400E' }}>品項名稱</label>
+                    <input autoFocus value={inlineAddName} onChange={e => setInlineAddName(e.target.value)}
+                      placeholder="例：辣椒"
+                      onKeyDown={e => { if (e.key === 'Escape') { setInlineAddVg(null); setInlineAddName('') } }}
+                      style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid #F59E0B', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold mb-1" style={{ color: '#92400E' }}>類別</label>
+                    <select value={inlineAddCat} onChange={e => setInlineAddCat(e.target.value)}
+                      style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid #F59E0B', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: 'white', outline: 'none' }}>
+                      <option>食材</option><option>耗材</option><option>雜項</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold mb-1" style={{ color: '#92400E' }}>單據類型</label>
+                    <select value={inlineAddDocType} onChange={e => setInlineAddDocType(e.target.value)}
+                      style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid #F59E0B', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: 'white', outline: 'none' }}>
+                      <option value="">不指定</option>
+                      {docTypeOptions.map(doc => <option key={doc} value={doc}>{doc}</option>)}
+                    </select>
+                  </div>
                   <button disabled={!inlineAddName.trim() || isPending}
                     onClick={() => {
                       const name = inlineAddName.trim()
@@ -772,8 +811,12 @@ export default function ItemMappingsClient({
                       startTransition(async () => {
                         const targetVg = vg === '未分類' ? undefined : vg
                         const storeParam = activeStoreId || undefined
-                        const r = await saveItemMapping(name, name, '食材', storeParam, targetVg)
+                        const r = await saveItemMapping(name, name, inlineAddCat, storeParam, targetVg)
                         if (r && 'error' in r) { toast.error('新增失敗：' + r.error); return }
+                        if (inlineAddDocType.trim()) {
+                          const docResult = await setItemDocOverride(name, storeParam ?? null, inlineAddDocType.trim())
+                          if (docResult && 'error' in docResult) { toast.error('單據類型儲存失敗：' + docResult.error); return }
+                        }
                         // Optimistic：若 auto-create 新 vg → 加入 vgsState
                         const newVg = (r as any)?.newVg
                         if (newVg) setVgsState(prev => prev.some(v => v.id === newVg.id) ? prev : [...prev, { ...newVg, doc_type: null }])
@@ -782,12 +825,12 @@ export default function ItemMappingsClient({
                         router.refresh()
                       })
                     }}
-                    className="text-xs font-semibold px-3 py-1 rounded-lg text-white"
+                    className="text-xs font-semibold px-3 py-2 rounded-lg text-white"
                     style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', cursor: 'pointer', opacity: (!inlineAddName.trim() || isPending) ? 0.5 : 1 }}>
                     儲存
                   </button>
                   <button onClick={() => { setInlineAddVg(null); setInlineAddName('') }}
-                    className="text-xs font-semibold px-2 py-1 rounded-lg"
+                    className="text-xs font-semibold px-2 py-2 rounded-lg"
                     style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b', cursor: 'pointer' }}>
                     取消
                   </button>
