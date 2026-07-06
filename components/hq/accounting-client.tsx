@@ -326,6 +326,11 @@ function ExportButtons({ kind, storeId, storeName, date }: { kind: 'store' | 'ck
 }
 
 /* ─────────── 店家詳情 ─────────── */
+type StoreDetailState = {
+  stats: DailyStats | null
+  detail: { closing: any; receipts: any[] } | null
+}
+
 function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName: string; date: string }) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -334,24 +339,49 @@ function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName:
   const [detail, setDetail] = useState<{ closing: any; receipts: any[] } | null>(null)
   const [showHolidays, setShowHolidays] = useState(false)
   const hasLoadedRef = useRef(false)
+  const cacheRef = useRef<Map<string, StoreDetailState>>(new Map())
+  const requestIdRef = useRef(0)
   const [y, m] = date.split('-').map(Number)
 
   const loadDetail = useCallback(() => {
-    if (hasLoadedRef.current) setRefreshing(true)
-    else setLoading(true)
+    const key = `${storeId}:${date}`
+    const requestId = ++requestIdRef.current
+    const cached = cacheRef.current.get(key)
+    if (cached) {
+      setStats(cached.stats)
+      setDetail(cached.detail)
+      setLoading(false)
+      setRefreshing(true)
+    } else if (hasLoadedRef.current) {
+      setStats(null)
+      setDetail(null)
+      setLoading(false)
+      setRefreshing(true)
+    } else {
+      setLoading(true)
+    }
     fetchDailyAccountingDetail(storeId, date)
       .then(result => {
+        if (requestId !== requestIdRef.current) return
         if ('error' in result) {
           toast.error(result.error)
           return
         }
         if (!('success' in result)) return
-        setStats(result.stats ?? null)
-        setDetail({ closing: result.closing, receipts: result.receipts ?? [] })
+        const next = {
+          stats: result.stats ?? null,
+          detail: { closing: result.closing, receipts: result.receipts ?? [] },
+        }
+        cacheRef.current.set(key, next)
+        setStats(next.stats)
+        setDetail(next.detail)
         hasLoadedRef.current = true
       })
-      .catch(e => toast.error('載入失敗：' + (e instanceof Error ? e.message : String(e))))
+      .catch(e => {
+        if (requestId === requestIdRef.current) toast.error('載入失敗：' + (e instanceof Error ? e.message : String(e)))
+      })
       .finally(() => {
+        if (requestId !== requestIdRef.current) return
         setLoading(false)
         setRefreshing(false)
       })
@@ -390,7 +420,9 @@ function StoreDetail({ storeId, storeName, date }: { storeId: string; storeName:
         {stats ? (
           <StoreStatsGrid data={stats} />
         ) : (
-          <p className="text-sm" style={{ color: '#a1a1aa' }}>當日尚無資料</p>
+          <div className="rounded-xl p-4 text-sm" style={{ color: '#a1a1aa', background: '#fafafa', border: '1px solid #f4f4f5' }}>
+            {refreshing ? '正在載入這家店的資料…' : '當日尚無資料'}
+          </div>
         )}
       </div>
       {detail?.closing && (
@@ -477,29 +509,73 @@ function StoreStatsGrid({ data }: { data: DailyStats }) {
 }
 
 /* ─────────── 央廚詳情 ─────────── */
+type CKDetailState = {
+  stats: CKDailyStats | null
+  detail: any | null
+}
+
 function CKDetail({ ckStoreId, storeName, date }: { ckStoreId: string; storeName: string; date: string }) {
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [stats, setStats] = useState<CKDailyStats | null>(null)
   const [detail, setDetail] = useState<any | null>(null)
+  const hasLoadedRef = useRef(false)
+  const cacheRef = useRef<Map<string, CKDetailState>>(new Map())
+  const requestIdRef = useRef(0)
+
   useEffect(() => {
-    setLoading(true); setStats(null); setDetail(null)
+    const key = `${ckStoreId}:${date}`
+    const requestId = ++requestIdRef.current
+    const cached = cacheRef.current.get(key)
+    if (cached) {
+      setStats(cached.stats)
+      setDetail(cached.detail)
+      setLoading(false)
+      setRefreshing(true)
+    } else if (hasLoadedRef.current) {
+      setStats(null)
+      setDetail(null)
+      setLoading(false)
+      setRefreshing(true)
+    } else {
+      setLoading(true)
+    }
     Promise.all([
       fetchCKDailyStats(ckStoreId, date),
       fetchCKDailyDetail(ckStoreId, date),
     ])
       .then(([sR, dR]) => {
-        if ('stats' in sR) setStats(sR.stats ?? null)
-        if ('success' in dR) setDetail(dR.detail)
+        if (requestId !== requestIdRef.current) return
+        const next = {
+          stats: 'stats' in sR ? (sR.stats ?? null) : null,
+          detail: 'success' in dR ? dR.detail : null,
+        }
+        cacheRef.current.set(key, next)
+        setStats(next.stats)
+        setDetail(next.detail)
+        hasLoadedRef.current = true
       })
-      .catch(e => toast.error('載入失敗：' + (e instanceof Error ? e.message : String(e))))
-      .finally(() => setLoading(false))
+      .catch(e => {
+        if (requestId === requestIdRef.current) toast.error('載入失敗：' + (e instanceof Error ? e.message : String(e)))
+      })
+      .finally(() => {
+        if (requestId !== requestIdRef.current) return
+        setLoading(false)
+        setRefreshing(false)
+      })
   }, [ckStoreId, date])
 
   if (loading) return <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" style={{ color: '#a1a1aa' }} /></div>
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
+      <div className="bg-white rounded-2xl p-4 relative" style={{ border: '1px solid #f4f4f5', opacity: refreshing ? 0.88 : 1 }}>
+        {refreshing && (
+          <div className="absolute top-3 right-3 flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full"
+            style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+            <Loader2 className="h-3 w-3 animate-spin" /> 更新中
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{storeName} · {date}</h2>
           <ExportButtons kind="ck" storeId={ckStoreId} storeName={storeName} date={date} />
@@ -525,7 +601,9 @@ function CKDetail({ ckStoreId, storeName, date }: { ckStoreId: string; storeName
             </div>
           </div>
         ) : (
-          <p className="text-sm" style={{ color: '#a1a1aa' }}>當日尚無資料</p>
+          <div className="rounded-xl p-4 text-sm" style={{ color: '#a1a1aa', background: '#fafafa', border: '1px solid #f4f4f5' }}>
+            {refreshing ? '正在載入這間央廚的資料…' : '當日尚無資料'}
+          </div>
         )}
       </div>
       {detail && (

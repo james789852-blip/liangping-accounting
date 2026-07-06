@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect, useRef, createContext, useContext }
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import {
   deleteItemMapping, updateItemMapping, saveItemMapping, copyGlobalMappingsToStore, reorderItemMappings, setItemDocOverride,
+  fetchItemMappingsForStore,
 } from '@/app/actions/item-mappings'
 import { setManagerStore } from '@/app/actions/store-select'
 import { useRouter } from 'next/navigation'
@@ -87,6 +88,7 @@ export default function ItemMappingsClient({
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const storeTabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const mappingsCacheRef = useRef<Record<string, Mapping[]>>({ [initStoreId]: initial })
   const [pendingStoreId, setPendingStoreId] = useState<string | null>(null)
 
   // 用 state 保存 vendorGroups，允許 optimistic update
@@ -94,8 +96,11 @@ export default function ItemMappingsClient({
   // 剛新增、尚無品項的空類別（不在 displayMappings 裡），用來讓 UI 立即顯示空分類
   const [pendingVgs, setPendingVgs] = useState<string[]>([])
 
-  // Sync from server after router.refresh()
-  useEffect(() => { setMappings(initial) }, [initial])
+  // Sync from server after direct entry or router.refresh()
+  useEffect(() => {
+    mappingsCacheRef.current[initStoreId] = initial
+    setMappings(initial)
+  }, [initial, initStoreId])
   useEffect(() => { setVgsState(vendorGroups) }, [vendorGroups])
 
   function resetStoreScopedUi() {
@@ -137,12 +142,41 @@ export default function ItemMappingsClient({
     })
   }, [activeStoreId, pendingStoreId, stores.length])
 
+  function replaceStoreUrl(storeId: string) {
+    window.history.replaceState(null, '', `/hq/item-mappings?storeId=${storeId}`)
+  }
+
   function selectStore(storeId: string) {
     if (storeId === activeStoreId || storeId === pendingStoreId) return
+    replaceStoreUrl(storeId)
+    setManagerStore(storeId).catch(() => {})
+
+    const cached = mappingsCacheRef.current[storeId]
+    if (cached) {
+      setMappings(cached)
+      setActiveStoreId(storeId)
+      setPendingStoreId(null)
+      resetStoreScopedUi()
+      return
+    }
+
     setPendingStoreId(storeId)
     startTransition(async () => {
-      await setManagerStore(storeId)
-      router.push(`/hq/item-mappings?storeId=${storeId}`)
+      const result = await fetchItemMappingsForStore(storeId)
+      if ('error' in result) {
+        toast.error(result.error)
+        setPendingStoreId(null)
+        return
+      }
+      if (!('success' in result)) {
+        setPendingStoreId(null)
+        return
+      }
+      mappingsCacheRef.current[storeId] = result.mappings as Mapping[]
+      setMappings(result.mappings as Mapping[])
+      setActiveStoreId(storeId)
+      setPendingStoreId(null)
+      resetStoreScopedUi()
     })
   }
 

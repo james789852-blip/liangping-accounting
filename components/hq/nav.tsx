@@ -161,6 +161,12 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   // 關閉抽屜當路由變化
   useEffect(() => { setMobileSheetOpen(false) }, [pathname])
 
+  useEffect(() => {
+    for (const href of ['/hq/accounting', '/hq/dashboard', '/hq/item-mappings', '/manager/dashboard', '/manager/closing']) {
+      router.prefetch(href)
+    }
+  }, [router])
+
   return (
     <>
       {/* ── 桌機側欄 */}

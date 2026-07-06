@@ -31,6 +31,35 @@ function revalidateLight() {
   revalidateTag('item-mappings', 'default')
 }
 
+async function checkHqAuth() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' as const }
+  const { data: profile } = await supabase
+    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
+  if (!profile?.is_hq && profile?.role !== '老闆') return { error: '權限不足' as const }
+  return { ok: true as const }
+}
+
+export async function fetchItemMappingsForStore(storeId: string) {
+  const auth = await checkHqAuth()
+  if ('error' in auth) return auth
+
+  const admin = createAdminClient()
+  const query = admin.from('item_column_mappings')
+    .select('*')
+    .order('sort_order')
+    .order('item_category')
+    .order('item_name')
+
+  const { data, error } = storeId
+    ? await query.or(`store_id.is.null,store_id.eq.${storeId}`)
+    : await query.is('store_id', null)
+
+  if (error) return { error: `載入品項失敗：${error.message}` as const }
+  return { success: true as const, mappings: data ?? [] }
+}
+
 export async function saveItemMapping(
   itemName: string, excelColumn: string, itemCategory: string, storeId?: string, vendorGroup?: string
 ) {

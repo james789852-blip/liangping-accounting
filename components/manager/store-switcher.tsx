@@ -1,6 +1,6 @@
 'use client'
 
-import { useTransition } from 'react'
+import { useOptimistic, useTransition } from 'react'
 import { setManagerStore } from '@/app/actions/store-select'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
@@ -8,14 +8,15 @@ interface Store { id: string; name: string; type?: string }
 
 export default function StoreSwitcher({ stores, currentStoreId, className, style }: { stores: Store[]; currentStoreId: string; className?: string; style?: React.CSSProperties }) {
   const [pending, startTransition] = useTransition()
+  const [selectedStoreId, setSelectedStoreId] = useOptimistic(currentStoreId)
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const nextStoreId = e.target.value
+    setSelectedStoreId(nextStoreId)
     startTransition(async () => {
-      await setManagerStore(nextStoreId)
       if (pathname.startsWith('/hq')) {
         const nextStore = stores.find(s => s.id === nextStoreId)
         const params = new URLSearchParams(searchParams.toString())
@@ -27,7 +28,9 @@ export default function StoreSwitcher({ stores, currentStoreId, className, style
           params.set('storeId', nextStoreId)
         }
         router.replace(`${pathname}?${params.toString()}`)
+        setManagerStore(nextStoreId).catch(() => {})
       } else {
+        await setManagerStore(nextStoreId)
         router.refresh()
       }
     })
@@ -37,9 +40,9 @@ export default function StoreSwitcher({ stores, currentStoreId, className, style
 
   return (
     <select
-      value={currentStoreId}
+      value={selectedStoreId}
       onChange={handleChange}
-      disabled={pending}
+      disabled={pending && !pathname.startsWith('/hq')}
       className={className ?? "text-xs border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"}
       style={style}
     >

@@ -48,6 +48,12 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
   const router = useRouter()
   const time = useClock()
 
+  useEffect(() => {
+    for (const href of ['/manager/dashboard', '/manager/closing', '/manager/history']) {
+      router.prefetch(href)
+    }
+  }, [router])
+
   async function handleLogout() {
     const supabase = createClient()
     await supabase.auth.signOut()
