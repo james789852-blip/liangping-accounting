@@ -384,8 +384,8 @@ function GradientTitle({ step, total, title, desc }: { step: number; total: numb
  * 黏在頂部的照片卡：可在「展開大圖」與「縮成小條」之間切換。
  * 使用者輸入品項時可保持小條看數字、需要時再展開比對。
  */
-const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, onReupload }: {
-  src: string; alt: string; onLightbox?: () => void; onReupload?: () => void
+const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, onReupload, onDelete }: {
+  src: string; alt: string; onLightbox?: () => void; onReupload?: () => void; onDelete?: () => void
 }) {
   // 預設展開 220px 看得清品項內容（手機螢幕約 30%），sticky 黏頂部捲動時不消失
   const [compact, setCompact] = useState(false)
@@ -407,6 +407,13 @@ const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, on
             className="px-2 py-0.5 rounded-md text-[10px] font-semibold"
             style={{ background: 'white', border: '1px solid #fed7aa', color: '#c2410c', cursor: 'pointer', fontFamily: 'inherit' }}>
             重拍
+          </button>
+        )}
+        {onDelete && (
+          <button type="button" onClick={onDelete}
+            className="px-2 py-0.5 rounded-md text-[10px] font-semibold inline-flex items-center gap-1"
+            style={{ background: '#fff1f2', border: '1px solid #fecdd3', color: '#be123c', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <Trash2 className="h-3 w-3" />刪除
           </button>
         )}
       </div>
@@ -1107,6 +1114,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     toast.success('配送單照片已上傳')
   }
 
+  function handleClearCkPhoto() {
+    setCkPhotoPreview(undefined)
+    setCkPhotoUrl(undefined)
+    try { localStorage.removeItem(ckPhotoLsKey) } catch {}
+    toast.success('配送單照片已刪除')
+  }
+
   async function handleEnvelopePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -1785,12 +1799,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (stepId === 'receipts' && !isLocked) {
       if (receiptForms.length > 0) {
         toast.error(`請先儲存 ${receiptForms.length} 筆未儲存的收據`)
-        return
-      }
-    }
-    if (stepId === 'ck_delivery' && !isLocked) {
-      if (!ckPhotoUrl && !ckPhotoPreview) {
-        toast.error('請先上傳央廚配送單照片')
         return
       }
     }
@@ -2791,7 +2799,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         {(stepId === 'ck_delivery' || (isLocked && !submitDone)) && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="央廚配送"
-              desc="填寫今日各品項配送數量，上傳配送單照片供總公司核對。" />}
+              desc="填寫今日各品項配送數量；若有配送單，可上傳照片供總公司核對。" />}
 
             {/* 照片用 fixed 黏在螢幕頂端，捲動下方輸入時照片仍可見。
                 .ck-photo-fixed 在 desktop 加 sidebar 偏移，跟下方主 container 對齊。 */}
@@ -2805,14 +2813,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         alt="配送單"
                         onLightbox={() => setPhotoLightbox((ckPhotoPreview || ckPhotoUrl)!)}
                         onReupload={() => ckPhotoInputRef.current?.click()}
+                        onDelete={handleClearCkPhoto}
                       />
                     ) : (
                       <button onClick={() => ckPhotoInputRef.current?.click()}
                         className="w-full rounded-2xl flex flex-col items-center justify-center gap-2 py-5"
                         style={{ border: '2px dashed #fed7aa', background: '#fff7ed', color: '#f97316' }}>
                         <Camera className="h-7 w-7" />
-                        <p className="text-sm font-semibold">上傳配送單照片</p>
-                        <p className="text-xs" style={{ color: '#fdba74' }}>供總公司核對品項與數量</p>
+                        <p className="text-sm font-semibold">有配送單再上傳照片</p>
+                        <p className="text-xs" style={{ color: '#fdba74' }}>沒有配送或沒有照片也可以繼續</p>
                       </button>
                     )}
                   </div>
