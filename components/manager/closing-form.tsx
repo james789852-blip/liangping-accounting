@@ -3946,6 +3946,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     </span>
                   </div>
 
+                  {/* 上方核對按鈕：照片很多時不用滑到底即可開始 */}
+                  {!allConfirmed && (
+                    <div className="px-4 pt-4">
+                      <button
+                        onClick={startReview}
+                        style={{ width: '100%', background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white', border: 'none', padding: '14px', borderRadius: '14px', fontSize: '15px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(245,158,11,0.22)' }}>
+                        <Camera style={{ width: '18px', height: '18px' }} />
+                        {confirmedCount > 0 ? `繼續核對（剩 ${verifyItems.length - confirmedCount} 張）` : '開始核對'}
+                      </button>
+                    </div>
+                  )}
+
                   {/* 清單 */}
                   <div className="p-4 space-y-2">
                     {verifyItems.map((item, idx) => (
