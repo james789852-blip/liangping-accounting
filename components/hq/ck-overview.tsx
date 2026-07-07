@@ -153,9 +153,9 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
       {!open && hasData && (
         <div className="grid grid-cols-3 gap-px mx-5 mb-4" style={{ border: '1px solid #f4f4f5', borderRadius: '12px', overflow: 'hidden' }}>
           {[
-            { label: '叫貨收入', value: d.revenueTotal, color: '#10b981' },
+            { label: '營業額', value: d.revenueTotal, color: '#10b981' },
             { label: '當日支出', value: d.expenseTotal, color: '#f97316' },
-            { label: '當日結餘', value: d.balance, color: d.balance >= 0 ? '#F59E0B' : '#dc2626' },
+            { label: '待補款', value: d.hqPaid ? 0 : d.expenseTotal, color: d.hqPaid ? '#a1a1aa' : '#dc2626' },
           ].map(({ label, value, color }) => (
             <div key={label} className="px-3 py-2.5" style={{ background: '#fafafa' }}>
               <p className="text-[10px] font-semibold" style={{ color: '#a1a1aa' }}>{label}</p>
@@ -174,9 +174,9 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
               {/* 摘要 */}
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { label: '叫貨收入', value: d.revenueTotal, color: '#10b981' },
+                  { label: '營業額', value: d.revenueTotal, color: '#10b981' },
                   { label: '當日支出', value: d.expenseTotal, color: '#f97316' },
-                  { label: '當日結餘', value: d.balance, color: d.balance >= 0 ? '#F59E0B' : '#dc2626' },
+                  { label: '待補款', value: d.hqPaid ? 0 : d.expenseTotal, color: d.hqPaid ? '#a1a1aa' : '#dc2626' },
                 ].map(({ label, value, color }) => (
                   <div key={label} className="rounded-xl px-3 py-2.5" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
                     <p className="text-[10px] font-semibold" style={{ color: '#a1a1aa' }}>{label}</p>
@@ -339,7 +339,7 @@ export default function CKOverview({ data, date }: Props) {
       {/* 全體摘要 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: '全體叫貨', value: `$${fmt(totalRevenue)}`, color: '#10b981' },
+          { label: '營業額', value: `$${fmt(totalRevenue)}`, color: '#10b981' },
           { label: '全體支出', value: `$${fmt(totalExpense)}`, color: '#f97316' },
           { label: '已送出', value: `${submittedCount} / ${data.length} 間`, color: '#F59E0B' },
           { label: '待補款', value: unpaidExpense > 0 ? `$${fmt(unpaidExpense)}` : '—', color: unpaidExpense > 0 ? '#dc2626' : '#a1a1aa' },

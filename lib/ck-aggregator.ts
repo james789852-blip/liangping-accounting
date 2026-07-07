@@ -4,9 +4,8 @@
  * 資料來源：
  *   ck_daily_records + ck_store_orders + ck_expense_items + ck_external_stores
  *
- * Revenue = 各成員店家訂單 + 外部店家訂單
+ * Revenue = 央廚輸入的各成員店家訂單 + 外部店家訂單
  * Expense = 食耗雜品項加總
- * Balance = Revenue − Expense
  */
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMonthLastDay } from '@/lib/business-date'
@@ -97,13 +96,12 @@ export async function getCKRangeStats(
   lastDay: string,
 ): Promise<{ ckStore: CKStoreInfo; days: CKDailyStats[] }> {
   const admin = createAdminClient()
-  const [{ data: storeRow }, { data: records }, { data: externalStoreRows }] = await Promise.all([
+  const [{ data: storeRow }, { data: records }] = await Promise.all([
     admin.from('stores').select('id, name, assigned_store_ids').eq('id', ckStoreId).single(),
     admin.from('ck_daily_records')
       .select('id, business_date, status, payer_name, hq_paid, receipt_photo_urls')
       .eq('ck_store_id', ckStoreId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
-    admin.from('ck_external_stores').select('id, name').eq('ck_store_id', ckStoreId),
   ])
   const ckStore = (storeRow ?? { id: ckStoreId, name: '' }) as CKStoreInfo
   const assignedIds = (ckStore.assigned_store_ids ?? []) as string[]
@@ -116,26 +114,16 @@ export async function getCKRangeStats(
   }
 
   const recordIds = (records ?? []).map(r => r.id)
-  const [{ data: orders }, { data: expenses }, { data: validClosings }] = await Promise.all([
+  const [{ data: orders }, { data: expenses }] = await Promise.all([
     recordIds.length > 0
       ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount').in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
       ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type').in('ck_daily_record_id', recordIds).order('sort_order')
       : Promise.resolve({ data: [] }),
-    assignedIds.length > 0
-      ? admin.from('daily_closings')
-          .select('store_id, business_date')
-          .in('store_id', assignedIds)
-          .gte('business_date', firstDay).lte('business_date', lastDay)
-          .in('status', ['submitted', 'verified'])
-      : Promise.resolve({ data: [] }),
   ])
 
   const recordByDate = new Map((records ?? []).map(r => [r.business_date as string, r] as const))
-  const validClosingKeys = new Set(
-    (validClosings ?? []).map((c: any) => `${c.business_date}||${c.store_id}`)
-  )
 
   // 補齊日曆
   const startDate = new Date(firstDay + 'T12:00:00+08:00')
@@ -157,7 +145,6 @@ export async function getCKRangeStats(
       const ords = (orders ?? []).filter((o: any) => o.ck_daily_record_id === rec.id)
       for (const o of ords) {
         if (o.store_id) {
-          if (!validClosingKeys.has(`${date}||${o.store_id}`)) continue
           dd.memberOrders.push({ store_id: o.store_id, store_name: memberStoreMap[o.store_id] ?? o.store_id, amount: o.amount ?? 0 })
           dd.memberRevenue += o.amount ?? 0
         } else {
@@ -213,6 +200,15 @@ export async function getCKMonthlyStats(ckStoreId: string, year: number, monthNu
     const nameById = Object.fromEntries((memberStoreRows ?? []).map((s: any) => [s.id, s.name as string]))
     for (const id of assignedIds) memberStoreOrder.push({ id, name: nameById[id] ?? id })
   }
+  const externalStoreOrder: string[] = []
+  const { data: externalStoreRows } = await admin
+    .from('ck_external_stores')
+    .select('name')
+    .eq('ck_store_id', ckStoreId)
+  for (const row of externalStoreRows ?? []) {
+    const name = String((row as any).name ?? '').trim()
+    if (name && !externalStoreOrder.includes(name)) externalStoreOrder.push(name)
+  }
 
   const totals = {
     memberRevenue: 0, externalRevenue: 0, revenue: 0,
@@ -263,11 +259,18 @@ export async function getCKMonthlyStats(ckStoreId: string, year: number, monthNu
   const extraMembers = Object.values(memberMap)
     .filter(m => !memberStoreOrder.find(x => x.id === m.store_id))
     .sort((a, b) => b.total - a.total)
+  const orderedExternal = externalStoreOrder.map(name => ({
+    name,
+    total: externalMap[name]?.total ?? 0,
+  }))
+  const extraExternal = Object.values(externalMap)
+    .filter(e => !externalStoreOrder.includes(e.name))
+    .sort((a, b) => b.total - a.total)
 
   return {
     year, monthNum, ckStore, daily: days, totals,
     expenseByItem: Object.values(itemMap).sort((a, b) => b.total - a.total),
     memberByStore: [...orderedMembers, ...extraMembers],
-    externalByName: Object.values(externalMap).sort((a, b) => b.total - a.total),
+    externalByName: [...orderedExternal, ...extraExternal],
   }
 }

@@ -234,10 +234,10 @@ function CKDailyPanel({ data, storeName, ckStoreId }: { data: CKDailyStats; stor
         <div>
           <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>結算</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <Stat label="總收入" value={data.revenue} color="#16a34a" />
+            <Stat label="營業額" value={data.revenue} color="#16a34a" />
             <Stat label="總支出" value={data.totalExpense} color="#be123c" />
-            <Stat label="淨額" value={data.balance} color={data.balance >= 0 ? '#0369a1' : '#dc2626'} />
-            <Stat label="總補款" value={data.hqPaid ? data.totalExpense : 0} color="#f59e0b" />
+            <Stat label="待補款" value={data.hqPaid ? 0 : data.totalExpense} color="#dc2626" />
+            <Stat label="補款完成" value={data.hqPaid ? data.totalExpense : 0} color="#f59e0b" />
           </div>
         </div>
 
@@ -348,10 +348,10 @@ function CKMonthlyPanel({ data }: { data: CKMonthlyStats }) {
         <div>
           <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>結算</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <Stat label="總收入" value={t.revenue} color="#16a34a" />
+            <Stat label="營業額" value={t.revenue} color="#16a34a" />
             <Stat label="總支出" value={t.totalExpense} color="#be123c" />
-            <Stat label="淨額" value={t.balance} color={t.balance >= 0 ? '#0369a1' : '#dc2626'} />
             <Stat label="成員店家" value={t.memberRevenue} color="#8b5cf6" />
+            <Stat label="體系外" value={t.externalRevenue} color="#0369a1" />
           </div>
         </div>
 
@@ -446,9 +446,8 @@ function CKMonthlyPanel({ data }: { data: CKMonthlyStats }) {
                 <th className="px-2 py-1.5 text-left sticky left-0" style={{ color: '#71717a', background: '#fafafa', minWidth: 56, zIndex: 2 }}>日期</th>
                 <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>星期</th>
                 <th className="px-2 py-1.5 text-center" style={{ color: '#71717a' }}>狀態</th>
-                <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>收入</th>
+                <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>營業額</th>
                 <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>支出</th>
-                <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>淨額</th>
                 <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>食</th>
                 <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>耗</th>
                 <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>雜</th>
@@ -472,7 +471,6 @@ function CKMonthlyPanel({ data }: { data: CKMonthlyStats }) {
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: '#16a34a' }}>{d.revenue ? fmt(d.revenue) : ''}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: '#be123c' }}>{d.totalExpense ? fmt(d.totalExpense) : ''}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: d.balance >= 0 ? '#0369a1' : '#dc2626' }}>{d.balance ? fmt(d.balance) : ''}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{d.food ? fmt(d.food) : ''}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{d.pack ? fmt(d.pack) : ''}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{d.misc ? fmt(d.misc) : ''}</td>

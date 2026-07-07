@@ -22,7 +22,7 @@ interface ColumnDef {
   vendorGroup?: string
   docType?: string
   itemKey?: string
-  statKey?: 'memberRevenue' | 'externalRevenue' | 'revenue' | 'invoice' | 'receipt' | 'refund' | 'food' | 'pack' | 'misc' | 'totalExpense' | 'balance'
+  statKey?: 'memberRevenue' | 'externalRevenue' | 'revenue' | 'invoice' | 'receipt' | 'refund' | 'food' | 'pack' | 'misc' | 'totalExpense'
 }
 
 function colLetter(colNum: number): string {
@@ -114,7 +114,7 @@ function columnFill(c: ColumnDef): string {
     return CK_ORANGE
   }
   if (c.kind === 'stat') {
-    if (c.statKey === 'revenue' || c.statKey === 'balance') return CK_MONTH_YELLOW
+    if (c.statKey === 'revenue') return CK_MONTH_YELLOW
     if (c.statKey === 'invoice') return 'FFD9E2F3'
     if (c.statKey === 'receipt') return 'FFFCE4D6'
     if (c.statKey === 'refund') return CK_GREEN
@@ -133,12 +133,12 @@ function headerFill(c: ColumnDef): string {
   if (c.kind === 'stat' && c.statKey === 'invoice') return 'FF00B0F0'
   if (c.kind === 'stat' && c.statKey === 'receipt') return CK_TOTAL_ORANGE
   if (c.kind === 'stat' && c.statKey === 'refund') return 'FFA9D18E'
-  if (c.kind === 'stat') return c.statKey === 'balance' ? CK_MONTH_YELLOW : CK_BLACK
+  if (c.kind === 'stat') return CK_BLACK
   return CK_HEADER_GRAY
 }
 
 function headerFontColor(c: ColumnDef): string {
-  return c.kind === 'stat' && c.statKey !== 'balance' && !['invoice', 'receipt', 'refund'].includes(c.statKey ?? '') ? 'FFFFFFFF' : 'FF000000'
+  return c.kind === 'stat' && !['invoice', 'receipt', 'refund'].includes(c.statKey ?? '') ? 'FFFFFFFF' : 'FF000000'
 }
 
 function displayHeader(text: string): string {
@@ -199,11 +199,6 @@ function statFormula(
     const miscCol = cols.find(x => x.statKey === 'misc')
     if (foodCol && packCol && miscCol) return `${colLetter(foodCol.index)}${rowRef}+${colLetter(packCol.index)}${rowRef}+${colLetter(miscCol.index)}${rowRef}`
   }
-  if (key === 'balance') {
-    const revCol = cols.find(x => x.statKey === 'revenue')
-    const totalExpCol = cols.find(x => x.statKey === 'totalExpense')
-    if (revCol && totalExpCol) return `${colLetter(revCol.index)}${rowRef}-${colLetter(totalExpCol.index)}${rowRef}`
-  }
   return null
 }
 
@@ -261,7 +256,7 @@ export async function addCKSheet(
   }
 
   // 店家叫貨與單據統計欄：順序比照舊 Excel，先看店家，再看總發票 / 食材耗材雜項。
-  cols.push({ index: idx++, header: '總收入', kind: 'stat', statKey: 'revenue' })
+  cols.push({ index: idx++, header: '營業額', kind: 'stat', statKey: 'revenue' })
   cols.push({ index: idx++, header: '總發票', kind: 'stat', statKey: 'invoice' })
   cols.push({ index: idx++, header: '總收據', kind: 'stat', statKey: 'receipt' })
   cols.push({ index: idx++, header: '梁平退稅', kind: 'stat', statKey: 'refund' })
@@ -269,7 +264,6 @@ export async function addCKSheet(
   cols.push({ index: idx++, header: '耗材', kind: 'stat', statKey: 'pack' })
   cols.push({ index: idx++, header: '雜項', kind: 'stat', statKey: 'misc' })
   cols.push({ index: idx++, header: '總支出', kind: 'stat', statKey: 'totalExpense' })
-  cols.push({ index: idx++, header: '淨額', kind: 'stat', statKey: 'balance' })
 
   // 支出品項欄（依 category → vendor_group → doc_type → item_name 排序）
   const catOrder: Record<string, number> = { '食材': 0, '耗材': 1, '雜項': 2 }
@@ -301,7 +295,7 @@ export async function addCKSheet(
   const externalCols = cols.filter(c => c.kind === 'external')
   const expenseCols = cols.filter(c => c.kind === 'expense')
   const leadingStatCols = cols.filter(c => c.kind === 'stat' && ['revenue', 'invoice', 'receipt', 'refund'].includes(c.statKey ?? ''))
-  const trailingStatCols = cols.filter(c => c.kind === 'stat' && ['food', 'pack', 'misc', 'totalExpense', 'balance'].includes(c.statKey ?? ''))
+  const trailingStatCols = cols.filter(c => c.kind === 'stat' && ['food', 'pack', 'misc', 'totalExpense'].includes(c.statKey ?? ''))
 
   for (let c = 1; c <= cols[cols.length - 1].index; c++) {
     fillHeader(ws.getRow(1).getCell(c), '', CK_PAPER, false, 'FF000000', 12)
@@ -558,7 +552,7 @@ function addCKAnnualOverviewSheet(wb: ExcelJS.Workbook, year: number) {
     | { type: 'ratio'; label: string; numerator: string; denominator: string; fill: string; key: string }
   > = [
     { type: 'section', label: '店家與單據', fill: CK_TOTAL_ORANGE },
-    { type: 'metric', label: '營業額', sheetHeader: '總收入', fill: CK_PAPER, key: 'revenue' },
+    { type: 'metric', label: '營業額', sheetHeader: '營業額', fill: CK_PAPER, key: 'revenue' },
     { type: 'metric', label: '總發票', sheetHeader: '總發票', fill: 'FFD9E2F3', key: 'invoice' },
     { type: 'metric', label: '總收據', sheetHeader: '總收據', fill: 'FFFCE4D6', key: 'receipt' },
     { type: 'metric', label: '梁平退稅', sheetHeader: '梁平退稅', fill: CK_GREEN, key: 'refund' },
@@ -567,8 +561,7 @@ function addCKAnnualOverviewSheet(wb: ExcelJS.Workbook, year: number) {
     { type: 'metric', label: '耗材', sheetHeader: '耗材', fill: 'FF4BACC6', key: 'pack' },
     { type: 'metric', label: '雜項', sheetHeader: '雜項', fill: CK_TOTAL_ORANGE, key: 'misc' },
     { type: 'metric', label: '總支出', sheetHeader: '總支出', fill: CK_BLACK, key: 'totalExpense' },
-    { type: 'section', label: '成果指標', fill: CK_HEADER_GRAY },
-    { type: 'metric', label: '淨額', sheetHeader: '淨額', fill: CK_MONTH_YELLOW, key: 'balance' },
+    { type: 'section', label: '成本占比', fill: CK_HEADER_GRAY },
     { type: 'ratio', label: '成本率（總支出 / 營業額）', numerator: 'totalExpense', denominator: 'revenue', fill: 'FFEFEFEF', key: 'costRate' },
     { type: 'ratio', label: '食材率', numerator: 'food', denominator: 'revenue', fill: 'FFFCE4D6', key: 'foodRate' },
     { type: 'ratio', label: '耗材率', numerator: 'pack', denominator: 'revenue', fill: 'FFDCEBF3', key: 'packRate' },

@@ -38,30 +38,26 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
   if (!ckStore) return { error: '找不到央廚' as const }
 
   const assignedIds: string[] = (ckStore.assigned_store_ids as string[] | null) ?? []
-  const [{ data: assignedStores }, { data: extStores }, orderRes, expRes, { data: validClosings }] = await Promise.all([
+  const [{ data: assignedStores }, { data: extStores }, orderRes, expRes] = await Promise.all([
     assignedIds.length > 0
       ? admin.from('stores').select('id, name').in('id', assignedIds)
       : Promise.resolve({ data: [] }),
     admin.from('ck_external_stores').select('id, ck_store_id, name').eq('ck_store_id', ckStoreId),
     rec ? admin.from('ck_store_orders').select('store_id, external_store_name, amount').eq('ck_daily_record_id', rec.id) : Promise.resolve({ data: [] }),
-    rec ? admin.from('ck_expense_items').select('category, item_name, amount, payer_name').eq('ck_daily_record_id', rec.id).order('sort_order') : Promise.resolve({ data: [] }),
-    assignedIds.length > 0
-      ? admin.from('daily_closings').select('store_id').in('store_id', assignedIds).eq('business_date', date)
-          .in('status', ['submitted', 'verified'])
-      : Promise.resolve({ data: [] }),
+    rec ? admin.from('ck_expense_items').select('category, item_name, amount, payer_name, vendor_group, doc_type').eq('ck_daily_record_id', rec.id).order('sort_order') : Promise.resolve({ data: [] }),
   ])
 
   const nameMap = Object.fromEntries((assignedStores ?? []).map((s: any) => [s.id, s.name as string]))
-  const validClosingStores = new Set((validClosings ?? []).map((c: any) => c.store_id as string))
   const memberOrders = ((orderRes.data ?? []) as any[])
     .filter(o => o.store_id !== null)
-    .filter(o => validClosingStores.has(o.store_id))
     .map(o => ({ store_id: o.store_id, store_name: nameMap[o.store_id] ?? o.store_id, amount: o.amount }))
   const externalOrders = ((orderRes.data ?? []) as any[])
     .filter(o => o.store_id === null)
     .map(o => ({ name: o.external_store_name, amount: o.amount }))
   const expenses = ((expRes.data ?? []) as any[]).map(e => ({
     category: e.category, item_name: e.item_name, amount: e.amount, payer_name: e.payer_name ?? undefined,
+    vendor_group: e.vendor_group ?? undefined,
+    doc_type: e.doc_type ?? undefined,
   }))
   const memberStores = assignedIds.map(id => {
     const existing = memberOrders.find(o => o.store_id === id)

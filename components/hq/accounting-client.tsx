@@ -689,10 +689,10 @@ function CKDetail({ ckStoreId, storeName, date }: { ckStoreId: string; storeName
             <div>
               <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>結算</p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <Stat label="總收入" value={stats.revenue} color="#16a34a" />
+                <Stat label="營業額" value={stats.revenue} color="#16a34a" />
                 <Stat label="總支出" value={stats.totalExpense} color="#be123c" />
-                <Stat label="淨額" value={stats.balance} color={stats.balance >= 0 ? '#0369a1' : '#dc2626'} />
-                <Stat label="總補款" value={stats.hqPaid ? stats.totalExpense : 0} color="#f59e0b" />
+                <Stat label="待補款" value={stats.hqPaid ? 0 : stats.totalExpense} color="#dc2626" />
+                <Stat label="補款完成" value={stats.hqPaid ? stats.totalExpense : 0} color="#f59e0b" />
               </div>
             </div>
             <div className="border-t pt-3" style={{ borderColor: '#f4f4f5' }}>
