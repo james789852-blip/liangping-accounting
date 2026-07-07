@@ -133,12 +133,16 @@ function headerFill(c: ColumnDef): string {
   if (c.kind === 'stat' && c.statKey === 'invoice') return 'FF00B0F0'
   if (c.kind === 'stat' && c.statKey === 'receipt') return CK_TOTAL_ORANGE
   if (c.kind === 'stat' && c.statKey === 'refund') return 'FFA9D18E'
-  if (c.kind === 'stat') return CK_BLACK
+  if (c.kind === 'stat' && c.statKey === 'revenue') return CK_MONTH_YELLOW
+  if (c.kind === 'stat' && c.statKey === 'totalExpense') return CK_HEADER_GRAY
+  if (c.kind === 'stat' && c.statKey === 'food') return CK_ORANGE
+  if (c.kind === 'stat' && c.statKey === 'pack') return 'FF4BACC6'
+  if (c.kind === 'stat' && c.statKey === 'misc') return CK_TOTAL_ORANGE
   return CK_HEADER_GRAY
 }
 
 function headerFontColor(c: ColumnDef): string {
-  return c.kind === 'stat' && !['invoice', 'receipt', 'refund'].includes(c.statKey ?? '') ? 'FFFFFFFF' : 'FF000000'
+  return 'FF000000'
 }
 
 function displayHeader(text: string): string {
@@ -255,15 +259,12 @@ export async function addCKSheet(
     cols.push({ index: idx++, header: e.name, kind: 'external', itemKey: e.name })
   }
 
-  // 店家叫貨與單據統計欄：順序比照舊 Excel，先看店家，再看總發票 / 食材耗材雜項。
+  // 店家叫貨與成本統計欄：單據小計放在上方摘要，不佔每日資料欄。
   cols.push({ index: idx++, header: '營業額', kind: 'stat', statKey: 'revenue' })
-  cols.push({ index: idx++, header: '總發票', kind: 'stat', statKey: 'invoice' })
-  cols.push({ index: idx++, header: '總收據', kind: 'stat', statKey: 'receipt' })
-  cols.push({ index: idx++, header: '梁平退稅', kind: 'stat', statKey: 'refund' })
+  cols.push({ index: idx++, header: '總', kind: 'stat', statKey: 'totalExpense' })
   cols.push({ index: idx++, header: '食材', kind: 'stat', statKey: 'food' })
   cols.push({ index: idx++, header: '耗材', kind: 'stat', statKey: 'pack' })
   cols.push({ index: idx++, header: '雜項', kind: 'stat', statKey: 'misc' })
-  cols.push({ index: idx++, header: '總支出', kind: 'stat', statKey: 'totalExpense' })
 
   // 支出品項欄（依 category → vendor_group → doc_type → item_name 排序）
   const catOrder: Record<string, number> = { '食材': 0, '耗材': 1, '雜項': 2 }
@@ -294,8 +295,15 @@ export async function addCKSheet(
   const memberCols = cols.filter(c => c.kind === 'member')
   const externalCols = cols.filter(c => c.kind === 'external')
   const expenseCols = cols.filter(c => c.kind === 'expense')
-  const leadingStatCols = cols.filter(c => c.kind === 'stat' && ['revenue', 'invoice', 'receipt', 'refund'].includes(c.statKey ?? ''))
-  const trailingStatCols = cols.filter(c => c.kind === 'stat' && ['food', 'pack', 'misc', 'totalExpense'].includes(c.statKey ?? ''))
+  const leadingStatCols = cols.filter(c => c.kind === 'stat' && c.statKey === 'revenue')
+  const trailingStatCols = cols.filter(c => c.kind === 'stat' && ['totalExpense', 'food', 'pack', 'misc'].includes(c.statKey ?? ''))
+  const memberColStart = memberCols[0]?.index
+  const memberColEnd = memberCols[memberCols.length - 1]?.index
+  const extColStart = externalCols[0]?.index
+  const extColEnd = externalCols[externalCols.length - 1]?.index
+  const foodExpCols = expenseCols.filter(c => c.category === '食材')
+  const packExpCols = expenseCols.filter(c => c.category === '耗材')
+  const miscExpCols = expenseCols.filter(c => c.category === '雜項')
 
   for (let c = 1; c <= cols[cols.length - 1].index; c++) {
     fillHeader(ws.getRow(1).getCell(c), '', CK_PAPER, false, 'FF000000', 12)
@@ -329,19 +337,32 @@ export async function addCKSheet(
     }
   }
 
-  if (leadingStatCols.length > 0) {
-    for (const c of leadingStatCols) {
-      if (c.statKey === 'revenue') continue
-      fillHeader(ws.getRow(1).getCell(c.index), c.header, headerFill(c), true, headerFontColor(c), 13)
-      fillHeader(ws.getRow(2).getCell(c.index), c.statKey === 'invoice' || c.statKey === 'receipt' ? '單據' : '', CK_PAPER, true, 'FF000000', 11)
-    }
-  }
   if (trailingStatCols.length > 0) {
-    const s = trailingStatCols[0].index
-    const e = trailingStatCols[trailingStatCols.length - 1].index
-    fillHeader(ws.getRow(1).getCell(s), '合計', CK_HEADER_GRAY, true, 'FF000000', 13)
-    if (e > s) ws.mergeCells(1, s, 1, e)
-    for (const c of trailingStatCols) fillHeader(ws.getRow(2).getCell(c.index), c.header, headerFill(c), true, headerFontColor(c), 11)
+    const totalCol = trailingStatCols.find(c => c.statKey === 'totalExpense')?.index
+    const foodCol = trailingStatCols.find(c => c.statKey === 'food')?.index
+    const packCol = trailingStatCols.find(c => c.statKey === 'pack')?.index
+    const miscCol = trailingStatCols.find(c => c.statKey === 'misc')?.index
+    if (totalCol && foodCol) {
+      fillHeader(ws.getRow(1).getCell(totalCol), '梁平退稅', 'FFA9D18E', true, 'FF000000', 13)
+      const refundCell = ws.getRow(1).getCell(foodCol)
+      refundCell.value = { formula: statFormula('refund', TOTAL_ROW, TOTAL_ROW, memberColStart, memberColEnd, extColStart, extColEnd, expenseCols, foodExpCols, packExpCols, miscExpCols, cols) ?? '0' } as any
+      styleDataCell(refundCell, 'FFA9D18E', 'right')
+      refundCell.font = { name: CK_FONT, size: 13, bold: true, color: { argb: 'FF000000' } }
+    }
+    if (totalCol && foodCol) {
+      fillHeader(ws.getRow(2).getCell(totalCol), '總發票', 'FF00B0F0', true, 'FF000000', 13)
+      const invoiceCell = ws.getRow(2).getCell(foodCol)
+      invoiceCell.value = { formula: statFormula('invoice', TOTAL_ROW, TOTAL_ROW, memberColStart, memberColEnd, extColStart, extColEnd, expenseCols, foodExpCols, packExpCols, miscExpCols, cols) ?? '0' } as any
+      styleDataCell(invoiceCell, 'FF00B0F0', 'right')
+      invoiceCell.font = { name: CK_FONT, size: 13, bold: true, color: { argb: 'FF000000' } }
+    }
+    if (packCol && miscCol) {
+      fillHeader(ws.getRow(2).getCell(packCol), '總收據', CK_TOTAL_ORANGE, true, 'FF000000', 13)
+      const receiptCell = ws.getRow(2).getCell(miscCol)
+      receiptCell.value = { formula: statFormula('receipt', TOTAL_ROW, TOTAL_ROW, memberColStart, memberColEnd, extColStart, extColEnd, expenseCols, foodExpCols, packExpCols, miscExpCols, cols) ?? '0' } as any
+      styleDataCell(receiptCell, CK_TOTAL_ORANGE, 'right')
+      receiptCell.font = { name: CK_FONT, size: 13, bold: true, color: { argb: 'FF000000' } }
+    }
   }
 
   // Row 3 header
@@ -369,14 +390,6 @@ export async function addCKSheet(
   // Row 4 月合計
   fillHeader(ws.getRow(TOTAL_ROW).getCell(1), `${monthNum}月`, 'FFFFFF00', true)
   fillHeader(ws.getRow(TOTAL_ROW).getCell(2), '', 'FFFFFF00', true)
-  const memberColStart = memberCols[0]?.index
-  const memberColEnd = memberCols[memberCols.length - 1]?.index
-  const extColStart = externalCols[0]?.index
-  const extColEnd = externalCols[externalCols.length - 1]?.index
-  const foodExpCols = expenseCols.filter(c => c.category === '食材')
-  const packExpCols = expenseCols.filter(c => c.category === '耗材')
-  const miscExpCols = expenseCols.filter(c => c.category === '雜項')
-
   for (const c of cols) {
     if (c.kind === 'date' || c.kind === 'weekday') continue
     const letter = colLetter(c.index)
@@ -560,7 +573,7 @@ function addCKAnnualOverviewSheet(wb: ExcelJS.Workbook, year: number) {
     { type: 'metric', label: '食材', sheetHeader: '食材', fill: CK_ORANGE, key: 'food' },
     { type: 'metric', label: '耗材', sheetHeader: '耗材', fill: 'FF4BACC6', key: 'pack' },
     { type: 'metric', label: '雜項', sheetHeader: '雜項', fill: CK_TOTAL_ORANGE, key: 'misc' },
-    { type: 'metric', label: '總支出', sheetHeader: '總支出', fill: CK_BLACK, key: 'totalExpense' },
+    { type: 'metric', label: '總支出', sheetHeader: '總', fill: CK_HEADER_GRAY, key: 'totalExpense' },
     { type: 'section', label: '成本占比', fill: CK_HEADER_GRAY },
     { type: 'ratio', label: '成本率（總支出 / 營業額）', numerator: 'totalExpense', denominator: 'revenue', fill: 'FFEFEFEF', key: 'costRate' },
     { type: 'ratio', label: '食材率', numerator: 'food', denominator: 'revenue', fill: 'FFFCE4D6', key: 'foodRate' },
@@ -584,7 +597,12 @@ function addCKAnnualOverviewSheet(wb: ExcelJS.Workbook, year: number) {
       const cell = ws.getRow(currentRow).getCell(m + 1)
       if (row.type === 'metric') {
         const sheetName = `${m}月央廚食耗`
-        cell.value = { formula: `IFERROR(INDEX('${sheetName}'!$4:$4,MATCH("${row.sheetHeader}",'${sheetName}'!$3:$3,0)),0)` } as any
+        const summaryRow = row.key === 'refund' ? 1 : row.key === 'invoice' || row.key === 'receipt' ? 2 : null
+        cell.value = {
+          formula: summaryRow
+            ? `IFERROR(INDEX('${sheetName}'!$${summaryRow}:$${summaryRow},MATCH("${row.sheetHeader}",'${sheetName}'!$${summaryRow}:$${summaryRow},0)+1),0)`
+            : `IFERROR(INDEX('${sheetName}'!$4:$4,MATCH("${row.sheetHeader}",'${sheetName}'!$3:$3,0)),0)`,
+        } as any
         cell.numFmt = row.numFmt ?? '#,##0;-#,##0;"-"'
       } else {
         const numeratorRow = metricRows[row.numerator]
