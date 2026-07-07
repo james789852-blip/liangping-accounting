@@ -934,6 +934,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               if (Array.isArray(bk.reserves)) setReserves(bk.reserves)
               if (Array.isArray(bk.largeCashExpenses)) setLargeCashExpenses(bk.largeCashExpenses)
               if (bk.ckQuantities && typeof bk.ckQuantities === 'object') setCkQuantities(bk.ckQuantities)
+              if (bk.pettyCounts && typeof bk.pettyCounts === 'object') setPettyCounts(bk.pettyCounts)
+              if (bk.pettyLumps && typeof bk.pettyLumps === 'object') setPettyLumps(bk.pettyLumps)
               toast.success('資料已從備份恢復，請確認後重新儲存')
               localStorage.removeItem(saveBkKey)
             } catch { toast.error('恢復失敗') }
@@ -1052,13 +1054,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
           data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses,
-          ckQuantities: ckQuantitiesRef.current, ts: Date.now(),
+          ckQuantities: ckQuantitiesRef.current, pettyCounts, pettyLumps, ts: Date.now(),
         }))
       } catch {}
     }, 500)
     return () => clearTimeout(t)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses])
+  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, pettyCounts, pettyLumps])
 
   // 頁面切換 / 關閉前立即 flush + 離頁警告
   useEffect(() => {
@@ -1067,7 +1069,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
           data: dataRef.current, expenses, handwriteOrders, adjustments, reserves,
-          largeCashExpenses, ckQuantities: ckQuantitiesRef.current, ts: Date.now(),
+          largeCashExpenses, ckQuantities: ckQuantitiesRef.current, pettyCounts, pettyLumps, ts: Date.now(),
         }))
       } catch {}
     }
@@ -1087,7 +1089,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       window.removeEventListener('beforeunload', onBeforeUnload)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, isLocked, submitDone])
+  }, [expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, pettyCounts, pettyLumps, isLocked, submitDone])
 
   useEffect(() => {
     const fromQty = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * effectiveCKPrice(p), 0)

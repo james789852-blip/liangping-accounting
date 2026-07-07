@@ -20,6 +20,22 @@ interface LargeCashExpense {
   amount: number
 }
 
+interface PettyCountsPayload {
+  counts?: Record<string, number>
+  lumps?: Record<string, number>
+  verified_at?: string
+}
+
+const CASH_ROWS = [
+  { label: '千元鈔', ck: 'bills_1000', lk: 'lump_1000', unit: 1000, ul: '張' },
+  { label: '五百元', ck: 'bills_500',  lk: 'lump_500',  unit: 500,  ul: '張' },
+  { label: '百元鈔', ck: 'bills_100',  lk: 'lump_100',  unit: 100,  ul: '張' },
+  { label: '五十元', ck: 'coins_50',   lk: 'lump_50',   unit: 50,   ul: '枚' },
+  { label: '十元',   ck: 'coins_10',   lk: 'lump_10',   unit: 10,   ul: '枚' },
+  { label: '五元',   ck: 'coins_5',    lk: 'lump_5',    unit: 5,    ul: '枚' },
+  { label: '一元',   ck: 'coins_1',    lk: 'lump_1',    unit: 1,    ul: '枚' },
+] as const
+
 function parseLargeCashExpenses(value: unknown): LargeCashExpense[] {
   if (!Array.isArray(value)) return []
   return value
@@ -32,6 +48,16 @@ function parseLargeCashExpenses(value: unknown): LargeCashExpense[] {
       }
     })
     .filter(item => item.amount > 0)
+}
+
+function parsePettyCounts(value: unknown): PettyCountsPayload | null {
+  if (!value || typeof value !== 'object') return null
+  const row = value as PettyCountsPayload
+  return {
+    counts: row.counts && typeof row.counts === 'object' ? row.counts : {},
+    lumps: row.lumps && typeof row.lumps === 'object' ? row.lumps : {},
+    verified_at: typeof row.verified_at === 'string' ? row.verified_at : undefined,
+  }
 }
 
 function fmtTs(iso: string) {
@@ -100,6 +126,15 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
   const largeCashExpenseTotal = largeCashExpenses.reduce((sum, item) => sum + item.amount, 0)
   const countedCashTotal = Number(cashRow?.cash_total ?? 0)
   const adjustedCashTotal = countedCashTotal - largeCashExpenseTotal
+  const pettyCountsPayload = parsePettyCounts((closing as any).petty_counts)
+  const pettyCounts = pettyCountsPayload?.counts ?? {}
+  const pettyLumps = pettyCountsPayload?.lumps ?? {}
+  const pettyTotal = CASH_ROWS.reduce((sum, row) => (
+    sum + (Number(pettyCounts[row.ck]) || 0) * row.unit + (Number(pettyLumps[row.lk]) || 0)
+  ), 0)
+  const pettyExpected = Number(store?.petty_cash ?? 0)
+  const pettyDiff = pettyTotal - pettyExpected
+  const hasPettyCounts = pettyTotal > 0 || !!pettyCountsPayload?.verified_at
   const st = statusMap[closing.status] ?? statusMap.draft
 
   const varColor = Math.abs(closing.variance) === 0 ? 'text-green-600' :
@@ -400,15 +435,7 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
               <span className="text-center">整筆金額</span>
               <span className="text-right">小計</span>
             </div>
-            {([
-              { label: '千元鈔', ck: 'bills_1000', lk: 'lump_1000', unit: 1000, ul: '張' },
-              { label: '五百元', ck: 'bills_500',  lk: 'lump_500',  unit: 500,  ul: '張' },
-              { label: '百元鈔', ck: 'bills_100',  lk: 'lump_100',  unit: 100,  ul: '張' },
-              { label: '五十元', ck: 'coins_50',   lk: 'lump_50',   unit: 50,   ul: '枚' },
-              { label: '十元',   ck: 'coins_10',   lk: 'lump_10',   unit: 10,   ul: '枚' },
-              { label: '五元',   ck: 'coins_5',    lk: 'lump_5',    unit: 5,    ul: '枚' },
-              { label: '一元',   ck: 'coins_1',    lk: 'lump_1',    unit: 1,    ul: '枚' },
-            ]).map(({ label, ck, lk, unit, ul }) => {
+            {CASH_ROWS.map(({ label, ck, lk, unit, ul }) => {
               const count = (cash as any)[ck] ?? 0
               const lump  = (cash as any)[lk] ?? 0
               const sub   = count * unit + lump
@@ -442,6 +469,60 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
             <div className="flex justify-between text-slate-400 text-xs">
               <span>扣零用金（${fmt(store?.petty_cash ?? 0)}）</span>
               <span className="tabular-nums">${fmt(closing.actual_remit)}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 零用金核對 */}
+      {hasPettyCounts && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
+              <PiggyBank className="h-4 w-4 text-orange-500" /> 零用金核對
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5 text-sm">
+            {pettyCountsPayload?.verified_at && (
+              <div className="flex justify-between text-xs text-slate-400 pb-1">
+                <span>核對時間</span>
+                <span className="tabular-nums">{fmtTs(pettyCountsPayload.verified_at)}</span>
+              </div>
+            )}
+            <div className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 text-[10px] text-slate-400">
+              <span />
+              <span className="text-center">張 / 枚</span>
+              <span className="text-center">整筆金額</span>
+              <span className="text-right">小計</span>
+            </div>
+            {CASH_ROWS.map(({ label, ck, lk, unit, ul }) => {
+              const count = Number(pettyCounts[ck] ?? 0)
+              const lump = Number(pettyLumps[lk] ?? 0)
+              const sub = count * unit + lump
+              if (sub === 0) return null
+              return (
+                <div key={label} className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 items-baseline text-slate-600">
+                  <span className="text-xs">{label}</span>
+                  <span className="text-xs text-center">{count > 0 ? `${count} ${ul}` : '—'}</span>
+                  <span className="text-xs text-center tabular-nums">{lump > 0 ? `$${fmt(lump)}` : '—'}</span>
+                  <span className="text-xs text-right tabular-nums font-medium">${fmt(sub)}</span>
+                </div>
+              )
+            })}
+            <Separator />
+            <div className="flex justify-between font-medium">
+              <span>清點零用金總額</span>
+              <span className="tabular-nums">${fmt(pettyTotal)}</span>
+            </div>
+            <div className="flex justify-between text-slate-400 text-xs">
+              <span>店面應剩餘零用金</span>
+              <span className="tabular-nums">${fmt(pettyExpected)}</span>
+            </div>
+            <div className="flex justify-between font-semibold text-sm">
+              <span>差額</span>
+              <span className={cn('tabular-nums', pettyDiff === 0 ? 'text-green-600' : 'text-orange-600')}>
+                {pettyDiff > 0 ? '+' : ''}{fmt(pettyDiff)}
+              </span>
             </div>
           </CardContent>
         </Card>
