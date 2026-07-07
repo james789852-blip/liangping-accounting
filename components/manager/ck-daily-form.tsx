@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn } from 'lucide-react'
@@ -150,6 +150,7 @@ interface Props {
 export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, isBackfill, memberOrders, externalStores, existing, vendorGroups = [], mappingItems = [], receiptCategories = [] }: Props) {
   const router = useRouter()
   const isLocked = existing?.status === 'submitted'
+  const draftKey = `lp_ck_daily_draft:${ckStoreId}:${date}`
 
   const [payerName, setPayerName] = useState(existing?.payer_name ?? '')
   const [note, setNote] = useState(existing?.note ?? '')
@@ -186,6 +187,72 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   const [showMember, setShowMember] = useState(true)
   const [showExternal, setShowExternal] = useState(true)
   const [showExpenses, setShowExpenses] = useState(true)
+
+  const vendorOptions = receiptCategories.find(c => c.name === activeCat)?.vendors ?? []
+  const expenseItemOptions = useMemo(() => {
+    if (!activeVendor) return []
+    return mappingItems
+      .filter(m => (m.vendor_group ?? '') === activeVendor)
+      .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999) || a.item_name.localeCompare(b.item_name, 'zh-Hant'))
+  }, [activeVendor, mappingItems])
+  const hasMappedExpenseItems = expenseItemOptions.length > 0
+
+  useEffect(() => {
+    if (isLocked || typeof window === 'undefined') return
+    const raw = window.localStorage.getItem(draftKey)
+    if (!raw) return
+    try {
+      const draft = JSON.parse(raw)
+      if (draft?.ckStoreId !== ckStoreId || draft?.date !== date) return
+      if (Array.isArray(draft.extOrders)) setExtOrders(draft.extOrders)
+      if (Array.isArray(draft.expenses)) setExpenses(draft.expenses)
+      if (Array.isArray(draft.photoUrls)) setPhotoUrls(draft.photoUrls)
+      if (typeof draft.payerName === 'string') setPayerName(draft.payerName)
+      if (typeof draft.note === 'string') setNote(draft.note)
+      if (draft.newExpense && typeof draft.newExpense === 'object') {
+        setNewExpense(prev => ({ ...prev, ...draft.newExpense }))
+      }
+      if (typeof draft.activeCat === 'string') setActiveCat(draft.activeCat)
+      if (typeof draft.activeVendor === 'string') setActiveVendor(draft.activeVendor)
+      toast.info('已恢復上次未儲存的央廚資料')
+    } catch {
+      window.localStorage.removeItem(draftKey)
+    }
+  }, [ckStoreId, date, draftKey, isLocked])
+
+  useEffect(() => {
+    if (isLocked || typeof window === 'undefined') return
+    const timer = window.setTimeout(() => {
+      const hasDraftContent =
+        payerName.trim() ||
+        note.trim() ||
+        photoUrls.length > 0 ||
+        expenses.length > 0 ||
+        extOrders.some(o => Number(o.amount || 0) > 0) ||
+        newExpense.item_name.trim() ||
+        newExpense.amount ||
+        newExpense.payer_name.trim() ||
+        newExpense.note.trim()
+      if (!hasDraftContent) {
+        window.localStorage.removeItem(draftKey)
+        return
+      }
+      window.localStorage.setItem(draftKey, JSON.stringify({
+        ckStoreId,
+        date,
+        savedAt: new Date().toISOString(),
+        payerName,
+        note,
+        extOrders,
+        expenses,
+        newExpense,
+        activeCat,
+        activeVendor,
+        photoUrls,
+      }))
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [activeCat, activeVendor, ckStoreId, date, draftKey, expenses, extOrders, isLocked, newExpense, note, payerName, photoUrls])
 
   const memberTotal = memberOrders.reduce((s, o) => s + o.amount, 0)
   const extTotal = extOrders.reduce((s, o) => s + (Number(o.amount) || 0), 0)
@@ -259,6 +326,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     })
     if (r.error) { toast.error('儲存失敗：' + r.error) }
     else {
+      if (typeof window !== 'undefined') window.localStorage.removeItem(draftKey)
       toast.success(asSubmit ? '已送出！' : '草稿已儲存')
       router.refresh()
     }
@@ -466,47 +534,38 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                     </button>
                   ))}
                 </div>
-                {/* 廠商 dropdown（依當前類別動態）—— 雜項/其他：廠商=品項，選完自動帶 item_name */}
+                {/* 廠商 dropdown（依當前類別動態） */}
                 <select className={INPUT} style={INPUT_STYLE}
                   value={activeVendor}
                   onChange={e => {
                     const v = e.target.value
                     setActiveVendor(v)
                     const vgRec = vendorGroups.find(g => g.name === v)
-                    if (activeCat === '雜項' || activeCat === '其他') {
-                      // 雜項/其他：廠商本身就是品項，直接帶入 item_name
-                      const m = mappingItems.find(x => x.item_name === v)
-                      const cat = (m?.item_category === '食材' || m?.item_category === '耗材' || m?.item_category === '雜項')
-                        ? m.item_category as '食材' | '耗材' | '雜項'
-                        : (activeCat === '雜項' ? '雜項' : '食材') as '食材' | '耗材' | '雜項'
-                      setNewExpense(p => ({
-                        ...p,
-                        item_name: v,
-                        vendor_group: v,
-                        category: cat,
-                        doc_type: vgRec?.doc_type ?? p.doc_type,
-                      }))
-                    } else {
-                      setNewExpense(p => ({ ...p, item_name: '', vendor_group: v, doc_type: vgRec?.doc_type ?? p.doc_type }))
-                    }
+                    const fallbackCategory = activeCat === '耗材' ? '耗材' : activeCat === '其他' || activeCat === '雜項' ? '雜項' : '食材'
+                    setNewExpense(p => ({
+                      ...p,
+                      item_name: '',
+                      vendor_group: v,
+                      category: fallbackCategory,
+                      doc_type: vgRec?.doc_type ?? p.doc_type,
+                    }))
                   }}>
-                  <option value="">— 選擇{activeCat === '雜項' || activeCat === '其他' ? '品項' : '廠商'} —</option>
-                  {(receiptCategories.find(c => c.name === activeCat)?.vendors ?? []).map(v => (
+                  <option value="">— 選擇廠商/群組 —</option>
+                  {vendorOptions.map(v => (
                     <option key={v.id} value={v.name}>{v.name}</option>
                   ))}
                 </select>
-                {/* 品項選擇：只有「廠商類別」需要（雜項/其他 已跳過此步） */}
-                {activeCat !== '雜項' && activeCat !== '其他' && (
+                {/* 品項選擇：所有類別都可以選；無對應時用群組名稱當品項，避免無法新增 */}
                 <select className={INPUT} style={INPUT_STYLE}
                   value={newExpense.item_name}
                   disabled={!activeVendor}
                   onChange={e => {
                     const name = e.target.value
-                    const m = mappingItems.find(x => x.item_name === name && (x.vendor_group ?? '') === activeVendor)
+                    const m = expenseItemOptions.find(x => x.item_name === name)
                     const vgRec = vendorGroups.find(g => g.name === activeVendor)
                     const cat = (m?.item_category === '食材' || m?.item_category === '耗材' || m?.item_category === '雜項')
                       ? m.item_category as '食材' | '耗材' | '雜項'
-                      : '食材' as '食材' | '耗材' | '雜項'
+                      : (activeCat === '耗材' ? '耗材' : activeCat === '其他' || activeCat === '雜項' ? '雜項' : '食材') as '食材' | '耗材' | '雜項'
                     setNewExpense(p => ({
                       ...p,
                       item_name: name,
@@ -516,11 +575,15 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                     }))
                   }}>
                   <option value="">{activeVendor ? '— 選擇品項 —' : '（先選廠商）'}</option>
-                  {activeVendor && mappingItems
-                    .filter(m => (m.vendor_group ?? '') === activeVendor)
-                    .map(m => <option key={m.item_name} value={m.item_name}>{m.item_name}</option>)
+                  {activeVendor && hasMappedExpenseItems
+                    ? expenseItemOptions.map(m => <option key={m.item_name} value={m.item_name}>{m.item_name}</option>)
+                    : activeVendor && <option value={activeVendor}>{activeVendor}</option>
                   }
                 </select>
+                {activeVendor && !hasMappedExpenseItems && (
+                  <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
+                    此群組尚未設定細項，會先以「{activeVendor}」作為品項名稱。
+                  </p>
                 )}
                 <div className="grid grid-cols-2 gap-2">
                   <input type="number" min="0" className={INPUT} style={INPUT_STYLE} placeholder="金額"

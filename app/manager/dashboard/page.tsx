@@ -77,7 +77,118 @@ export default async function ManagerDashboard() {
         .in('status', ['submitted', 'verified']),
     ])
     storeName = (storeData as any)?.name ?? ''
-    if ((storeData as any)?.type === '央廚') redirect('/manager/ck')
+    if ((storeData as any)?.type === '央廚') {
+      const { data: ckStoreFull } = await admin
+        .from('stores')
+        .select('assigned_store_ids')
+        .eq('id', storeId)
+        .single()
+      const assignedStoreIds: string[] = ((ckStoreFull as any)?.assigned_store_ids as string[] | null) ?? []
+      const [ckRecordRes, todayClosingsRes] = await Promise.all([
+        admin.from('ck_daily_records')
+          .select('id, status, payer_name, note, receipt_photo_urls')
+          .eq('ck_store_id', storeId)
+          .eq('business_date', today)
+          .maybeSingle(),
+        assignedStoreIds.length > 0
+          ? supabase.from('daily_closings')
+              .select('store_id, status')
+              .in('store_id', assignedStoreIds)
+              .eq('business_date', today)
+          : Promise.resolve({ data: [] }),
+      ])
+      const ckRecord = ckRecordRes.data as any
+      const [{ data: ckOrders }, { data: ckExpenses }] = ckRecord
+        ? await Promise.all([
+            admin.from('ck_store_orders')
+              .select('store_id, amount, ck_confirmed_amount, external_store_name')
+              .eq('ck_daily_record_id', ckRecord.id),
+            admin.from('ck_expense_items')
+              .select('amount')
+              .eq('ck_daily_record_id', ckRecord.id),
+          ])
+        : [{ data: [] }, { data: [] }]
+
+      const submittedStoreIds = new Set(
+        (todayClosingsRes.data ?? [])
+          .filter((c: any) => ['submitted', 'verified'].includes(c.status))
+          .map((c: any) => c.store_id as string)
+      )
+      const validOrders = ((ckOrders ?? []) as any[])
+        .filter((o: any) => !o.store_id || submittedStoreIds.has(o.store_id as string))
+      const revenueTotal = validOrders.reduce((sum: number, o: any) => sum + Number(o.amount || 0), 0)
+      const expenseTotal = ((ckExpenses ?? []) as any[]).reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0)
+      const pendingConfirmCount = validOrders.filter((o: any) => o.store_id && Number(o.amount || 0) > 0 && o.ck_confirmed_amount == null).length
+      const mismatchCount = validOrders.filter((o: any) => o.store_id && o.ck_confirmed_amount != null && Number(o.ck_confirmed_amount) !== Number(o.amount)).length
+      const statusLabel = ckRecord?.status === 'submitted' ? '已送出，等待總公司審核'
+        : ckRecord?.status === 'draft' ? '草稿進行中'
+        : ckRecord?.status === 'verified' ? '已對帳完成'
+        : '今日尚未建立央廚帳目'
+
+      return (
+        <div className="min-h-full" style={{ background: '#fafafa' }}>
+          <div className="bg-white px-6 py-4 sticky top-0 z-10 lg:static" style={{ borderBottom: '1px solid #f4f4f5' }}>
+            <p style={{ color: '#a1a1aa', fontSize: '13px' }}>
+              店長端 / <strong style={{ color: '#18181b' }}>今日狀態</strong>
+            </p>
+          </div>
+
+          <div className="max-w-2xl mx-auto px-4 lg:px-6 pt-5 pb-28 lg:pb-8" style={{ maxWidth: '800px' }}>
+            <div className="rounded-3xl p-6 mb-5 bg-white" style={{ border: '1px solid #f4f4f5', boxShadow: '0 14px 40px rgba(15,23,42,0.05)' }}>
+              <div className="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>央廚今日狀態</p>
+                  <h1 className="text-2xl font-extrabold" style={{ color: '#18181b' }}>{storeName || '央廚'}</h1>
+                  <p className="text-sm mt-1" style={{ color: '#71717a' }}>{dateLabel} · {weekdayLabel}</p>
+                </div>
+                <span className="text-xs font-bold px-3 py-1 rounded-full" style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+                  {statusLabel}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                {[
+                  { label: '叫貨收入', value: revenueTotal, color: '#10b981' },
+                  { label: '當日支出', value: expenseTotal, color: '#f97316' },
+                  { label: '當日結餘', value: revenueTotal - expenseTotal, color: revenueTotal - expenseTotal >= 0 ? '#F59E0B' : '#dc2626' },
+                ].map(item => (
+                  <div key={item.label} className="rounded-2xl px-4 py-3" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
+                    <p className="text-[10px] font-semibold uppercase mb-1" style={{ color: '#a1a1aa' }}>{item.label}</p>
+                    <p className="text-lg font-bold tabular-nums" style={{ color: item.color }}>${fmt(item.value)}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                <div className="rounded-2xl px-4 py-3" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
+                  <p className="text-[10px] font-semibold uppercase mb-1" style={{ color: '#a1a1aa' }}>體系內店家</p>
+                  <p className="text-base font-bold" style={{ color: '#18181b' }}>
+                    {submittedStoreIds.size} / {assignedStoreIds.length} 間已送出
+                  </p>
+                </div>
+                <div className="rounded-2xl px-4 py-3" style={{ background: mismatchCount > 0 ? '#FEF2F2' : '#fafafa', border: `1px solid ${mismatchCount > 0 ? '#FECACA' : '#f4f4f5'}` }}>
+                  <p className="text-[10px] font-semibold uppercase mb-1" style={{ color: '#a1a1aa' }}>對帳狀態</p>
+                  <p className="text-base font-bold" style={{ color: mismatchCount > 0 ? '#991B1B' : '#18181b' }}>
+                    {mismatchCount > 0 ? `${mismatchCount} 筆不一致` : pendingConfirmCount > 0 ? `${pendingConfirmCount} 筆待對帳` : '目前無異常'}
+                  </p>
+                </div>
+              </div>
+
+              <Link href="/manager/ck"
+                className="w-full inline-flex items-center justify-center gap-2 rounded-2xl text-sm font-bold text-white py-3"
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 8px 18px rgba(245,158,11,0.25)' }}>
+                <ArrowRight className="h-4 w-4" />
+                前往央廚今日帳目
+              </Link>
+            </div>
+
+            <div className="rounded-2xl p-4 text-sm" style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }}>
+              這裡是央廚的狀態總覽，只看今天帳目進度；要輸入叫貨、支出、照片與對帳，請進「央廚今日帳目」。
+            </div>
+          </div>
+        </div>
+      )
+    }
     todayClosing = closingRes.data
     recentClosings = (recentRes.data ?? []).filter((c: any) => c.business_date !== today).slice(0, 7)
 

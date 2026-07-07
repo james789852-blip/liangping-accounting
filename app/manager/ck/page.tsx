@@ -60,7 +60,7 @@ export default async function CKPage({
     { data: ckRecord },
     { data: todayClosings },
     { data: ckVendorGroups },
-    { data: mappings },
+    { data: rawMappings },
   ] = await Promise.all([
     assignedStoreIds.length > 0
       ? admin.from('stores').select('id, name').in('id', assignedStoreIds)
@@ -82,10 +82,21 @@ export default async function CKPage({
       .order('sort_order').order('name'),
     // 央廚品項對應（跟店面版一樣，xlsx 匯出對應 excel_column）
     admin.from('item_column_mappings')
-      .select('item_name, vendor_group, item_category, excel_column, sort_order')
-      .eq('store_id', storeId)
+      .select('store_id, item_name, vendor_group, item_category, excel_column, sort_order')
+      .or(`store_id.is.null,store_id.eq.${storeId}`)
       .order('sort_order'),
   ])
+
+  const mappingMap = new Map<string, any>()
+  for (const item of (rawMappings ?? []) as any[]) {
+    const key = `${item.vendor_group ?? ''}||${item.item_name}`
+    const existingItem = mappingMap.get(key)
+    if (!existingItem || (!existingItem.store_id && item.store_id === storeId)) {
+      mappingMap.set(key, item)
+    }
+  }
+  const mappings = Array.from(mappingMap.values())
+    .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999) || String(a.item_name).localeCompare(String(b.item_name), 'zh-Hant'))
 
   // 收據類別（跟店面版一致的 UI）
   const receiptCategories = await getReceiptSettings(storeId)
