@@ -11,7 +11,7 @@
  * 完全依 aggregator + store_items_resolver 動態產出欄位，無 hardcoded 模板。
  */
 import ExcelJS from 'exceljs'
-import { getMonthlyStats, type DailyStats, type MonthlyStats } from '@/lib/store-aggregator'
+import { getDisplayPosTotal, getMonthlyStats, type DailyStats, type MonthlyStats } from '@/lib/store-aggregator'
 import { type ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -170,10 +170,15 @@ const PACK_DATA_FILL = 'FFDCEBF7'
 const MISC_DATA_FILL = 'FFFCE4D6'
 const REFUND_DATA_FILL = 'FFD9EAD3'
 const INCOME_HEADER_FILL = 'FFFFC000'
+const UBER_FILL = 'FF00B050'
+const PANDA_FILL = 'FFFF66CC'
 const STAT_ORANGE_FILL = 'FFF79544'
 const STAT_BLUE_FILL = 'FF4BACC6'
 const STAT_MISC_FILL = 'FFF4B183'
 const RED_FONT = 'FFFF0000'
+const ZERO_NUM_FMT = '#,##0;-#,##0;0'
+const BLANK_ZERO_NUM_FMT = '#,##0;-#,##0;'
+const RESULT_NUM_FMT = '#,##0;[Red]-#,##0;0'
 
 function fillHeaderCell(cell: ExcelJS.Cell, text: string, fillArgb?: string, fontColor = 'FF000000', bold = false, size = HEADER_DEFAULT_SIZE) {
   cell.value = text
@@ -210,8 +215,24 @@ function applyVerticalBorder(cell: ExcelJS.Cell, side: 'left' | 'right', style: 
   } as any
 }
 
+function isUberColumn(c: ColumnDef): boolean {
+  const key = c.incomeKey ?? ''
+  return key.startsWith('uber:') || /uber/i.test(c.header)
+}
+
+function isPandaColumn(c: ColumnDef): boolean {
+  return c.incomeKey === 'panda' || c.header.includes('熊貓')
+}
+
+function platformFillForColumn(c: ColumnDef): string | null {
+  if (isUberColumn(c)) return UBER_FILL
+  if (isPandaColumn(c)) return PANDA_FILL
+  return null
+}
+
 function dataFillForColumn(c: ColumnDef): string | null {
-  if (c.kind === 'date' || c.kind === 'weekday' || c.kind === 'income') return PALE_YELLOW
+  if (c.kind === 'income') return PALE_YELLOW
+  if (c.kind === 'date' || c.kind === 'weekday') return PALE_YELLOW
   if (c.kind === 'spacer') return BLACK
   if (c.kind === 'stat') {
     if (c.statKey === 'food') return 'FFF79646'
@@ -285,15 +306,12 @@ export async function addFoodCostSheet(
 ): Promise<void> {
   const monthly = await getMonthlyStats(store.id, year, monthNum)
 
-  const handwriteAccounts = Array.from(new Set(
-    monthly.daily.flatMap(d => Object.keys(d.handwrite))
-  )).sort()
-
   const ws = wb.addWorksheet(`${monthNum}月食耗成本`, {
     views: [{ state: 'frozen', xSplit: 2, ySplit: 4, showGridLines: false }],
   })
 
-  const cols = buildLayout(store, items, handwriteAccounts)
+  // 手寫收入已併入「(手動)POS」總營業額；月報視覺沿用舊 Excel，不另外拆手寫欄。
+  const cols = buildLayout(store, items, [])
   const totalCols = cols.length
   const daysInMonth = new Date(year, monthNum, 0).getDate()
 
@@ -316,6 +334,29 @@ export async function addFoodCostSheet(
   const HEADER_ROW = 3           // 「日期/POS/...」在 row 3
   const TOTAL_ROW = 4            // 月合計
   const DATA_START = 5           // 每日資料
+  const blankZeroFromCol = cols.find(c => c.kind === 'item' && c.vendorGroup === '央廚配送')?.index ?? Number.POSITIVE_INFINITY
+  const numFmtForColumn = (c: ColumnDef) => c.kind === 'item' && c.index >= blankZeroFromCol ? BLANK_ZERO_NUM_FMT : ZERO_NUM_FMT
+  const incomeRef = (key: string) => cols.find(c => c.incomeKey === key)?.index
+  const posCol = incomeRef('pos')
+  const afterDeductCol = incomeRef('after_deduct')
+  const actualCol = incomeRef('actual')
+  const ckCol = incomeRef('ck')
+  const varianceCol = incomeRef('variance')
+  const statTotalCol = cols.find(c => c.statKey === 'total')?.index
+  const platformIncomeCols = cols
+    .filter(c => c.kind === 'income' && (
+      c.incomeKey === 'twpay' ||
+      c.incomeKey === 'panda' ||
+      c.incomeKey === 'online' ||
+      c.incomeKey === 'online_cash' ||
+      c.incomeKey?.startsWith('uber:')
+    ))
+    .map(c => c.index)
+  const cellRef = (col: number, row: number) => `${colLetter(col)}${row}`
+  const sumRefs = (colIndexes: number[], row: number) => {
+    if (!colIndexes.length) return '0'
+    return `SUM(${colIndexes.map(col => cellRef(col, row)).join(',')})`
+  }
 
   // ── Row 1 / Row 2：品項欄的 vendor_group / doc_type ──
   // 加 merge cells: 連續相同 vendor_group 的品項欄合併
@@ -424,7 +465,7 @@ export async function addFoodCostSheet(
     let fontColor = BLACK
     if (c.kind === 'income') {
       const k = c.incomeKey ?? ''
-      fill = INCOME_HEADER_FILL
+      fill = platformFillForColumn(c) ?? INCOME_HEADER_FILL
       if (k === 'actual' || k === 'ck') fontColor = RED_FONT
     } else if (c.kind === 'stat') {
       fill = c.statKey === 'total' ? BLACK : STAT_ORANGE_FILL
@@ -448,10 +489,10 @@ export async function addFoodCostSheet(
   for (const c of cols) {
     const cell = ws.getRow(TOTAL_ROW).getCell(c.index)
     setGridBorder(cell)
-    setSolidFill(cell, MONTH_TOTAL_YELLOW)
+    setSolidFill(cell, platformFillForColumn(c) ?? MONTH_TOTAL_YELLOW)
     cell.font = { name: FONT_FAMILY, size: 13, bold: true, italic: true, color: { argb: BLACK } }
     cell.alignment = { horizontal: 'right', vertical: 'middle' }
-    cell.numFmt = '#,##0;-#,##0;"-"'
+    cell.numFmt = c.incomeKey === 'variance' ? RESULT_NUM_FMT : numFmtForColumn(c)
   }
   const monthCell = ws.getRow(TOTAL_ROW).getCell(1)
   monthCell.value = `${monthNum}月`
@@ -463,7 +504,7 @@ export async function addFoodCostSheet(
     const formula = `SUM(${letter}${DATA_START}:${letter}${DATA_START + daysInMonth - 1})`
     const cell = ws.getRow(TOTAL_ROW).getCell(c.index)
     cell.value = { formula } as any
-    if (c.incomeKey === 'variance') cell.font = { ...(cell.font as any), color: { argb: RED_FONT }, bold: true, italic: true }
+    if (c.incomeKey === 'variance') cell.font = { ...(cell.font as any), color: { argb: BLACK }, bold: true, italic: true }
   }
 
   // ── Row 5+ : 每日資料 ──
@@ -519,17 +560,26 @@ export async function addFoodCostSheet(
       } else if (c.kind === 'spacer') {
         cell.value = ''
       } else if (c.kind === 'income' && dd && c.incomeKey) {
-        const v = readIncomeValue(dd, c.incomeKey)
+        const platformSum = sumRefs(platformIncomeCols, rowNum)
         // 「結果」欄特殊：=0 顯示 0（不是空）、有誤差顯示紅色
-        if (c.incomeKey === 'variance') {
-          cell.value = v
-          cell.numFmt = '#,##0;-#,##0;0'
-          if (v !== 0) {
-            cell.font = { ...(cell.font as any), color: { argb: RED_FONT }, bold: true }
-          }
+        if (c.incomeKey === 'after_deduct' && posCol && statTotalCol) {
+          cell.value = { formula: `${cellRef(posCol, rowNum)}-${cellRef(statTotalCol, rowNum)}-${platformSum}` } as any
+          cell.numFmt = ZERO_NUM_FMT
+        } else if (c.incomeKey === 'onsite' && posCol) {
+          cell.value = { formula: `${cellRef(posCol, rowNum)}-${platformSum}` } as any
+          cell.numFmt = ZERO_NUM_FMT
+        } else if (c.incomeKey === 'variance' && actualCol && afterDeductCol && ckCol) {
+          cell.value = { formula: `${cellRef(actualCol, rowNum)}-${cellRef(afterDeductCol, rowNum)}-${cellRef(ckCol, rowNum)}` } as any
+          cell.numFmt = RESULT_NUM_FMT
+          cell.font = { ...(cell.font as any), color: { argb: BLACK }, bold: true }
+        } else if (c.incomeKey === 'revenue' && posCol && varianceCol) {
+          cell.value = { formula: `IF(${cellRef(posCol, rowNum)}-${platformSum}>0,${cellRef(varianceCol, rowNum)}+${cellRef(posCol, rowNum)}-${platformSum},"")` } as any
+          cell.numFmt = ZERO_NUM_FMT
+          cell.font = { ...(cell.font as any), color: { argb: BLACK }, bold: true }
         } else {
-          if (v !== 0) cell.value = v
-          cell.numFmt = '#,##0;-#,##0;'
+          const v = readIncomeValue(dd, c.incomeKey, store)
+          cell.value = v
+          cell.numFmt = ZERO_NUM_FMT
         }
       } else if (c.kind === 'stat' && c.statKey) {
         // 用 SUM range 公式，Excel 開會動態重算
@@ -547,16 +597,16 @@ export async function addFoodCostSheet(
           formula = `${colLetter(foodCol.index)}${rowNum}+${colLetter(packCol.index)}${rowNum}+${colLetter(miscCol.index)}${rowNum}`
         }
         if (formula) cell.value = { formula } as any
-        cell.numFmt = '#,##0;-#,##0;'
+        cell.numFmt = ZERO_NUM_FMT
       } else if (c.kind === 'item' && dd) {
         // nameKey = 完整 item_name（aggregator items 用），header 可能剝過前綴
         // 先精確比對，再去掉連字號再比（處理「小雲-稅金」↔「小雲稅金」等改名差異）
         const key = c.nameKey ?? c.header
         const v = dd.items[key] ?? dd.items[key.replace(/-/g, '')] ?? 0
-        if (v !== 0) cell.value = v
+        cell.value = v
         const note = dd.notes[key] ?? dd.notes[key.replace(/-/g, '')]
         if (note?.trim()) cell.note = note
-        cell.numFmt = '#,##0;-#,##0;'
+        cell.numFmt = numFmtForColumn(c)
         // 負數用紅色（折扣/退貨/退費類）
         if (v < 0) cell.font = { ...(cell.font as any), color: { argb: RED_FONT }, bold: true }
       }
@@ -899,9 +949,9 @@ function addAnnualOverviewSheet(wb: ExcelJS.Workbook, store: StoreInfo, year: nu
   }
 }
 
-function readIncomeValue(dd: DailyStats, key: string): number {
+function readIncomeValue(dd: DailyStats, key: string, store?: StoreInfo): number {
   switch (key) {
-    case 'pos': return dd.pos
+    case 'pos': return getDisplayPosTotal(dd, store)
     case 'twpay': return dd.twpay
     case 'panda': return dd.panda
     case 'online': return dd.online

@@ -181,7 +181,6 @@ function ReviewPanel({ closingId, status, canReview }: { closingId: string; stat
     setLoading(false)
   }
   async function handleDispute() {
-    if (!note.trim()) { toast.error('請填寫退回原因'); return }
     setLoading(true)
     const r = await disputeClosing(closingId, note)
     if (r.error) toast.error(r.error)
@@ -199,15 +198,15 @@ function ReviewPanel({ closingId, status, canReview }: { closingId: string; stat
   if (mode === 'dispute') return (
     <div className="space-y-2 p-3 rounded-xl" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
       <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold" style={{ color: '#c2410c' }}>填寫退回原因</p>
+        <p className="text-xs font-semibold" style={{ color: '#c2410c' }}>退回原因（選填）</p>
         <button onClick={() => { setMode('idle'); setNote('') }}><X className="h-3.5 w-3.5" style={{ color: '#a1a1aa' }} /></button>
       </div>
-      <textarea placeholder="請說明異常原因..." value={note} onChange={e => setNote(e.target.value)}
+      <textarea placeholder="可選填異常原因，店長會看到這段說明..." value={note} onChange={e => setNote(e.target.value)}
         style={{ width: '100%', fontSize: '13px', border: '1.5px solid #fed7aa', borderRadius: '8px', padding: '8px 10px', height: '64px', resize: 'none', outline: 'none', fontFamily: 'inherit', background: 'white' }} />
       <div className="flex gap-2">
-        <button disabled={loading || !note.trim()} onClick={handleDispute}
+        <button disabled={loading} onClick={handleDispute}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
-          style={{ background: 'linear-gradient(135deg,#f97316,#ea580c)', opacity: loading || !note.trim() ? 0.5 : 1 }}>
+          style={{ background: 'linear-gradient(135deg,#f97316,#ea580c)', opacity: loading ? 0.5 : 1 }}>
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}確認退回
         </button>
         <button onClick={() => { setMode('idle'); setNote('') }}
@@ -235,17 +234,18 @@ function ReviewPanel({ closingId, status, canReview }: { closingId: string; stat
 
   return (
     <div className="flex gap-2 flex-wrap">
-      {status === 'submitted' && (
+      {(status === 'submitted' || status === 'disputed') && (
         <button disabled={loading} onClick={handleVerify}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
           style={{ background: 'linear-gradient(135deg,#10b981,#059669)', opacity: loading ? 0.5 : 1 }}>
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}核准
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+          {status === 'disputed' ? '重新核准' : '核准'}
         </button>
       )}
       <button disabled={loading} onClick={() => setMode('dispute')}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
         style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
-        <RotateCcw className="h-3.5 w-3.5" />{status === 'verified' ? '重新退回' : '退回修改'}
+        <RotateCcw className="h-3.5 w-3.5" />{status === 'verified' ? '重新退回' : status === 'disputed' ? '再次退回' : '退回修改'}
       </button>
       <button disabled={loading} onClick={() => setMode('delete')}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"

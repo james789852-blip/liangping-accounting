@@ -61,6 +61,7 @@ interface ReceiptFormItem {
   quantity: number
   unit_price: number
   amount: number
+  vendor_group_hint?: string
 }
 
 interface ReceiptForm {
@@ -87,6 +88,28 @@ interface VerifyItem {
   confirmed: boolean
   notes?: string
   items?: { item_name: string; unit: string; quantity: number; unit_price: number; amount: number }[]
+}
+
+function getVerifySignature(item: VerifyItem): string {
+  const items = (item.items ?? [])
+    .filter(i => i.item_name?.trim())
+    .map(i => ({
+      item_name: i.item_name,
+      unit: i.unit,
+      quantity: Number(i.quantity) || 0,
+      unit_price: Number(i.unit_price) || 0,
+      amount: Number(i.amount) || 0,
+    }))
+
+  return JSON.stringify({
+    key: item.key,
+    type: item.type,
+    label: item.label,
+    photoUrl: item.photoUrl,
+    inputAmount: Number(item.inputAmount) || 0,
+    notes: item.notes ?? '',
+    items,
+  })
 }
 
 function isCKReceipt(receipt: TodayReceipt, ckPrices: CKPrice[]): boolean {
@@ -299,6 +322,58 @@ function displayItemName(name: string, vendorGroup?: string | null) {
   return /^[\s　\-－—–_]/.test(rest) ? name : rest
 }
 
+function deriveReceiptCategory(
+  vendorName: string | undefined,
+  items: { item_name?: string }[] | undefined,
+  categories: CategoryWithVendors[],
+  mappingColumns: { name: string; category: string; vendor_group?: string; excel_column?: string }[],
+) {
+  const vendor = vendorName?.trim() ?? ''
+  if (vendor) {
+    const byVendor = categories.find(c => c.vendors.some(v => v.name === vendor))
+    if (byVendor) return byVendor.name
+    const byCategoryName = categories.find(c => c.name === vendor)
+    if (byCategoryName) return byCategoryName.name
+  }
+
+  const itemNames = (items ?? []).map(i => i.item_name?.trim()).filter(Boolean) as string[]
+  for (const itemName of itemNames) {
+    const mapping =
+      mappingColumns.find(c => c.name === itemName && c.vendor_group === vendor)
+      ?? mappingColumns.find(c => c.name === itemName)
+    if (!mapping) continue
+
+    if (mapping.vendor_group) {
+      const byMappingVendor = categories.find(c => c.vendors.some(v => v.name === mapping.vendor_group))
+      if (byMappingVendor) return byMappingVendor.name
+      const byMappingGroup = categories.find(c => c.name === mapping.vendor_group)
+      if (byMappingGroup) return byMappingGroup.name
+    }
+
+    const byMappingCategory = categories.find(c => c.name === mapping.category)
+    if (byMappingCategory) return byMappingCategory.name
+  }
+
+  return ''
+}
+
+function findReceiptItemMapping(
+  itemName: string,
+  vendorName: string,
+  categoryName: string,
+  mappingColumns: { name: string; category: string; vendor_group?: string; excel_column?: string }[],
+) {
+  const name = itemName.trim()
+  const vendor = vendorName.trim()
+  const category = categoryName.trim()
+  return (
+    mappingColumns.find(c => c.name === name && c.vendor_group === vendor)
+    ?? mappingColumns.find(c => c.name === name && c.vendor_group === category)
+    ?? mappingColumns.find(c => c.name === name && c.category === category)
+    ?? mappingColumns.find(c => c.name === name)
+  )
+}
+
 const DENOMINATIONS = [
   { label: '千元鈔', countKey: 'bills_1000' as const, lumpKey: 'lump_1000' as const, unit: 1000, unitLabel: '張' },
   { label: '五百元', countKey: 'bills_500'  as const, lumpKey: 'lump_500'  as const, unit: 500,  unitLabel: '張' },
@@ -381,27 +456,19 @@ function GradientTitle({ step, total, title, desc }: { step: number; total: numb
 }
 
 /**
- * 黏在頂部的照片卡：可在「展開大圖」與「縮成小條」之間切換。
- * 使用者輸入品項時可保持小條看數字、需要時再展開比對。
+ * 配送單照片卡：用大圖直接展示，避免固定/滑動照片區影響品項輸入。
  */
 const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, onReupload, onDelete }: {
   src: string; alt: string; onLightbox?: () => void; onReupload?: () => void; onDelete?: () => void
 }) {
-  // 預設展開 220px 看得清品項內容（手機螢幕約 30%），sticky 黏頂部捲動時不消失
-  const [compact, setCompact] = useState(false)
   return (
-    <div className="rounded-2xl overflow-hidden shadow-md"
+    <div className="rounded-3xl overflow-hidden shadow-md"
       style={{ border: '1px solid #f4f4f5', background: 'white' }}>
       {/* 工具列 */}
-      <div className="flex items-center gap-2 px-3 py-1.5"
+      <div className="flex items-center gap-2 px-3 py-2"
         style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa' }}>
-        <span className="text-xs font-semibold" style={{ color: '#c2410c' }}>📷 {alt}</span>
-        <span className="text-[10px] ml-auto" style={{ color: '#a1a1aa' }}>{compact ? '已縮小' : '邊輸入邊看'}</span>
-        <button type="button" onClick={() => setCompact(c => !c)}
-          className="px-2 py-0.5 rounded-md text-[10px] font-semibold"
-          style={{ background: 'white', border: '1px solid #fed7aa', color: '#c2410c', cursor: 'pointer', fontFamily: 'inherit' }}>
-          {compact ? '展開' : '縮小'}
-        </button>
+        <span className="text-sm font-semibold" style={{ color: '#c2410c' }}>📷 {alt}</span>
+        <span className="text-[11px] ml-auto" style={{ color: '#a1a1aa' }}>點照片可放大檢視</span>
         {onReupload && (
           <button type="button" onClick={onReupload}
             className="px-2 py-0.5 rounded-md text-[10px] font-semibold"
@@ -422,10 +489,10 @@ const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, on
         <img src={src} alt={alt}
           style={{
             width: '100%',
-            maxHeight: compact ? '80px' : '220px',
-            objectFit: compact ? 'cover' : 'contain',
+            maxHeight: '430px',
+            minHeight: '260px',
+            objectFit: 'contain',
             display: 'block',
-            transition: 'max-height 0.2s ease',
             // 強制讀 EXIF 方向，避免手機直拍照片在瀏覽器上顯示歪掉
             imageOrientation: 'from-image' as any,
           }} />
@@ -534,6 +601,7 @@ function CategoryPicker({ categories, value, onChange }: {
 
   return (
     <select
+      className="receipt-field"
       value={value}
       onChange={e => onChange(e.target.value)}
       style={{
@@ -593,7 +661,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null)
   const [editUploading, setEditUploading] = useState(false)
   const editPhotoInputRef = useRef<HTMLInputElement>(null)
-  const [editItems, setEditItems] = useState<{ item_name: string; unit: string; quantity: number; unit_price: number; amount: number }[]>([])
+  const [editItems, setEditItems] = useState<ReceiptFormItem[]>([])
   const [photoLightbox, setPhotoLightbox] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [receiptForms, setReceiptForms] = useState<ReceiptForm[]>([])
@@ -632,7 +700,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       ckPrices.forEach(p => {
         const found = items.find((i: any) => i.vendor === '央廚' && i.item_name === p.item_name)
         // 補做/退回時，以原帳目實際單價為準，避免退回後單價欄變空或被總公司新價覆蓋。
-        if (found && typeof found.unit_price === 'number' && found.unit_price !== p.unit_price) {
+        if (found && typeof found.unit_price === 'number') {
           result[p.id] = found.unit_price
         }
       })
@@ -654,6 +722,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (stored) setCkPhotoUrl(stored)
     }
   }, [])
+  const ckPhotoSectionRef = useRef<HTMLDivElement>(null)
   const ckPhotoInputRef = useRef<HTMLInputElement>(null)
 
   // Envelope bag photo
@@ -829,6 +898,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const stepLsKey = `closing_step_${store.id}_${today}`
   const submitDoneSsKey = `submit_done_${store.id}_${today}`
   const saveBkKey = `save_bk_${store.id}_${today}`
+  const verifyDoneLsKey = `verify_done_${store.id}_${today}`
+  const verifyResetLsKey = `verify_reset_${store.id}_${today}`
+  const summaryHref = `/manager/summary?date=${encodeURIComponent(today)}`
   const [currentStep, setCurrentStep] = useState(0)
   const [hqDeletedReset, setHqDeletedReset] = useState(false)
   const stepButtonRefs = useRef<(HTMLButtonElement | null)[]>([])
@@ -839,24 +911,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const resultIdx = totalStepsEstimate - 2
 
     // 偵測零用金是否已完成
-    const dbPetty = (existingClosing as { petty_counts?: { counts?: Record<string, number>; lumps?: Record<string, number> } } | null)?.petty_counts
-    const dbPettyDone = !!dbPetty && (
-      Object.values(dbPetty.counts ?? {}).some(v => (v as number) > 0) ||
-      Object.values(dbPetty.lumps ?? {}).some(v => (v as number) > 0)
-    )
-    let lsPettyDone = false
-    try {
-      const ls = JSON.parse(localStorage.getItem(`petty_counts_${store.id}_${today}`) ?? 'null')
-      lsPettyDone = !!ls && (
-        Object.values((ls.counts ?? {}) as Record<string, number>).some(v => v > 0) ||
-        Object.values((ls.lumps ?? {}) as Record<string, number>).some(v => v > 0)
-      )
-    } catch {}
+    const dbPetty = (existingClosing as { petty_counts?: { verified_at?: string } } | null)?.petty_counts
+    const dbPettyDone = !!dbPetty?.verified_at
     let donePressed = false
     try { donePressed = localStorage.getItem(`petty_done_${store.id}_${today}`) === '1' } catch {}
     let submitFlag = false
     try { submitFlag = localStorage.getItem(`submit_done_${store.id}_${today}`) === '1' } catch {}
-    const pettyDone = dbPettyDone || lsPettyDone || donePressed
+    const pettyDone = dbPettyDone || donePressed
     const wasFinishedBefore = submitFlag || donePressed
     const stale = [
       stepLsKey, submitDoneSsKey,
@@ -865,7 +926,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       cashLsKey, adjLsKey, reserveLsKey,
       ckPhotoLsKey, channelPhotoLsKey, envelopePhotoLsKey,
       extraPhotosLsKey, voidInvoiceLsKey, notePhotoLsKey,
-      receiptFormsDraftKey, saveBkKey,
+      receiptFormsDraftKey, saveBkKey, verifyDoneLsKey, verifyResetLsKey,
     ]
     let hasLocalDraftTrace = false
     try { hasLocalDraftTrace = stale.some(k => localStorage.getItem(k) != null) } catch {}
@@ -887,7 +948,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     } else if (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified') {
       localStorage.removeItem(stepLsKey)
       if (pettyDone) {
-        router.replace('/manager/summary')
+        router.replace(summaryHref)
         return
       }
       setCurrentStep(resultIdx)
@@ -912,6 +973,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       const raw = localStorage.getItem(saveBkKey)
       if (!raw) return
       const bk = JSON.parse(raw)
+      if (bk?.storeId && bk.storeId !== store.id) { localStorage.removeItem(saveBkKey); return }
+      if (bk?.date && bk.date !== today) { localStorage.removeItem(saveBkKey); return }
+      if (bk?.submitted || bk?.status === 'submitted' || bk?.status === 'verified') { localStorage.removeItem(saveBkKey); return }
+      if (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified' || submitDone) {
+        localStorage.removeItem(saveBkKey)
+        return
+      }
       // 退回帳目延長備份保留至 7 天；一般草稿 24 小時
       const maxAge = existingClosing?.status === 'disputed' ? 7 * 86400000 : 86400000
       if (!bk?.ts || Date.now() - bk.ts > maxAge) { localStorage.removeItem(saveBkKey); return }
@@ -1055,6 +1123,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const t = setTimeout(() => {
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
+          storeId: store.id, date: today, status, submitted: false,
           data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses,
           ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
           pettyCounts, pettyLumps, ts: Date.now(),
@@ -1071,6 +1140,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     function flush() {
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
+          storeId: store.id, date: today, status, submitted: false,
           data: dataRef.current, expenses, handwriteOrders, adjustments, reserves,
           largeCashExpenses, ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
           pettyCounts, pettyLumps, ts: Date.now(),
@@ -1242,14 +1312,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const finalTotal = editHasTax ? editAmount + editTaxAmount : editAmount
     let validItems = editItems.filter(i => i.item_name.trim())
     if (validItems.length === 0 && (isNoItemMode || mappingColumns.some(c => c.name === editVendor.trim()))) {
-      validItems = [{ item_name: editVendor.trim(), unit: '', quantity: 1, unit_price: 0, amount: finalTotal }]
+      validItems = [{ id: crypto.randomUUID(), item_name: editVendor.trim(), unit: '', quantity: 1, unit_price: 0, amount: finalTotal }]
     }
 
     const updatedReceipts = localReceipts.map(r =>
       r.id === editingReceiptId ? {
         ...r, vendor_name: editVendor, total_amount: finalTotal,
         tax_amount: editHasTax ? editTaxAmount : 0,
-        receipt_type: editCategory || r.receipt_type,
+        receipt_type: r.receipt_type,
         photo_url: newPhotoUrl,
         notes: editNotes.trim() || undefined,
         receipt_items: validItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: normalizeItemAmount(i.item_name, i.amount) })),
@@ -1264,7 +1334,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       vendor_name: editVendor,
       total_amount: finalTotal,
       tax_amount: editHasTax ? editTaxAmount : 0,
-      receipt_type: editCategory || undefined,
       photo_url: newPhotoUrl,
       notes: editNotes.trim() || null,
     }).eq('id', editingReceiptId)
@@ -1471,7 +1540,34 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (noteFinal) {
       items.push({ key: 'note', type: 'note', label: '備註照片', photoUrl: noteFinal, inputAmount: 0, confirmed: false })
     }
-    setVerifyItems(items)
+    let confirmedSignatures = new Set<string>()
+    try {
+      const disputeToken = existingClosing?.status === 'disputed'
+        ? `${existingClosing?.id ?? 'closing'}:${existingClosing?.disputed_at ?? existingClosing?.dispute_note ?? 'disputed'}`
+        : ''
+
+      if (disputeToken) {
+        const lastResetToken = localStorage.getItem(verifyResetLsKey)
+        if (lastResetToken !== disputeToken) {
+          localStorage.removeItem(verifyDoneLsKey)
+          localStorage.setItem(verifyResetLsKey, disputeToken)
+        }
+      } else {
+        localStorage.removeItem(verifyResetLsKey)
+      }
+
+      const saved = JSON.parse(localStorage.getItem(verifyDoneLsKey) ?? '[]')
+      if (Array.isArray(saved)) {
+        confirmedSignatures = new Set(saved.filter((v): v is string => typeof v === 'string'))
+      }
+    } catch {}
+
+    const hydratedItems = items.map(item => ({
+      ...item,
+      confirmed: confirmedSignatures.has(getVerifySignature(item)),
+    }))
+
+    setVerifyItems(hydratedItems)
     setReviewIndex(null)
   }
 
@@ -1613,6 +1709,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       // Backup full form state before destructive delete-then-insert operations
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
+          storeId: store.id, date: today, status, submitted: false,
           data: d, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses,
           ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
           pettyCounts, pettyLumps, ts: Date.now(),
@@ -1737,6 +1834,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       setStatus('submitted')
       setSubmitDone(true)
       try { localStorage.setItem(submitDoneSsKey, '1') } catch {}
+      localStorage.removeItem(saveBkKey)
       localStorage.removeItem(ckPhotoLsKey)
       localStorage.removeItem(channelPhotoLsKey)
       localStorage.removeItem(adjLsKey)
@@ -1787,6 +1885,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     : Math.min(currentStep, totalSteps - 1)
   const stepId = STEPS[step]?.id
   const stepNum = step + 1
+  const previousStepIdRef = useRef<string | undefined>(undefined)
 
   useEffect(() => {
     if (!stepMounted) return
@@ -1796,6 +1895,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
     })
   }, [step, stepMounted])
+
+  useEffect(() => {
+    if (!stepMounted) return
+    if (previousStepIdRef.current === stepId) return
+    previousStepIdRef.current = stepId
+    if (stepId !== 'ck_delivery') return
+    requestAnimationFrame(() => {
+      ckPhotoSectionRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' })
+    })
+  }, [stepId, stepMounted])
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -1855,6 +1964,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     sum + (pettyCounts[countKey] || 0) * unit + (pettyLumps[lumpKey] || 0), 0)
   const pettyDiff = pettyVerifyCash - store.petty_cash
   const pettyOk = pettyDiff === 0
+  const hasRequiredPettyInput =
+    Object.values(pettyCounts).some(v => Math.abs(Number(v) || 0) > 0) ||
+    Object.values(pettyLumps).some(v => Math.abs(Number(v) || 0) > 0) ||
+    largeCashExpenses.some(item => Math.abs(Number(item.amount) || 0) > 0)
 
   // ── Main wizard return ────────────────────────────────────────────────────
   if (!stepMounted || finishingToday) {
@@ -2204,7 +2317,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         )}
 
                       {/* 表單 */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: '10px', minWidth: 0, overflow: 'hidden' }}>
+                      <div className="receipt-form-fields">
                         {/* 類別 */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>類別</label>
@@ -2240,6 +2353,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               return (
                                 <select value={form.vendor_name}
                                   onChange={e => updateReceiptForm(form.id, 'vendor_name', e.target.value)}
+                                  className="receipt-field"
                                   style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
                                   <option value="">— 選擇 —</option>
                                   {catObj.vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
@@ -2248,6 +2362,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             }
                             return (
                               <input placeholder="廠商名稱（可空）"
+                                className="receipt-field"
                                 style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
                                 value={form.vendor_name}
                                 onChange={e => updateReceiptForm(form.id, 'vendor_name', e.target.value)} />
@@ -2296,10 +2411,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               {/* 細項列表：品項 + 金額 */}
                               <div className="space-y-1.5">
                                 {(form.items ?? []).map(item => (
-                                  <div key={item.id} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                  <div key={item.id} className="receipt-item-row">
                                     {mappingColumns.length > 0 ? (
                                       <select
-                                        value={(item as any).vendor_group_hint ? `${(item as any).vendor_group_hint}|${item.item_name}` : item.item_name}
+                                        value={(() => {
+                                          const hint = (item as any).vendor_group_hint as string | undefined
+                                          if (hint) return `${hint}|${item.item_name}`
+                                          const match = findReceiptItemMapping(item.item_name, form.vendor_name, form.category, mappingColumns)
+                                          return match?.vendor_group ? `${match.vendor_group}|${item.item_name}` : item.item_name
+                                        })()}
                                         onChange={e => {
                                           const raw = e.target.value
                                           const sepIdx = raw.indexOf('|')
@@ -2311,6 +2431,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             i.id !== item.id ? i : { ...i, item_name: name, vendor_group_hint: vg } as any
                                           ))
                                         }}
+                                        className="receipt-field"
                                         style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
                                         <option value="">— 選擇品項 —</option>
                                         {(() => {
@@ -2350,14 +2471,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           // 顯示時剝離直接相連的 vendor_group 前綴；有分隔符的名稱保留完整（例：免洗-稅金）
                                           const stripVg = (n: string, vg?: string) =>
                                             displayItemName(n, vg)
-                                          // 偵測「同名品項出現在多個分組」— 若有，value 用「{vg}|{name}」確保唯一
-                                          const nameCount = new Map<string, number>()
-                                          for (const c of base) nameCount.set(c.name, (nameCount.get(c.name) ?? 0) + 1)
                                           return groups.map(({ group, items }) => (
                                             <optgroup key={group} label={group}>
                                               {items.map(c => {
-                                                const needVgPrefix = (nameCount.get(c.name) ?? 0) > 1
-                                                const val = needVgPrefix && c.vendor_group ? `${c.vendor_group}|${c.name}` : c.name
+                                                const val = c.vendor_group ? `${c.vendor_group}|${c.name}` : c.name
                                                 return <option key={`${group}|${c.name}`} value={val}>{stripVg(c.name, c.vendor_group)}</option>
                                               })}
                                             </optgroup>
@@ -2366,6 +2483,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                       </select>
                                     ) : (
                                       <input placeholder="品項名稱"
+                                        className="receipt-field"
                                         style={{ flex: 1, padding: '6px 8px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: '#18181b', background: 'white' }}
                                         value={item.item_name}
                                         onChange={e => updateItem(item.id, 'item_name', e.target.value)} />
@@ -2520,7 +2638,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             )}
                           </div>
                           {/* 表單 */}
-                          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: '10px', minWidth: 0, overflow: 'hidden' }}>
+                          <div className="receipt-form-fields">
                             {/* 類別 */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>類別</label>
@@ -2537,7 +2655,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                     const hasSubItems = mappingColumns.some(c => c.vendor_group === v)
                                     const isDirectItem = mappingColumns.some(c => c.name === v)
                                     if (!hasSubItems && !isDirectItem && editItems.length === 0) {
-                                      setEditItems([{ item_name: v, unit: '', quantity: 1, unit_price: 0, amount: 0 }])
+                                      setEditItems([{ id: crypto.randomUUID(), item_name: v, unit: '', quantity: 1, unit_price: 0, amount: 0 }])
                                     }
                                   }
                                 }}
@@ -2552,6 +2670,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 if (catObj && catObj.vendors.length > 0) {
                                   return (
                                     <select value={editVendor} onChange={e => setEditVendor(e.target.value)}
+                                      className="receipt-field"
                                       style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
                                       <option value="">— 選擇 —</option>
                                       {catObj.vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
@@ -2560,6 +2679,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 }
                                 return (
                                   <input placeholder="廠商名稱（可空）"
+                                    className="receipt-field"
                                     style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
                                     value={editVendor} onChange={e => setEditVendor(e.target.value)} />
                                 )
@@ -2585,7 +2705,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 if (total !== 0) setEditAmount(total)
                               }
                               function addEditItemFn() {
-                                syncEditItems([...editItems, { item_name: '', unit: '', quantity: 1, unit_price: 0, amount: 0 }])
+                                syncEditItems([...editItems, { id: crypto.randomUUID(), item_name: '', unit: '', quantity: 1, unit_price: 0, amount: 0 }])
                               }
                               function updateEditItemFn(idx: number, field: string, value: any) {
                                 syncEditItems(editItems.map((item, i) => i !== idx ? item : { ...item, [field]: value }))
@@ -2605,27 +2725,44 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   </div>
                                   <div className="space-y-1.5">
                                     {editItems.map((item, idx) => (
-                                      <div key={idx} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                      <div key={item.id} className="receipt-item-row">
                                         {mappingColumns.length > 0 ? (
-                                          <select value={item.item_name}
-                                            onChange={e => updateEditItemFn(idx, 'item_name', e.target.value)}
+                                          <select
+                                            value={(() => {
+                                              const hint = item.vendor_group_hint
+                                              if (hint) return `${hint}|${item.item_name}`
+                                              const match = findReceiptItemMapping(item.item_name, editVendor, editCategory, mappingColumns)
+                                              return match?.vendor_group ? `${match.vendor_group}|${item.item_name}` : item.item_name
+                                            })()}
+                                            onChange={e => {
+                                              const raw = e.target.value
+                                              const sepIdx = raw.indexOf('|')
+                                              const vg = sepIdx > 0 ? raw.slice(0, sepIdx) : ''
+                                              const name = sepIdx > 0 ? raw.slice(sepIdx + 1) : raw
+                                              syncEditItems(editItems.map((row, i) =>
+                                                i !== idx ? row : { ...row, item_name: name, vendor_group_hint: vg }
+                                              ))
+                                            }}
+                                            className="receipt-field"
                                             style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
                                             <option value="">— 選擇品項 —</option>
                                             {(() => {
                                               const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送' && c.vendor_group !== '退稅')
-                                              const base = editCategory
-                                                ? (() => {
-                                                    const merged = new Map<string, typeof mappingColumns[0]>()
-                                                    for (const c of baseAll) {
-                                                      if (c.vendor_group === editCategory
-                                                          || c.category === editCategory
-                                                          || c.name === editCategory) {
-                                                        if (!merged.has(c.name)) merged.set(c.name, c)
-                                                      }
-                                                    }
-                                                    return merged.size > 0 ? Array.from(merged.values()) : baseAll
-                                                  })()
-                                                : baseAll
+                                              let base = baseAll
+                                              if (editVendor) {
+                                                const filtered = baseAll.filter(c => c.vendor_group === editVendor)
+                                                if (filtered.length > 0) base = filtered
+                                              } else if (editCategory) {
+                                                const merged = new Map<string, typeof mappingColumns[0]>()
+                                                for (const c of baseAll) {
+                                                  if (c.vendor_group === editCategory
+                                                      || c.category === editCategory
+                                                      || c.name === editCategory) {
+                                                    if (!merged.has(`${c.vendor_group ?? c.category}|${c.name}`)) merged.set(`${c.vendor_group ?? c.category}|${c.name}`, c)
+                                                  }
+                                                }
+                                                if (merged.size > 0) base = Array.from(merged.values())
+                                              }
                                               const groups: { group: string; items: typeof mappingColumns }[] = []
                                               for (const col of base) {
                                                 const g = col.vendor_group ?? col.category
@@ -2641,20 +2778,26 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                                 displayItemName(n, vg)
                                               return groups.map(({ group, items }) => (
                                                 <optgroup key={group} label={group}>
-                                                  {items.map(c => <option key={c.name} value={c.name}>{stripVg(c.name, c.vendor_group)}</option>)}
+                                                  {items.map(c => {
+                                                    const val = c.vendor_group ? `${c.vendor_group}|${c.name}` : c.name
+                                                    return <option key={`${group}|${c.name}`} value={val}>{stripVg(c.name, c.vendor_group)}</option>
+                                                  })}
                                                 </optgroup>
                                               ))
                                             })()}
                                           </select>
                                         ) : (
                                           <input placeholder="品項名稱"
+                                            className="receipt-field"
                                             style={{ flex: 1, padding: '6px 8px', border: '1px solid #e4e4e7', borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: '#18181b', background: 'white' }}
                                             value={item.item_name}
                                             onChange={e => updateEditItemFn(idx, 'item_name', e.target.value)} />
                                         )}
                                         {/* Excel 對應提示 */}
                                         {item.item_name && mappingColumns.length > 0 && (() => {
-                                          const match = mappingColumns.find(c => c.name === item.item_name)
+                                          const match = item.vendor_group_hint
+                                            ? mappingColumns.find(c => c.name === item.item_name && c.vendor_group === item.vendor_group_hint)
+                                            : findReceiptItemMapping(item.item_name, editVendor, editCategory, mappingColumns)
                                           const col = match?.excel_column || match?.name
                                           if (!col) return null
                                           return (
@@ -2758,16 +2901,29 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           {!isLocked && (
                             <div className="flex gap-1 shrink-0">
                               <button onClick={() => {
+                                const derivedCategory = deriveReceiptCategory(r.vendor_name, r.receipt_items, categories, mappingColumns)
+                                const restoredItems = (r.receipt_items ?? []).map(i => {
+                                  const match = findReceiptItemMapping(i.item_name, r.vendor_name || '', derivedCategory, mappingColumns)
+                                  return {
+                                    id: crypto.randomUUID(),
+                                    item_name: i.item_name,
+                                    unit: i.unit ?? '',
+                                    quantity: i.quantity ?? 1,
+                                    unit_price: i.unit_price ?? 0,
+                                    amount: i.amount,
+                                    vendor_group_hint: match?.vendor_group,
+                                  }
+                                })
                                 setEditingReceiptId(r.id)
                                 setEditVendor(r.vendor_name || '')
                                 setEditAmount(r.tax_amount ? r.total_amount - r.tax_amount : r.total_amount)
-                                setEditCategory(r.receipt_type || '')
+                                setEditCategory(derivedCategory)
                                 setEditHasTax(!!(r.tax_amount && r.tax_amount > 0))
                                 setEditTaxAmount(r.tax_amount ?? 0)
                                 setEditNotes(r.notes || '')
                                 setEditPhotoFile(null)
                                 setEditPhotoPreview(r.photo_url || null)
-                                setEditItems((r.receipt_items ?? []).map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: i.amount })))
+                                setEditItems(restoredItems)
                               }}
                                 className="p-1.5 rounded-lg" style={{ background: '#f4f4f5', color: '#52525b' }}>
                                 <Pencil className="h-3.5 w-3.5" />
@@ -2808,12 +2964,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="央廚配送"
               desc="填寫今日各品項配送數量；若有配送單，可上傳照片供總公司核對。" />}
 
-            {/* 照片用 fixed 黏在螢幕頂端，捲動下方輸入時照片仍可見。
-                .ck-photo-fixed 在 desktop 加 sidebar 偏移，跟下方主 container 對齊。 */}
+            {/* 配送單照片用大圖展示，不固定在畫面上，避免影響下面品項輸入。 */}
             {!isLocked && (
               <>
-                <div className="ck-photo-fixed">
-                  <div style={{ pointerEvents: 'auto' }}>
+                <div ref={ckPhotoSectionRef} className="ck-photo-pinned">
+                  <div className="mx-auto w-full max-w-xl pointer-events-auto">
                     {(ckPhotoPreview || ckPhotoUrl) ? (
                       <StickyPhotoCard
                         src={(ckPhotoPreview || ckPhotoUrl)!}
@@ -2824,26 +2979,24 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       />
                     ) : (
                       <button onClick={() => ckPhotoInputRef.current?.click()}
-                        className="w-full rounded-2xl flex flex-col items-center justify-center gap-2 py-5"
+                        className="w-full rounded-3xl flex flex-col items-center justify-center gap-2 py-10"
                         style={{ border: '2px dashed #fed7aa', background: '#fff7ed', color: '#f97316' }}>
-                        <Camera className="h-7 w-7" />
-                        <p className="text-sm font-semibold">有配送單再上傳照片</p>
+                        <Camera className="h-9 w-9" />
+                        <p className="text-base font-semibold">請上傳當日配送單照片</p>
                         <p className="text-xs" style={{ color: '#fdba74' }}>沒有配送或沒有照片也可以繼續</p>
                       </button>
                     )}
                   </div>
                 </div>
-                <div style={{ height: (ckPhotoPreview || ckPhotoUrl) ? 270 : 130 }} />
               </>
             )}
             {isLocked && ckPhotoUrl && (
               <>
-                <div className="ck-photo-fixed">
-                  <div style={{ pointerEvents: 'auto' }}>
+                <div className="ck-photo-pinned">
+                  <div className="mx-auto w-full max-w-xl pointer-events-auto">
                     <StickyPhotoCard src={ckPhotoUrl} alt="配送單" onLightbox={() => setPhotoLightbox(ckPhotoUrl!)} />
                   </div>
                 </div>
-                <div style={{ height: 270 }} />
               </>
             )}
 
@@ -3792,14 +3945,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
           function confirmCurrent() {
             if (reviewIndex === null) return
+            const currentItem = verifyItems[reviewIndex]
+            if (!currentItem) return
+            try {
+              const saved = JSON.parse(localStorage.getItem(verifyDoneLsKey) ?? '[]')
+              const previous = Array.isArray(saved) ? saved.filter((v): v is string => typeof v === 'string') : []
+              localStorage.setItem(verifyDoneLsKey, JSON.stringify(Array.from(new Set([...previous, getVerifySignature(currentItem)]))))
+            } catch {}
             setVerifyItems(prev => prev.map((v, i) => i === reviewIndex ? { ...v, confirmed: true } : v))
             // advance to next unconfirmed
             const next = verifyItems.findIndex((v, i) => i > reviewIndex && !v.confirmed)
             if (next >= 0) {
               setReviewIndex(next)
             } else {
-              // all done
-              setReviewIndex(null)
+              const wrapped = verifyItems.findIndex((v, i) => i !== reviewIndex && !v.confirmed)
+              setReviewIndex(wrapped >= 0 ? wrapped : null)
             }
           }
 
@@ -4001,18 +4161,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       </button>
                     ))}
                   </div>
-
-                  {/* 開始核對按鈕 */}
-                  {!allConfirmed && (
-                    <div className="px-4 pb-4">
-                      <button
-                        onClick={startReview}
-                        style={{ width: '100%', background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white', border: 'none', padding: '14px', borderRadius: '14px', fontSize: '15px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                        <Camera style={{ width: '18px', height: '18px' }} />
-                        {confirmedCount > 0 ? `繼續核對（剩 ${verifyItems.length - confirmedCount} 張）` : '開始核對'}
-                      </button>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -4265,6 +4413,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {/* Step 8: 零用金核對 → 完成結束並前往結帳結果 */}
             {stepId === 'petty' && (
               <button onClick={async () => {
+                if (!hasRequiredPettyInput) {
+                  toast.error('請先完成零用金清點，至少輸入一筆張數、整筆金額或大額支出')
+                  return
+                }
                 setFinishingToday(true)
                 setFinishError('')
                 try {
@@ -4272,9 +4424,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   if (!cid) throw new Error('找不到今日帳目，請重新整理後再試一次')
                   const r = await savePettyCounts(cid, pettyCounts, pettyLumps)
                   if (r && 'error' in r) throw new Error(r.error)
+                  if (status !== 'submitted' && status !== 'verified') {
+                    const submitResult = await submitClosing(cid)
+                    if (submitResult.error) throw new Error('送出帳目失敗：' + submitResult.error)
+                    setStatus('submitted')
+                  }
+                  setSubmitDone(true)
                   localStorage.setItem(`petty_done_${store.id}_${today}`, '1')
+                  localStorage.setItem(submitDoneSsKey, '1')
+                  localStorage.removeItem(saveBkKey)
                   localStorage.removeItem(stepLsKey)
-                  router.replace('/manager/summary')
+                  router.replace(summaryHref)
                 } catch (e) {
                   setFinishError(e instanceof Error ? e.message : String(e))
                 }

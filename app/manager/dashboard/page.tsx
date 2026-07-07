@@ -2,12 +2,10 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { format } from 'date-fns'
-import { zhTW } from 'date-fns/locale'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
 import { getCachedUserProfile, getCachedStoreById } from '@/lib/cached-queries'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, CalendarDays, Banknote, ClipboardList, CheckCircle2 } from 'lucide-react'
 import RecentClosingsList from '@/components/manager/recent-closings'
 
 export const dynamic = 'force-dynamic'
@@ -16,9 +14,15 @@ function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
 const WEEKDAY: Record<number, string> = { 0: '日', 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六' }
 
+function parseDateOnly(date: string) {
+  const [year, month, day] = date.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
 const STATUS_DESC: Record<string, { label: string; pct: number; btnLabel: string }> = {
   none:      { label: '今日尚未開始，點下方按鈕開始', pct: 0,   btnLabel: '開始今日結帳' },
   draft:     { label: '草稿進行中，點下方繼續填寫',   pct: 55,  btnLabel: '繼續今日結帳' },
+  petty_pending: { label: '已送出資料，請完成零用金核對', pct: 90, btnLabel: '完成零用金核對' },
   submitted: { label: '已送出，等待總公司審核中',      pct: 100, btnLabel: '查看今日結帳' },
   verified:  { label: '已對帳完成',                   pct: 100, btnLabel: '查看今日結帳' },
   disputed:  { label: '有異議需修正，請重新填寫',      pct: 30,  btnLabel: '修正退回帳目' },
@@ -40,9 +44,9 @@ export default async function ManagerDashboard() {
   // manager/layout 已擋下非店家角色；此處只需處理店家角色的流程
   const storeId = await getEffectiveStoreId(profile)
   const today = getBusinessDate()
-  const todayDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
-  const dateLabel = format(todayDate, 'yyyy/MM/dd', { locale: zhTW })
-  const weekdayLabel = `星期${WEEKDAY[todayDate.getDay()]}`
+  const businessDate = parseDateOnly(today)
+  const dateLabel = today.replaceAll('-', '/')
+  const weekdayLabel = `星期${WEEKDAY[businessDate.getDay()]}`
 
   let todayClosing: any = null
   let recentClosings: any[] = []
@@ -58,7 +62,7 @@ export default async function ManagerDashboard() {
     const [storeData, closingRes, recentRes, ckMismatchRes, validClosingRes] = await Promise.all([
       getCachedStoreById(storeId),
       supabase.from('daily_closings')
-        .select('id, status, total_revenue, should_include_delivery, actual_remit, total_cost, variance')
+        .select('id, status, petty_counts, total_revenue, should_include_delivery, actual_remit, total_cost, variance')
         .eq('store_id', storeId).eq('business_date', today).maybeSingle(),
       supabase.from('daily_closings')
         .select('id, business_date, status, total_revenue, should_include_delivery, variance')
@@ -84,7 +88,7 @@ export default async function ManagerDashboard() {
         .eq('id', storeId)
         .single()
       const assignedStoreIds: string[] = ((ckStoreFull as any)?.assigned_store_ids as string[] | null) ?? []
-      const [ckRecordRes, todayClosingsRes] = await Promise.all([
+      const [ckRecordRes, todayClosingsRes, pendingReimbursementRes] = await Promise.all([
         admin.from('ck_daily_records')
           .select('id, status, payer_name, note, receipt_photo_urls, hq_paid, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed')
           .eq('ck_store_id', storeId)
@@ -96,6 +100,13 @@ export default async function ManagerDashboard() {
               .in('store_id', assignedStoreIds)
               .eq('business_date', today)
           : Promise.resolve({ data: [] }),
+        admin.from('ck_daily_records')
+          .select('id, business_date, hq_paid, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed')
+          .eq('ck_store_id', storeId)
+          .eq('hq_paid', true)
+          .eq('ck_reimbursement_confirmed', false)
+          .order('business_date', { ascending: false })
+          .limit(6),
       ])
       const ckRecord = ckRecordRes.data as any
       const [{ data: ckOrders }, { data: ckExpenses }] = ckRecord
@@ -119,12 +130,23 @@ export default async function ManagerDashboard() {
       const expenseTotal = ((ckExpenses ?? []) as any[]).reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0)
       const pendingConfirmCount = validOrders.filter((o: any) => o.store_id && Number(o.amount || 0) > 0 && o.ck_confirmed_amount == null).length
       const mismatchCount = validOrders.filter((o: any) => o.store_id && o.ck_confirmed_amount != null && Number(o.ck_confirmed_amount) !== Number(o.amount)).length
-      const reimbursementNeedsConfirm = !!ckRecord?.hq_paid && !ckRecord?.ck_reimbursement_confirmed
-      const reimbursementPhotoCount = ((ckRecord?.hq_reimbursement_photo_urls as string[] | null) ?? []).length
+      const pendingReimbursements = ((pendingReimbursementRes.data ?? []) as any[])
+        .map(r => ({
+          id: r.id as string,
+          business_date: r.business_date as string,
+          sent_at: (r.hq_reimbursement_sent_at ?? null) as string | null,
+          photos: ((r.hq_reimbursement_photo_urls as string[] | null) ?? []),
+        }))
+      const reimbursementNeedsConfirm = pendingReimbursements.length > 0
       const statusLabel = ckRecord?.status === 'submitted' ? '已送出，等待總公司審核'
         : ckRecord?.status === 'draft' ? '草稿進行中'
         : ckRecord?.status === 'verified' ? '已對帳完成'
         : '今日尚未建立央廚帳目'
+      const ckActionLabel = ckRecord?.status === 'submitted' || ckRecord?.status === 'verified'
+        ? '查看今日結果'
+        : ckRecord?.status === 'draft'
+          ? '繼續央廚結帳'
+          : '開始央廚結帳'
 
       return (
         <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -134,55 +156,130 @@ export default async function ManagerDashboard() {
             </p>
           </div>
 
-          <div className="max-w-2xl mx-auto px-4 lg:px-6 pt-5 pb-28 lg:pb-8" style={{ maxWidth: '800px' }}>
-            <div className="rounded-3xl p-6 mb-5 bg-white" style={{ border: '1px solid #f4f4f5', boxShadow: '0 14px 40px rgba(15,23,42,0.05)' }}>
-              <div className="flex items-start justify-between gap-4 mb-5">
+          <div className="max-w-2xl mx-auto px-4 lg:px-6 pt-5 pb-28 lg:pb-8" style={{ maxWidth: '860px' }}>
+            <div className="rounded-3xl p-6 mb-4 text-white relative overflow-hidden"
+              style={{ background: 'linear-gradient(135deg,#F59E0B 0%,#F97316 100%)', boxShadow: '0 18px 45px rgba(245,158,11,0.22)' }}>
+              <div className="absolute pointer-events-none" style={{ right: '-90px', top: '-120px', width: 320, height: 320, borderRadius: '50%', background: 'rgba(255,255,255,0.14)' }} />
+              <div className="relative flex items-start justify-between gap-4 mb-6">
                 <div>
-                  <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>央廚今日狀態</p>
-                  <h1 className="text-2xl font-extrabold" style={{ color: '#18181b' }}>{storeName || '央廚'}</h1>
-                  <p className="text-sm mt-1" style={{ color: '#71717a' }}>{dateLabel} · {weekdayLabel}</p>
+                  <p className="text-xs font-semibold mb-1" style={{ opacity: 0.82 }}>央廚今日狀態</p>
+                  <h1 className="text-3xl font-extrabold">{storeName || '央廚'}</h1>
+                  <p className="text-sm mt-1" style={{ opacity: 0.86 }}>{dateLabel} · {weekdayLabel}</p>
                 </div>
-                <span className="text-xs font-bold px-3 py-1 rounded-full" style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+                <span className="text-xs font-bold px-3 py-1 rounded-full" style={{ background: 'rgba(255,255,255,0.92)', color: '#92400E' }}>
                   {statusLabel}
                 </span>
               </div>
 
-              {reimbursementNeedsConfirm && (
-                <div className="rounded-2xl p-4 mb-4 flex items-start justify-between gap-3"
-                  style={{ background: '#FFFBEB', border: '1.5px solid #FDE68A', color: '#92400E' }}>
-                  <div>
-                    <p className="text-sm font-bold">總公司已補款，等待你點交確認</p>
-                    <p className="text-xs mt-1" style={{ color: '#a16207' }}>
-                      已上傳 {reimbursementPhotoCount} 張補款信封照片，請到今日帳目查看並確認。
-                    </p>
-                  </div>
-                  <Link href="/manager/ck"
-                    className="shrink-0 px-3 py-2 rounded-xl text-xs font-bold text-white"
-                    style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
-                    去點交
-                  </Link>
-                </div>
-              )}
-
-              <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="relative grid grid-cols-3 gap-3 mb-5">
                 {[
-                  { label: '叫貨收入', value: revenueTotal, color: '#10b981' },
-                  { label: '當日支出', value: expenseTotal, color: '#f97316' },
-                  { label: '當日結餘', value: revenueTotal - expenseTotal, color: revenueTotal - expenseTotal >= 0 ? '#F59E0B' : '#dc2626' },
+                  { label: '營業額', value: revenueTotal },
+                  { label: '支出', value: expenseTotal },
+                  { label: '結餘', value: revenueTotal - expenseTotal },
                 ].map(item => (
-                  <div key={item.label} className="rounded-2xl px-4 py-3" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
-                    <p className="text-[10px] font-semibold uppercase mb-1" style={{ color: '#a1a1aa' }}>{item.label}</p>
-                    <p className="text-lg font-bold tabular-nums" style={{ color: item.color }}>${fmt(item.value)}</p>
+                  <div key={item.label} className="rounded-2xl px-2 py-3 min-h-[92px] flex flex-col items-center justify-center text-center" style={{ background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.24)' }}>
+                    <p className="text-[10px] font-semibold uppercase mb-1" style={{ opacity: 0.78 }}>{item.label}</p>
+                    <p className="text-lg sm:text-xl font-bold tabular-nums leading-tight break-all">${fmt(item.value)}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="grid grid-cols-2 gap-3 mb-5">
+              <div className="relative flex gap-3 flex-col sm:flex-row">
+                <Link href="/manager/ck"
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl text-sm font-bold py-3"
+                  style={{ background: 'white', color: '#92400E', boxShadow: '0 8px 18px rgba(146,64,14,0.12)' }}>
+                  <ArrowRight className="h-4 w-4" />
+                  {ckActionLabel}
+                </Link>
+                <form action="/manager/ck" method="GET" className="flex gap-2 sm:w-auto">
+                  <input type="date" name="date" defaultValue={today} max={today}
+                    className="text-sm px-3 py-2 rounded-2xl outline-none min-w-0"
+                    style={{ border: '1px solid rgba(255,255,255,0.45)', background: 'rgba(255,255,255,0.92)', color: '#18181b' }} />
+                  <button type="submit"
+                    className="inline-flex items-center justify-center gap-1.5 text-sm font-bold px-4 py-2 rounded-2xl"
+                    style={{ background: 'rgba(255,255,255,0.18)', color: 'white', border: '1px solid rgba(255,255,255,0.3)' }}>
+                    <CalendarDays className="h-4 w-4" />
+                    補做
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            {reimbursementNeedsConfirm && (
+              <div className="rounded-3xl p-5 mb-4 bg-white"
+                style={{ border: '1.5px solid #FDE68A', boxShadow: '0 12px 36px rgba(245,158,11,0.10)' }}>
+                <div className="flex items-start gap-4">
+                  <div className="h-12 w-12 rounded-2xl flex items-center justify-center shrink-0" style={{ background: '#FEF3C7', color: '#92400E' }}>
+                    <Banknote className="h-6 w-6" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-base font-extrabold" style={{ color: '#92400E' }}>
+                      {pendingReimbursements.length === 1 ? '有一筆補款等待點交' : `有 ${pendingReimbursements.length} 筆補款等待點交`}
+                    </p>
+                    <p className="text-sm mt-1" style={{ color: '#a16207' }}>
+                      總公司已上傳補款信封照片，請確認收到後完成點交。
+                    </p>
+                    <div className="space-y-3 mt-3">
+                      {pendingReimbursements.map(item => (
+                        <div key={item.id} className="rounded-2xl p-3" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold" style={{ color: '#78350F' }}>{item.business_date}</p>
+                              <p className="text-xs truncate" style={{ color: '#a16207' }}>
+                                {item.sent_at ? `送出時間：${new Date(item.sent_at).toLocaleString('zh-TW')}` : '總公司已送出補款照片'}
+                              </p>
+                            </div>
+                            <Link href={`/manager/ck?date=${item.business_date}`}
+                              className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold text-white"
+                              style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+                              去點交
+                            </Link>
+                          </div>
+                          {item.photos.length > 0 && (
+                            <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
+                              {item.photos.slice(0, 5).map((url, i) => (
+                                <img key={`${url}-${i}`} src={url} alt={`補款照片 ${i + 1}`}
+                                  className="h-16 w-16 rounded-xl object-cover shrink-0"
+                                  style={{ border: '1px solid #FDE68A' }} />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+              <div className="rounded-3xl p-5 bg-white" style={{ border: '1px solid #f4f4f5' }}>
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="h-10 w-10 rounded-2xl flex items-center justify-center" style={{ background: '#f0fdf4', color: '#16a34a' }}>
+                    <CheckCircle2 className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: '#18181b' }}>店家送出狀態</p>
+                    <p className="text-xs" style={{ color: '#a1a1aa' }}>體系內店家今日帳目</p>
+                  </div>
+                </div>
                 <div className="rounded-2xl px-4 py-3" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
                   <p className="text-[10px] font-semibold uppercase mb-1" style={{ color: '#a1a1aa' }}>體系內店家</p>
                   <p className="text-base font-bold" style={{ color: '#18181b' }}>
                     {submittedStoreIds.size} / {assignedStoreIds.length} 間已送出
                   </p>
+                </div>
+              </div>
+
+              <div className="rounded-3xl p-5 bg-white" style={{ border: `1px solid ${mismatchCount > 0 ? '#FECACA' : '#f4f4f5'}` }}>
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="h-10 w-10 rounded-2xl flex items-center justify-center" style={{ background: mismatchCount > 0 ? '#FEF2F2' : '#FFFBEB', color: mismatchCount > 0 ? '#be123c' : '#92400E' }}>
+                    <ClipboardList className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: '#18181b' }}>對帳狀態</p>
+                    <p className="text-xs" style={{ color: '#a1a1aa' }}>央廚確認金額</p>
+                  </div>
                 </div>
                 <div className="rounded-2xl px-4 py-3" style={{ background: mismatchCount > 0 ? '#FEF2F2' : '#fafafa', border: `1px solid ${mismatchCount > 0 ? '#FECACA' : '#f4f4f5'}` }}>
                   <p className="text-[10px] font-semibold uppercase mb-1" style={{ color: '#a1a1aa' }}>對帳狀態</p>
@@ -191,17 +288,10 @@ export default async function ManagerDashboard() {
                   </p>
                 </div>
               </div>
-
-              <Link href="/manager/ck"
-                className="w-full inline-flex items-center justify-center gap-2 rounded-2xl text-sm font-bold text-white py-3"
-                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 8px 18px rgba(245,158,11,0.25)' }}>
-                <ArrowRight className="h-4 w-4" />
-                前往央廚今日帳目
-              </Link>
             </div>
 
-            <div className="rounded-2xl p-4 text-sm" style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }}>
-              這裡是央廚的狀態總覽，只看今天帳目進度；要輸入叫貨、支出、照片與對帳，請進「央廚今日帳目」。
+            <div className="rounded-2xl p-4 text-sm bg-white" style={{ border: '1px solid #f4f4f5', color: '#71717a' }}>
+              央廚每日流程：先上傳支出單據，再輸入店家叫貨金額，最後填寫貨款代墊人並送出。若總公司已補款，會在這裡直接提醒點交。
             </div>
           </div>
         </div>
@@ -222,11 +312,16 @@ export default async function ManagerDashboard() {
       .sort((a, b) => b.business_date.localeCompare(a.business_date))
   }
 
-  const statusKey = (todayClosing?.status ?? 'none') as keyof typeof STATUS_DESC
+  const pettyVerified = !!(todayClosing?.petty_counts as { verified_at?: string } | null | undefined)?.verified_at
+  const statusKey = todayClosing && ['submitted', 'verified'].includes(todayClosing.status) && !pettyVerified
+    ? 'petty_pending'
+    : (todayClosing?.status ?? 'none') as keyof typeof STATUS_DESC
   const cfg = STATUS_DESC[statusKey] ?? STATUS_DESC.none
 
   const actionHref = !todayClosing || todayClosing.status === 'draft' ? '/manager/closing'
-    : todayClosing.status === 'disputed' ? `/manager/edit/${todayClosing.id}` : '/manager/closing'
+    : todayClosing.status === 'disputed' ? `/manager/edit/${todayClosing.id}`
+    : statusKey === 'petty_pending' ? `/manager/closing?date=${encodeURIComponent(today)}`
+    : `/manager/summary?date=${encodeURIComponent(today)}`
 
   const isDisputed = todayClosing?.status === 'disputed'
   const ctaGradient = isDisputed
@@ -240,7 +335,7 @@ export default async function ManagerDashboard() {
       <div className="bg-white px-6 py-4 sticky top-0 z-10 lg:static"
         style={{ borderBottom: '1px solid #f4f4f5' }}>
         <p style={{ color: '#a1a1aa', fontSize: '13px' }}>
-          店長端 / <strong style={{ color: '#18181b' }}>今日結帳</strong>
+          店長端 / <strong style={{ color: '#18181b' }}>今日狀態</strong>
         </p>
       </div>
 

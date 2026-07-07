@@ -46,10 +46,15 @@ const CHANNEL_LABEL: Record<string, string> = {
   twpay: '台灣 Pay', online: '線上點餐', handwrite: '手寫訂單',
 }
 
-export default async function SummaryPage() {
+export default async function SummaryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>
+}) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
+  const params = await searchParams
 
   const { data: profile } = await supabase
     .from('user_profiles').select('name, role, store_ids, is_hq').eq('user_id', user.id).single()
@@ -57,7 +62,12 @@ export default async function SummaryPage() {
   const storeId = await getEffectiveStoreId(profile)
   if (!storeId) return <div className="p-6" style={{ color: '#a1a1aa' }}>尚未指派店家</div>
 
-  const today = getBusinessDate()
+  const realToday = getBusinessDate()
+  const requested = params.date
+  const today = (requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested <= realToday)
+    ? requested
+    : realToday
+  const closingHref = `/manager/closing?date=${encodeURIComponent(today)}`
 
   const [{ data: closing }, { data: store }] = await Promise.all([
     supabase.from('daily_closings')
@@ -80,12 +90,40 @@ export default async function SummaryPage() {
             style={{ background: '#f1f5f9' }}>
             <Calculator className="h-9 w-9" style={{ color: '#a1a1aa' }} />
           </div>
-          <h1 className="text-xl font-bold mb-2" style={{ color: '#18181b' }}>今日尚未結帳</h1>
-          <p className="text-sm mb-6" style={{ color: '#a1a1aa' }}>請先完成今日結帳再查看結算結果</p>
-          <Link href="/manager/closing"
+          <h1 className="text-xl font-bold mb-2" style={{ color: '#18181b' }}>此日期尚未結帳</h1>
+          <p className="text-sm mb-6" style={{ color: '#a1a1aa' }}>請先完成 {today} 的結帳再查看結算結果</p>
+          <Link href={closingHref}
             className="inline-flex items-center gap-2 px-5 py-3 text-white rounded-xl text-sm font-semibold"
             style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 14px rgba(245,158,11,0.3)' }}>
-            前往每日結帳
+            前往結帳頁面
+            <ChevronRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  const petty = (closing as any).petty_counts as { verified_at?: string } | null | undefined
+  const pettyDone = !!petty?.verified_at
+  const closingIncomplete = closing.status === 'draft' || (['submitted', 'verified'].includes(closing.status) && !pettyDone)
+  if (closingIncomplete) {
+    const title = closing.status === 'draft' ? '此日期尚未完成結帳' : '零用金尚未核對完成'
+    const desc = closing.status === 'draft'
+      ? `請先完成 ${today} 的結帳再查看結算結果`
+      : `請先完成 ${today} 的零用金核對，才會產生結算結果`
+    return (
+      <div className="min-h-full flex items-center justify-center" style={{ background: '#fafafa' }}>
+        <div className="text-center px-6 py-16">
+          <div className="h-20 w-20 rounded-3xl flex items-center justify-center mx-auto mb-6"
+            style={{ background: '#f1f5f9' }}>
+            <Calculator className="h-9 w-9" style={{ color: '#a1a1aa' }} />
+          </div>
+          <h1 className="text-xl font-bold mb-2" style={{ color: '#18181b' }}>{title}</h1>
+          <p className="text-sm mb-6" style={{ color: '#a1a1aa' }}>{desc}</p>
+          <Link href={closingHref}
+            className="inline-flex items-center gap-2 px-5 py-3 text-white rounded-xl text-sm font-semibold"
+            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 14px rgba(245,158,11,0.3)' }}>
+            前往結帳頁面
             <ChevronRight className="h-4 w-4" />
           </Link>
         </div>
@@ -422,17 +460,15 @@ export default async function SummaryPage() {
         )}
 
         {/* 底部按鈕 */}
-        {(closing.status === 'draft' || closing.status === 'disputed') && (
-          <div className="flex gap-3 pt-2">
-            <Link
-              href={closing.status === 'draft' ? '/manager/closing' : `/manager/edit/${closing.id}`}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white"
-              style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 14px rgba(245,158,11,0.2)' }}>
-              <BarChart3 className="h-4 w-4" />
-              {closing.status === 'draft' ? '繼續填寫結帳' : '修改帳目'}
-            </Link>
-          </div>
-        )}
+        <div className="flex gap-3 pt-2">
+          <Link
+            href={closing.status === 'disputed' ? `/manager/edit/${closing.id}` : closing.status === 'draft' ? closingHref : '/manager/dashboard'}
+            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white"
+            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 14px rgba(245,158,11,0.2)' }}>
+            <BarChart3 className="h-4 w-4" />
+            {closing.status === 'disputed' ? '修改帳目' : closing.status === 'draft' ? '繼續填寫結帳' : '回到今日狀態頁面'}
+          </Link>
+        </div>
 
       </div>
     </div>

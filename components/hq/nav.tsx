@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, CheckSquare,
   Store, Users, LogOut,
-  ClipboardList, History, LineChart,
+  ClipboardList, History,
   ArrowRightLeft, Package, BookOpen, Settings, FileBarChart2, ChefHat, ExternalLink,
   Menu, X,
 } from 'lucide-react'
@@ -82,7 +82,6 @@ const managerSections = [
       { href: '/manager/closing',    label: '今日結帳', icon: ClipboardList },
       { href: '/manager/dashboard',  label: '今日狀態', icon: LayoutDashboard },
       { href: '/manager/history',    label: '歷史紀錄', icon: History },
-      { href: '/manager/analytics',  label: '營運洞察', icon: LineChart },
     ],
   },
   // 「收據設定」已整合到總公司端 /hq/receipt-settings，店長端不再獨立管理
@@ -98,7 +97,6 @@ const mobileManagerTabs = [
   { href: '/manager/closing',    label: '今日結帳', icon: ClipboardList },
   { href: '/manager/dashboard',  label: '今日狀態', icon: LayoutDashboard },
   { href: '/manager/history',    label: '歷史紀錄', icon: History },
-  { href: '/manager/analytics',  label: '營運洞察', icon: LineChart },
 ]
 
 interface Props {
@@ -352,12 +350,13 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               </Link>
             )
           })}
-          {/* 更多 (展開所有頁面) */}
-          <button type="button" onClick={() => setMobileSheetOpen(true)}
-            className="flex flex-col items-center gap-1 flex-1 py-1">
-            <Menu className="h-[22px] w-[22px]" style={{ color: '#a1a1aa' }} />
-            <span className="text-[11px] font-medium" style={{ color: '#a1a1aa' }}>更多</span>
-          </button>
+          {!isManagerPath && (
+            <button type="button" onClick={() => setMobileSheetOpen(true)}
+              className="flex flex-col items-center gap-1 flex-1 py-1">
+              <Menu className="h-[22px] w-[22px]" style={{ color: '#a1a1aa' }} />
+              <span className="text-[11px] font-medium" style={{ color: '#a1a1aa' }}>更多</span>
+            </button>
+          )}
         </div>
       </nav>
 

@@ -17,7 +17,8 @@ export default function ReviewActions({ closingId, currentStatus, onProcessed }:
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [note, setNote] = useState('')
   const [done, setDone] = useState(false)
-  const canDispute = currentStatus === 'submitted' || currentStatus === 'verified'
+  const canVerify = currentStatus === 'submitted' || currentStatus === 'disputed'
+  const canDispute = currentStatus === 'submitted' || currentStatus === 'verified' || currentStatus === 'disputed'
 
   if (done) return null
 
@@ -38,7 +39,6 @@ export default function ReviewActions({ closingId, currentStatus, onProcessed }:
   }
 
   async function handleDispute() {
-    if (!note.trim()) { toast.error('請填寫退回原因'); return }
     setLoading(true)
     const result = await disputeClosing(closingId, note)
     if (result.error) { toast.error(result.error) }
@@ -50,21 +50,21 @@ export default function ReviewActions({ closingId, currentStatus, onProcessed }:
     return (
       <div className="space-y-2 p-3 rounded-xl" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
         <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold" style={{ color: '#c2410c' }}>填寫退回原因</p>
+          <p className="text-xs font-semibold" style={{ color: '#c2410c' }}>退回原因（選填）</p>
           <button type="button" onClick={() => { setShowDisputeForm(false); setNote('') }}>
             <X className="h-3.5 w-3.5" style={{ color: '#a1a1aa' }} />
           </button>
         </div>
         <textarea
-          placeholder="請說明異常原因，店長看到後會依此修正..."
+          placeholder="可選填異常原因，店長看到後會依此修正..."
           style={{ width: '100%', fontSize: '13px', border: '1.5px solid #fed7aa', borderRadius: '8px', padding: '8px 10px', height: '72px', resize: 'none', outline: 'none', fontFamily: 'inherit', background: 'white' }}
           value={note}
           onChange={e => setNote(e.target.value)}
         />
         <div className="flex gap-2">
-          <button type="button" disabled={loading || !note.trim()} onClick={handleDispute}
+          <button type="button" disabled={loading} onClick={handleDispute}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
-            style={{ background: 'linear-gradient(135deg,#f97316,#ea580c)', opacity: loading || !note.trim() ? 0.5 : 1 }}>
+            style={{ background: 'linear-gradient(135deg,#f97316,#ea580c)', opacity: loading ? 0.5 : 1 }}>
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
             確認退回
           </button>
@@ -107,12 +107,12 @@ export default function ReviewActions({ closingId, currentStatus, onProcessed }:
 
   return (
     <div className="flex gap-2 flex-wrap">
-      {currentStatus === 'submitted' && (
+      {canVerify && (
         <button type="button" disabled={loading} onClick={handleVerify}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
           style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 2px 8px rgba(16,185,129,0.25)', opacity: loading ? 0.5 : 1 }}>
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-          核准
+          {currentStatus === 'disputed' ? '重新核准' : '核准'}
         </button>
       )}
       {canDispute && (
@@ -120,7 +120,7 @@ export default function ReviewActions({ closingId, currentStatus, onProcessed }:
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
           style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
           <RotateCcw className="h-3.5 w-3.5" />
-          {currentStatus === 'verified' ? '重新退回修改' : '退回修改'}
+          {currentStatus === 'verified' ? '重新退回修改' : currentStatus === 'disputed' ? '再次退回修改' : '退回修改'}
         </button>
       )}
       <button type="button" disabled={loading} onClick={() => setShowDeleteConfirm(true)}

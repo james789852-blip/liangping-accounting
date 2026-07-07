@@ -68,7 +68,7 @@ function ReviewActions({ ckStoreId, date, status }: { ckStoreId: string; date: s
   }
 
   function reject() {
-    const note = window.prompt('請輸入退回原因，央廚店長會看到這段說明：', '')
+    const note = window.prompt('退回原因（選填），央廚店長會看到這段說明：', '')
     if (note === null) return
     startTransition(async () => {
       const r = await reviewCKDailyRecord(ckStoreId, date, 'disputed', note)

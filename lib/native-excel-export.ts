@@ -40,6 +40,8 @@ const C = {
   platformRed:   'FFFFE4E6',
   platformPink:  'FFFCE7F3',
   platformGreen: 'FFDCFCE7',
+  uberGreen:      'FF00B050',
+  pandaPink:      'FFFF66CC',
   vendorOrange:  'FFFFEDD5',
   docInvoice:    'FFE0F2FE',
   docReceipt:    'FFFFEDD5',
@@ -547,16 +549,16 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
   // 動態長度：只列出該店實際啟用的平台，沒啟用的不出欄。
   // 顏色依平台種類：
   //   TWPAY            → 桃粉底 + 紅字（DA9694 對比清晰）
-  //   所有 Uber 帳號   → 綠底  + 黑字（鑫營 / 五分舖 等統一）
-  //   熊貓             → 桃粉底 + 紅字（同類型支付/外送色系，實務上同店少同時出現）
+  //   所有 Uber 帳號   → 綠底  + 黑字（對齊原本 Excel）
+  //   熊貓             → 粉紅底 + 黑字（對齊原本 Excel）
   //   線上自家/線上(現金) → 淺藍底 + 黑字（兩者一致以標示自家通路）
   // 注意：NFT 目前不使用，不列入匯出。
   // 順序：TWPAY → Uber 帳號 → 熊貓 → 線上自家 → 線上(現金)
   const platformStyle = (key: string): { bg: string; color: string } => {
     if (key === 'twpay') return { bg: C.platformRed, color: C.red }
-    if (key === 'panda') return { bg: C.platformRed, color: C.red }
+    if (key === 'panda') return { bg: C.pandaPink, color: C.ink }
     if (key === 'online' || key === 'online_cash') return { bg: C.blueLight, color: C.ink }
-    return { bg: C.platformGreen, color: C.ink }
+    return { bg: C.uberGreen, color: C.ink }
   }
   const platformCols: { key: string; label: string; bg: string; color: string }[] = []
   const enabled: { key: string; label: string }[] = []
@@ -790,6 +792,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
   // ────────────────────────────────────────────────
   // Row 4 月份合計
   // ────────────────────────────────────────────────
+  const blankZeroFromCol = vendorGroupRanges.find(v => v.name === '央廚配送')?.start ?? null
   const r4 = ws.getRow(4)
   r4.getCell(1).value = `${monthNum}月`
   r4.getCell(1).font = { name: FONT_DATA, bold: true, size: 14, color: { argb: C.ink } }
@@ -810,11 +813,14 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
   for (const c of allDataCols) {
     const letter = colLetter(c)
     const cell = r4.getCell(c)
+    const platform = platformCols.find(p => colOfKey[p.key] === c)
     cell.value = { formula: `SUM(${letter}5:${letter}35)` } as any
-    cell.font = { name: FONT_DATA, bold: true, size: 14, color: { argb: C.ink } }
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.yellow } }
+    cell.font = { name: FONT_DATA, bold: true, size: 14, color: { argb: platform?.color ?? C.ink } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: platform?.bg ?? C.yellow } }
     cell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
-    cell.numFmt = '#,##0'
+    cell.numFmt = c === colOfKey['result']
+      ? '#,##0;[Red]-#,##0;0'
+      : (blankZeroFromCol && c >= blankZeroFromCol ? '#,##0;-#,##0;' : '#,##0')
     cell.border = thinBlack
   }
 
@@ -1029,7 +1035,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.cream } }
       cell.font = { name: FONT_DATA, size: 14, color: { argb: C.ink } }
       cell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
-      cell.numFmt = '#,##0'
+      cell.numFmt = c === resultCol ? '#,##0;[Red]-#,##0;0' : '#,##0'
       cell.border = thinBlack
     }
     // 小計欄（總/食/耗/雜）
@@ -1047,7 +1053,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.white } }
       cell.font = { name: FONT_DATA, size: 14, color: { argb: C.ink } }
       cell.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 }
-      cell.numFmt = '#,##0'
+      cell.numFmt = blankZeroFromCol && c >= blankZeroFromCol ? '#,##0;-#,##0;' : '#,##0'
       cell.border = thinBlack
     }
   }

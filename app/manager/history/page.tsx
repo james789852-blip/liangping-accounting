@@ -98,18 +98,29 @@ export default async function HistoryPage({
               央廚歷史紀錄
             </div>
             <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>帳目紀錄</h1>
-            <form method="GET" action="/manager/history" className="flex gap-2 mt-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#a1a1aa' }} />
-                <input type="date" name="date" defaultValue={searchDate}
-                  style={{ width: '100%', height: '40px', padding: '0 12px 0 36px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '14px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b' }} />
+            <form method="GET" action="/manager/history" className="mt-4 rounded-2xl bg-white p-3" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+              <p className="text-xs font-bold mb-2" style={{ color: '#71717a' }}>搜尋帳目</p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_150px_auto_auto]">
+                <label className="min-w-0">
+                  <span className="mb-1 block text-[11px] font-semibold" style={{ color: '#a1a1aa' }}>指定日期</span>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#a1a1aa' }} />
+                    <input type="date" name="date" defaultValue={searchDate}
+                      style={{ width: '100%', minWidth: 0, height: '40px', padding: '0 10px 0 36px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '16px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b' }} />
+                  </div>
+                </label>
+                <label className="min-w-0">
+                  <span className="mb-1 block text-[11px] font-semibold" style={{ color: '#a1a1aa' }}>整月查詢</span>
+                  <input type="month" name="month" defaultValue={searchMonth}
+                    className="min-w-0"
+                    style={{ width: '100%', minWidth: 0, height: '40px', padding: '0 10px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '16px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b' }} />
+                </label>
+                <button type="submit" className="rounded-xl text-sm font-semibold text-white sm:mt-[18px]" style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', height: '40px', minWidth: '64px' }}>搜尋</button>
+                {(searchDate || searchMonth) && (
+                  <a href="/manager/history" className="rounded-xl text-sm font-medium flex items-center justify-center sm:mt-[18px]" style={{ border: '1.5px solid #e4e4e7', color: '#71717a', height: '40px', minWidth: '56px', background: 'white' }}>清除</a>
+                )}
               </div>
-              <input type="month" name="month" defaultValue={searchMonth}
-                style={{ height: '40px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '14px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b' }} />
-              <button type="submit" className="px-4 rounded-xl text-sm font-semibold text-white" style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', height: '40px' }}>搜尋</button>
-              {(searchDate || searchMonth) && (
-                <a href="/manager/history" className="px-3 rounded-xl text-sm font-medium flex items-center" style={{ border: '1.5px solid #e4e4e7', color: '#71717a', height: '40px', background: 'white' }}>清除</a>
-              )}
+              <p className="mt-2 text-[11px]" style={{ color: '#a1a1aa' }}>可查單日帳目，也可選月份查看整月紀錄。</p>
             </form>
           </div>
         </div>
@@ -202,44 +213,55 @@ export default async function HistoryPage({
           <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>帳目紀錄</h1>
 
           {/* 搜尋列 */}
-          <form method="GET" action="/manager/history" className="flex gap-2 mt-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#a1a1aa' }} />
-              <input
-                type="date"
-                name="date"
-                defaultValue={searchDate}
-                style={{
-                  width: '100%', height: '40px', padding: '0 12px 0 36px',
-                  border: '1.5px solid #e4e4e7', borderRadius: '12px',
-                  fontSize: '14px', outline: 'none', background: 'white',
-                  fontFamily: 'inherit', color: '#18181b',
-                }}
-              />
+          <form method="GET" action="/manager/history" className="mt-4 rounded-2xl bg-white p-3" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+            <p className="text-xs font-bold mb-2" style={{ color: '#71717a' }}>搜尋帳目</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_150px_auto_auto]">
+              <label className="min-w-0">
+                <span className="mb-1 block text-[11px] font-semibold" style={{ color: '#a1a1aa' }}>指定日期</span>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#a1a1aa' }} />
+                  <input
+                    type="date"
+                    name="date"
+                    defaultValue={searchDate}
+                    style={{
+                      width: '100%', minWidth: 0, height: '40px', padding: '0 10px 0 36px',
+                      border: '1.5px solid #e4e4e7', borderRadius: '12px',
+                      fontSize: '16px', outline: 'none', background: 'white',
+                      fontFamily: 'inherit', color: '#18181b',
+                    }}
+                  />
+                </div>
+              </label>
+              <label className="min-w-0">
+                <span className="mb-1 block text-[11px] font-semibold" style={{ color: '#a1a1aa' }}>整月查詢</span>
+                <input
+                  type="month"
+                  name="month"
+                  defaultValue={searchMonth}
+                  className="min-w-0"
+                  style={{
+                    width: '100%', minWidth: 0, height: '40px', padding: '0 10px',
+                    border: '1.5px solid #e4e4e7', borderRadius: '12px',
+                    fontSize: '16px', outline: 'none', background: 'white',
+                    fontFamily: 'inherit', color: '#18181b',
+                  }}
+                />
+              </label>
+              <button type="submit"
+                className="rounded-xl text-sm font-semibold text-white sm:mt-[18px]"
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', height: '40px', minWidth: '64px' }}>
+                搜尋
+              </button>
+              {(searchDate || searchMonth) && (
+                <a href="/manager/history"
+                  className="rounded-xl text-sm font-medium flex items-center justify-center sm:mt-[18px]"
+                  style={{ border: '1.5px solid #e4e4e7', color: '#71717a', height: '40px', minWidth: '56px', background: 'white' }}>
+                  清除
+                </a>
+              )}
             </div>
-            <input
-              type="month"
-              name="month"
-              defaultValue={searchMonth}
-              style={{
-                height: '40px', padding: '0 12px',
-                border: '1.5px solid #e4e4e7', borderRadius: '12px',
-                fontSize: '14px', outline: 'none', background: 'white',
-                fontFamily: 'inherit', color: '#18181b',
-              }}
-            />
-            <button type="submit"
-              className="px-4 rounded-xl text-sm font-semibold text-white"
-              style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', height: '40px' }}>
-              搜尋
-            </button>
-            {(searchDate || searchMonth) && (
-              <a href="/manager/history"
-                className="px-3 rounded-xl text-sm font-medium flex items-center"
-                style={{ border: '1.5px solid #e4e4e7', color: '#71717a', height: '40px', background: 'white' }}>
-                清除
-              </a>
-            )}
+            <p className="mt-2 text-[11px]" style={{ color: '#a1a1aa' }}>可查單日帳目，也可選月份查看整月紀錄。</p>
           </form>
         </div>
       </div>

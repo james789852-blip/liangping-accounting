@@ -7,5 +7,5 @@ export const dynamic = 'force-dynamic'
  * 保留這個 route 是為了：若店長曾 bookmark 此網址，會被導回結帳頁而非 404。
  */
 export default async function DeprecatedManagerSettingsPage() {
-  redirect('/manager/closing')
+  redirect('/manager/dashboard')
 }

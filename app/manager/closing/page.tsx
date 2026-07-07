@@ -113,12 +113,9 @@ export default async function ClosingPage({
     redirect(`/manager/edit/${existingClosing.id}`)
   }
   if (existingClosing && ['submitted', 'verified'].includes(existingClosing.status)) {
-    const petty = (existingClosing as any).petty_counts as { counts?: Record<string, number>; lumps?: Record<string, number> } | null | undefined
-    const pettyDone = !!petty && (
-      Object.values(petty.counts ?? {}).some(v => Number(v) > 0) ||
-      Object.values(petty.lumps ?? {}).some(v => Number(v) > 0)
-    )
-    if (pettyDone) redirect('/manager/summary')
+    const petty = (existingClosing as any).petty_counts as { verified_at?: string } | null | undefined
+    const pettyDone = !!petty?.verified_at
+    if (pettyDone) redirect(`/manager/summary?date=${encodeURIComponent(today)}`)
   }
 
   const prevReserveItems = (prevClosing?.reserve_items as any[]) ?? []

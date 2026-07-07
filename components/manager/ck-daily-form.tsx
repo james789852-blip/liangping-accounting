@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn, Pencil, BarChart3, ClipboardList, Banknote } from 'lucide-react'
+import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn, Pencil, BarChart3, ClipboardList, Banknote, ArrowLeft, ArrowRight, ClipboardCheck } from 'lucide-react'
 import { saveCKDailyRecord, confirmCKOrder, confirmCKReimbursementHandoff } from '@/app/actions/ck'
 import CKHelp from './ck-help'
 import { uploadToStorage } from '@/app/actions/upload'
@@ -116,6 +116,19 @@ interface MemberOrder { store_id: string; store_name: string; amount: number; su
 interface ExternalStore { id: string; name: string }
 interface ExternalOrder { name: string; amount: number }
 interface Expense { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string; vendor_group: string; doc_type: string; note: string; receipt_photo_url?: string }
+interface PhotoExpenseForm {
+  id: string
+  photoUrl: string
+  savedExpenseId?: string
+  category: '食材' | '耗材' | '雜項'
+  category_name?: string
+  item_name: string
+  amount: string
+  payer_name: string
+  vendor_group: string
+  doc_type: string
+  note: string
+}
 interface ExistingRecord {
   id: string
   payer_name?: string
@@ -138,6 +151,64 @@ const CAT_COLORS: Record<string, { bg: string; text: string }> = {
   '食材': { bg: '#fef3c7', text: '#92400e' },
   '耗材': { bg: '#ecfdf5', text: '#047857' },
   '雜項': { bg: '#f4f4f5', text: '#52525b' },
+}
+
+function inferExpenseCategory(categoryName: string): '食材' | '耗材' | '雜項' {
+  if (categoryName === '耗材') return '耗材'
+  if (categoryName === '雜項' || categoryName === '其他') return '雜項'
+  return '食材'
+}
+
+function resolveReceiptCategoryName(form: PhotoExpenseForm, receiptCategories: ReceiptCat[]) {
+  if (form.category_name && receiptCategories.some(c => c.name === form.category_name)) return form.category_name
+  if (form.vendor_group) {
+    const containing = receiptCategories.find(c => c.vendors.some(v => v.name === form.vendor_group))
+    if (containing) return containing.name
+  }
+  if (form.category === '耗材' && receiptCategories.some(c => c.name === '耗材')) return '耗材'
+  if (form.category === '雜項') {
+    if (receiptCategories.some(c => c.name === '雜項')) return '雜項'
+    if (receiptCategories.some(c => c.name === '其他')) return '其他'
+  }
+  if (receiptCategories.some(c => c.name === '廠商類別')) return '廠商類別'
+  return receiptCategories[0]?.name ?? '廠商類別'
+}
+
+function buildPhotoExpenseForms(photoUrls: string[], expenses: Expense[]): PhotoExpenseForm[] {
+  const used = new Set<string>()
+  const fromExpenses = expenses
+    .filter(e => !!e.receipt_photo_url)
+    .map((e, index) => {
+      used.add(e.receipt_photo_url || '')
+      return {
+        id: e.id || `expense-${index}`,
+        photoUrl: e.receipt_photo_url || '',
+        savedExpenseId: e.id,
+        category: e.category,
+        category_name: undefined,
+        item_name: e.item_name,
+        amount: e.amount ? String(e.amount) : '',
+        payer_name: e.payer_name || '',
+        vendor_group: e.vendor_group || '',
+        doc_type: e.doc_type || '發票',
+        note: e.note || '',
+      }
+    })
+  const photoOnly = photoUrls
+    .filter(url => !used.has(url))
+    .map((url, index) => ({
+      id: `photo-${index}-${url}`,
+      photoUrl: url,
+      category: '食材' as const,
+      category_name: undefined,
+      item_name: '',
+      amount: '',
+      payer_name: '',
+      vendor_group: '',
+      doc_type: '發票',
+      note: '',
+    }))
+  return [...fromExpenses, ...photoOnly]
 }
 
 function CKDoneCard({
@@ -338,6 +409,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   const isLocked = existing?.status === 'submitted' || existing?.status === 'verified'
   const isRejected = existing?.status === 'disputed'
   const draftKey = `lp_ck_daily_draft:${ckStoreId}:${date}`
+  const [currentStep, setCurrentStep] = useState(1)
+  const [ckRecordId, setCkRecordId] = useState<string | null>(existing?.id ?? null)
 
   const [payerName, setPayerName] = useState(existing?.payer_name ?? '')
   const [note, setNote] = useState(existing?.note ?? '')
@@ -364,6 +437,9 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   // 收據照片
   const [photoUrls, setPhotoUrls] = useState<string[]>(existing?.receiptPhotoUrls ?? [])
   const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string>(existing?.receiptPhotoUrls?.[0] ?? '')
+  const [photoForms, setPhotoForms] = useState<PhotoExpenseForm[]>(
+    () => buildPhotoExpenseForms(existing?.receiptPhotoUrls ?? [], existing?.expenses ?? [])
+  )
   const [photoUploading, setPhotoUploading] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
@@ -393,6 +469,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       if (Array.isArray(draft.extOrders)) setExtOrders(draft.extOrders)
       if (Array.isArray(draft.expenses)) setExpenses(draft.expenses)
       if (Array.isArray(draft.photoUrls)) setPhotoUrls(draft.photoUrls)
+      if (Array.isArray(draft.photoForms)) setPhotoForms(draft.photoForms)
       if (typeof draft.selectedPhotoUrl === 'string') setSelectedPhotoUrl(draft.selectedPhotoUrl)
       if (typeof draft.payerName === 'string') setPayerName(draft.payerName)
       if (typeof draft.note === 'string') setNote(draft.note)
@@ -414,6 +491,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         payerName.trim() ||
         note.trim() ||
         photoUrls.length > 0 ||
+        photoForms.some(f => f.item_name.trim() || f.amount || f.vendor_group.trim() || f.note.trim()) ||
         expenses.length > 0 ||
         extOrders.some(o => Number(o.amount || 0) > 0) ||
         newExpense.item_name.trim() ||
@@ -436,17 +514,44 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         activeCat,
         activeVendor,
         photoUrls,
+        photoForms,
         selectedPhotoUrl,
       }))
     }, 300)
     return () => window.clearTimeout(timer)
-  }, [activeCat, activeVendor, ckStoreId, date, draftKey, expenses, extOrders, isLocked, newExpense, note, payerName, photoUrls, selectedPhotoUrl])
+  }, [activeCat, activeVendor, ckStoreId, date, draftKey, expenses, extOrders, isLocked, newExpense, note, payerName, photoForms, photoUrls, selectedPhotoUrl])
 
   const memberTotal = memberOrders.reduce((s, o) => s + Number(o.confirmed_amount ?? o.amount ?? 0), 0)
   const extTotal = extOrders.reduce((s, o) => s + (Number(o.amount) || 0), 0)
   const revenueTotal = memberTotal + extTotal
-  const expenseTotal = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0)
+  const expensesForSave = getExpensesForSave()
+  const expenseTotal = expensesForSave.reduce((s, e) => s + (Number(e.amount) || 0), 0)
   const balance = revenueTotal - expenseTotal
+
+  function getExpensesForSave() {
+    const manualExpenses = expenses.filter(e => !e.receipt_photo_url)
+    const photoExpenses = photoForms
+      .map(form => {
+        const categoryName = resolveReceiptCategoryName(form, receiptCategories)
+        const itemName = categoryName === '雜項'
+          ? form.vendor_group.trim()
+          : form.item_name.trim() || form.vendor_group.trim()
+        if (!itemName || !form.amount) return null
+        return {
+          id: form.savedExpenseId || form.id,
+          category: inferExpenseCategory(categoryName),
+          item_name: itemName,
+          amount: Number(form.amount) || 0,
+          payer_name: form.payer_name.trim(),
+          vendor_group: form.vendor_group.trim(),
+          doc_type: form.doc_type,
+          note: form.note.trim(),
+          receipt_photo_url: form.photoUrl,
+        } as Expense
+      })
+      .filter(Boolean) as Expense[]
+    return [...manualExpenses, ...photoExpenses]
+  }
 
   function updateExtAmount(name: string, val: string) {
     setExtOrders(prev => prev.map(o => o.name === name ? { ...o, amount: Number(val) || 0 } : o))
@@ -503,6 +608,61 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
 
   function removeExpense(id: string) {
     setExpenses(prev => prev.filter(e => e.id !== id))
+    setPhotoForms(prev => prev.map(f => f.savedExpenseId === id ? { ...f, savedExpenseId: undefined } : f))
+  }
+
+  function updatePhotoForm(id: string, patch: Partial<PhotoExpenseForm>) {
+    setPhotoForms(prev => prev.map(form => form.id === id ? { ...form, ...patch } : form))
+  }
+
+  function photoItemOptions(vendorName: string) {
+    if (!vendorName) return []
+    return mappingItems
+      .filter(m => (m.vendor_group ?? '') === vendorName)
+      .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999) || a.item_name.localeCompare(b.item_name, 'zh-Hant'))
+  }
+
+  function savePhotoExpense(form: PhotoExpenseForm) {
+    const categoryName = resolveReceiptCategoryName(form, receiptCategories)
+    const fallbackItemName = form.vendor_group.trim()
+    const itemName = categoryName === '雜項' ? fallbackItemName : form.item_name.trim() || fallbackItemName
+    if (!itemName || !form.amount) {
+      toast.error('請選擇廠商/品項並填寫金額')
+      return
+    }
+    const expenseId = form.savedExpenseId || crypto.randomUUID()
+    const nextExpense: Expense = {
+      id: expenseId,
+      category: inferExpenseCategory(categoryName),
+      item_name: itemName,
+      amount: Number(form.amount) || 0,
+      payer_name: form.payer_name.trim(),
+      vendor_group: form.vendor_group.trim(),
+      doc_type: form.doc_type,
+      note: form.note.trim(),
+      receipt_photo_url: form.photoUrl,
+    }
+    setExpenses(prev => {
+      const withoutSamePhoto = prev.filter(e => e.id !== expenseId && e.receipt_photo_url !== form.photoUrl)
+      return [...withoutSamePhoto, nextExpense]
+    })
+    setPhotoForms(prev => prev.map(f => f.id === form.id ? {
+      ...f,
+      savedExpenseId: expenseId,
+      item_name: itemName,
+      amount: String(Number(form.amount) || 0),
+    } : f))
+    toast.success(form.savedExpenseId ? '此張照片支出已更新' : '此張照片支出已儲存')
+  }
+
+  function removeReceiptPhoto(url: string) {
+    setPhotoUrls(prev => prev.filter(item => item !== url))
+    setPhotoForms(prev => prev.filter(form => form.photoUrl !== url))
+    setExpenses(prev => prev.filter(e => e.receipt_photo_url !== url))
+    if (selectedPhotoUrl === url) {
+      const next = photoUrls.find(item => item !== url) || ''
+      setSelectedPhotoUrl(next)
+    }
   }
 
   async function handlePhotoUpload(files: FileList | null) {
@@ -521,19 +681,31 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
           if (!selectedPhotoUrl) setSelectedPhotoUrl(result.publicUrl)
           return next
         })
+        setPhotoForms(prev => [...prev, {
+          id: `photo-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          photoUrl: result.publicUrl,
+          category: '食材',
+          category_name: undefined,
+          item_name: '',
+          amount: '',
+          payer_name: '',
+          vendor_group: '',
+          doc_type: '發票',
+          note: '',
+        }])
       }
     }
     setPhotoUploading(false)
   }
 
-  async function handleSave(asSubmit = false) {
+  async function handleSave(asSubmit = false, opts: { silent?: boolean } = {}) {
     if (asSubmit) setSubmitting(true); else setSaving(true)
     const r = await saveCKDailyRecord(ckStoreId, date, {
       payerName: payerName || undefined,
       note: note || undefined,
       status: asSubmit ? 'submitted' : 'draft',
       externalOrders: extOrders.filter(o => o.amount > 0),
-      expenses: expenses.map(e => ({
+      expenses: expensesForSave.map(e => ({
         category: e.category, item_name: e.item_name, amount: e.amount,
         payer_name: e.payer_name || undefined,
         vendor_group: e.vendor_group || undefined,
@@ -545,11 +717,26 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     })
     if (r.error) { toast.error('儲存失敗：' + r.error) }
     else {
+      if (r.id) setCkRecordId(r.id)
       if (typeof window !== 'undefined') window.localStorage.removeItem(draftKey)
-      toast.success(asSubmit ? '已送出！' : '草稿已儲存')
-      router.refresh()
+      if (!opts.silent) toast.success(asSubmit ? '已送出！' : '草稿已儲存')
+      if (!opts.silent) router.refresh()
     }
     if (asSubmit) setSubmitting(false); else setSaving(false)
+    return !r.error
+  }
+
+  async function goNext() {
+    if (currentStep >= 4) return
+    const ok = await handleSave(false, { silent: true })
+    if (!ok) return
+    setCurrentStep(s => Math.min(4, s + 1))
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function goPrev() {
+    setCurrentStep(s => Math.max(1, s - 1))
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const INPUT = 'w-full px-3 py-2 rounded-xl text-sm outline-none border transition-colors'
@@ -603,12 +790,50 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         </div>
       )}
 
-      {!isLocked && (
+      <div className="bg-white rounded-3xl p-4" style={{ border: '1px solid #f4f4f5', boxShadow: '0 10px 30px rgba(15,23,42,0.04)' }}>
+        <div className="flex items-center justify-between gap-3 mb-3">
+          {[
+            { n: 1, title: '上傳單據' },
+            { n: 2, title: '叫貨金額' },
+            { n: 3, title: '代墊人' },
+            { n: 4, title: '確認結果' },
+          ].map((s, i) => (
+            <div key={s.n} className="flex items-center gap-2 flex-1">
+              <button type="button" onClick={() => setCurrentStep(s.n)}
+                className="h-9 w-9 rounded-full text-sm font-bold shrink-0"
+                style={{
+                  background: currentStep === s.n ? 'linear-gradient(135deg,#F59E0B,#F97316)' : currentStep > s.n ? '#10b981' : '#f4f4f5',
+                  color: currentStep >= s.n ? 'white' : '#a1a1aa',
+                  border: 'none',
+                }}>
+                {currentStep > s.n ? '✓' : s.n}
+              </button>
+              {i < 3 && <div className="h-1 flex-1 rounded-full" style={{ background: currentStep > s.n ? '#10b981' : '#e4e4e7' }} />}
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>央廚結帳流程</p>
+            <h2 className="text-xl font-extrabold" style={{ color: '#18181b' }}>
+              {currentStep === 1 ? '上傳並編輯單據'
+                : currentStep === 2 ? '輸入店家叫貨金額'
+                : currentStep === 3 ? '輸入貨款代墊人'
+                : '確認今日結果'}
+            </h2>
+          </div>
+          <span className="text-xs font-bold px-3 py-1 rounded-full" style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+            步驟 {currentStep} / 4
+          </span>
+        </div>
+      </div>
+
+      {currentStep === 1 && !isLocked && (
         <div className="bg-white rounded-2xl px-4 py-4 space-y-3" style={{ border: '1px solid #f4f4f5' }}>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-bold" style={{ color: '#18181b' }}>先上傳支出單據照片</p>
-              <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>上傳後再到支出明細選擇廠商、品項與金額。</p>
+              <p className="text-sm font-bold" style={{ color: '#18181b' }}>請上傳當日支出單據照片</p>
+              <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>可一次多張，上傳後逐張編輯類別、廠商、品項與金額。</p>
             </div>
             <button type="button" onClick={() => photoInputRef.current?.click()} disabled={photoUploading}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl shrink-0"
@@ -617,6 +842,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
               {photoUploading ? '上傳中' : '新增照片'}
             </button>
           </div>
+          <input ref={photoInputRef} type="file" accept="image/*" multiple className="hidden"
+            onChange={e => handlePhotoUpload(e.target.files)} />
           {photoUrls.length > 0 && (
             <div className="flex gap-2 overflow-x-auto pb-1">
               {photoUrls.slice(0, 8).map((url, i) => (
@@ -652,6 +879,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       </div>
 
       {/* 體系內店家叫貨 */}
+      {currentStep === 2 && (
       <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
         <button type="button" onClick={() => setShowMember(v => !v)}
           className="w-full flex items-center justify-between px-4 py-3.5">
@@ -671,7 +899,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
               memberOrders.map(o => (
                 <CrossCheckRow key={o.store_id}
                   order={o}
-                  ckDailyRecordId={existing?.id ?? null}
+                  ckDailyRecordId={ckRecordId}
                   disabled={isLocked}
                 />
               ))
@@ -683,8 +911,10 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
           </div>
         )}
       </div>
+      )}
 
       {/* 體系外店家叫貨 */}
+      {currentStep === 2 && (
       <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
         <button type="button" onClick={() => setShowExternal(v => !v)}
           className="w-full flex items-center justify-between px-4 py-3.5">
@@ -728,8 +958,10 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
           </div>
         )}
       </div>
+      )}
 
       {/* 支出明細 */}
+      {currentStep === 1 && (
       <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
         <button type="button" onClick={() => setShowExpenses(v => !v)}
           className="w-full flex items-center justify-between px-4 py-3.5">
@@ -785,128 +1017,149 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
               </div>
             ))}
             {!isLocked && (
-              <div className="px-4 py-4 space-y-2" style={{ borderTop: expenses.length > 0 ? '1px solid #f4f4f5' : 'none', background: '#fafafa' }}>
-                {editingExpenseId && (
-                  <div className="flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold"
-                    style={{ background: '#fff7ed', color: '#92400e', border: '1px solid #fed7aa' }}>
-                    <span>正在編輯支出</span>
-                    <button type="button" onClick={cancelEditExpense}
-                      style={{ background: 'transparent', border: 'none', color: '#92400e', cursor: 'pointer', fontWeight: 700 }}>
-                      取消編輯
-                    </button>
+              <div className="px-4 py-4 space-y-3" style={{ borderTop: expenses.length > 0 ? '1px solid #f4f4f5' : 'none', background: '#fafafa' }}>
+                {photoForms.length === 0 ? (
+                  <div className="rounded-2xl px-4 py-5 text-center" style={{ background: 'white', border: '1px dashed #e4e4e7' }}>
+                    <p className="text-sm font-bold" style={{ color: '#18181b' }}>先上傳支出單據照片</p>
+                    <p className="text-xs mt-1" style={{ color: '#a1a1aa' }}>上傳後會在這裡出現每張照片的編輯欄位。</p>
                   </div>
+                ) : (
+                  photoForms.map((form, index) => {
+                    const activeCategoryName = resolveReceiptCategoryName(form, receiptCategories)
+                    const formVendors = receiptCategories.find(c => c.name === activeCategoryName)?.vendors ?? []
+                    const itemOptions = photoItemOptions(form.vendor_group)
+                    const hasItemOptions = itemOptions.length > 0
+                    const useVendorAsPhotoItem = activeCategoryName === '雜項'
+                    const saved = !!form.savedExpenseId
+                    return (
+                      <div key={form.id} className="rounded-2xl p-3 md:p-4 space-y-3"
+                        style={{ background: '#fff', border: `1.5px solid ${saved ? '#BBF7D0' : '#FDE68A'}` }}>
+                        <div className="flex items-start gap-3">
+                          <button type="button" onClick={() => setLightboxUrl(form.photoUrl)}
+                            className="relative h-24 w-24 md:h-28 md:w-28 rounded-2xl overflow-hidden shrink-0"
+                            style={{ border: '1px solid #e4e4e7', background: '#f4f4f5' }}>
+                            <img src={form.photoUrl} alt={`支出照片 ${index + 1}`} className="h-full w-full object-cover" />
+                            <span className="absolute bottom-1 right-1 h-7 w-7 rounded-full flex items-center justify-center"
+                              style={{ background: 'rgba(0,0,0,0.55)', color: 'white' }}>
+                              <ZoomIn className="h-3.5 w-3.5" />
+                            </span>
+                          </button>
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-bold" style={{ color: '#18181b' }}>單據照片 {index + 1}</p>
+                              <div className="flex items-center gap-2">
+                                {saved && (
+                                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                                    style={{ background: '#dcfce7', color: '#15803d' }}>
+                                    已儲存
+                                  </span>
+                                )}
+                                <button type="button" onClick={() => removeReceiptPhoto(form.photoUrl)}
+                                  className="p-1.5 rounded-lg"
+                                  style={{ background: '#fff1f2', color: '#e11d48', border: '1px solid #fecdd3' }}
+                                  aria-label="刪除照片">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              <select className={INPUT} style={{ ...INPUT_STYLE, minWidth: 0, fontSize: 16 }}
+                                value={activeCategoryName}
+                                onChange={e => {
+                                  const categoryName = e.target.value
+                                  updatePhotoForm(form.id, {
+                                    category: inferExpenseCategory(categoryName),
+                                    category_name: categoryName,
+                                    vendor_group: '',
+                                    item_name: '',
+                                  })
+                                }}>
+                                {receiptCategories.map(c => (
+                                  <option key={c.id} value={c.name}>{c.name}</option>
+                                ))}
+                              </select>
+                              <select className={INPUT} style={{ ...INPUT_STYLE, minWidth: 0, fontSize: 16 }}
+                                value={form.vendor_group}
+                                onChange={e => {
+                                  const vendor = e.target.value
+                                  const vgRec = vendorGroups.find(g => g.name === vendor)
+                                  updatePhotoForm(form.id, {
+                                    vendor_group: vendor,
+                                    item_name: '',
+                                    doc_type: vgRec?.doc_type ?? form.doc_type,
+                                  })
+                                }}>
+                                <option value="">— 選擇廠商/群組 —</option>
+                                {formVendors.map(v => (
+                                  <option key={v.id} value={v.name}>{v.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(112px,150px)] gap-2 items-start">
+                              <div className="min-w-0 space-y-1">
+                                {useVendorAsPhotoItem ? (
+                                  <div className="rounded-xl px-3 py-2"
+                                    style={{ background: '#f8fafc', border: '1px solid #e4e4e7', color: '#52525b' }}>
+                                    <p className="text-[11px] font-semibold" style={{ color: '#a1a1aa' }}>品項</p>
+                                    <p className="text-sm font-bold truncate">
+                                      {form.vendor_group ? `${form.vendor_group}（自動帶入）` : '選擇廠商後自動帶入'}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <select className={INPUT} style={{ ...INPUT_STYLE, minWidth: 0, fontSize: 16 }}
+                                    value={form.item_name}
+                                    disabled={!form.vendor_group}
+                                    onChange={e => {
+                                      const itemName = e.target.value
+                                      const mapped = itemOptions.find(item => item.item_name === itemName)
+                                      updatePhotoForm(form.id, {
+                                        item_name: itemName,
+                                        category: (mapped?.item_category === '食材' || mapped?.item_category === '耗材' || mapped?.item_category === '雜項')
+                                          ? mapped.item_category as '食材' | '耗材' | '雜項'
+                                          : form.category,
+                                      })
+                                    }}>
+                                    <option value="">{form.vendor_group ? '— 選擇品項 —' : '（先選廠商）'}</option>
+                                    {form.vendor_group && hasItemOptions
+                                      ? itemOptions.map(item => <option key={item.item_name} value={item.item_name}>{item.item_name}</option>)
+                                      : form.vendor_group && <option value={form.vendor_group}>{form.vendor_group}</option>
+                                    }
+                                  </select>
+                                )}
+                              </div>
+                              <input type="number" min="0" className={INPUT}
+                                style={{ ...INPUT_STYLE, minWidth: 0, textAlign: 'right', fontSize: 16 }}
+                                placeholder="金額"
+                                value={form.amount}
+                                onChange={e => updatePhotoForm(form.id, { amount: e.target.value })} />
+                            </div>
+                          </div>
+                        </div>
+                        {form.vendor_group && !hasItemOptions && (
+                          <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
+                            此群組尚未設定細項，會先以「{form.vendor_group}」作為品項名稱。
+                          </p>
+                        )}
+                        <textarea className={INPUT} style={{ ...INPUT_STYLE, minHeight: 74, resize: 'vertical', fontSize: 16 }}
+                          placeholder="備註（選填，會顯示在 Excel 附註）"
+                          value={form.note}
+                          onChange={e => updatePhotoForm(form.id, { note: e.target.value })} />
+                        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2">
+                          <input className={INPUT} style={{ ...INPUT_STYLE, minWidth: 0, fontSize: 16 }}
+                            placeholder="誰付（選填）"
+                            value={form.payer_name}
+                            onChange={e => updatePhotoForm(form.id, { payer_name: e.target.value })} />
+                          <button type="button" onClick={() => savePhotoExpense(form)}
+                            className="flex items-center justify-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl text-white"
+                            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
+                            <Save className="h-3.5 w-3.5" />
+                            {saved ? '更新此張' : '儲存此張'}
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })
                 )}
-                {/* 類別 tab（廠商類別/雜項/其他） */}
-                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.max(1, receiptCategories.length)}, 1fr)` }}>
-                  {receiptCategories.map(c => (
-                    <button key={c.id} type="button"
-                      onClick={() => {
-                        setActiveCat(c.name); setActiveVendor('')
-                        setNewExpense(p => ({ ...p, item_name: '', vendor_group: '' }))
-                      }}
-                      className="py-2 rounded-xl text-sm font-semibold"
-                      style={{
-                        background: activeCat === c.name ? '#FEF3C7' : 'white',
-                        color: activeCat === c.name ? '#92400E' : '#52525b',
-                        border: `1.5px solid ${activeCat === c.name ? 'transparent' : '#e4e4e7'}`,
-                      }}>
-                      {c.name}
-                    </button>
-                  ))}
-                </div>
-                {/* 廠商 dropdown（依當前類別動態） */}
-                <select className={INPUT} style={INPUT_STYLE}
-                  value={activeVendor}
-                  onChange={e => {
-                    const v = e.target.value
-                    setActiveVendor(v)
-                    const vgRec = vendorGroups.find(g => g.name === v)
-                    const fallbackCategory = activeCat === '耗材' ? '耗材' : activeCat === '其他' || activeCat === '雜項' ? '雜項' : '食材'
-                    if (activeCat === '雜項') {
-                      setNewExpense(p => ({
-                        ...p,
-                        item_name: v,
-                        vendor_group: v,
-                        category: '雜項',
-                        doc_type: vgRec?.doc_type ?? p.doc_type,
-                      }))
-                      return
-                    }
-                    setNewExpense(p => ({
-                      ...p,
-                      item_name: '',
-                      vendor_group: v,
-                      category: fallbackCategory,
-                      doc_type: vgRec?.doc_type ?? p.doc_type,
-                    }))
-                  }}>
-                  <option value="">— 選擇廠商/群組 —</option>
-                  {vendorOptions.map(v => (
-                    <option key={v.id} value={v.name}>{v.name}</option>
-                  ))}
-                </select>
-                {/* 品項選擇：所有類別都可以選；無對應時用群組名稱當品項，避免無法新增 */}
-                {!useVendorAsItem && (
-                  <select className={INPUT} style={INPUT_STYLE}
-                    value={newExpense.item_name}
-                    disabled={!activeVendor}
-                    onChange={e => {
-                      const name = e.target.value
-                      const m = expenseItemOptions.find(x => x.item_name === name)
-                      const vgRec = vendorGroups.find(g => g.name === activeVendor)
-                      const cat = (m?.item_category === '食材' || m?.item_category === '耗材' || m?.item_category === '雜項')
-                        ? m.item_category as '食材' | '耗材' | '雜項'
-                        : (activeCat === '耗材' ? '耗材' : activeCat === '其他' ? '雜項' : '食材') as '食材' | '耗材' | '雜項'
-                      setNewExpense(p => ({
-                        ...p,
-                        item_name: name,
-                        vendor_group: activeVendor,
-                        category: cat,
-                        doc_type: vgRec?.doc_type ?? p.doc_type,
-                      }))
-                    }}>
-                    <option value="">{activeVendor ? '— 選擇品項 —' : '（先選廠商）'}</option>
-                    {activeVendor && hasMappedExpenseItems
-                      ? expenseItemOptions.map(m => <option key={m.item_name} value={m.item_name}>{m.item_name}</option>)
-                      : activeVendor && <option value={activeVendor}>{activeVendor}</option>
-                    }
-                  </select>
-                )}
-                {activeVendor && useVendorAsItem && (
-                  <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
-                    雜項會直接以「{activeVendor}」作為品項名稱。
-                  </p>
-                )}
-                {activeVendor && !useVendorAsItem && !hasMappedExpenseItems && (
-                  <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
-                    此群組尚未設定細項，會先以「{activeVendor}」作為品項名稱。
-                  </p>
-                )}
-                {photoUrls.length > 0 && (
-                  <div className="rounded-xl px-3 py-2 text-xs flex items-center justify-between gap-3"
-                    style={{ background: selectedPhotoUrl ? '#FFFBEB' : '#fafafa', color: selectedPhotoUrl ? '#92400E' : '#a1a1aa', border: `1px solid ${selectedPhotoUrl ? '#FDE68A' : '#e4e4e7'}` }}>
-                    <span>{selectedPhotoUrl ? '此筆支出會綁定目前選取的照片' : '未選照片，此筆支出不綁照片'}</span>
-                    {selectedPhotoUrl && (
-                      <button type="button" onClick={() => setSelectedPhotoUrl('')}
-                        style={{ background: 'transparent', border: 'none', color: '#92400E', fontWeight: 700, cursor: 'pointer' }}>
-                        取消綁定
-                      </button>
-                    )}
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-2">
-                  <input type="number" min="0" className={INPUT} style={INPUT_STYLE} placeholder="金額"
-                    value={newExpense.amount} onChange={e => setNewExpense(p => ({ ...p, amount: e.target.value }))} />
-                  <input className={INPUT} style={INPUT_STYLE} placeholder="誰付（選填）"
-                    value={newExpense.payer_name} onChange={e => setNewExpense(p => ({ ...p, payer_name: e.target.value }))} />
-                </div>
-                <input className={INPUT} style={INPUT_STYLE} placeholder="備注（選填，會顯示在 Excel 附註）"
-                  value={newExpense.note} onChange={e => setNewExpense(p => ({ ...p, note: e.target.value }))} />
-                <button type="button" onClick={addExpense}
-                  className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl"
-                  style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white' }}>
-                  <Plus className="h-3.5 w-3.5" />{editingExpenseId ? '更新支出' : '新增支出'}
-                </button>
               </div>
             )}
             <div className="flex items-center justify-between px-4 py-3" style={{ background: '#fafafa', borderTop: '1px solid #f4f4f5' }}>
@@ -916,63 +1169,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
           </div>
         )}
       </div>
-
-      {/* 收據照片 */}
-      <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
-        <div className="flex items-center justify-between px-4 py-3.5">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold" style={{ color: '#18181b' }}>收據照片</span>
-            {photoUrls.length > 0 && (
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: '#f0fdf4', color: '#15803d' }}>
-                {photoUrls.length} 張
-              </span>
-            )}
-          </div>
-          {!isLocked && (
-            <button type="button" onClick={() => photoInputRef.current?.click()}
-              disabled={photoUploading}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl"
-              style={{ background: '#fafafa', border: '1px solid #e4e4e7', color: '#52525b' }}>
-              {photoUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
-              {photoUploading ? '上傳中…' : '新增照片'}
-            </button>
-          )}
-        </div>
-        <input ref={photoInputRef} type="file" accept="image/*" multiple className="hidden"
-          onChange={e => handlePhotoUpload(e.target.files)} />
-        {photoUrls.length > 0 && (
-          <div className="px-4 pb-4 grid grid-cols-3 gap-2" style={{ borderTop: '1px solid #f4f4f5' }}>
-            {photoUrls.map((url, i) => (
-              <div key={url} className="relative group" style={{ aspectRatio: '1' }}>
-                <img src={url} alt={`收據 ${i + 1}`}
-                  onClick={() => setLightboxUrl(url)}
-                  className="w-full h-full object-cover rounded-xl cursor-pointer"
-                  style={{ border: '1px solid #e4e4e7' }} />
-                <button type="button"
-                  onClick={() => setLightboxUrl(url)}
-                  className="absolute bottom-1 right-1 p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{ background: 'rgba(0,0,0,0.5)' }}>
-                  <ZoomIn className="h-3 w-3 text-white" />
-                </button>
-                {!isLocked && (
-                  <button type="button"
-                    onClick={() => {
-                      setPhotoUrls(prev => prev.filter((_, idx) => idx !== i))
-                      if (selectedPhotoUrl === url) setSelectedPhotoUrl('')
-                    }}
-                    className="absolute top-1 right-1 p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                    style={{ background: 'rgba(0,0,0,0.5)' }}>
-                    <X className="h-3 w-3 text-white" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-        {photoUrls.length === 0 && (
-          <p className="px-4 pb-4 text-sm text-center" style={{ color: '#a1a1aa' }}>尚未上傳收據照片</p>
-        )}
-      </div>
+      )}
 
       {/* 圖片 Lightbox */}
       {lightboxUrl && (
@@ -990,7 +1187,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       )}
 
       {/* 貨款代墊人 + 備註 */}
-      {!isLocked && (
+      {currentStep === 3 && !isLocked && (
         <div className="bg-white rounded-2xl px-4 py-4 space-y-3" style={{ border: '1px solid #f4f4f5' }}>
           <div>
             <label className="block text-xs font-semibold mb-1" style={{ color: '#52525b' }}>今日貨款代墊人</label>
@@ -1005,6 +1202,63 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
           </div>
         </div>
       )}
+      {currentStep === 4 && !isLocked && (
+        <div className="bg-white rounded-3xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 10px 30px rgba(15,23,42,0.04)' }}>
+          <div className="px-5 py-4 flex items-center gap-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
+            <span className="h-10 w-10 rounded-2xl flex items-center justify-center" style={{ background: '#FFFBEB', color: '#F97316' }}>
+              <ClipboardCheck className="h-5 w-5" />
+            </span>
+            <div>
+              <h3 className="text-base font-bold" style={{ color: '#18181b' }}>送出前確認</h3>
+              <p className="text-xs" style={{ color: '#a1a1aa' }}>請確認叫貨、支出、照片與代墊人都正確。</p>
+            </div>
+          </div>
+          <div className="p-5 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl p-4" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                <p className="text-xs font-semibold" style={{ color: '#16a34a' }}>今日營業額</p>
+                <p className="text-2xl font-extrabold tabular-nums" style={{ color: '#15803d' }}>${fmt(revenueTotal)}</p>
+              </div>
+              <div className="rounded-2xl p-4" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                <p className="text-xs font-semibold" style={{ color: '#ea580c' }}>今日支出</p>
+                <p className="text-2xl font-extrabold tabular-nums" style={{ color: '#f97316' }}>${fmt(expenseTotal)}</p>
+              </div>
+            </div>
+            <div className="rounded-2xl p-4" style={{ background: balance >= 0 ? '#FFFBEB' : '#fff1f2', border: `1px solid ${balance >= 0 ? '#FDE68A' : '#fecdd3'}` }}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>今日結餘</p>
+                  <p className="text-sm" style={{ color: '#71717a' }}>營業額 - 支出</p>
+                </div>
+                <p className="text-3xl font-extrabold tabular-nums" style={{ color: balance >= 0 ? '#92400E' : '#be123c' }}>${fmt(balance)}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-2xl p-4" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
+                <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>支出單據</p>
+                <p className="font-bold" style={{ color: '#18181b' }}>{expensesForSave.length} 筆 · {photoUrls.length} 張照片</p>
+              </div>
+              <div className="rounded-2xl p-4" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
+                <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>貨款代墊人</p>
+                <p className="font-bold" style={{ color: payerName ? '#18181b' : '#a1a1aa' }}>{payerName || '未填寫'}</p>
+              </div>
+            </div>
+            {expensesForSave.length > 0 && (
+              <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
+                {expensesForSave.slice(0, 6).map(e => (
+                  <div key={e.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm" style={{ borderBottom: '1px solid #f9f9f9' }}>
+                    <span className="font-semibold min-w-0 truncate" style={{ color: '#18181b' }}>{e.item_name}</span>
+                    <span className="font-bold tabular-nums shrink-0" style={{ color: '#dc2626' }}>${fmt(e.amount)}</span>
+                  </div>
+                ))}
+                {expensesForSave.length > 6 && (
+                  <p className="px-4 py-2 text-xs text-center" style={{ color: '#a1a1aa' }}>還有 {expensesForSave.length - 6} 筆支出</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {isLocked && (payerName || note) && (
         <div className="bg-white rounded-2xl px-4 py-4 space-y-2" style={{ border: '1px solid #f4f4f5' }}>
           {payerName && <p className="text-sm" style={{ color: '#18181b' }}>貨款代墊：<b>{payerName}</b></p>}
@@ -1014,19 +1268,37 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
 
       {/* 操作按鈕 */}
       {!isLocked && (
-        <div className="flex gap-3">
+        <div className="sticky bottom-0 -mx-4 px-4 py-3 flex gap-3"
+          style={{ background: 'rgba(250,250,250,0.94)', backdropFilter: 'blur(16px)', borderTop: '1px solid #f4f4f5' }}>
+          {currentStep > 1 && (
+            <button type="button" onClick={goPrev}
+              className="flex items-center justify-center gap-2 py-3 px-4 rounded-2xl text-sm font-semibold"
+              style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}>
+              <ArrowLeft className="h-4 w-4" />
+              上一步
+            </button>
+          )}
           <button type="button" onClick={() => handleSave(false)} disabled={saving}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold"
             style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             儲存草稿
           </button>
+          {currentStep < 4 ? (
+            <button type="button" onClick={goNext} disabled={saving}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold text-white"
+              style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+              儲存並下一步
+            </button>
+          ) : (
           <button type="button" onClick={() => handleSave(true)} disabled={submitting}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold text-white"
             style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             送出今日帳目
           </button>
+          )}
         </div>
       )}
     </div>

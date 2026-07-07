@@ -18,6 +18,21 @@ import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
+export function getPlatformTotal(dd: Pick<DailyStats, 'twpay' | 'panda' | 'online' | 'online_cash' | 'uber'> & Partial<Record<'nft', number>>): number {
+  return (dd.twpay || 0)
+    + (dd.panda || 0)
+    + (dd.online || 0)
+    + (dd.online_cash || 0)
+    + ((dd as any).nft || 0)
+    + Object.values(dd.uber ?? {}).reduce((sum, value) => sum + (value || 0), 0)
+}
+
+export function getDisplayPosTotal(dd: DailyStats, store?: Pick<StoreInfo, 'ichef_uber_linked'>): number {
+  if (dd.totalRevenue > 0) return dd.totalRevenue
+  if (store?.ichef_uber_linked) return dd.pos
+  return dd.pos + dd.handwriteTotal + getPlatformTotal(dd)
+}
+
 export interface StoreInfo {
   id: string
   name: string
@@ -320,8 +335,8 @@ export async function getRangeStats(
     // Step 4: 結果 = 實際 − 扣除後 − 配送
     dd.variance = dd.actual - dd.after_deduct - dd.ck
 
-    // Step 5: 營業額 = 結果 + 現場（若現場 > 0）
-    dd.revenue = dd.onsite > 0 ? dd.variance + dd.onsite : 0
+    // Step 5: 營業額以 daily_closings.total_revenue 為準；沒有時才用通路加總補齊。
+    dd.revenue = getDisplayPosTotal(dd, store)
   }
 
   return { store, items, days }

@@ -4,39 +4,49 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { Zap, History, LineChart, LogOut, Settings, Download, ChefHat, Package, ClipboardList } from 'lucide-react'
+import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
-function useClock() {
-  const [time, setTime] = useState('')
+const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
+
+function useTaipeiNow() {
+  const [now, setNow] = useState({ date: '', time: '' })
   useEffect(() => {
     function tick() {
-      setTime(new Date().toLocaleTimeString('zh-TW', {
-        timeZone: 'Asia/Taipei',
-        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-      }))
+      const current = new Date()
+      setNow({
+        date: current.toLocaleDateString('zh-TW', {
+          timeZone: 'Asia/Taipei',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }),
+        time: current.toLocaleTimeString('zh-TW', {
+          timeZone: 'Asia/Taipei',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        }),
+      })
     }
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
   }, [])
-  return time
+  return now
 }
 
 const STORE_NAV_ITEMS = [
-  { href: '/manager/dashboard',      label: '今日結帳', icon: Zap },
+  { href: '/manager/closing',        label: '今日結帳', icon: ClipboardList },
+  { href: '/manager/dashboard',      label: '今日狀態', icon: LayoutDashboard },
   { href: '/manager/history',        label: '歷史紀錄', icon: History },
-  { href: '/manager/analytics',      label: '營運洞察', icon: LineChart },
-  { href: '/manager/meeting-report', label: '雙週會議', icon: ClipboardList },
-  { href: '/manager/export',         label: '匯出報表', icon: Download },
-  { href: '/manager/items',          label: '品項管理', icon: Package },
-  { href: '/manager/settings',       label: '收據設定', icon: Settings },
 ]
 
 const CK_NAV_ITEMS = [
   { href: '/manager/ck',         label: '今日帳目', icon: ChefHat },
+  { href: '/manager/dashboard',  label: '今日狀態', icon: LayoutDashboard },
   { href: '/manager/history',    label: '歷史紀錄', icon: History },
-  { href: '/manager/export',     label: '匯出報表', icon: Download },
 ]
 
 interface Props { userName: string; storeName: string; role: string; storeType?: string }
@@ -46,10 +56,10 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
   const NAV_ITEMS = isCK ? CK_NAV_ITEMS : STORE_NAV_ITEMS
   const pathname = usePathname()
   const router = useRouter()
-  const time = useClock()
+  const { date, time } = useTaipeiNow()
 
   useEffect(() => {
-    for (const href of ['/manager/dashboard', '/manager/closing', '/manager/history']) {
+    for (const href of ['/manager/dashboard', '/manager/closing', '/manager/ck', '/manager/history']) {
       router.prefetch(href)
     }
   }, [router])
@@ -77,10 +87,24 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
 
         {/* 時鐘 */}
         {time && (
-          <div className="px-5 pb-5">
+          <div className="px-5 pb-3">
+            <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>{date}</p>
             <p className="text-2xl font-bold tabular-nums" style={{ color: '#18181b', letterSpacing: '-0.02em', fontFeatureSettings: '"tnum"' }}>{time}</p>
           </div>
         )}
+
+        <div className="px-4 pb-3">
+          <a
+            href={HR_SYSTEM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full py-2 rounded-[10px] text-xs font-semibold transition-all hover:opacity-80"
+            style={{ backgroundColor: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            輔助管理系統
+          </a>
+        </div>
 
         {/* 導覽 */}
         <nav className="flex-1 px-4 pb-4 space-y-0.5">
@@ -121,7 +145,22 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
             <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{role}</p>
           </div>
         </div>
-        {time && <p className="text-sm font-bold tabular-nums mx-3" style={{ color: '#18181b' }}>{time}</p>}
+        {time && (
+          <div className="mx-2 text-right shrink-0">
+            <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{date}</p>
+            <p className="text-sm font-bold tabular-nums leading-tight" style={{ color: '#18181b' }}>{time}</p>
+          </div>
+        )}
+        <a
+          href={HR_SYSTEM_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="h-8 px-2 flex items-center justify-center gap-1 rounded-lg text-xs font-semibold shrink-0"
+          style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}
+        >
+          <ExternalLink className="h-3 w-3" />
+          HR
+        </a>
         <button onClick={handleLogout} className="h-8 w-8 flex items-center justify-center rounded-lg transition-colors hover:bg-slate-50" style={{ color: '#a1a1aa' }}>
           <LogOut className="h-4 w-4" />
         </button>

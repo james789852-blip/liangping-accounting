@@ -582,7 +582,7 @@ function StoreStatsGrid({ data }: { data: DailyStats }) {
       <div>
         <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>通路收入</p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          <Stat label="(手動)POS" value={data.pos} color="#0369a1" />
+          <Stat label="(手動)POS" value={data.totalRevenue || data.revenue || data.pos} color="#0369a1" />
           {data.channels?.twpay && <Stat label="TWPAY" value={data.twpay} color="#be123c" />}
           {data.channels?.panda && <Stat label="Panda" value={data.panda} color="#f43f5e" />}
           {data.channels?.online && <Stat label="線上點餐" value={data.online} color="#8b5cf6" />}

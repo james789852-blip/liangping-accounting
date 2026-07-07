@@ -133,14 +133,14 @@
     touch-action: manipulation;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
-    /* 確保 input focus 時不會被 sticky photo 蓋住 — scroll-padding 留給 sticky 區域 */
-    scroll-padding-top: 320px;
+    /* 確保 input focus 時不會被 sticky photo 蓋住，同時避免切步驟時被推太遠 */
+    scroll-padding-top: 180px;
   }
   /* 表單欄位點擊 focus 時，自動捲到 sticky 照片下方 */
   .closing-form-input-area input,
   .closing-form-input-area select,
   .closing-form-input-area textarea {
-    scroll-margin-top: 320px;
+    scroll-margin-top: 180px;
   }
   /* iOS 快速點擊：cursor:pointer 是讓 iOS Safari 立即觸發 click 的關鍵 */
   button, a, [role="button"], [role="tab"],
@@ -181,26 +181,6 @@
   }
 }
 
-/* 央廚配送單照片固定在頂端 — 手機相對 viewport 置中；desktop 加上 sidebar 240px 一半的偏移以對齊主 container */
-.ck-photo-fixed {
-  position: fixed;
-  top: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  max-width: 576px;
-  padding-left: 16px;
-  padding-right: 16px;
-  box-sizing: border-box;
-  z-index: 30;
-  pointer-events: none;
-}
-@media (min-width: 1024px) {
-  .ck-photo-fixed {
-    left: calc(50% + 120px);
-  }
-}
-
 /* 隱藏所有 <input type="number"> 的上下調整箭頭（spinner） */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
@@ -211,4 +191,67 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
+}
+
+/* 店長單據編輯表單：避免手機欄位被擠壓，保留 select 文字可讀性 */
+.receipt-form-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+  overflow: visible;
+}
+.receipt-field {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  text-overflow: ellipsis;
+}
+.receipt-item-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+.ck-photo-pinned {
+  position: static;
+  z-index: auto;
+  padding: 0;
+  margin-bottom: 16px;
+  pointer-events: auto;
+}
+.ck-photo-spacer {
+  display: none;
+}
+.ck-photo-spacer-expanded {
+  display: none;
+}
+@media (max-width: 640px) {
+  .receipt-form-fields {
+    grid-template-columns: 1fr;
+  }
+  .receipt-item-row {
+    flex-wrap: wrap;
+  }
+  .receipt-item-row > select,
+  .receipt-item-row > input {
+    flex: 1 1 100% !important;
+  }
+}
+@media (max-width: 1023px) {
+  .ck-photo-pinned {
+    padding: 0;
+  }
+  .ck-photo-spacer {
+    display: none;
+  }
+  .ck-photo-spacer-expanded {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .ck-photo-pinned {
+    padding: 0;
+  }
 }

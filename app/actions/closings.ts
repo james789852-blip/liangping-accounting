@@ -150,7 +150,9 @@ export async function verifyClosing(closingId: string) {
     .from('daily_closings').select('store_id, business_date, status')
     .eq('id', closingId).single()
   if (!closing) return { error: '找不到此帳目' }
-  if (closing.status !== 'submitted') return { error: `只能審核已送出的帳目（目前狀態：${closing.status}）` }
+  if (!['submitted', 'disputed'].includes(closing.status)) {
+    return { error: `只能審核已送出/退回修改的帳目（目前狀態：${closing.status}）` }
+  }
 
   const { error } = await supabase
     .from('daily_closings')
@@ -285,15 +287,16 @@ export async function disputeClosing(closingId: string, note: string) {
     .from('daily_closings').select('store_id, business_date, status')
     .eq('id', closingId).single()
   if (!closing) return { error: '找不到此帳目' }
-  if (!['submitted', 'verified'].includes(closing.status)) {
-    return { error: `只能退回已送出/已審核的帳目（目前狀態：${closing.status}）` }
+  if (!['submitted', 'verified', 'disputed'].includes(closing.status)) {
+    return { error: `只能退回已送出/已審核/退回修改的帳目（目前狀態：${closing.status}）` }
   }
 
+  const cleanNote = note.trim()
   const { error } = await supabase
     .from('daily_closings')
     .update({
       status: 'disputed',
-      dispute_note: note.trim(),
+      dispute_note: cleanNote || null,
       disputed_at: new Date().toISOString(),
       disputed_by: user.id,
       updated_at: new Date().toISOString(),
@@ -306,7 +309,7 @@ export async function disputeClosing(closingId: string, note: string) {
     eventType: 'closing_dispute', severity: 'warn',
     storeId: closing.store_id, userId: user.id, closingId,
     description: `${profile.name ?? user.email ?? '未知'} 退回 ${closing.business_date} 帳目`,
-    metadata: { note: note.trim(), previous_status: closing.status },
+    metadata: { note: cleanNote || null, previous_status: closing.status },
   })
 
   revalidatePath('/hq/reviews')
