@@ -621,16 +621,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   })
   const ckQuantitiesRef = useRef(ckQuantities)
   ckQuantitiesRef.current = ckQuantities
-  // 央廚單價覆寫：只有補做過往帳目時才保留舊帳目單價。
-  // 今日草稿重新整理時要跟上總公司最新單價，避免舊草稿把新價蓋掉。
+  // 央廚單價覆寫：補做過往帳目、退回修改時保留帳目當時輸入的單價。
+  // 今日一般草稿重新整理時跟上總公司最新單價，避免舊草稿把新價蓋掉。
   // key = ckPrice.id, value = 覆寫單價（沒覆寫就用 ckPrice.unit_price）
   const [ckPriceOverrides, setCkPriceOverrides] = useState<Record<string, number>>(() => {
     const result: Record<string, number> = {}
-    if (existingClosing && isBackfill) {
+    const shouldKeepSavedPrice = isBackfill || existingClosing?.status === 'disputed'
+    if (existingClosing && shouldKeepSavedPrice) {
       const items = existingClosing.order_items ?? []
       ckPrices.forEach(p => {
         const found = items.find((i: any) => i.vendor === '央廚' && i.item_name === p.item_name)
-        // 補做歷史帳目時，儲存於 order_items 的單價與目前總公司單價不同 → 視為覆寫。
+        // 補做/退回時，以原帳目實際單價為準，避免退回後單價欄變空或被總公司新價覆蓋。
         if (found && typeof found.unit_price === 'number' && found.unit_price !== p.unit_price) {
           result[p.id] = found.unit_price
         }
@@ -934,6 +935,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               if (Array.isArray(bk.reserves)) setReserves(bk.reserves)
               if (Array.isArray(bk.largeCashExpenses)) setLargeCashExpenses(bk.largeCashExpenses)
               if (bk.ckQuantities && typeof bk.ckQuantities === 'object') setCkQuantities(bk.ckQuantities)
+              if (bk.ckPriceOverrides && typeof bk.ckPriceOverrides === 'object') setCkPriceOverrides(bk.ckPriceOverrides)
               if (bk.pettyCounts && typeof bk.pettyCounts === 'object') setPettyCounts(bk.pettyCounts)
               if (bk.pettyLumps && typeof bk.pettyLumps === 'object') setPettyLumps(bk.pettyLumps)
               toast.success('資料已從備份恢復，請確認後重新儲存')
@@ -1045,7 +1047,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     return () => clearInterval(t)
     // 任何會寫進 handleSave payload 的 state 都要列依賴，否則 60 秒定時器拿到的是 stale closure
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, channelPhotos, ckPhotoUrl, envelopePhotoUrl, voidInvoicePhotos, notePhotoUrl, ckQuantities, isLocked, isDisputed, submitDone])
+  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, channelPhotos, ckPhotoUrl, envelopePhotoUrl, voidInvoicePhotos, notePhotoUrl, ckQuantities, ckPriceOverrides, isLocked, isDisputed, submitDone])
 
   // 主要 state 變動 debounced 寫 localStorage backup（每 500ms）— 切頁前一定有最新 snapshot
   useEffect(() => {
@@ -1054,13 +1056,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
           data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses,
-          ckQuantities: ckQuantitiesRef.current, pettyCounts, pettyLumps, ts: Date.now(),
+          ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
+          pettyCounts, pettyLumps, ts: Date.now(),
         }))
       } catch {}
     }, 500)
     return () => clearTimeout(t)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, pettyCounts, pettyLumps])
+  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, ckPriceOverrides, pettyCounts, pettyLumps])
 
   // 頁面切換 / 關閉前立即 flush + 離頁警告
   useEffect(() => {
@@ -1069,7 +1072,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
           data: dataRef.current, expenses, handwriteOrders, adjustments, reserves,
-          largeCashExpenses, ckQuantities: ckQuantitiesRef.current, pettyCounts, pettyLumps, ts: Date.now(),
+          largeCashExpenses, ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
+          pettyCounts, pettyLumps, ts: Date.now(),
         }))
       } catch {}
     }
@@ -1089,7 +1093,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       window.removeEventListener('beforeunload', onBeforeUnload)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, pettyCounts, pettyLumps, isLocked, submitDone])
+  }, [expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, ckPriceOverrides, pettyCounts, pettyLumps, isLocked, submitDone])
 
   useEffect(() => {
     const fromQty = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * effectiveCKPrice(p), 0)
@@ -1610,7 +1614,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
           data: d, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses,
-          ckQuantities: ckQuantitiesRef.current, ts: Date.now(),
+          ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
+          pettyCounts, pettyLumps, ts: Date.now(),
         }))
       } catch {}
       // revenue_items：只有任一通路 > 0 才 wipe-insert，避免 autoSave 在使用者尚未進入該步驟時清空 DB 既有資料
