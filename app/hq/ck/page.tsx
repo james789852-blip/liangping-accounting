@@ -66,7 +66,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     { data: externalStores },
   ] = await Promise.all([
     admin.from('ck_daily_records')
-      .select('id, ck_store_id, status, payer_name, note, hq_paid, hq_paid_at, receipt_photo_urls, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
+      .select('id, ck_store_id, status, payer_name, note, review_note, reviewed_at, hq_paid, hq_paid_at, receipt_photo_urls, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
       .in('ck_store_id', ckStoreIds)
       .eq('business_date', date),
     uniqueAssignedIds.length > 0
@@ -82,10 +82,10 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     { data: expenseItems },
   ] = await Promise.all([
     recordIds.length > 0
-      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount').in('ck_daily_record_id', recordIds)
+      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount').in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
-      ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name').in('ck_daily_record_id', recordIds).order('sort_order')
+      ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, receipt_photo_url').in('ck_daily_record_id', recordIds).order('sort_order')
       : Promise.resolve({ data: [] }),
   ])
 
@@ -104,13 +104,13 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       const orders = (storeOrders ?? []).filter((o: any) => o.ck_daily_record_id === record.id)
       memberOrders = orders
         .filter((o: any) => o.store_id !== null)
-        .map((o: any) => ({ store_id: o.store_id, store_name: assignedStoreMap[o.store_id] ?? o.store_id, amount: o.amount }))
+        .map((o: any) => ({ store_id: o.store_id, store_name: assignedStoreMap[o.store_id] ?? o.store_id, amount: Number(o.ck_confirmed_amount ?? o.amount ?? 0) }))
       externalOrders = orders
         .filter((o: any) => o.store_id === null)
-        .map((o: any) => ({ name: o.external_store_name, amount: o.amount }))
+        .map((o: any) => ({ name: o.external_store_name, amount: Number(o.amount ?? 0) }))
       expenses = (expenseItems ?? [])
         .filter((e: any) => e.ck_daily_record_id === record.id)
-        .map((e: any) => ({ category: e.category, item_name: e.item_name, amount: e.amount, payer_name: e.payer_name ?? undefined }))
+        .map((e: any) => ({ category: e.category, item_name: e.item_name, amount: Number(e.amount ?? 0), payer_name: e.payer_name ?? undefined, receipt_photo_url: e.receipt_photo_url ?? undefined }))
     }
 
     const memberTotalFromOrders = memberOrders.reduce((s, o) => s + o.amount, 0)
@@ -128,6 +128,8 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       status: record?.status ?? 'none',
       payerName: record?.payer_name ?? null,
       note: record?.note ?? null,
+      reviewNote: (record as any)?.review_note ?? null,
+      reviewedAt: (record as any)?.reviewed_at ?? null,
       hqPaid: (record as any)?.hq_paid ?? false,
       hqPaidAt: (record as any)?.hq_paid_at ?? null,
       hqReimbursementPhotoUrls: ((record as any)?.hq_reimbursement_photo_urls as string[] | null) ?? [],

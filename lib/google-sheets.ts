@@ -835,7 +835,7 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
   const recordIds = (records ?? []).map(r => r.id)
   const [{ data: storeOrders }, { data: expenseItems }, { data: validClosings }] = await Promise.all([
     recordIds.length > 0
-      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount').in('ck_daily_record_id', recordIds)
+      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount').in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
       ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount').in('ck_daily_record_id', recordIds).order('sort_order')
@@ -880,7 +880,10 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
       const name = (o as AnyRecord).store_id
         ? storeNameMap[(o as AnyRecord).store_id] ?? (o as AnyRecord).store_id
         : (o as AnyRecord).external_store_name
-      if (name) storeRevenues[name] = (storeRevenues[name] ?? 0) + ((o as AnyRecord).amount as number)
+      const amount = (o as AnyRecord).store_id
+        ? Number((o as AnyRecord).ck_confirmed_amount ?? (o as AnyRecord).amount ?? 0)
+        : Number((o as AnyRecord).amount ?? 0)
+      if (name) storeRevenues[name] = (storeRevenues[name] ?? 0) + amount
     }
 
     const expenses: Record<string, number> = {}

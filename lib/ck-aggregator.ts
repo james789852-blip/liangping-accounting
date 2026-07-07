@@ -21,7 +21,7 @@ export interface CKStoreInfo {
 export interface CKDailyStats {
   date: string
   weekday: string
-  status: 'submitted' | 'draft' | 'none'
+  status: 'submitted' | 'draft' | 'verified' | 'disputed' | 'none'
   payerName: string | null
   hqPaid: boolean
   // Revenue
@@ -31,7 +31,7 @@ export interface CKDailyStats {
   externalRevenue: number
   revenue: number
   // Expense
-  expenses: Array<{ category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string }>
+  expenses: Array<{ category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; receipt_photo_url?: string }>
   food: number
   pack: number
   misc: number
@@ -116,10 +116,10 @@ export async function getCKRangeStats(
   const recordIds = (records ?? []).map(r => r.id)
   const [{ data: orders }, { data: expenses }] = await Promise.all([
     recordIds.length > 0
-      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount').in('ck_daily_record_id', recordIds)
+      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount').in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
-      ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type').in('ck_daily_record_id', recordIds).order('sort_order')
+      ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type, receipt_photo_url').in('ck_daily_record_id', recordIds).order('sort_order')
       : Promise.resolve({ data: [] }),
   ])
 
@@ -145,11 +145,13 @@ export async function getCKRangeStats(
       const ords = (orders ?? []).filter((o: any) => o.ck_daily_record_id === rec.id)
       for (const o of ords) {
         if (o.store_id) {
-          dd.memberOrders.push({ store_id: o.store_id, store_name: memberStoreMap[o.store_id] ?? o.store_id, amount: o.amount ?? 0 })
-          dd.memberRevenue += o.amount ?? 0
+          const effectiveAmount = Number(o.ck_confirmed_amount ?? o.amount ?? 0)
+          dd.memberOrders.push({ store_id: o.store_id, store_name: memberStoreMap[o.store_id] ?? o.store_id, amount: effectiveAmount })
+          dd.memberRevenue += effectiveAmount
         } else {
-          dd.externalOrders.push({ name: o.external_store_name, amount: o.amount ?? 0 })
-          dd.externalRevenue += o.amount ?? 0
+          const amount = Number(o.amount ?? 0)
+          dd.externalOrders.push({ name: o.external_store_name, amount })
+          dd.externalRevenue += amount
         }
       }
       dd.revenue = dd.memberRevenue + dd.externalRevenue
@@ -162,6 +164,7 @@ export async function getCKRangeStats(
           category: e.category, item_name: e.item_name, amount: e.amount ?? 0,
           payer_name: e.payer_name ?? undefined,
           vendor_group: vg || undefined, doc_type: doc || undefined,
+          receipt_photo_url: e.receipt_photo_url ?? undefined,
         })
         const amt = e.amount ?? 0
         if (e.category === '食材') dd.food += amt

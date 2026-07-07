@@ -115,12 +115,14 @@ function CrossCheckRow({ order, ckDailyRecordId, disabled }: {
 interface MemberOrder { store_id: string; store_name: string; amount: number; submitted: boolean; confirmed_amount?: number | null }
 interface ExternalStore { id: string; name: string }
 interface ExternalOrder { name: string; amount: number }
-interface Expense { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string; vendor_group: string; doc_type: string; note: string }
+interface Expense { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string; vendor_group: string; doc_type: string; note: string; receipt_photo_url?: string }
 interface ExistingRecord {
   id: string
   payer_name?: string
   note?: string
   status: string
+  review_note?: string | null
+  reviewed_at?: string | null
   hq_paid?: boolean
   hq_paid_at?: string | null
   hq_reimbursement_photo_urls?: string[]
@@ -128,7 +130,7 @@ interface ExistingRecord {
   ck_reimbursement_confirmed?: boolean
   ck_reimbursement_confirmed_at?: string | null
   externalOrders: ExternalOrder[]
-  expenses: Expense[]
+  expenses: Array<Expense & { receipt_photo_url?: string }>
   receiptPhotoUrls?: string[]
 }
 
@@ -333,7 +335,8 @@ interface Props {
 
 export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, isBackfill, memberOrders, externalStores, existing, vendorGroups = [], mappingItems = [], receiptCategories = [] }: Props) {
   const router = useRouter()
-  const isLocked = existing?.status === 'submitted'
+  const isLocked = existing?.status === 'submitted' || existing?.status === 'verified'
+  const isRejected = existing?.status === 'disputed'
   const draftKey = `lp_ck_daily_draft:${ckStoreId}:${date}`
 
   const [payerName, setPayerName] = useState(existing?.payer_name ?? '')
@@ -360,6 +363,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
 
   // 收據照片
   const [photoUrls, setPhotoUrls] = useState<string[]>(existing?.receiptPhotoUrls ?? [])
+  const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string>(existing?.receiptPhotoUrls?.[0] ?? '')
   const [photoUploading, setPhotoUploading] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
@@ -389,6 +393,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       if (Array.isArray(draft.extOrders)) setExtOrders(draft.extOrders)
       if (Array.isArray(draft.expenses)) setExpenses(draft.expenses)
       if (Array.isArray(draft.photoUrls)) setPhotoUrls(draft.photoUrls)
+      if (typeof draft.selectedPhotoUrl === 'string') setSelectedPhotoUrl(draft.selectedPhotoUrl)
       if (typeof draft.payerName === 'string') setPayerName(draft.payerName)
       if (typeof draft.note === 'string') setNote(draft.note)
       if (draft.newExpense && typeof draft.newExpense === 'object') {
@@ -431,12 +436,13 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         activeCat,
         activeVendor,
         photoUrls,
+        selectedPhotoUrl,
       }))
     }, 300)
     return () => window.clearTimeout(timer)
-  }, [activeCat, activeVendor, ckStoreId, date, draftKey, expenses, extOrders, isLocked, newExpense, note, payerName, photoUrls])
+  }, [activeCat, activeVendor, ckStoreId, date, draftKey, expenses, extOrders, isLocked, newExpense, note, payerName, photoUrls, selectedPhotoUrl])
 
-  const memberTotal = memberOrders.reduce((s, o) => s + o.amount, 0)
+  const memberTotal = memberOrders.reduce((s, o) => s + Number(o.confirmed_amount ?? o.amount ?? 0), 0)
   const extTotal = extOrders.reduce((s, o) => s + (Number(o.amount) || 0), 0)
   const revenueTotal = memberTotal + extTotal
   const expenseTotal = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0)
@@ -461,7 +467,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       vendor_group: newExpense.vendor_group.trim() || activeVendor.trim(),
       doc_type: newExpense.doc_type,
       note: newExpense.note.trim(),
-    }
+      receipt_photo_url: selectedPhotoUrl || '',
+    } as Expense
     if (editingExpenseId) {
       setExpenses(prev => prev.map(e => e.id === editingExpenseId ? { ...nextExpense, id: editingExpenseId } : e))
       setEditingExpenseId(null)
@@ -485,6 +492,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       doc_type: expense.doc_type,
       note: expense.note,
     })
+    setSelectedPhotoUrl(expense.receipt_photo_url ?? '')
     setShowExpenses(true)
   }
 
@@ -507,7 +515,13 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       const path = `ck/${ckStoreId}/${date}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
       const result = await uploadToStorage(fd, 'receipts', path)
       if ('error' in result) { toast.error('上傳失敗：' + result.error) }
-      else { setPhotoUrls(prev => [...prev, result.publicUrl]) }
+      else {
+        setPhotoUrls(prev => {
+          const next = [...prev, result.publicUrl]
+          if (!selectedPhotoUrl) setSelectedPhotoUrl(result.publicUrl)
+          return next
+        })
+      }
     }
     setPhotoUploading(false)
   }
@@ -525,6 +539,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         vendor_group: e.vendor_group || undefined,
         doc_type: e.doc_type || undefined,
         note: e.note || undefined,
+        receipt_photo_url: (e as any).receipt_photo_url || undefined,
       })),
       receiptPhotoUrls: photoUrls,
     })
@@ -578,6 +593,49 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
           style={{ border: '1px solid #e4e4e7', color: '#52525b', background: 'white' }}
           title="切換日期（可補做過往帳目）" />
       </div>
+
+      {isRejected && (
+        <div className="rounded-2xl px-4 py-3" style={{ background: '#fff1f2', border: '1px solid #fecdd3' }}>
+          <p className="text-sm font-bold" style={{ color: '#be123c' }}>總公司已退回，請修正後重新送出</p>
+          <p className="text-xs mt-1 leading-relaxed" style={{ color: '#881337' }}>
+            {existing?.review_note || '請檢查央廚叫貨、支出與收據照片是否正確。'}
+          </p>
+        </div>
+      )}
+
+      {!isLocked && (
+        <div className="bg-white rounded-2xl px-4 py-4 space-y-3" style={{ border: '1px solid #f4f4f5' }}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold" style={{ color: '#18181b' }}>先上傳支出單據照片</p>
+              <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>上傳後再到支出明細選擇廠商、品項與金額。</p>
+            </div>
+            <button type="button" onClick={() => photoInputRef.current?.click()} disabled={photoUploading}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl shrink-0"
+              style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white', opacity: photoUploading ? 0.7 : 1 }}>
+              {photoUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+              {photoUploading ? '上傳中' : '新增照片'}
+            </button>
+          </div>
+          {photoUrls.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {photoUrls.slice(0, 8).map((url, i) => (
+                <button key={`${url}-quick-${i}`} type="button" onClick={() => setSelectedPhotoUrl(url)}
+                  className="h-16 w-16 rounded-xl overflow-hidden shrink-0"
+                  style={{ border: `2px solid ${selectedPhotoUrl === url ? '#F59E0B' : '#e4e4e7'}`, background: '#f4f4f5' }}>
+                  <img src={url} alt={`收據 ${i + 1}`} className="h-full w-full object-cover" />
+                </button>
+              ))}
+              {photoUrls.length > 8 && (
+                <div className="h-16 w-16 rounded-xl flex items-center justify-center text-xs font-semibold shrink-0"
+                  style={{ background: '#fafafa', color: '#71717a', border: '1px solid #e4e4e7' }}>
+                  +{photoUrls.length - 8}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 摘要卡片 */}
       <div className="grid grid-cols-3 gap-3">
@@ -687,6 +745,13 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
           <div style={{ borderTop: '1px solid #f4f4f5' }}>
             {expenses.map(e => (
               <div key={e.id} className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: '1px solid #f9f9f9' }}>
+                {(e as any).receipt_photo_url && (
+                  <button type="button" onClick={() => setLightboxUrl((e as any).receipt_photo_url)}
+                    className="h-12 w-12 rounded-xl overflow-hidden shrink-0"
+                    style={{ border: '1px solid #e4e4e7', background: '#f4f4f5' }}>
+                    <img src={(e as any).receipt_photo_url} alt="支出照片" className="h-full w-full object-cover" />
+                  </button>
+                )}
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0"
                   style={{ background: CAT_COLORS[e.category]?.bg, color: CAT_COLORS[e.category]?.text }}>
                   {e.category}
@@ -817,6 +882,18 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                     此群組尚未設定細項，會先以「{activeVendor}」作為品項名稱。
                   </p>
                 )}
+                {photoUrls.length > 0 && (
+                  <div className="rounded-xl px-3 py-2 text-xs flex items-center justify-between gap-3"
+                    style={{ background: selectedPhotoUrl ? '#FFFBEB' : '#fafafa', color: selectedPhotoUrl ? '#92400E' : '#a1a1aa', border: `1px solid ${selectedPhotoUrl ? '#FDE68A' : '#e4e4e7'}` }}>
+                    <span>{selectedPhotoUrl ? '此筆支出會綁定目前選取的照片' : '未選照片，此筆支出不綁照片'}</span>
+                    {selectedPhotoUrl && (
+                      <button type="button" onClick={() => setSelectedPhotoUrl('')}
+                        style={{ background: 'transparent', border: 'none', color: '#92400E', fontWeight: 700, cursor: 'pointer' }}>
+                        取消綁定
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <input type="number" min="0" className={INPUT} style={INPUT_STYLE} placeholder="金額"
                     value={newExpense.amount} onChange={e => setNewExpense(p => ({ ...p, amount: e.target.value }))} />
@@ -879,7 +956,10 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                 </button>
                 {!isLocked && (
                   <button type="button"
-                    onClick={() => setPhotoUrls(prev => prev.filter((_, idx) => idx !== i))}
+                    onClick={() => {
+                      setPhotoUrls(prev => prev.filter((_, idx) => idx !== i))
+                      if (selectedPhotoUrl === url) setSelectedPhotoUrl('')
+                    }}
                     className="absolute top-1 right-1 p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
                     style={{ background: 'rgba(0,0,0,0.5)' }}>
                     <X className="h-3 w-3 text-white" />

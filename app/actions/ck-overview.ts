@@ -32,7 +32,7 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
   const [{ data: ckStore }, { data: rec }] = await Promise.all([
     admin.from('stores').select('id, name, assigned_store_ids').eq('id', ckStoreId).maybeSingle(),
     admin.from('ck_daily_records')
-      .select('id, ck_store_id, business_date, status, payer_name, note, hq_paid, hq_paid_at, receipt_photo_urls, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
+      .select('id, ck_store_id, business_date, status, payer_name, note, review_note, reviewed_at, hq_paid, hq_paid_at, receipt_photo_urls, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
       .eq('ck_store_id', ckStoreId).eq('business_date', date).maybeSingle(),
   ])
   if (!ckStore) return { error: '找不到央廚' as const }
@@ -43,21 +43,22 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
       ? admin.from('stores').select('id, name').in('id', assignedIds)
       : Promise.resolve({ data: [] }),
     admin.from('ck_external_stores').select('id, ck_store_id, name').eq('ck_store_id', ckStoreId),
-    rec ? admin.from('ck_store_orders').select('store_id, external_store_name, amount').eq('ck_daily_record_id', rec.id) : Promise.resolve({ data: [] }),
-    rec ? admin.from('ck_expense_items').select('category, item_name, amount, payer_name, vendor_group, doc_type').eq('ck_daily_record_id', rec.id).order('sort_order') : Promise.resolve({ data: [] }),
+    rec ? admin.from('ck_store_orders').select('store_id, external_store_name, amount, ck_confirmed_amount').eq('ck_daily_record_id', rec.id) : Promise.resolve({ data: [] }),
+    rec ? admin.from('ck_expense_items').select('category, item_name, amount, payer_name, vendor_group, doc_type, receipt_photo_url').eq('ck_daily_record_id', rec.id).order('sort_order') : Promise.resolve({ data: [] }),
   ])
 
   const nameMap = Object.fromEntries((assignedStores ?? []).map((s: any) => [s.id, s.name as string]))
   const memberOrders = ((orderRes.data ?? []) as any[])
     .filter(o => o.store_id !== null)
-    .map(o => ({ store_id: o.store_id, store_name: nameMap[o.store_id] ?? o.store_id, amount: o.amount }))
+    .map(o => ({ store_id: o.store_id, store_name: nameMap[o.store_id] ?? o.store_id, amount: Number(o.ck_confirmed_amount ?? o.amount ?? 0) }))
   const externalOrders = ((orderRes.data ?? []) as any[])
     .filter(o => o.store_id === null)
-    .map(o => ({ name: o.external_store_name, amount: o.amount }))
+    .map(o => ({ name: o.external_store_name, amount: Number(o.amount ?? 0) }))
   const expenses = ((expRes.data ?? []) as any[]).map(e => ({
-    category: e.category, item_name: e.item_name, amount: e.amount, payer_name: e.payer_name ?? undefined,
+    category: e.category, item_name: e.item_name, amount: Number(e.amount ?? 0), payer_name: e.payer_name ?? undefined,
     vendor_group: e.vendor_group ?? undefined,
     doc_type: e.doc_type ?? undefined,
+    receipt_photo_url: e.receipt_photo_url ?? undefined,
   }))
   const memberStores = assignedIds.map(id => {
     const existing = memberOrders.find(o => o.store_id === id)
@@ -73,6 +74,8 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
       status: rec.status ?? 'none',
       payerName: rec.payer_name ?? null,
       note: rec.note ?? null,
+      reviewNote: (rec as any).review_note ?? null,
+      reviewedAt: (rec as any).reviewed_at ?? null,
       hqPaid: (rec as any).hq_paid ?? false,
       hqPaidAt: (rec as any).hq_paid_at ?? null,
       hqReimbursementPhotoUrls: ((rec as any).hq_reimbursement_photo_urls as string[] | null) ?? [],

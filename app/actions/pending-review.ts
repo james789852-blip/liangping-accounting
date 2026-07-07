@@ -14,16 +14,19 @@ export async function getPendingReviewCount(): Promise<{ stores: number; ck: num
 
   const admin = createAdminClient()
   // 店家：status=submitted 的 closings 數
-  // 央廚：任何未補款的 record（draft 或 submitted 都算，因為央廚流程可能跳過 submitted）
-  const [{ count: storeSubmitted }, { count: ckPending }] = await Promise.all([
+  // 央廚：已送出待審核 + HQ 已補款但央廚尚未點交
+  const [{ count: storeSubmitted }, { count: ckSubmitted }, { count: ckHandoffPending }] = await Promise.all([
     admin.from('daily_closings').select('*', { count: 'exact', head: true })
       .eq('status', 'submitted'),
     admin.from('ck_daily_records').select('*', { count: 'exact', head: true })
-      .in('status', ['submitted', 'draft']).eq('hq_paid', false),
+      .eq('status', 'submitted'),
+    admin.from('ck_daily_records').select('*', { count: 'exact', head: true })
+      .eq('hq_paid', true).eq('ck_reimbursement_confirmed', false),
   ])
+  const ckPending = (ckSubmitted ?? 0) + (ckHandoffPending ?? 0)
   return {
     stores: storeSubmitted ?? 0,
-    ck: ckPending ?? 0,
-    total: (storeSubmitted ?? 0) + (ckPending ?? 0),
+    ck: ckPending,
+    total: (storeSubmitted ?? 0) + ckPending,
   }
 }

@@ -66,7 +66,7 @@ export default async function FoodCostPreviewPage({
     const recordIds = (records ?? []).map(r => r.id)
     const [{ data: storeOrders }, { data: expenseItems }, { data: validClosings }] = await Promise.all([
       recordIds.length > 0
-        ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, amount').in('ck_daily_record_id', recordIds)
+        ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, amount, ck_confirmed_amount').in('ck_daily_record_id', recordIds)
         : Promise.resolve({ data: [] }),
       recordIds.length > 0
         ? admin.from('ck_expense_items').select('ck_daily_record_id, category, amount').in('ck_daily_record_id', recordIds)
@@ -115,7 +115,7 @@ export default async function FoodCostPreviewPage({
       if (!row) continue
       for (const o of (ordersByRecord[record.id as string] ?? [])) {
         if (o.store_id && !validClosingKeys.has(`${date}||${o.store_id}`)) continue
-        row.revenueTotal += (o.amount as number) ?? 0
+        row.revenueTotal += Number(o.ck_confirmed_amount ?? o.amount ?? 0)
       }
       for (const e of (expsByRecord[record.id as string] ?? [])) {
         const amt = (e.amount as number) ?? 0

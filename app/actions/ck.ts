@@ -110,7 +110,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
   note?: string
   status?: 'draft' | 'submitted'
   externalOrders?: { name: string; amount: number }[]
-  expenses?: { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string }[]
+  expenses?: { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }[]
   receiptPhotoUrls?: string[]
 }) {
   const ctx = await getAuthContext()
@@ -128,6 +128,9 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
         payer_name: data.payerName ?? null,
         note: data.note ?? null,
         status: data.status ?? 'draft',
+        review_note: data.status === 'submitted' ? null : undefined,
+        reviewed_at: data.status === 'submitted' ? null : undefined,
+        reviewed_by: data.status === 'submitted' ? null : undefined,
         ...(data.receiptPhotoUrls !== undefined ? { receipt_photo_urls: data.receiptPhotoUrls } : {}),
         updated_at: new Date().toISOString(),
       },
@@ -170,6 +173,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
           vendor_group: e.vendor_group ?? null,
           doc_type: e.doc_type ?? null,
           note: (e as any).note ?? null,
+          receipt_photo_url: e.receipt_photo_url ?? null,
           sort_order: i,
         }))
       )
@@ -186,6 +190,89 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
   revalidatePath('/manager/ck')
   revalidatePath('/hq/ck')
   return { success: true, id: recordId }
+}
+
+export async function reviewCKDailyRecord(
+  ckStoreId: string,
+  date: string,
+  decision: 'verified' | 'disputed',
+  note?: string
+) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  if (!ctx.isHQ) return { error: '權限不足（僅總公司可審核）' }
+
+  const admin = createAdminClient()
+  const { data: existing, error: findError } = await admin
+    .from('ck_daily_records')
+    .select('id, status')
+    .eq('ck_store_id', ckStoreId)
+    .eq('business_date', date)
+    .maybeSingle()
+  if (findError) return { error: findError.message }
+  if (!existing) return { error: '找不到央廚帳目' }
+
+  const now = new Date().toISOString()
+  const { error } = await admin
+    .from('ck_daily_records')
+    .update({
+      status: decision,
+      review_note: decision === 'disputed' ? (note?.trim() || '總公司退回修改') : null,
+      reviewed_at: now,
+      reviewed_by: ctx.userId,
+      updated_at: now,
+    })
+    .eq('id', existing.id)
+  if (error) return { error: error.message }
+
+  await logAudit({
+    eventType: 'ck_record_update',
+    storeId: ckStoreId,
+    userId: ctx.userId,
+    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} ${decision === 'verified' ? '審核通過' : '退回'}央廚 ${date} 帳目`,
+    metadata: { business_date: date, decision, note: note ?? null },
+  })
+
+  revalidatePath('/hq/ck')
+  revalidatePath('/hq/accounting')
+  revalidatePath('/manager/ck')
+  revalidatePath('/manager/history')
+  revalidatePath('/manager/dashboard')
+  return { success: true }
+}
+
+export async function deleteCKDailyRecord(ckStoreId: string, date: string) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  if (!ctx.isHQ) return { error: '權限不足（僅總公司可刪除）' }
+
+  const admin = createAdminClient()
+  const { data: existing, error: findError } = await admin
+    .from('ck_daily_records')
+    .select('id')
+    .eq('ck_store_id', ckStoreId)
+    .eq('business_date', date)
+    .maybeSingle()
+  if (findError) return { error: findError.message }
+  if (!existing) return { error: '找不到央廚帳目' }
+
+  const { error } = await admin.from('ck_daily_records').delete().eq('id', existing.id)
+  if (error) return { error: error.message }
+
+  await logAudit({
+    eventType: 'closing_delete',
+    storeId: ckStoreId,
+    userId: ctx.userId,
+    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 刪除央廚 ${date} 帳目`,
+    metadata: { business_date: date },
+  })
+
+  revalidatePath('/hq/ck')
+  revalidatePath('/hq/accounting')
+  revalidatePath('/manager/ck')
+  revalidatePath('/manager/history')
+  revalidatePath('/manager/dashboard')
+  return { success: true }
 }
 
 // 設定央廚服務的體系內店家

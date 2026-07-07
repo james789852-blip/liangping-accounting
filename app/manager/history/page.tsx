@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronRight, History, Search } from 'lucide-react'
@@ -34,6 +35,134 @@ export default async function HistoryPage({
   const params = await searchParams
   const searchDate = params.date ?? ''
   const searchMonth = params.month ?? ''
+  const admin = createAdminClient()
+
+  const { data: currentStore } = await admin
+    .from('stores')
+    .select('id, name, type')
+    .eq('id', storeId)
+    .maybeSingle()
+
+  if (currentStore?.type === '央廚') {
+    let ckQuery = admin
+      .from('ck_daily_records')
+      .select('id, business_date, status, payer_name, hq_paid, ck_reimbursement_confirmed, review_note, reviewed_at')
+      .eq('ck_store_id', storeId)
+      .order('business_date', { ascending: false })
+
+    if (searchDate) {
+      ckQuery = ckQuery.eq('business_date', searchDate)
+    } else if (searchMonth) {
+      const [y, m] = searchMonth.split('-')
+      ckQuery = ckQuery
+        .gte('business_date', `${y}-${m}-01`)
+        .lte('business_date', getMonthLastDay(parseInt(y), parseInt(m)))
+    } else {
+      ckQuery = ckQuery.limit(90)
+    }
+
+    const { data: ckRecords } = await ckQuery
+    const ckList = ckRecords ?? []
+    const ckRecordIds = ckList.map((r: any) => r.id)
+    const [{ data: ckOrders }, { data: ckExpenses }] = await Promise.all([
+      ckRecordIds.length > 0
+        ? admin.from('ck_store_orders').select('ck_daily_record_id, amount, ck_confirmed_amount').in('ck_daily_record_id', ckRecordIds)
+        : Promise.resolve({ data: [] }),
+      ckRecordIds.length > 0
+        ? admin.from('ck_expense_items').select('ck_daily_record_id, amount').in('ck_daily_record_id', ckRecordIds)
+        : Promise.resolve({ data: [] }),
+    ])
+    const ckRows = ckList.map((r: any) => {
+      const revenue = (ckOrders ?? [])
+        .filter((o: any) => o.ck_daily_record_id === r.id)
+        .reduce((s: number, o: any) => s + Number(o.ck_confirmed_amount ?? o.amount ?? 0), 0)
+      const expense = (ckExpenses ?? [])
+        .filter((e: any) => e.ck_daily_record_id === r.id)
+        .reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0)
+      return { ...r, revenue, expense, balance: revenue - expense }
+    })
+
+    const ckByMonth: Record<string, typeof ckRows> = {}
+    for (const row of ckRows) {
+      const key = row.business_date.slice(0, 7)
+      if (!ckByMonth[key]) ckByMonth[key] = []
+      ckByMonth[key].push(row)
+    }
+
+    return (
+      <div className="min-h-full" style={{ background: '#fafafa' }}>
+        <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          <div className="max-w-xl mx-auto">
+            <div className="flex items-center gap-2 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
+              <History className="h-3.5 w-3.5" />
+              央廚歷史紀錄
+            </div>
+            <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>帳目紀錄</h1>
+            <form method="GET" action="/manager/history" className="flex gap-2 mt-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#a1a1aa' }} />
+                <input type="date" name="date" defaultValue={searchDate}
+                  style={{ width: '100%', height: '40px', padding: '0 12px 0 36px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '14px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b' }} />
+              </div>
+              <input type="month" name="month" defaultValue={searchMonth}
+                style={{ height: '40px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '14px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b' }} />
+              <button type="submit" className="px-4 rounded-xl text-sm font-semibold text-white" style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', height: '40px' }}>搜尋</button>
+              {(searchDate || searchMonth) && (
+                <a href="/manager/history" className="px-3 rounded-xl text-sm font-medium flex items-center" style={{ border: '1.5px solid #e4e4e7', color: '#71717a', height: '40px', background: 'white' }}>清除</a>
+              )}
+            </form>
+          </div>
+        </div>
+
+        <div className="max-w-xl mx-auto px-4 py-5 space-y-5 pb-28">
+          {ckRows.length === 0 && (
+            <div className="text-center py-16" style={{ color: '#a1a1aa' }}>
+              <History className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">{searchDate || searchMonth ? '查無符合的央廚帳目' : '尚無央廚帳目紀錄'}</p>
+            </div>
+          )}
+
+          {Object.entries(ckByMonth).map(([month, rows]) => {
+            const [y, m] = month.split('-')
+            const monthRevenue = rows.reduce((s, r) => s + r.revenue, 0)
+            return (
+              <div key={month}>
+                <div className="flex items-center justify-between px-1 mb-2">
+                  <p className="text-xs font-bold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>{parseInt(y)} 年 {parseInt(m)} 月</p>
+                  <p className="text-xs font-semibold tabular-nums" style={{ color: '#52525b' }}>${fmt(monthRevenue)}</p>
+                </div>
+                <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                  {rows.map((c, idx) => {
+                    const st = STATUS[c.status] ?? STATUS.draft
+                    return (
+                      <Link key={c.id} href={`/manager/ck?date=${c.business_date}`}
+                        className="flex items-center gap-3 px-4 py-3.5 transition-all hover:translate-x-1"
+                        style={{ borderBottom: idx !== rows.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
+                        <div className="h-2 w-2 rounded-full shrink-0" style={{ background: st.dot, boxShadow: `0 0 0 3px ${st.ring}` }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold" style={{ color: '#18181b' }}>{c.business_date}</span>
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: st.ring, color: st.dot }}>{st.label}</span>
+                            {c.hq_paid && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: '#f0fdf4', color: '#15803d' }}>{c.ck_reimbursement_confirmed ? '補款已點交' : '待點交補款'}</span>}
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            <span className="text-xs tabular-nums" style={{ color: '#10b981' }}>營業額 ${fmt(c.revenue)}</span>
+                            <span className="text-xs tabular-nums" style={{ color: '#f97316' }}>支出 ${fmt(c.expense)}</span>
+                            <span className="text-xs font-semibold tabular-nums" style={{ color: c.balance >= 0 ? '#d97706' : '#dc2626' }}>結餘 {c.balance >= 0 ? '' : '-'}${fmt(Math.abs(c.balance))}</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-[18px] w-[18px] shrink-0" style={{ color: '#a1a1aa' }} />
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
 
   let query = supabase
     .from('daily_closings')

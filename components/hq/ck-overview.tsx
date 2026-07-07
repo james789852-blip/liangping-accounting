@@ -1,8 +1,9 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
-import { ChevronDown, ChevronUp, CheckCircle2, Loader2, Banknote, Camera, X, Upload } from 'lucide-react'
-import { markCKHQPaid } from '@/app/actions/ck'
+import { useRouter } from 'next/navigation'
+import { ChevronDown, ChevronUp, CheckCircle2, Loader2, Banknote, Camera, X, Upload, RotateCcw, Trash2 } from 'lucide-react'
+import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
 import { toast } from 'sonner'
 
@@ -10,6 +11,8 @@ function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
 const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
   submitted: { bg: '#f0fdf4', text: '#15803d', label: '已送出' },
+  verified:  { bg: '#dcfce7', text: '#15803d', label: '已審核' },
+  disputed:  { bg: '#ffe4e6', text: '#be123c', label: '已退回' },
   draft:     { bg: '#FFFBEB', text: '#92400E', label: '草稿中' },
   none:      { bg: '#f4f4f5', text: '#71717a', label: '未開始' },
 }
@@ -29,6 +32,8 @@ interface CKStoreData {
   status: string
   payerName?: string | null
   note?: string | null
+  reviewNote?: string | null
+  reviewedAt?: string | null
   hqPaid: boolean
   hqPaidAt?: string | null
   hqReimbursementPhotoUrls?: string[]
@@ -48,6 +53,66 @@ interface CKStoreData {
 interface Props {
   data: CKStoreData[]
   date: string
+}
+
+function ReviewActions({ ckStoreId, date, status }: { ckStoreId: string; date: string; status: string }) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
+
+  function approve() {
+    startTransition(async () => {
+      const r = await reviewCKDailyRecord(ckStoreId, date, 'verified')
+      if (r.error) toast.error('審核失敗：' + r.error)
+      else { toast.success('央廚帳目已審核通過'); router.refresh() }
+    })
+  }
+
+  function reject() {
+    const note = window.prompt('請輸入退回原因，央廚店長會看到這段說明：', '')
+    if (note === null) return
+    startTransition(async () => {
+      const r = await reviewCKDailyRecord(ckStoreId, date, 'disputed', note)
+      if (r.error) toast.error('退回失敗：' + r.error)
+      else { toast.success('已退回央廚帳目，等待修正'); router.refresh() }
+    })
+  }
+
+  function remove() {
+    if (!window.confirm('確定要刪除這天的央廚帳目嗎？刪除後央廚需要重新輸入。')) return
+    startTransition(async () => {
+      const r = await deleteCKDailyRecord(ckStoreId, date)
+      if (r.error) toast.error('刪除失敗：' + r.error)
+      else { toast.success('央廚帳目已刪除'); router.refresh() }
+    })
+  }
+
+  const canReview = ['submitted', 'verified', 'disputed', 'draft'].includes(status)
+
+  return (
+    <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
+      <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>帳目審核</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <button type="button" onClick={approve} disabled={isPending || !canReview}
+          className="flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+          style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+          {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+          審核通過
+        </button>
+        <button type="button" onClick={reject} disabled={isPending || !canReview}
+          className="flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold disabled:opacity-50"
+          style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+          <RotateCcw className="h-4 w-4" />
+          退回修改
+        </button>
+        <button type="button" onClick={remove} disabled={isPending || !canReview}
+          className="flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold disabled:opacity-50"
+          style={{ background: '#fff1f2', color: '#be123c', border: '1px solid #fecdd3' }}>
+          <Trash2 className="h-4 w-4" />
+          刪除帳目
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function PayButton({
@@ -350,6 +415,13 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                 </div>
               )}
 
+              {d.reviewNote && (
+                <div className="rounded-xl px-3 py-3 space-y-1" style={{ background: '#fff1f2', border: '1px solid #fecdd3' }}>
+                  <p className="text-xs font-semibold" style={{ color: '#be123c' }}>退回原因</p>
+                  <p className="text-sm" style={{ color: '#881337' }}>{d.reviewNote}</p>
+                </div>
+              )}
+
               {/* 收據照片 */}
               {(d.receiptPhotoUrls?.length ?? 0) > 0 && (
                 <div>
@@ -387,6 +459,8 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                   />
                 </div>
               )}
+
+              <ReviewActions ckStoreId={d.ckStore.id} date={date} status={d.status} />
 
               {/* 匯出 Excel */}
             </>

@@ -259,7 +259,7 @@ export async function GET(req: NextRequest) {
 
   const [{ data: storeOrders }, { data: expenseItems }, { data: validClosings }] = await Promise.all([
     recordIds.length > 0
-      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount').in('ck_daily_record_id', recordIds)
+      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount').in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
       ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount').in('ck_daily_record_id', recordIds).order('sort_order')
@@ -292,7 +292,10 @@ export async function GET(req: NextRequest) {
       const name = (o as any).store_id
         ? storeNameMap[(o as any).store_id] ?? (o as any).store_id
         : (o as any).external_store_name
-      if (name) storeRevenues[name] = (storeRevenues[name] ?? 0) + ((o as any).amount as number)
+      const amount = (o as any).store_id
+        ? Number((o as any).ck_confirmed_amount ?? (o as any).amount ?? 0)
+        : Number((o as any).amount ?? 0)
+      if (name) storeRevenues[name] = (storeRevenues[name] ?? 0) + amount
     }
 
     const expenses: Record<string, number> = {}

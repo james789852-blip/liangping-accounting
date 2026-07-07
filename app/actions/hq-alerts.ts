@@ -20,6 +20,8 @@ export interface HQAlerts {
   storeInDraft: Array<{ id: string; name: string }>
   storeInDispute: Array<{ id: string; name: string }>
   ckNotSubmitted: Array<{ id: string; name: string }>
+  ckInDispute: Array<{ id: string; name: string }>
+  ckHandoffPending: Array<{ id: string; name: string }>
 }
 
 /** 今日各店結帳異常提醒 */
@@ -61,18 +63,23 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
 
   // 今日央廚 ck_daily_records
   const { data: todayCK } = await admin.from('ck_daily_records')
-    .select('ck_store_id, status').eq('business_date', today)
-  const ckByStore = new Map<string, string>(
-    (todayCK ?? []).map((c: any) => [c.ck_store_id as string, c.status as string])
+    .select('ck_store_id, status, hq_paid, ck_reimbursement_confirmed').eq('business_date', today)
+  const ckByStore = new Map<string, any>(
+    (todayCK ?? []).map((c: any) => [c.ck_store_id as string, c])
   )
   const ckNotSubmitted: HQAlerts['ckNotSubmitted'] = []
+  const ckInDispute: HQAlerts['ckInDispute'] = []
+  const ckHandoffPending: HQAlerts['ckHandoffPending'] = []
   for (const s of ckList) {
-    const status = ckByStore.get(s.id as string)
-    if (status !== 'submitted') ckNotSubmitted.push({ id: s.id, name: s.name })
+    const record = ckByStore.get(s.id as string)
+    const status = record?.status as string | undefined
+    if (!['submitted', 'verified'].includes(status ?? '')) ckNotSubmitted.push({ id: s.id, name: s.name })
+    if (status === 'disputed') ckInDispute.push({ id: s.id, name: s.name })
+    if (record?.hq_paid && !record?.ck_reimbursement_confirmed) ckHandoffPending.push({ id: s.id, name: s.name })
   }
 
   return {
     success: true,
-    alerts: { today, storeNotClosed, storeInDraft, storeInDispute, ckNotSubmitted },
+    alerts: { today, storeNotClosed, storeInDraft, storeInDispute, ckNotSubmitted, ckInDispute, ckHandoffPending },
   }
 }
