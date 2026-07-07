@@ -159,20 +159,73 @@ function colLetter(colNum: number): string {
 const FONT_FAMILY = 'Microsoft JhengHei'
 const HEADER_DEFAULT_SIZE = 14
 const DATA_DEFAULT_SIZE = 13
+const BLACK = 'FF000000'
+const WHITE = 'FFFFFFFF'
+const HEADER_GRAY = 'FFBFBFBF'
+const MONTH_TOTAL_YELLOW = 'FFFFFF00'
+const PALE_YELLOW = 'FFFFFFCC'
+const WEEKEND_GRAY = 'FFBFBFBF'
+const FOOD_DATA_FILL = 'FFFFFFFF'
+const PACK_DATA_FILL = 'FFDCEBF7'
+const MISC_DATA_FILL = 'FFFCE4D6'
+const REFUND_DATA_FILL = 'FFD9EAD3'
+const INCOME_HEADER_FILL = 'FFFFC000'
+const STAT_ORANGE_FILL = 'FFF79544'
+const STAT_BLUE_FILL = 'FF4BACC6'
+const STAT_MISC_FILL = 'FFF4B183'
+const RED_FONT = 'FFFF0000'
 
 function fillHeaderCell(cell: ExcelJS.Cell, text: string, fillArgb?: string, fontColor = 'FF000000', bold = false, size = HEADER_DEFAULT_SIZE) {
   cell.value = text
   cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
   cell.font = { name: FONT_FAMILY, size, bold, color: { argb: fontColor } }
   cell.border = {
-    top: { style: 'thin', color: { argb: 'FFB8B8B8' } },
-    bottom: { style: 'thin', color: { argb: 'FFB8B8B8' } },
-    left: { style: 'thin', color: { argb: 'FFB8B8B8' } },
-    right: { style: 'thin', color: { argb: 'FFB8B8B8' } },
+    top: { style: 'thin', color: { argb: BLACK } },
+    bottom: { style: 'thin', color: { argb: BLACK } },
+    left: { style: 'thin', color: { argb: BLACK } },
+    right: { style: 'thin', color: { argb: BLACK } },
   }
   if (fillArgb) {
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillArgb } }
   }
+}
+
+function setSolidFill(cell: ExcelJS.Cell, argb: string) {
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } }
+}
+
+function setGridBorder(cell: ExcelJS.Cell) {
+  cell.border = {
+    top: { style: 'thin', color: { argb: BLACK } },
+    bottom: { style: 'thin', color: { argb: BLACK } },
+    left: { style: 'thin', color: { argb: BLACK } },
+    right: { style: 'thin', color: { argb: BLACK } },
+  }
+}
+
+function applyVerticalBorder(cell: ExcelJS.Cell, side: 'left' | 'right', style: 'medium' | 'thick' = 'medium') {
+  cell.border = {
+    ...(cell.border ?? {}),
+    [side]: { style, color: { argb: BLACK } },
+  } as any
+}
+
+function dataFillForColumn(c: ColumnDef): string | null {
+  if (c.kind === 'date' || c.kind === 'weekday' || c.kind === 'income') return PALE_YELLOW
+  if (c.kind === 'spacer') return BLACK
+  if (c.kind === 'stat') {
+    if (c.statKey === 'food') return 'FFF79646'
+    if (c.statKey === 'pack') return STAT_BLUE_FILL
+    if (c.statKey === 'misc') return STAT_MISC_FILL
+    return WHITE
+  }
+  if (c.kind === 'item') {
+    if (c.isRefund || c.vendorGroup === '退稅') return REFUND_DATA_FILL
+    if (c.category === '耗材') return PACK_DATA_FILL
+    if (c.category === '雜項') return MISC_DATA_FILL
+    return FOOD_DATA_FILL
+  }
+  return null
 }
 
 // vendor_group 顏色調色盤（Excel Row 1 每個廠商群組不同色）
@@ -237,7 +290,7 @@ export async function addFoodCostSheet(
   )).sort()
 
   const ws = wb.addWorksheet(`${monthNum}月食耗成本`, {
-    views: [{ state: 'frozen', xSplit: 2, ySplit: 3 }],
+    views: [{ state: 'frozen', xSplit: 2, ySplit: 4, showGridLines: false }],
   })
 
   const cols = buildLayout(store, items, handwriteAccounts)
@@ -294,10 +347,8 @@ export async function addFoodCostSheet(
     }
     // 「退稅」拆多塊時加粗邊界視覺分隔
     if (r.vg === '退稅' && r.source) {
-      const c1 = ws.getRow(1).getCell(r.start)
-      c1.border = { ...(c1.border ?? {}), left: { style: 'medium', color: { argb: 'FF7C2D12' } } }
-      const c2 = ws.getRow(1).getCell(r.end)
-      c2.border = { ...(c2.border ?? {}), right: { style: 'medium', color: { argb: 'FF7C2D12' } } }
+      applyVerticalBorder(ws.getRow(1).getCell(r.start), 'left')
+      applyVerticalBorder(ws.getRow(1).getCell(r.end), 'right')
     }
   }
 
@@ -332,7 +383,7 @@ export async function addFoodCostSheet(
     const vgRow1Range = `${itemStart}1:${itemEnd}1`
 
     // 梁平退稅 = 所有 is_refund=true 品項的月合計加總（跟 vg 解耦，位置可自由排）
-    fillHeaderCell(ws.getRow(1).getCell(totalStatCol - 1), '梁平退稅', 'FFC6EFCE', 'FF000000', true)
+    fillHeaderCell(ws.getRow(1).getCell(totalStatCol - 1), '梁平退稅', 'FFC6EFCE', BLACK, true)
     const cellRefund = ws.getRow(1).getCell(totalStatCol)
     const refundCols = itemCols.filter(c => c.isRefund)
     if (refundCols.length > 0) {
@@ -342,26 +393,26 @@ export async function addFoodCostSheet(
       // fallback：無勾選任何 is_refund 時，回舊邏輯（doc=發票 且 vg=退稅）
       cellRefund.value = { formula: `SUMIFS(${totalRange},${docRow2Range},"發票",${vgRow1Range},"退稅")` } as any
     }
-    cellRefund.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFCC' } }
+    setSolidFill(cellRefund, PALE_YELLOW)
     cellRefund.font = { name: FONT_FAMILY, size: 12, bold: true }
     cellRefund.alignment = { horizontal: 'center', vertical: 'middle' }
     cellRefund.numFmt = '#,##0;-#,##0;"-"'
 
     // 總發票 = 所有 doc=發票
-    fillHeaderCell(ws.getRow(2).getCell(totalStatCol - 1), '總發票', 'FFC6D9F0', 'FF000000')
+    fillHeaderCell(ws.getRow(2).getCell(totalStatCol - 1), '總發票', 'FFC6D9F0', BLACK)
     const cellInv = ws.getRow(2).getCell(totalStatCol)
     cellInv.value = { formula: `SUMIFS(${totalRange},${docRow2Range},"發票")` } as any
-    cellInv.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFCC' } }
+    setSolidFill(cellInv, PALE_YELLOW)
     cellInv.alignment = { horizontal: 'center', vertical: 'middle' }
     cellInv.numFmt = '#,##0;-#,##0;"-"'
 
     // 總收據 = 所有 doc=收據
     const foodCol = cols.find(c => c.statKey === 'food')?.index
     if (foodCol) {
-      fillHeaderCell(ws.getRow(2).getCell(foodCol), '總收據', 'FFFCE4D6', 'FF000000')
+      fillHeaderCell(ws.getRow(2).getCell(foodCol), '總收據', 'FFFCE4D6', BLACK)
       const cellRec = ws.getRow(2).getCell(foodCol + 1)
       cellRec.value = { formula: `SUMIFS(${totalRange},${docRow2Range},"收據")` } as any
-      cellRec.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFCC' } }
+      setSolidFill(cellRec, PALE_YELLOW)
       cellRec.alignment = { horizontal: 'center', vertical: 'middle' }
       cellRec.numFmt = '#,##0;-#,##0;"-"'
     }
@@ -369,50 +420,50 @@ export async function addFoodCostSheet(
 
   // ── Row 3 : header（依 category 給不同底色，接近原檔） ──
   for (const c of cols) {
-    let fill = 'FFEEEEEE'
-    let fontColor = 'FF000000'
+    let fill = HEADER_GRAY
+    let fontColor = BLACK
     if (c.kind === 'income') {
-      // POS 粉紅、TWPAY/Panda/Online 各自色、扣除/現場/實際/配送/結果/營業額 = 橘系
       const k = c.incomeKey ?? ''
-      if (k === 'pos') fill = 'FFFDE9D9'
-      else if (k === 'twpay') fill = 'FFF4CCCC'
-      else if (k === 'panda') fill = 'FFEAD1DC'
-      else if (k === 'online' || k === 'online_cash') fill = 'FFC9DAF8'
-      else if (k.startsWith('uber:')) fill = 'FFD9EAD3'
-      else if (k.startsWith('handwrite:')) fill = 'FFFFE599'
-      else if (k === 'after_deduct') fill = 'FFFDE9D9'
-      else if (k === 'onsite') fill = 'FFFCE4D6'
-      else if (k === 'actual') fill = 'FFDA9694'
-      else if (k === 'ck') fill = 'FFFDE9D9'
-      else if (k === 'variance') fill = 'FFFFFF00'
-      else if (k === 'revenue') fill = 'FFFFFF00'
+      fill = INCOME_HEADER_FILL
+      if (k === 'actual' || k === 'ck') fontColor = RED_FONT
     } else if (c.kind === 'stat') {
-      fill = c.statKey === 'total' ? 'FF000000' : 'FFF79544'
-      if (c.statKey === 'total') fontColor = 'FFFFFFFF'
+      fill = c.statKey === 'total' ? BLACK : STAT_ORANGE_FILL
+      if (c.statKey === 'pack') fill = STAT_BLUE_FILL
+      if (c.statKey === 'misc') fill = STAT_MISC_FILL
+      if (c.statKey === 'total') fontColor = WHITE
     } else if (c.kind === 'item') {
-      if (c.category === '食材') fill = 'FFBFBFBF'
+      if (c.isRefund || c.vendorGroup === '退稅') {
+        fill = REFUND_DATA_FILL
+        fontColor = RED_FONT
+      } else if (c.category === '食材') fill = HEADER_GRAY
       else if (c.category === '耗材') fill = 'FFC6D9F0'
-      else fill = 'FFDDD9C4'
+      else fill = 'FFF4B183'
     } else if (c.kind === 'date' || c.kind === 'weekday') {
-      fill = 'FFBFBFBF'
+      fill = HEADER_GRAY
     }
     fillHeaderCell(ws.getRow(HEADER_ROW).getCell(c.index), c.header, fill, fontColor, true)
   }
 
   // ── Row 4 : 月份標題 + 月合計 ──
-  fillHeaderCell(ws.getRow(TOTAL_ROW).getCell(1), `${monthNum}月`, 'FFFFFF00', 'FF000000', true)
+  for (const c of cols) {
+    const cell = ws.getRow(TOTAL_ROW).getCell(c.index)
+    setGridBorder(cell)
+    setSolidFill(cell, MONTH_TOTAL_YELLOW)
+    cell.font = { name: FONT_FAMILY, size: 13, bold: true, italic: true, color: { argb: BLACK } }
+    cell.alignment = { horizontal: 'right', vertical: 'middle' }
+    cell.numFmt = '#,##0;-#,##0;"-"'
+  }
+  const monthCell = ws.getRow(TOTAL_ROW).getCell(1)
+  monthCell.value = `${monthNum}月`
+  monthCell.alignment = { horizontal: 'center', vertical: 'middle' }
+  ws.getRow(TOTAL_ROW).getCell(2).value = ''
   for (const c of cols) {
     if (c.kind === 'date' || c.kind === 'weekday' || c.kind === 'spacer') continue
     const letter = colLetter(c.index)
     const formula = `SUM(${letter}${DATA_START}:${letter}${DATA_START + daysInMonth - 1})`
     const cell = ws.getRow(TOTAL_ROW).getCell(c.index)
     cell.value = { formula } as any
-    cell.font = { name: FONT_FAMILY, size: 13, bold: true }
-    cell.alignment = { horizontal: 'right', vertical: 'middle' }
-    cell.numFmt = '#,##0;-#,##0;"-"'
-    if (c.kind === 'stat') {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }
-    }
+    if (c.incomeKey === 'variance') cell.font = { ...(cell.font as any), color: { argb: RED_FONT }, bold: true, italic: true }
   }
 
   // ── Row 5+ : 每日資料 ──
@@ -442,10 +493,14 @@ export async function addFoodCostSheet(
     const dt = new Date(year, monthNum - 1, dayIdx + 1)
     const dow = dt.getDay()
     const isWeekend = dow === 0 || dow === 6
+    const isClosedRow = dow === 0
     const excelRow = ws.getRow(rowNum)
 
     for (const c of cols) {
       const cell = excelRow.getCell(c.index)
+      setGridBorder(cell)
+      const fill = isClosedRow ? WEEKEND_GRAY : dataFillForColumn(c)
+      if (fill) setSolidFill(cell, fill)
       // Data row 統一字體大小
       if (c.kind !== 'spacer') {
         cell.font = { name: FONT_FAMILY, size: DATA_DEFAULT_SIZE,
@@ -461,6 +516,8 @@ export async function addFoodCostSheet(
       } else if (c.kind === 'weekday') {
         cell.value = `星期${WEEKDAYS[dow]}`
         cell.alignment = { horizontal: 'center', vertical: 'middle' }
+      } else if (c.kind === 'spacer') {
+        cell.value = ''
       } else if (c.kind === 'income' && dd && c.incomeKey) {
         const v = readIncomeValue(dd, c.incomeKey)
         // 「結果」欄特殊：=0 顯示 0（不是空）、有誤差顯示紅色
@@ -468,7 +525,7 @@ export async function addFoodCostSheet(
           cell.value = v
           cell.numFmt = '#,##0;-#,##0;0'
           if (v !== 0) {
-            cell.font = { ...(cell.font as any), color: { argb: 'FFDC2626' }, bold: true }
+            cell.font = { ...(cell.font as any), color: { argb: RED_FONT }, bold: true }
           }
         } else {
           if (v !== 0) cell.value = v
@@ -501,18 +558,69 @@ export async function addFoodCostSheet(
         if (note?.trim()) cell.note = note
         cell.numFmt = '#,##0;-#,##0;'
         // 負數用紅色（折扣/退貨/退費類）
-        if (v < 0) cell.font = { ...(cell.font as any), color: { argb: 'FFDC2626' }, bold: true }
+        if (v < 0) cell.font = { ...(cell.font as any), color: { argb: RED_FONT }, bold: true }
       }
+    }
+  }
+
+  // 空白的 row 1/2 非品項區也補上舊表感底色與格線，避免左側上方看起來破碎。
+  for (const rowNum of [1, 2]) {
+    const row = ws.getRow(rowNum)
+    for (const c of cols) {
+      const cell = row.getCell(c.index)
+      setGridBorder(cell)
+      if (!cell.fill) setSolidFill(cell, c.kind === 'spacer' ? BLACK : PALE_YELLOW)
+      if (!cell.font) cell.font = { name: FONT_FAMILY, size: 12, bold: true, color: { argb: BLACK } }
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+    }
+  }
+
+  // 大區塊用粗黑線分隔，視覺上更接近原本手工維護的寬版 Excel。
+  const incomeCols = cols.filter(c => c.kind === 'income')
+  const statCols = cols.filter(c => c.kind === 'stat')
+  const spacerCol = cols.find(c => c.kind === 'spacer')
+  const majorLeftBorders = new Set<number>([
+    1,
+    incomeCols[0]?.index,
+    spacerCol?.index,
+    statCols[0]?.index,
+    itemCols[0]?.index,
+  ].filter(Boolean) as number[])
+  const majorRightBorders = new Set<number>([
+    2,
+    incomeCols[incomeCols.length - 1]?.index,
+    spacerCol?.index,
+    statCols[statCols.length - 1]?.index,
+    itemCols[itemCols.length - 1]?.index,
+  ].filter(Boolean) as number[])
+  for (const r of vgRanges) {
+    majorLeftBorders.add(r.start)
+    majorRightBorders.add(r.end)
+  }
+  for (let rowNum = 1; rowNum <= DATA_START + daysInMonth - 1; rowNum++) {
+    for (const colIndex of majorLeftBorders) applyVerticalBorder(ws.getRow(rowNum).getCell(colIndex), 'left', 'medium')
+    for (const colIndex of majorRightBorders) applyVerticalBorder(ws.getRow(rowNum).getCell(colIndex), 'right', 'medium')
+  }
+
+  // 營業額與差異欄維持醒目字重，方便掃描整月數字。
+  for (let dayIdx = 0; dayIdx < daysInMonth; dayIdx++) {
+    const rowNum = DATA_START + dayIdx
+    const revenueCol = cols.find(c => c.incomeKey === 'revenue')?.index
+    if (!revenueCol) continue
+    const cell = ws.getRow(rowNum).getCell(revenueCol)
+    if (typeof cell.value === 'number' && cell.value > 0) {
+      setSolidFill(cell, PALE_YELLOW)
+      cell.font = { ...(cell.font as any), bold: true }
     }
   }
 
   // ── 欄寬（依字體大小重新加寬避免字體被擋） ──
   for (const c of cols) {
     // 依 header 中文字數動態決定，但確保最小寬度
-    const baseByKind = c.kind === 'date' ? 16 : c.kind === 'weekday' ? 12 : c.kind === 'income' ? 18 : c.kind === 'stat' ? 18 : 16
+    const baseByKind = c.kind === 'date' ? 13 : c.kind === 'weekday' ? 11 : c.kind === 'income' ? 15 : c.kind === 'stat' ? 12 : c.kind === 'spacer' ? 3 : 11
     const headerLen = (c.header ?? '').length
-    // 中文字（13pt）大約每字 2.6 個寬度單位；含全形括弧預留 padding
-    const width = Math.max(baseByKind, headerLen * 2.6 + 3)
+    // 舊表偏緊湊，避免匯出後一列太寬但仍保留中文可讀性。
+    const width = c.kind === 'spacer' ? 3 : Math.min(18, Math.max(baseByKind, headerLen * 1.7 + 3))
     ws.getColumn(c.index).width = width
     // 取消 shrinkToFit（避免文字自動縮小）
     ws.getColumn(c.index).alignment = { ...(ws.getColumn(c.index).alignment as any), shrinkToFit: false, wrapText: true }
