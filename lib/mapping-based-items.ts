@@ -16,19 +16,13 @@ import { fetchAllPaged } from '@/lib/supabase-paged'
  */
 export async function getStoreItemsFromMappings(storeId: string): Promise<ResolvedStoreItem[]> {
   const admin = createAdminClient()
-  const [mappings, { data: vgs }, sysItems, storeItems] = await Promise.all([
+  const [mappings, { data: vgs }] = await Promise.all([
     // 分頁撈：避免 PostgREST 1000 max-rows 截斷
     fetchAllPaged<any>(() => admin.from('item_column_mappings').select('*').or(`store_id.is.null,store_id.eq.${storeId}`)),
     admin.from('system_vendor_groups').select('id, name, doc_type, sort_order, tax_mode, merge_across_category').eq('active', true),
-    fetchAllPaged<any>(() => admin.from('system_items').select('id, name, doc_type_override').eq('active', true)),
-    fetchAllPaged<any>(() => admin.from('store_items').select('id, system_item_id, doc_type_override, custom_vendor_group_id').eq('store_id', storeId).eq('enabled', true)),
   ])
 
   const vgByName = new Map<string, any>((vgs ?? []).map((v: any) => [v.name as string, v]))
-  const sysByName = new Map<string, any>()
-  for (const s of sysItems ?? []) sysByName.set(s.name, s)
-  const storeBySysId = new Map<string, any>()
-  for (const si of storeItems ?? []) storeBySysId.set(si.system_item_id, si)
 
   // 依「store-specific > global」merge：同 item_name 若有 store mapping 就用它，否則用 global
   const byName = new Map<string, any>()
@@ -44,11 +38,10 @@ export async function getStoreItemsFromMappings(storeId: string): Promise<Resolv
   for (const m of byName.values()) {
     const vgName = (m.vendor_group ?? '未分類') as string
     const vg = vgByName.get(vgName) ?? null
-    const sys = sysByName.get(m.item_name)
-    const store = sys ? storeBySysId.get(sys.id) : null
 
-    // doc_type 優先序：item_column_mappings.doc_type_override > store_items > system_items > vg.doc_type
-    const effectiveDocType = (m.doc_type_override ?? store?.doc_type_override ?? sys?.doc_type_override ?? vg?.doc_type) ?? null
+    // xlsx 必須完全尊重品項對應管理的明確設定：
+    // doc_type_override 有值才顯示；空值代表「無單據類型」，不可 fallback 成類別預設。
+    const effectiveDocType = (m.doc_type_override ?? null) as string | null
 
     items.push({
       id: m.id as string,
