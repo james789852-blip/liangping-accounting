@@ -39,9 +39,12 @@ export async function getStoreItemsFromMappings(storeId: string): Promise<Resolv
     const vgName = (m.vendor_group ?? '未分類') as string
     const vg = vgByName.get(vgName) ?? null
 
-    // xlsx 必須完全尊重品項對應管理的明確設定：
-    // doc_type_override 有值才顯示；空值代表「無單據類型」，不可 fallback 成類別預設。
-    const effectiveDocType = (m.doc_type_override ?? null) as string | null
+    // xlsx 單據類型規則：
+    // 1. 品項有明確選單據類型 → 用品項設定
+    // 2. 品項未選 → 繼承該分類/廠商群組的單據類型
+    // 3. 分類也未設定 → 空白
+    // 不再 fallback 到 system_items/store_items 的舊預設，避免「其他」被補成發票。
+    const effectiveDocType = (m.doc_type_override ?? vg?.doc_type ?? null) as string | null
 
     items.push({
       id: m.id as string,
