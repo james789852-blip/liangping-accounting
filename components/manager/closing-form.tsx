@@ -908,7 +908,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // On SSR it's silently skipped (no window), so no hydration mismatch
   useLayoutEffect(() => {
     const totalStepsEstimate = (store.mode !== 'ichef') ? 10 : 9
-    const resultIdx = totalStepsEstimate - 2
+    const pettyIdx = totalStepsEstimate - 3
 
     // 偵測零用金是否已完成
     const dbPetty = (existingClosing as { petty_counts?: { verified_at?: string } } | null)?.petty_counts
@@ -951,7 +951,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         router.replace(summaryHref)
         return
       }
-      setCurrentStep(resultIdx)
+      setCurrentStep(pettyIdx)
     } else {
       const saved = parseInt(localStorage.getItem(stepLsKey) ?? '0') || 0
       if (saved > 0) {
@@ -1020,7 +1020,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const dbPettyCounts = (existingClosing as { petty_counts?: { counts?: Record<string, number>; lumps?: Record<string, number> } } | null)?.petty_counts
   const [pettyCounts, setPettyCounts] = useState<Record<string, number>>(() => dbPettyCounts?.counts ?? {})
   const [pettyLumps, setPettyLumps] = useState<Record<string, number>>(() => dbPettyCounts?.lumps ?? {})
-  const [pettyFinished, setPettyFinished] = useState(false)
+  const [pettyFinished, setPettyFinished] = useState(() => {
+    const dbDone = !!(existingClosing as { petty_counts?: { verified_at?: string } } | null)?.petty_counts?.verified_at
+    if (dbDone) return true
+    try { return localStorage.getItem(`petty_done_${store.id}_${today}`) === '1' } catch { return false }
+  })
   useEffect(() => {
     if (dbPettyCounts?.counts || dbPettyCounts?.lumps) return  // 已從 DB 初始化
     try {
@@ -1042,6 +1046,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [newOrderNum, setNewOrderNum] = useState('')
   const [newOrderAmt, setNewOrderAmt] = useState(0)
   const [saving, setSaving] = useState(false)
+  const [savingPetty, setSavingPetty] = useState(false)
   const savingRef = useRef(false)  // mutex 防止並發 handleSave 衝突（自動存 + 手動下一步）
   const backgroundSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => {
@@ -1820,6 +1825,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       toast.error('此帳目已送出，請勿重複送出')
       return
     }
+    if (!pettyIsComplete) {
+      toast.error('請先完成零用金核對，才能送出帳目')
+      if (pettyStepIdx >= 0) goToStep(pettyStepIdx)
+      return
+    }
     setSubmitting(true)
     try {
       const cid = await handleSave(true)
@@ -1873,13 +1883,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     { id: 'cash',      label: '現金清點' },
     { id: 'summary',   label: '確認結帳' },
     { id: 'ai_verify', label: '照片核對' },
+    { id: 'petty',     label: '零用金核對' },
     { id: 'submit',    label: '送出'    },
     { id: 'result',    label: '摘要'    },
-    { id: 'petty',     label: '零用金核對' },
   ]
   const totalSteps = STEPS.length
   const submitStepIdx = STEPS.findIndex(s => s.id === 'submit')
+  const pettyStepIdx = STEPS.findIndex(s => s.id === 'petty')
   const isPostSubmit = submitDone || status === 'submitted' || status === 'verified'
+  const pettyIsComplete = pettyFinished || !!(existingClosing as { petty_counts?: { verified_at?: string } } | null)?.petty_counts?.verified_at
   const step = isLocked && !submitDone
     ? STEPS.findIndex(s => s.id === 'summary')
     : Math.min(currentStep, totalSteps - 1)
@@ -1948,11 +1960,23 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         return
       }
     }
+    if (stepId === 'petty' && !isLocked && !pettyIsComplete) {
+      toast.error('請先按下「確認，繼續送出」完成零用金核對')
+      return
+    }
     if (step >= submitStepIdx) { goToStep(step + 1); return }
     if (step < totalSteps - 1) {
       goToStep(step + 1)
       scheduleBackgroundSave()
     }
+  }
+  function canNavigateToStep(n: number) {
+    if (!isLocked && n >= submitStepIdx && pettyStepIdx >= 0 && !pettyIsComplete) {
+      toast.error('請先完成零用金核對，才能送出帳目')
+      goToStep(pettyStepIdx)
+      return false
+    }
+    return true
   }
   function goToStep(n: number) {
     startTransition(() => setCurrentStep(n))
@@ -2086,6 +2110,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     ref={el => { stepButtonRefs.current[i] = el }}
                     onClick={() => {
                       if (i === step) return
+                      if (!canNavigateToStep(i)) return
                       goToStep(i)
                       scheduleBackgroundSave()
                     }}
@@ -4262,31 +4287,26 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           </>
         )}
 
-        {/* ── STEP 8: 零用金核對 ───────────────────────────────────────── */}
+        {/* ── STEP: 零用金核對 ───────────────────────────────────────── */}
         {stepId === 'petty' && (
           <>
             <GradientTitle step={stepNum} total={totalSteps} title="零用金核對"
-              desc="包好信封後，請清點店內剩餘零用金是否等於備付額。" />
+              desc="送出帳目前，請清點店內剩餘零用金是否等於備付額。" />
 
             {/* 完成後顯示成功卡片 */}
             {pettyFinished && (
               <div className="rounded-3xl p-8 text-center mb-4"
                 style={{ background: 'linear-gradient(135deg,#d1fae5,#ecfdf5)', border: '1.5px solid #6ee7b7' }}>
-                <div style={{ fontSize: 48 }}>✅</div>
-                <p className="text-2xl font-extrabold mt-3" style={{ color: '#047857' }}>今日結帳完成！</p>
+                <div style={{ fontSize: 48 }}>✓</div>
+                <p className="text-2xl font-extrabold mt-3" style={{ color: '#047857' }}>零用金核對完成</p>
                 <p className="text-sm mt-1" style={{ color: '#065f46' }}>零用金核對已記錄</p>
-                <a href="/manager/dashboard"
-                  className="inline-block mt-5 px-6 py-3 rounded-2xl font-bold text-white text-sm"
-                  style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
-                  返回首頁
-                </a>
               </div>
             )}
 
             <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <div className="px-5 pt-5 pb-4" style={{ borderBottom: '1px solid #f4f4f5' }}>
                 <p className="text-sm font-semibold mb-0.5">零用金最終核對</p>
-                <p className="text-xs" style={{ color: '#a1a1aa' }}>包好信封後，請清點剩餘零用金是否等於零用金備付額</p>
+                <p className="text-xs" style={{ color: '#a1a1aa' }}>送出帳目前，請清點剩餘零用金是否等於零用金備付額</p>
               </div>
               <div className="px-5 py-4">
                 <div className="rounded-2xl p-4 text-center mb-4" style={{ background: 'linear-gradient(135deg,#FFFBEB,#f5f3ff)' }}>
@@ -4410,48 +4430,43 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           style={{ visibility: stepMounted ? 'visible' : 'hidden' }}>
           <div className="max-w-xl mx-auto flex gap-3">
 
-            {/* Step 8: 零用金核對 → 完成結束並前往結帳結果 */}
+            {/* 零用金核對 → 儲存後才能送出 */}
             {stepId === 'petty' && (
               <button onClick={async () => {
                 if (!hasRequiredPettyInput) {
                   toast.error('請先完成零用金清點，至少輸入一筆張數、整筆金額或大額支出')
                   return
                 }
-                setFinishingToday(true)
-                setFinishError('')
+                setSavingPetty(true)
                 try {
-                  const cid = existingClosing?.id ?? closingId
+                  const cid = existingClosing?.id ?? closingId ?? await handleSave(true)
                   if (!cid) throw new Error('找不到今日帳目，請重新整理後再試一次')
                   const r = await savePettyCounts(cid, pettyCounts, pettyLumps)
                   if (r && 'error' in r) throw new Error(r.error)
-                  if (status !== 'submitted' && status !== 'verified') {
-                    const submitResult = await submitClosing(cid)
-                    if (submitResult.error) throw new Error('送出帳目失敗：' + submitResult.error)
-                    setStatus('submitted')
-                  }
-                  setSubmitDone(true)
                   localStorage.setItem(`petty_done_${store.id}_${today}`, '1')
-                  localStorage.setItem(submitDoneSsKey, '1')
-                  localStorage.removeItem(saveBkKey)
-                  localStorage.removeItem(stepLsKey)
-                  router.replace(summaryHref)
+                  setPettyFinished(true)
+                  toast.success('零用金核對已完成，請繼續送出帳目')
+                  goToStep(step + 1)
                 } catch (e) {
-                  setFinishError(e instanceof Error ? e.message : String(e))
+                  toast.error('零用金儲存失敗：' + (e instanceof Error ? e.message : String(e)))
+                } finally {
+                  setSavingPetty(false)
                 }
               }}
+                disabled={savingPetty || saving}
                 className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-base font-bold text-white"
-                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 8px 20px rgba(245,158,11,0.3)' }}>
-                <CheckCircle2 className="h-5 w-5" />
-                完成 · 結束今日
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 8px 20px rgba(245,158,11,0.3)', opacity: savingPetty || saving ? 0.7 : 1 }}>
+                {savingPetty ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}
+                確認，繼續送出 →
               </button>
             )}
 
-            {/* Step 7: 摘要 → 繼續到零用金核對 */}
+            {/* 摘要 → 前往結帳結果 */}
             {stepId === 'result' && (
-              <button onClick={goNext}
+              <button onClick={() => router.replace(summaryHref)}
                 className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
-                繼續 → 零用金核對
+                查看結帳結果
               </button>
             )}
 
@@ -4476,8 +4491,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </>
             )}
 
-            {/* Steps 1-5 + ai_verify: 上一步 + 繼續 */}
-            {step < submitStepIdx && (
+            {/* Steps before submit: 上一步 + 繼續 */}
+            {step < submitStepIdx && stepId !== 'petty' && (
               <>
                 {step > 0 && (
                   <button onClick={goPrev} disabled={saving}
@@ -4494,7 +4509,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     opacity: saving ? 0.7 : 1,
                   }}>
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {stepId === 'ai_verify' ? '確認，繼續送出 →' : '繼續 →'}
+                  {stepId === 'ai_verify' ? '確認，進入零用金核對 →' : '繼續 →'}
                 </button>
               </>
             )}
