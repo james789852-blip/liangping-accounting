@@ -2566,33 +2566,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               })()}
                             </div>
 
-                            {/* 金額 */}
-                            {(() => {
-                              const editItemsTotal = editItems.filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
-                              const editHasItemsTotal = editItemsTotal !== 0
-                              return (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                  <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    金額 *
-                                    {editHasItemsTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
-                                  </label>
-                                  <input type="number" min="0" inputMode="numeric" placeholder="0" readOnly={editHasItemsTotal}
-                                    style={{ padding: '8px 10px', border: `1.5px solid ${editHasItemsTotal ? '#FDE68A' : editAmount > 0 ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: editHasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: '#18181b', cursor: editHasItemsTotal ? 'default' : 'text' }}
-                                    value={editAmount || ''}
-                                    onChange={e => { if (!editHasItemsTotal) setEditAmount(parseInt(e.target.value) || 0) }} />
-                                </div>
-                              )
-                            })()}
-
                             {/* 稅外加 UI 已移除 — 稅金請直接選稅金品項輸入金額 */}
-
-                            {/* 備註 */}
-                            <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>備註（可空）</label>
-                              <textarea placeholder=""
-                                style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', resize: 'none', minHeight: '64px' }}
-                                value={editNotes} onChange={e => setEditNotes(e.target.value)} />
-                            </div>
 
                             {/* 品項 — 若廠商下沒子品項（廠商本身就是品項）→ 隱藏 */}
                             {(() => {
@@ -2601,7 +2575,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             })() ? (
                               <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
                                 <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
-                                  💡「{editVendor}」本身就是品項，不用再選，直接於上方輸入金額
+                                  💡「{editVendor}」本身就是品項，不用再選，直接於下方輸入金額
                                 </p>
                               </div>
                             ) : (() => {
@@ -2701,6 +2675,32 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                       </div>
                                     ))}
                                   </div>
+                                </div>
+                              )
+                            })()}
+
+                            {/* 備註（品項之後） */}
+                            <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>備註（可空）</label>
+                              <textarea placeholder=""
+                                style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', resize: 'none', minHeight: '64px' }}
+                                value={editNotes} onChange={e => setEditNotes(e.target.value)} />
+                            </div>
+
+                            {/* 金額（最下） */}
+                            {(() => {
+                              const editItemsTotal = editItems.filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
+                              const editHasItemsTotal = editItemsTotal !== 0
+                              return (
+                                <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    金額 *
+                                    {editHasItemsTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
+                                  </label>
+                                  <input type="number" min="0" inputMode="numeric" placeholder="0" readOnly={editHasItemsTotal}
+                                    style={{ padding: '8px 10px', border: `1.5px solid ${editHasItemsTotal ? '#FDE68A' : editAmount > 0 ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: editHasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: '#18181b', cursor: editHasItemsTotal ? 'default' : 'text' }}
+                                    value={editAmount || ''}
+                                    onChange={e => { if (!editHasItemsTotal) setEditAmount(parseInt(e.target.value) || 0) }} />
                                 </div>
                               )
                             })()}
