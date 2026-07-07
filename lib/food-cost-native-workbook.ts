@@ -571,7 +571,12 @@ export async function addFoodCostSheet(
       setGridBorder(cell)
       if (!cell.fill) setSolidFill(cell, c.kind === 'spacer' ? BLACK : PALE_YELLOW)
       if (!cell.font) cell.font = { name: FONT_FAMILY, size: 12, bold: true, color: { argb: BLACK } }
-      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+      cell.alignment = {
+        horizontal: 'center',
+        vertical: 'middle',
+        wrapText: c.kind !== 'spacer',
+        shrinkToFit: false,
+      }
     }
   }
 
@@ -617,13 +622,24 @@ export async function addFoodCostSheet(
   // ── 欄寬（依字體大小重新加寬避免字體被擋） ──
   for (const c of cols) {
     // 依 header 中文字數動態決定，但確保最小寬度
-    const baseByKind = c.kind === 'date' ? 13 : c.kind === 'weekday' ? 11 : c.kind === 'income' ? 15 : c.kind === 'stat' ? 12 : c.kind === 'spacer' ? 3 : 11
+    const baseByKind = c.kind === 'date' ? 13 : c.kind === 'weekday' ? 11 : c.kind === 'income' ? 16 : c.kind === 'stat' ? 13 : c.kind === 'spacer' ? 13 : 12
     const headerLen = (c.header ?? '').length
-    // 舊表偏緊湊，避免匯出後一列太寬但仍保留中文可讀性。
-    const width = c.kind === 'spacer' ? 3 : Math.min(18, Math.max(baseByKind, headerLen * 1.7 + 3))
+    // 保留舊表的密度，但不要讓中文標題被壓成直排。
+    const width = c.kind === 'spacer'
+      ? 13
+      : Math.min(24, Math.max(baseByKind, headerLen * 2.2 + 4))
     ws.getColumn(c.index).width = width
     // 取消 shrinkToFit（避免文字自動縮小）
     ws.getColumn(c.index).alignment = { ...(ws.getColumn(c.index).alignment as any), shrinkToFit: false, wrapText: true }
+  }
+  for (const rowNum of [1, 2]) {
+    for (const c of cols) {
+      if (c.kind !== 'spacer') continue
+      const cell = ws.getRow(rowNum).getCell(c.index)
+      if (cell.value) {
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false, shrinkToFit: false }
+      }
+    }
   }
   // ── Row 高度加大以容納較大字體 + 2 行 wrap ──
   ws.getRow(1).height = 38
