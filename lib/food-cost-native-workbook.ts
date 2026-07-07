@@ -64,12 +64,12 @@ function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAcco
   // 收入區
   cols.push({ index: idx++, header: '(手動)POS', kind: 'income', incomeKey: 'pos' })
   if (store.twpay_enabled) cols.push({ index: idx++, header: 'TWPAY', kind: 'income', incomeKey: 'twpay' })
-  if (store.panda_enabled) cols.push({ index: idx++, header: '熊貓', kind: 'income', incomeKey: 'panda' })
-  if (store.online_enabled) cols.push({ index: idx++, header: '線上', kind: 'income', incomeKey: 'online' })
-  if (store.online_cash_enabled) cols.push({ index: idx++, header: '線上現金', kind: 'income', incomeKey: 'online_cash' })
   for (const acc of store.uber_accounts ?? []) {
     cols.push({ index: idx++, header: acc, kind: 'income', incomeKey: `uber:${acc}` })
   }
+  if (store.panda_enabled) cols.push({ index: idx++, header: '熊貓', kind: 'income', incomeKey: 'panda' })
+  if (store.online_enabled) cols.push({ index: idx++, header: '線上', kind: 'income', incomeKey: 'online' })
+  if (store.online_cash_enabled) cols.push({ index: idx++, header: '線上現金', kind: 'income', incomeKey: 'online_cash' })
   // 手寫（依當月實際出現的 account_name 動態加欄）
   for (const acc of handwriteAccounts) {
     cols.push({ index: idx++, header: acc ? `手寫(${acc})` : '手寫', kind: 'income', incomeKey: `handwrite:${acc}` })
@@ -690,89 +690,213 @@ export async function buildAnnualFoodCostWorkbook(
 
 /** 年度總覽 sheet：12 個月的月合計橫向排列（引用各月份 sheet 的 Row 4） */
 function addAnnualOverviewSheet(wb: ExcelJS.Workbook, store: StoreInfo, year: number) {
-  const ws = wb.addWorksheet('年度總覽', { views: [{ state: 'frozen', ySplit: 3 }] })
+  const ws = wb.addWorksheet('年度總覽', { views: [{ state: 'frozen', xSplit: 1, ySplit: 3, showGridLines: false }] })
 
-  // Row 1 標題
-  fillHeaderCell(ws.getRow(1).getCell(1), `${store.name}  ${year} 年度總覽`, 'FFFFF2CC', 'FF000000', true)
-  ws.mergeCells(1, 1, 1, 14)
-
-  // Row 3 header
-  const headers = ['項目', '1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月', '全年合計']
-  headers.forEach((h, i) => fillHeaderCell(ws.getRow(3).getCell(i + 1), h, 'FFBFBFBF', 'FF000000', true))
-
-  // Row 4+ : 各統計 row，引用月份 sheet 的月合計 (Row 4) 對應 cell
-  // 月份 sheet 名: '{M}月食耗成本'，月合計欄在 Row 4
-  // 「月合計」cell 在 sheet 內 col varies；用 SUMIFS 或直接 hardcode 部分欄
-  // 簡化：只列「總／食/耗/雜／營業額／實際／配送／扣除後／現場／總發票／總收據／梁平退稅」
-  const rows: Array<{ label: string; sheetCol: 'total' | 'food' | 'pack' | 'misc' | 'revenue' | 'actual' | 'ck' | 'after_deduct' | 'onsite' | 'invoice' | 'receipt' | 'refund' }> = [
-    { label: '營業額',   sheetCol: 'revenue' },
-    { label: '現場',     sheetCol: 'onsite' },
-    { label: '實際',     sheetCol: 'actual' },
-    { label: '配送',     sheetCol: 'ck' },
-    { label: '扣除後',   sheetCol: 'after_deduct' },
-    { label: '總（食+耗+雜）', sheetCol: 'total' },
-    { label: '食材',     sheetCol: 'food' },
-    { label: '耗材',     sheetCol: 'pack' },
-    { label: '雜項',     sheetCol: 'misc' },
-    { label: '總發票',   sheetCol: 'invoice' },
-    { label: '總收據',   sheetCol: 'receipt' },
-    { label: '梁平退稅', sheetCol: 'refund' },
-  ]
-
-  // 各月份 sheet 上這些統計欄的 cell 位置不固定（依店家欄位動態算）
-  // 這裡使用「跨 sheet reference + 找 headers」的方式：用 INDEX+MATCH 抓
-  // 因為 sheet 內 Row 3 是 header，Row 4 是月合計 → 用 INDEX/MATCH 找對應 col
-  const headerRefBySheetCol: Record<string, string> = {
-    total: '"總"',
-    food: '"食材"',
-    pack: '"耗材"',
-    misc: '"雜項"',
-    revenue: '"營業額"',
-    actual: '"(手動)實際$"',
-    ck: '"配送(月底結)"',
-    after_deduct: '"扣除後的$"',
-    onsite: '"現場"',
-    invoice: '"總發票"',
-    receipt: '"總收據"',
-    refund: '"梁平退稅"',
+  const TOTAL_COL = 14
+  const monthHeaders = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
+  const headers = ['項目', ...monthHeaders, '全年合計']
+  const headerByKey: Record<string, string> = {
+    pos: '(手動)POS',
+    twpay: 'TWPAY',
+    panda: '熊貓',
+    online: '線上',
+    online_cash: '線上現金',
+    after_deduct: '扣除後的$',
+    onsite: '現場',
+    actual: '(手動)實際$',
+    ck: '配送(月底結)',
+    variance: '結果',
+    revenue: '營業額',
+    total: '總',
+    food: '食材',
+    pack: '耗材',
+    misc: '雜項',
   }
 
-  rows.forEach((row, rIdx) => {
-    const excelRow = 4 + rIdx
-    fillHeaderCell(ws.getRow(excelRow).getCell(1), row.label, 'FFFAFAFA', 'FF000000', true)
+  const monthlyHeaderFormula = (sheetName: string, header: string) =>
+    `IFERROR(INDEX('${sheetName}'!$4:$4,MATCH("${header}",'${sheetName}'!$3:$3,0)),0)`
+  const monthlyDocFormula = (sheetName: string, doc: string) =>
+    `SUMIFS('${sheetName}'!$4:$4,'${sheetName}'!$2:$2,"${doc}")`
+  const monthlyRefundFormula = (sheetName: string) =>
+    `IFERROR(INDEX('${sheetName}'!$1:$1,MATCH("梁平退稅",'${sheetName}'!$1:$1,0)+1),0)`
+  const monthlyUberFormula = (sheetName: string) => {
+    const accounts = store.uber_accounts ?? []
+    if (accounts.length === 0) return '0'
+    return `SUM(${accounts.map(acc => monthlyHeaderFormula(sheetName, acc)).join(',')})`
+  }
+  const monthlyHandwriteFormula = (sheetName: string) =>
+    `SUMIF('${sheetName}'!$3:$3,"手寫*", '${sheetName}'!$4:$4)`
+  const monthlyMetricFormula = (sheetName: string, key: keyof typeof headerByKey) =>
+    monthlyHeaderFormula(sheetName, headerByKey[key])
+
+  type OverviewRow = {
+    label: string
+    group: string
+    formulaForMonth?: (month: number) => string
+    totalFormula?: (rowNum: number) => string
+    numFmt?: string
+    highlight?: 'revenue' | 'cost' | 'receipt' | 'ratio' | 'profit'
+  }
+  type SectionRow = { section: string; fill: string }
+  const revenueRows: OverviewRow[] = [
+    { label: '(手動)POS', group: '通路收入', formulaForMonth: m => monthlyMetricFormula(`${m}月食耗成本`, 'pos') },
+    ...(store.twpay_enabled ? [{ label: 'TWPAY', group: '通路收入', formulaForMonth: (m: number) => monthlyMetricFormula(`${m}月食耗成本`, 'twpay') }] : []),
+    ...((store.uber_accounts ?? []).length > 0 ? [{ label: 'Uber', group: '通路收入', formulaForMonth: (m: number) => monthlyUberFormula(`${m}月食耗成本`) }] : []),
+    ...(store.panda_enabled ? [{ label: '熊貓', group: '通路收入', formulaForMonth: (m: number) => monthlyMetricFormula(`${m}月食耗成本`, 'panda') }] : []),
+    ...(store.online_enabled ? [{ label: '線上', group: '通路收入', formulaForMonth: (m: number) => monthlyMetricFormula(`${m}月食耗成本`, 'online') }] : []),
+    ...(store.online_cash_enabled ? [{ label: '線上現金', group: '通路收入', formulaForMonth: (m: number) => monthlyMetricFormula(`${m}月食耗成本`, 'online_cash') }] : []),
+    { label: '手寫收入', group: '通路收入', formulaForMonth: m => monthlyHandwriteFormula(`${m}月食耗成本`) },
+    { label: '營業額', group: '通路收入', formulaForMonth: m => monthlyMetricFormula(`${m}月食耗成本`, 'revenue'), highlight: 'revenue' },
+  ]
+  const overviewRows: Array<SectionRow | OverviewRow> = [
+    { section: '通路收入', fill: 'FFFFC000' },
+    ...revenueRows,
+    { section: '結算核對', fill: 'FFF4B183' },
+    { label: '現場', group: '結算核對', formulaForMonth: m => monthlyMetricFormula(`${m}月食耗成本`, 'onsite') },
+    { label: '實際', group: '結算核對', formulaForMonth: m => monthlyMetricFormula(`${m}月食耗成本`, 'actual') },
+    { label: '配送(月底結)', group: '結算核對', formulaForMonth: m => monthlyMetricFormula(`${m}月食耗成本`, 'ck') },
+    { label: '扣除後的$', group: '結算核對', formulaForMonth: m => monthlyMetricFormula(`${m}月食耗成本`, 'after_deduct') },
+    { label: '結果', group: '結算核對', formulaForMonth: m => monthlyMetricFormula(`${m}月食耗成本`, 'variance'), highlight: 'profit' },
+    { section: '成本結構', fill: 'FF9BC2E6' },
+    { label: '總成本（食+耗+雜）', group: '成本結構', formulaForMonth: m => monthlyMetricFormula(`${m}月食耗成本`, 'total'), highlight: 'cost' },
+    { label: '食材', group: '成本結構', formulaForMonth: m => monthlyMetricFormula(`${m}月食耗成本`, 'food') },
+    { label: '耗材', group: '成本結構', formulaForMonth: m => monthlyMetricFormula(`${m}月食耗成本`, 'pack') },
+    { label: '雜項', group: '成本結構', formulaForMonth: m => monthlyMetricFormula(`${m}月食耗成本`, 'misc') },
+    { section: '單據 / 退稅', fill: 'FFD9EAD3' },
+    { label: '總發票', group: '單據 / 退稅', formulaForMonth: m => monthlyDocFormula(`${m}月食耗成本`, '發票'), highlight: 'receipt' },
+    { label: '總收據', group: '單據 / 退稅', formulaForMonth: m => monthlyDocFormula(`${m}月食耗成本`, '收據'), highlight: 'receipt' },
+    { label: '估價單', group: '單據 / 退稅', formulaForMonth: m => monthlyDocFormula(`${m}月食耗成本`, '估價單'), highlight: 'receipt' },
+    { label: '公司開', group: '單據 / 退稅', formulaForMonth: m => monthlyDocFormula(`${m}月食耗成本`, '公司開'), highlight: 'receipt' },
+    { label: '梁平退稅', group: '單據 / 退稅', formulaForMonth: m => monthlyRefundFormula(`${m}月食耗成本`), highlight: 'receipt' },
+  ]
+
+  fillHeaderCell(ws.getRow(1).getCell(1), `${store.name}  ${year} 年度總覽`, 'FFFFF2CC', BLACK, true, 16)
+  ws.mergeCells(1, 1, 1, TOTAL_COL)
+  ws.getRow(1).height = 32
+
+  headers.forEach((h, i) => fillHeaderCell(ws.getRow(3).getCell(i + 1), h, HEADER_GRAY, BLACK, true, 14))
+  ws.getRow(3).height = 34
+
+  const rowByLabel = new Map<string, number>()
+  let rowNum = 4
+  for (const row of overviewRows) {
+    if ('section' in row) {
+      ws.mergeCells(rowNum, 1, rowNum, TOTAL_COL)
+      const cell = ws.getRow(rowNum).getCell(1)
+      fillHeaderCell(cell, row.section, row.fill, BLACK, true, 13)
+      ws.getRow(rowNum).height = 24
+      rowNum++
+      continue
+    }
+    rowByLabel.set(row.label, rowNum)
+    const labelCell = ws.getRow(rowNum).getCell(1)
+    fillHeaderCell(labelCell, row.label, 'FFFAFAFA', BLACK, true, 12)
+    labelCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }
+
     for (let m = 1; m <= 12; m++) {
-      const cell = ws.getRow(excelRow).getCell(m + 1)
-      const sheetName = `${m}月食耗成本`
-      // 「總發票/收據/梁平退稅」在 sheet 上是 Row 1/2 的特殊格 → 用 SUMIF
-      let formula: string
-      if (row.sheetCol === 'invoice') {
-        // 抓月份 sheet 內 "總發票" 那格（假設在 Row 2）— 用 SUMIFS 較穩定
-        formula = `SUMIFS('${sheetName}'!$4:$4,'${sheetName}'!$2:$2,"發票")`
-      } else if (row.sheetCol === 'receipt') {
-        formula = `SUMIFS('${sheetName}'!$4:$4,'${sheetName}'!$2:$2,"收據")`
-      } else if (row.sheetCol === 'refund') {
-        // 直接引用該月 sheet 已算好的「梁平退稅」cell（Row 1，label 右邊那格）
-        formula = `INDEX('${sheetName}'!$1:$1,MATCH("梁平退稅",'${sheetName}'!$1:$1,0)+1)`
-      } else {
-        // 用 INDEX+MATCH 找 header 對應欄的月合計
-        formula = `INDEX('${sheetName}'!$4:$4,MATCH(${headerRefBySheetCol[row.sheetCol]},'${sheetName}'!$3:$3,0))`
-      }
-      cell.value = { formula } as any
-      cell.numFmt = '#,##0;-#,##0;"-"'
+      const cell = ws.getRow(rowNum).getCell(m + 1)
+      setGridBorder(cell)
+      setSolidFill(cell, row.highlight === 'revenue' ? 'FFE2F0D9' : row.highlight === 'cost' ? 'FFFCE4D6' : row.highlight === 'receipt' ? 'FFD9EAD3' : WHITE)
+      cell.value = { formula: row.formulaForMonth?.(m) ?? '0' } as any
+      cell.numFmt = row.numFmt ?? '#,##0;-#,##0;"-"'
+      cell.font = { name: FONT_FAMILY, size: 12, bold: !!row.highlight }
       cell.alignment = { horizontal: 'right', vertical: 'middle' }
     }
-    // 全年合計 = SUM 該 row 12 個月
-    const totalCell = ws.getRow(excelRow).getCell(14)
-    totalCell.value = { formula: `SUM(B${excelRow}:M${excelRow})` } as any
-    totalCell.numFmt = '#,##0;-#,##0;"-"'
-    totalCell.font = { bold: true }
+    const totalCell = ws.getRow(rowNum).getCell(TOTAL_COL)
+    setGridBorder(totalCell)
+    setSolidFill(totalCell, 'FFFFF2CC')
+    totalCell.value = { formula: row.totalFormula?.(rowNum) ?? `SUM(B${rowNum}:M${rowNum})` } as any
+    totalCell.numFmt = row.numFmt ?? '#,##0;-#,##0;"-"'
+    totalCell.font = { name: FONT_FAMILY, size: 12, bold: true }
     totalCell.alignment = { horizontal: 'right', vertical: 'middle' }
-    totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } }
-  })
+    ws.getRow(rowNum).height = 24
+    rowNum++
+  }
 
-  // 欄寬
-  ws.getColumn(1).width = 18
-  for (let c = 2; c <= 14; c++) ws.getColumn(c).width = 12
+  const revenueRow = rowByLabel.get('營業額')
+  const costRow = rowByLabel.get('總成本（食+耗+雜）')
+  const actualRow = rowByLabel.get('實際')
+  const ckRow = rowByLabel.get('配送(月底結)')
+  const resultRow = rowByLabel.get('結果')
+  const ratioStart = rowNum + 1
+  const ratioRows: OverviewRow[] = [
+    {
+      label: '成本率',
+      group: '效率指標',
+      formulaForMonth: m => revenueRow && costRow ? `IFERROR(${colLetter(m + 1)}${costRow}/${colLetter(m + 1)}${revenueRow},0)` : '0',
+      totalFormula: () => revenueRow && costRow ? `IFERROR(N${costRow}/N${revenueRow},0)` : '0',
+      numFmt: '0.0%',
+      highlight: 'ratio',
+    },
+    {
+      label: '配送占營業額',
+      group: '效率指標',
+      formulaForMonth: m => revenueRow && ckRow ? `IFERROR(${colLetter(m + 1)}${ckRow}/${colLetter(m + 1)}${revenueRow},0)` : '0',
+      totalFormula: () => revenueRow && ckRow ? `IFERROR(N${ckRow}/N${revenueRow},0)` : '0',
+      numFmt: '0.0%',
+      highlight: 'ratio',
+    },
+    {
+      label: '實際差額',
+      group: '效率指標',
+      formulaForMonth: m => actualRow && revenueRow ? `${colLetter(m + 1)}${actualRow}-${colLetter(m + 1)}${revenueRow}` : '0',
+      totalFormula: () => actualRow && revenueRow ? `N${actualRow}-N${revenueRow}` : '0',
+      highlight: 'profit',
+    },
+    {
+      label: '結算結果',
+      group: '效率指標',
+      formulaForMonth: m => resultRow ? `${colLetter(m + 1)}${resultRow}` : '0',
+      totalFormula: () => resultRow ? `N${resultRow}` : '0',
+      highlight: 'profit',
+    },
+  ]
+
+  ws.mergeCells(rowNum, 1, rowNum, TOTAL_COL)
+  fillHeaderCell(ws.getRow(rowNum).getCell(1), '效率指標', 'FFB4C6E7', BLACK, true, 13)
+  ws.getRow(rowNum).height = 24
+  rowNum++
+  for (const row of ratioRows) {
+    const labelCell = ws.getRow(rowNum).getCell(1)
+    fillHeaderCell(labelCell, row.label, 'FFFAFAFA', BLACK, true, 12)
+    labelCell.alignment = { horizontal: 'left', vertical: 'middle' }
+    for (let m = 1; m <= 12; m++) {
+      const cell = ws.getRow(rowNum).getCell(m + 1)
+      setGridBorder(cell)
+      setSolidFill(cell, 'FFEAF2F8')
+      cell.value = { formula: row.formulaForMonth?.(m) ?? '0' } as any
+      cell.numFmt = row.numFmt ?? '#,##0;-#,##0;"-"'
+      cell.font = { name: FONT_FAMILY, size: 12, bold: true }
+      cell.alignment = { horizontal: 'right', vertical: 'middle' }
+    }
+    const totalCell = ws.getRow(rowNum).getCell(TOTAL_COL)
+    setGridBorder(totalCell)
+    setSolidFill(totalCell, 'FFFFF2CC')
+    totalCell.value = { formula: row.totalFormula?.(rowNum) ?? `SUM(B${rowNum}:M${rowNum})` } as any
+    totalCell.numFmt = row.numFmt ?? '#,##0;-#,##0;"-"'
+    totalCell.font = { name: FONT_FAMILY, size: 12, bold: true }
+    totalCell.alignment = { horizontal: 'right', vertical: 'middle' }
+    ws.getRow(rowNum).height = 24
+    rowNum++
+  }
+
+  for (let r = 1; r < rowNum; r++) {
+    applyVerticalBorder(ws.getRow(r).getCell(1), 'left', 'medium')
+    applyVerticalBorder(ws.getRow(r).getCell(TOTAL_COL), 'right', 'medium')
+  }
+  for (let c = 1; c <= TOTAL_COL; c++) {
+    applyVerticalBorder(ws.getRow(3).getCell(c), 'left', c === 1 ? 'medium' : 'medium')
+    setGridBorder(ws.getRow(2).getCell(c))
+    setSolidFill(ws.getRow(2).getCell(c), PALE_YELLOW)
+  }
+
+  ws.getColumn(1).width = 24
+  for (let c = 2; c <= 13; c++) ws.getColumn(c).width = 13
+  ws.getColumn(TOTAL_COL).width = 15
+  for (let r = ratioStart; r < rowNum; r++) {
+    const labelCell = ws.getRow(r).getCell(1)
+    labelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF2F8' } }
+  }
 }
 
 function readIncomeValue(dd: DailyStats, key: string): number {
