@@ -46,6 +46,10 @@ const CK_GREEN = 'FFD9EAD3'
 const CK_TOTAL_ORANGE = 'FFF79646'
 const CK_BLACK = 'FF000000'
 const CK_WEEKEND = 'FFBFBFBF'
+const CK_STORE_COLORS = [
+  'FFD9EAD3', 'FF9BC2CF', 'FFEAD1DC', 'FFF4B183',
+  'FF77933C', 'FFDA9694', 'FFC6E0B4', 'FFFFF2CC',
+]
 const CK_VG_PALETTE = [
   'FFEAD1DC', 'FFD9EAD3', 'FFFCE4D6', 'FFFFF2CC',
   'FFDCEBF3', 'FFF4CCCC', 'FFC9DAF8', 'FFE2EFDA',
@@ -104,7 +108,11 @@ function applySide(cell: ExcelJS.Cell, side: 'left' | 'right', style: 'medium' |
 function columnFill(c: ColumnDef): string {
   if (c.kind === 'date' || c.kind === 'weekday') return CK_PAPER
   if (c.kind === 'member' || c.kind === 'external') return CK_PAPER
-  if (c.kind === 'expense') return c.category === '雜項' ? CK_ORANGE : CK_BLUE
+  if (c.kind === 'expense') {
+    if (c.category === '食材') return 'FFFFFFFF'
+    if (c.category === '耗材') return CK_BLUE
+    return CK_ORANGE
+  }
   if (c.kind === 'stat') {
     if (c.statKey === 'revenue' || c.statKey === 'balance') return CK_MONTH_YELLOW
     if (c.statKey === 'invoice') return 'FFD9E2F3'
@@ -135,6 +143,10 @@ function headerFontColor(c: ColumnDef): string {
 
 function displayHeader(text: string): string {
   return text.replace(/^[^・]+・/, '')
+}
+
+function storeHeaderColor(index: number): string {
+  return CK_STORE_COLORS[index % CK_STORE_COLORS.length]
 }
 
 function statFormula(
@@ -253,6 +265,11 @@ export async function addCKSheet(
   cols.push({ index: idx++, header: '總發票', kind: 'stat', statKey: 'invoice' })
   cols.push({ index: idx++, header: '總收據', kind: 'stat', statKey: 'receipt' })
   cols.push({ index: idx++, header: '梁平退稅', kind: 'stat', statKey: 'refund' })
+  cols.push({ index: idx++, header: '食材', kind: 'stat', statKey: 'food' })
+  cols.push({ index: idx++, header: '耗材', kind: 'stat', statKey: 'pack' })
+  cols.push({ index: idx++, header: '雜項', kind: 'stat', statKey: 'misc' })
+  cols.push({ index: idx++, header: '總支出', kind: 'stat', statKey: 'totalExpense' })
+  cols.push({ index: idx++, header: '淨額', kind: 'stat', statKey: 'balance' })
 
   // 支出品項欄（依 category → vendor_group → doc_type → item_name 排序）
   const catOrder: Record<string, number> = { '食材': 0, '耗材': 1, '雜項': 2 }
@@ -274,13 +291,6 @@ export async function addCKSheet(
     })
   }
 
-  // 支出小計 + 淨額
-  cols.push({ index: idx++, header: '食材', kind: 'stat', statKey: 'food' })
-  cols.push({ index: idx++, header: '耗材', kind: 'stat', statKey: 'pack' })
-  cols.push({ index: idx++, header: '雜項', kind: 'stat', statKey: 'misc' })
-  cols.push({ index: idx++, header: '總支出', kind: 'stat', statKey: 'totalExpense' })
-  cols.push({ index: idx++, header: '淨額', kind: 'stat', statKey: 'balance' })
-
   const daysInMonth = new Date(year, monthNum, 0).getDate()
   const HEADER_ROW = 3
   const TOTAL_ROW = 4
@@ -293,21 +303,9 @@ export async function addCKSheet(
   const leadingStatCols = cols.filter(c => c.kind === 'stat' && ['revenue', 'invoice', 'receipt', 'refund'].includes(c.statKey ?? ''))
   const trailingStatCols = cols.filter(c => c.kind === 'stat' && ['food', 'pack', 'misc', 'totalExpense', 'balance'].includes(c.statKey ?? ''))
 
-  if (memberCols.length > 0 || externalCols.length > 0) {
-    const revStart = (memberCols[0] ?? externalCols[0])!.index
-    const revEnd = (externalCols[externalCols.length - 1] ?? memberCols[memberCols.length - 1])!.index
-    fillHeader(ws.getRow(1).getCell(revStart), '店家叫貨', 'FFD9EAD3', true, 'FF000000', 14)
-    if (revEnd > revStart) ws.mergeCells(1, revStart, 1, revEnd)
-  }
-  if (memberCols.length > 0) {
-    const s = memberCols[0].index, e = memberCols[memberCols.length - 1].index
-    fillHeader(ws.getRow(2).getCell(s), '體系內', CK_PAPER, true, 'FF000000', 12)
-    if (e > s) ws.mergeCells(2, s, 2, e)
-  }
-  if (externalCols.length > 0) {
-    const s = externalCols[0].index, e = externalCols[externalCols.length - 1].index
-    fillHeader(ws.getRow(2).getCell(s), '體系外', CK_PAPER, true, 'FF000000', 12)
-    if (e > s) ws.mergeCells(2, s, 2, e)
+  for (let c = 1; c <= cols[cols.length - 1].index; c++) {
+    fillHeader(ws.getRow(1).getCell(c), '', CK_PAPER, false, 'FF000000', 12)
+    fillHeader(ws.getRow(2).getCell(c), '', CK_PAPER, false, 'FF000000', 12)
   }
   if (expenseCols.length > 0) {
     // Row 1: 廠商群組（vendor_group），連續相同就 merge
@@ -339,8 +337,9 @@ export async function addCKSheet(
 
   if (leadingStatCols.length > 0) {
     for (const c of leadingStatCols) {
+      if (c.statKey === 'revenue') continue
       fillHeader(ws.getRow(1).getCell(c.index), c.header, headerFill(c), true, headerFontColor(c), 13)
-      fillHeader(ws.getRow(2).getCell(c.index), c.statKey === 'revenue' ? '店家' : '單據', CK_PAPER, true, 'FF000000', 11)
+      fillHeader(ws.getRow(2).getCell(c.index), c.statKey === 'invoice' || c.statKey === 'receipt' ? '單據' : '', CK_PAPER, true, 'FF000000', 11)
     }
   }
   if (trailingStatCols.length > 0) {
@@ -352,9 +351,19 @@ export async function addCKSheet(
   }
 
   // Row 3 header
+  let storeColorIndex = 0
   for (const c of cols) {
+    const row3Cell = ws.getRow(HEADER_ROW).getCell(c.index)
+    if (c.kind === 'member' || c.kind === 'external') {
+      fillHeader(row3Cell, displayHeader(c.header), storeHeaderColor(storeColorIndex++), true, 'FF000000', 20)
+      continue
+    }
+    if (c.kind === 'stat' && c.statKey === 'revenue') {
+      fillHeader(row3Cell, '營業額', CK_MONTH_YELLOW, true, 'FF000000', 15)
+      continue
+    }
     fillHeader(
-      ws.getRow(HEADER_ROW).getCell(c.index),
+      row3Cell,
       displayHeader(c.header),
       headerFill(c),
       true,
@@ -382,11 +391,22 @@ export async function addCKSheet(
       ? (statFormula(c.statKey, TOTAL_ROW, TOTAL_ROW, memberColStart, memberColEnd, extColStart, extColEnd, expenseCols, foodExpCols, packExpCols, miscExpCols, cols) ?? '0')
       : `SUM(${letter}${DATA_START}:${letter}${DATA_START + daysInMonth - 1})`
     cell.value = { formula } as any
-    cell.font = { name: CK_FONT, size: 12, bold: true, italic: true }
+    cell.font = {
+      name: CK_FONT,
+      size: c.kind === 'member' || c.kind === 'external' || c.statKey === 'revenue' ? 16 : 12,
+      bold: true,
+      italic: c.kind !== 'member' && c.kind !== 'external' && c.statKey !== 'revenue',
+    }
     cell.alignment = { horizontal: 'right', vertical: 'middle', shrinkToFit: false }
     cell.numFmt = '#,##0;-#,##0;"-"'
     cell.border = thinBorder() as ExcelJS.Borders
-    setFill(cell, CK_MONTH_YELLOW)
+    if (c.kind === 'member' || c.kind === 'external') {
+      const headerCell = ws.getRow(HEADER_ROW).getCell(c.index)
+      const fill = (headerCell.fill as any)?.fgColor?.argb ?? CK_PAPER
+      setFill(cell, fill)
+    } else {
+      setFill(cell, CK_MONTH_YELLOW)
+    }
   }
 
   // Row 5+ 每日
@@ -466,6 +486,7 @@ export async function addCKSheet(
   const revenueCol = cols.find(c => c.statKey === 'revenue')?.index
   if (revenueCol) boundaryCols.add(revenueCol)
   if (leadingStatCols.length > 0) boundaryCols.add(leadingStatCols[leadingStatCols.length - 1].index)
+  if (trailingStatCols.length > 0) boundaryCols.add(trailingStatCols[trailingStatCols.length - 1].index)
   if (expenseCols.length > 0) {
     boundaryCols.add(expenseCols[expenseCols.length - 1].index)
     for (let i = 0; i < expenseCols.length - 1; i++) {
