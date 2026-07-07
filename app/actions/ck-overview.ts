@@ -32,7 +32,7 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
   const [{ data: ckStore }, { data: rec }] = await Promise.all([
     admin.from('stores').select('id, name, assigned_store_ids').eq('id', ckStoreId).maybeSingle(),
     admin.from('ck_daily_records')
-      .select('id, ck_store_id, business_date, status, payer_name, note, hq_paid, hq_paid_at, receipt_photo_urls')
+      .select('id, ck_store_id, business_date, status, payer_name, note, hq_paid, hq_paid_at, receipt_photo_urls, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
       .eq('ck_store_id', ckStoreId).eq('business_date', date).maybeSingle(),
   ])
   if (!ckStore) return { error: '找不到央廚' as const }
@@ -75,6 +75,10 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
       note: rec.note ?? null,
       hqPaid: (rec as any).hq_paid ?? false,
       hqPaidAt: (rec as any).hq_paid_at ?? null,
+      hqReimbursementPhotoUrls: ((rec as any).hq_reimbursement_photo_urls as string[] | null) ?? [],
+      hqReimbursementSentAt: (rec as any).hq_reimbursement_sent_at ?? null,
+      ckReimbursementConfirmed: (rec as any).ck_reimbursement_confirmed ?? false,
+      ckReimbursementConfirmedAt: (rec as any).ck_reimbursement_confirmed_at ?? null,
       revenueTotal,
       expenseTotal,
       balance: revenueTotal - expenseTotal,

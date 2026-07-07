@@ -265,13 +265,41 @@ export async function updateCKExternalStore(id: string, name: string) {
   return { success: true }
 }
 
-// 總公司標記補款狀態
-export async function markCKHQPaid(ckStoreId: string, date: string, paid: boolean) {
+// 總公司送出/取消央廚補款
+export async function markCKHQPaid(
+  ckStoreId: string,
+  date: string,
+  paid: boolean,
+  photoUrls: string[] = []
+) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
   if (!ctx.isHQ) return { error: '權限不足（僅總公司可標記）' }
+  if (paid && photoUrls.length === 0) return { error: '請先上傳補款信封照片' }
 
   const admin = createAdminClient()
+  const now = new Date().toISOString()
+  const patch = paid
+    ? {
+        hq_paid: true,
+        hq_paid_at: now,
+        hq_reimbursement_photo_urls: photoUrls,
+        hq_reimbursement_sent_at: now,
+        ck_reimbursement_confirmed: false,
+        ck_reimbursement_confirmed_at: null,
+        ck_reimbursement_confirmed_by: null,
+        updated_at: now,
+      }
+    : {
+        hq_paid: false,
+        hq_paid_at: null,
+        hq_reimbursement_photo_urls: [],
+        hq_reimbursement_sent_at: null,
+        ck_reimbursement_confirmed: false,
+        ck_reimbursement_confirmed_at: null,
+        ck_reimbursement_confirmed_by: null,
+        updated_at: now,
+      }
 
   const { data: existing } = await admin
     .from('ck_daily_records')
@@ -284,11 +312,7 @@ export async function markCKHQPaid(ckStoreId: string, date: string, paid: boolea
   if (existing) {
     ;({ error } = await admin
       .from('ck_daily_records')
-      .update({
-        hq_paid: paid,
-        hq_paid_at: paid ? new Date().toISOString() : null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(patch)
       .eq('id', existing.id))
   } else {
     ;({ error } = await admin
@@ -296,8 +320,7 @@ export async function markCKHQPaid(ckStoreId: string, date: string, paid: boolea
       .insert({
         ck_store_id: ckStoreId,
         business_date: date,
-        hq_paid: paid,
-        hq_paid_at: paid ? new Date().toISOString() : null,
+        ...patch,
       }))
   }
 
@@ -306,10 +329,58 @@ export async function markCKHQPaid(ckStoreId: string, date: string, paid: boolea
   await logAudit({
     eventType: 'ck_hq_paid',
     storeId: ckStoreId, userId: ctx.userId,
-    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} ${paid ? '標記' : '取消'}央廚 ${date} 補款`,
-    metadata: { paid, business_date: date },
+    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} ${paid ? '送出' : '取消'}央廚 ${date} 補款`,
+    metadata: { paid, business_date: date, photo_count: paid ? photoUrls.length : 0 },
   })
 
   revalidatePath('/hq/ck')
+  revalidatePath('/hq/accounting')
+  revalidatePath('/manager/ck')
+  revalidatePath('/manager/dashboard')
+  return { success: true }
+}
+
+// 央廚確認已點交補款
+export async function confirmCKReimbursementHandoff(ckStoreId: string, date: string) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  if (!canAccessStore(ctx, ckStoreId)) return { error: '無權限存取此央廚' }
+
+  const admin = createAdminClient()
+  const { data: existing, error: findError } = await admin
+    .from('ck_daily_records')
+    .select('id, hq_paid')
+    .eq('ck_store_id', ckStoreId)
+    .eq('business_date', date)
+    .maybeSingle()
+  if (findError) return { error: findError.message }
+  if (!existing) return { error: '找不到央廚帳目' }
+  if (!(existing as any).hq_paid) return { error: '總公司尚未送出補款' }
+
+  const now = new Date().toISOString()
+  const { error } = await admin
+    .from('ck_daily_records')
+    .update({
+      ck_reimbursement_confirmed: true,
+      ck_reimbursement_confirmed_at: now,
+      ck_reimbursement_confirmed_by: ctx.userId,
+      updated_at: now,
+    })
+    .eq('id', existing.id)
+
+  if (error) return { error: error.message }
+
+  await logAudit({
+    eventType: 'ck_hq_paid',
+    storeId: ckStoreId,
+    userId: ctx.userId,
+    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 已點交央廚 ${date} 補款`,
+    metadata: { business_date: date, handoff_confirmed: true },
+  })
+
+  revalidatePath('/manager/ck')
+  revalidatePath('/manager/dashboard')
+  revalidatePath('/hq/ck')
+  revalidatePath('/hq/accounting')
   return { success: true }
 }

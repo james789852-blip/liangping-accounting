@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { ChevronDown, ChevronUp, CheckCircle2, Loader2, Banknote, Camera, X } from 'lucide-react'
+import { useRef, useState, useTransition } from 'react'
+import { ChevronDown, ChevronUp, CheckCircle2, Loader2, Banknote, Camera, X, Upload } from 'lucide-react'
 import { markCKHQPaid } from '@/app/actions/ck'
+import { uploadToStorage } from '@/app/actions/upload'
 import { toast } from 'sonner'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -30,6 +31,10 @@ interface CKStoreData {
   note?: string | null
   hqPaid: boolean
   hqPaidAt?: string | null
+  hqReimbursementPhotoUrls?: string[]
+  hqReimbursementSentAt?: string | null
+  ckReimbursementConfirmed?: boolean
+  ckReimbursementConfirmedAt?: string | null
   revenueTotal: number
   expenseTotal: number
   balance: number
@@ -45,59 +50,167 @@ interface Props {
   date: string
 }
 
-function PayButton({ ckStoreId, date, paid, expenseTotal }: { ckStoreId: string; date: string; paid: boolean; expenseTotal: number }) {
+function PayButton({
+  ckStoreId,
+  date,
+  paid,
+  expenseTotal,
+  photoUrls: initialPhotoUrls,
+  sentAt,
+  confirmed,
+  confirmedAt,
+  onPreview,
+}: {
+  ckStoreId: string
+  date: string
+  paid: boolean
+  expenseTotal: number
+  photoUrls: string[]
+  sentAt?: string | null
+  confirmed: boolean
+  confirmedAt?: string | null
+  onPreview: (url: string) => void
+}) {
   const [isPending, startTransition] = useTransition()
   const [optimistic, setOptimistic] = useState(paid)
+  const [photoUrls, setPhotoUrls] = useState(initialPhotoUrls)
+  const [uploading, setUploading] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  function handleToggle() {
-    const next = !optimistic
-    setOptimistic(next)
+  async function handleFiles(files: FileList | null) {
+    if (!files?.length) return
+    setUploading(true)
+    try {
+      const uploaded: string[] = []
+      for (const file of Array.from(files)) {
+        const formData = new FormData()
+        formData.append('file', file)
+        const ext = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
+        const path = `ck-reimbursements/${ckStoreId}/${date}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+        const r = await uploadToStorage(formData, 'receipts', path)
+        if ('error' in r) throw new Error(r.error)
+        uploaded.push(r.publicUrl)
+      }
+      setPhotoUrls(prev => [...prev, ...uploaded])
+      toast.success(`已上傳 ${uploaded.length} 張補款照片`)
+    } catch (err: any) {
+      toast.error('上傳失敗：' + (err?.message ?? '未知錯誤'))
+    } finally {
+      setUploading(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  function handleSubmit() {
+    if (photoUrls.length === 0) {
+      toast.error('請先上傳補款信封照片')
+      return
+    }
+    setOptimistic(true)
     startTransition(async () => {
-      const r = await markCKHQPaid(ckStoreId, date, next)
+      const r = await markCKHQPaid(ckStoreId, date, true, photoUrls)
       if (r.error) {
-        setOptimistic(!next)
+        setOptimistic(false)
         toast.error('操作失敗：' + r.error)
       } else {
-        toast.success(next ? '已標記補款完成' : '已取消補款記錄')
+        toast.success('已送出補款，等待央廚點交')
+      }
+    })
+  }
+
+  function handleCancel() {
+    setOptimistic(false)
+    startTransition(async () => {
+      const r = await markCKHQPaid(ckStoreId, date, false)
+      if (r.error) {
+        setOptimistic(true)
+        toast.error('操作失敗：' + r.error)
+      } else {
+        setPhotoUrls([])
+        toast.success('已取消補款記錄')
       }
     })
   }
 
   if (optimistic) {
     return (
-      <div className="flex items-center justify-between px-4 py-3.5 rounded-2xl"
+      <div className="space-y-3 px-4 py-3.5 rounded-2xl"
         style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: '#15803d' }} />
-          <div>
-            <p className="text-sm font-semibold" style={{ color: '#15803d' }}>已補款</p>
-            <p className="text-xs" style={{ color: '#16a34a' }}>已包 ${fmt(expenseTotal)} 給央廚</p>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: confirmed ? '#15803d' : '#d97706' }} />
+            <div>
+              <p className="text-sm font-semibold" style={{ color: confirmed ? '#15803d' : '#92400e' }}>
+                {confirmed ? '央廚已點交' : '待央廚點交'}
+              </p>
+              <p className="text-xs" style={{ color: '#16a34a' }}>
+                已包 ${fmt(expenseTotal)} 給央廚{sentAt ? ` · ${new Date(sentAt).toLocaleString('zh-TW')}` : ''}
+              </p>
+              {confirmedAt && (
+                <p className="text-xs" style={{ color: '#15803d' }}>點交時間：{new Date(confirmedAt).toLocaleString('zh-TW')}</p>
+              )}
+            </div>
           </div>
+          <button type="button" onClick={handleCancel} disabled={isPending || confirmed}
+            className="text-xs px-2.5 py-1 rounded-lg transition-colors hover:bg-white/60 disabled:opacity-40"
+            style={{ color: '#15803d' }}>
+            {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : '取消'}
+          </button>
         </div>
-        <button type="button" onClick={handleToggle} disabled={isPending}
-          className="text-xs px-2.5 py-1 rounded-lg transition-colors hover:bg-white/60"
-          style={{ color: '#15803d' }}>
-          {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : '取消'}
-        </button>
+        {photoUrls.length > 0 && (
+          <div className="grid grid-cols-4 gap-2">
+            {photoUrls.map((url, i) => (
+              <button key={`${url}-${i}`} type="button" onClick={() => onPreview(url)} className="block" style={{ aspectRatio: '1' }}>
+                <img src={url} alt={`補款照片 ${i + 1}`} className="h-full w-full rounded-lg object-cover" style={{ border: '1px solid #bbf7d0' }} />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
 
   return (
-    <button type="button" onClick={handleToggle} disabled={isPending}
-      className="w-full flex items-center justify-between px-4 py-3.5 rounded-2xl transition-colors hover:opacity-80"
-      style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.25)' }}>
-      <div className="flex items-center gap-2">
-        <Banknote className="h-4 w-4 text-white shrink-0" />
-        <div className="text-left">
-          <p className="text-sm font-semibold text-white">標記補款完成</p>
-          <p className="text-xs text-white/80">應包 ${fmt(expenseTotal)}</p>
+    <div className="space-y-3 rounded-2xl p-3" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+      <input ref={inputRef} type="file" accept="image/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)} />
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Banknote className="h-4 w-4 shrink-0" style={{ color: '#92400e' }} />
+          <div className="text-left">
+            <p className="text-sm font-semibold" style={{ color: '#92400e' }}>補款信封照片</p>
+            <p className="text-xs" style={{ color: '#a16207' }}>應包 ${fmt(expenseTotal)}</p>
+          </div>
         </div>
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading || isPending}
+          className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
+          style={{ background: 'white', color: '#92400e', border: '1px solid #FDE68A' }}>
+          {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />}
+          上傳
+        </button>
       </div>
-      {isPending
-        ? <Loader2 className="h-4 w-4 text-white animate-spin" />
-        : <span className="text-white/80 text-lg">→</span>}
-    </button>
+      {photoUrls.length > 0 && (
+        <div className="grid grid-cols-4 gap-2">
+          {photoUrls.map((url, i) => (
+            <div key={`${url}-${i}`} className="relative" style={{ aspectRatio: '1' }}>
+              <button type="button" onClick={() => onPreview(url)} className="block h-full w-full">
+                <img src={url} alt={`補款照片 ${i + 1}`} className="h-full w-full rounded-lg object-cover" style={{ border: '1px solid #FDE68A' }} />
+              </button>
+              <button type="button" onClick={() => setPhotoUrls(prev => prev.filter((_, idx) => idx !== i))}
+                className="absolute -right-1 -top-1 h-5 w-5 rounded-full flex items-center justify-center"
+                style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca' }}>
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <button type="button" onClick={handleSubmit} disabled={isPending || uploading}
+        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60"
+        style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.2)' }}>
+        {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+        送出補款，通知央廚點交
+      </button>
+    </div>
   )
 }
 
@@ -126,8 +239,8 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                 style={{ background: st.bg, color: st.text }}>{st.label}</span>
               {d.hqPaid && (
                 <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1"
-                  style={{ background: '#f0fdf4', color: '#15803d' }}>
-                  <CheckCircle2 className="h-2.5 w-2.5" />補款完成
+                  style={{ background: d.ckReimbursementConfirmed ? '#f0fdf4' : '#FFFBEB', color: d.ckReimbursementConfirmed ? '#15803d' : '#92400E' }}>
+                  <CheckCircle2 className="h-2.5 w-2.5" />{d.ckReimbursementConfirmed ? '已點交' : '待點交'}
                 </span>
               )}
             </div>
@@ -266,6 +379,11 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                     date={date}
                     paid={d.hqPaid}
                     expenseTotal={d.expenseTotal}
+                    photoUrls={d.hqReimbursementPhotoUrls ?? []}
+                    sentAt={d.hqReimbursementSentAt}
+                    confirmed={d.ckReimbursementConfirmed ?? false}
+                    confirmedAt={d.ckReimbursementConfirmedAt}
+                    onPreview={setLightboxUrl}
                   />
                 </div>
               )}

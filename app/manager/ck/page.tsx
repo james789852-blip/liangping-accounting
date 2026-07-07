@@ -67,7 +67,7 @@ export default async function CKPage({
       : Promise.resolve({ data: [] }),
     admin.from('ck_external_stores').select('id, name').eq('ck_store_id', storeId).order('created_at'),
     admin.from('ck_daily_records')
-      .select('id, payer_name, note, status, receipt_photo_urls')
+      .select('id, payer_name, note, status, receipt_photo_urls, hq_paid, hq_paid_at, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
       .eq('ck_store_id', storeId)
       .eq('business_date', today)
       .maybeSingle(),
@@ -115,6 +115,12 @@ export default async function CKPage({
     payer_name?: string
     note?: string
     status: string
+    hq_paid?: boolean
+    hq_paid_at?: string | null
+    hq_reimbursement_photo_urls?: string[]
+    hq_reimbursement_sent_at?: string | null
+    ck_reimbursement_confirmed?: boolean
+    ck_reimbursement_confirmed_at?: string | null
     externalOrders: { name: string; amount: number }[]
     expenses: { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string; vendor_group: string; doc_type: string; note: string }[]
     receiptPhotoUrls?: string[]
@@ -146,6 +152,12 @@ export default async function CKPage({
       payer_name: ckRecord.payer_name ?? undefined,
       note: ckRecord.note ?? undefined,
       status: ckRecord.status,
+      hq_paid: (ckRecord as any).hq_paid ?? false,
+      hq_paid_at: (ckRecord as any).hq_paid_at ?? null,
+      hq_reimbursement_photo_urls: ((ckRecord as any).hq_reimbursement_photo_urls as string[] | null) ?? [],
+      hq_reimbursement_sent_at: (ckRecord as any).hq_reimbursement_sent_at ?? null,
+      ck_reimbursement_confirmed: (ckRecord as any).ck_reimbursement_confirmed ?? false,
+      ck_reimbursement_confirmed_at: (ckRecord as any).ck_reimbursement_confirmed_at ?? null,
       externalOrders: (extOrders ?? []).map((o: any) => ({
         name: o.external_store_name as string,
         amount: o.amount as number,

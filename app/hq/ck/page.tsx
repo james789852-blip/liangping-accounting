@@ -64,22 +64,16 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     { data: ckRecords },
     { data: assignedStores },
     { data: externalStores },
-    { data: validClosings },
   ] = await Promise.all([
     admin.from('ck_daily_records')
-      .select('id, ck_store_id, status, payer_name, note, hq_paid, hq_paid_at, receipt_photo_urls')
+      .select('id, ck_store_id, status, payer_name, note, hq_paid, hq_paid_at, receipt_photo_urls, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
       .in('ck_store_id', ckStoreIds)
       .eq('business_date', date),
     uniqueAssignedIds.length > 0
       ? admin.from('stores').select('id, name').in('id', uniqueAssignedIds)
       : Promise.resolve({ data: [] }),
     admin.from('ck_external_stores').select('id, ck_store_id, name').in('ck_store_id', ckStoreIds),
-    uniqueAssignedIds.length > 0
-      ? admin.from('daily_closings').select('store_id').in('store_id', uniqueAssignedIds).eq('business_date', date)
-          .in('status', ['submitted', 'verified'])
-      : Promise.resolve({ data: [] }),
   ])
-  const validClosingStores = new Set((validClosings ?? []).map((c: any) => c.store_id as string))
 
   const recordIds = (ckRecords ?? []).map(r => r.id)
 
@@ -110,7 +104,6 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       const orders = (storeOrders ?? []).filter((o: any) => o.ck_daily_record_id === record.id)
       memberOrders = orders
         .filter((o: any) => o.store_id !== null)
-        .filter((o: any) => validClosingStores.has(o.store_id as string))
         .map((o: any) => ({ store_id: o.store_id, store_name: assignedStoreMap[o.store_id] ?? o.store_id, amount: o.amount }))
       externalOrders = orders
         .filter((o: any) => o.store_id === null)
@@ -137,6 +130,10 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       note: record?.note ?? null,
       hqPaid: (record as any)?.hq_paid ?? false,
       hqPaidAt: (record as any)?.hq_paid_at ?? null,
+      hqReimbursementPhotoUrls: ((record as any)?.hq_reimbursement_photo_urls as string[] | null) ?? [],
+      hqReimbursementSentAt: (record as any)?.hq_reimbursement_sent_at ?? null,
+      ckReimbursementConfirmed: (record as any)?.ck_reimbursement_confirmed ?? false,
+      ckReimbursementConfirmedAt: (record as any)?.ck_reimbursement_confirmed_at ?? null,
       revenueTotal,
       expenseTotal,
       balance: revenueTotal - expenseTotal,

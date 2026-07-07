@@ -86,7 +86,7 @@ export default async function ManagerDashboard() {
       const assignedStoreIds: string[] = ((ckStoreFull as any)?.assigned_store_ids as string[] | null) ?? []
       const [ckRecordRes, todayClosingsRes] = await Promise.all([
         admin.from('ck_daily_records')
-          .select('id, status, payer_name, note, receipt_photo_urls')
+          .select('id, status, payer_name, note, receipt_photo_urls, hq_paid, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed')
           .eq('ck_store_id', storeId)
           .eq('business_date', today)
           .maybeSingle(),
@@ -115,11 +115,12 @@ export default async function ManagerDashboard() {
           .map((c: any) => c.store_id as string)
       )
       const validOrders = ((ckOrders ?? []) as any[])
-        .filter((o: any) => !o.store_id || submittedStoreIds.has(o.store_id as string))
       const revenueTotal = validOrders.reduce((sum: number, o: any) => sum + Number(o.amount || 0), 0)
       const expenseTotal = ((ckExpenses ?? []) as any[]).reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0)
       const pendingConfirmCount = validOrders.filter((o: any) => o.store_id && Number(o.amount || 0) > 0 && o.ck_confirmed_amount == null).length
       const mismatchCount = validOrders.filter((o: any) => o.store_id && o.ck_confirmed_amount != null && Number(o.ck_confirmed_amount) !== Number(o.amount)).length
+      const reimbursementNeedsConfirm = !!ckRecord?.hq_paid && !ckRecord?.ck_reimbursement_confirmed
+      const reimbursementPhotoCount = ((ckRecord?.hq_reimbursement_photo_urls as string[] | null) ?? []).length
       const statusLabel = ckRecord?.status === 'submitted' ? '已送出，等待總公司審核'
         : ckRecord?.status === 'draft' ? '草稿進行中'
         : ckRecord?.status === 'verified' ? '已對帳完成'
@@ -145,6 +146,23 @@ export default async function ManagerDashboard() {
                   {statusLabel}
                 </span>
               </div>
+
+              {reimbursementNeedsConfirm && (
+                <div className="rounded-2xl p-4 mb-4 flex items-start justify-between gap-3"
+                  style={{ background: '#FFFBEB', border: '1.5px solid #FDE68A', color: '#92400E' }}>
+                  <div>
+                    <p className="text-sm font-bold">總公司已補款，等待你點交確認</p>
+                    <p className="text-xs mt-1" style={{ color: '#a16207' }}>
+                      已上傳 {reimbursementPhotoCount} 張補款信封照片，請到今日帳目查看並確認。
+                    </p>
+                  </div>
+                  <Link href="/manager/ck"
+                    className="shrink-0 px-3 py-2 rounded-xl text-xs font-bold text-white"
+                    style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
+                    去點交
+                  </Link>
+                </div>
+              )}
 
               <div className="grid grid-cols-3 gap-3 mb-4">
                 {[

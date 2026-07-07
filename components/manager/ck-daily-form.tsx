@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn, Pencil, BarChart3, ClipboardList } from 'lucide-react'
-import { saveCKDailyRecord, confirmCKOrder } from '@/app/actions/ck'
+import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn, Pencil, BarChart3, ClipboardList, Banknote } from 'lucide-react'
+import { saveCKDailyRecord, confirmCKOrder, confirmCKReimbursementHandoff } from '@/app/actions/ck'
 import CKHelp from './ck-help'
 import { uploadToStorage } from '@/app/actions/upload'
 import { compressImage } from '@/lib/compress-image'
@@ -121,6 +121,12 @@ interface ExistingRecord {
   payer_name?: string
   note?: string
   status: string
+  hq_paid?: boolean
+  hq_paid_at?: string | null
+  hq_reimbursement_photo_urls?: string[]
+  hq_reimbursement_sent_at?: string | null
+  ck_reimbursement_confirmed?: boolean
+  ck_reimbursement_confirmed_at?: string | null
   externalOrders: ExternalOrder[]
   expenses: Expense[]
   receiptPhotoUrls?: string[]
@@ -133,20 +139,52 @@ const CAT_COLORS: Record<string, { bg: string; text: string }> = {
 }
 
 function CKDoneCard({
+  ckStoreId,
   ckStoreName,
   date,
   revenueTotal,
   expenseTotal,
   payerName,
   photoCount,
+  hqPaid,
+  hqReimbursementPhotoUrls,
+  hqReimbursementSentAt,
+  ckReimbursementConfirmed,
+  ckReimbursementConfirmedAt,
 }: {
+  ckStoreId: string
   ckStoreName: string
   date: string
   revenueTotal: number
   expenseTotal: number
   payerName: string
   photoCount: number
+  hqPaid: boolean
+  hqReimbursementPhotoUrls: string[]
+  hqReimbursementSentAt?: string | null
+  ckReimbursementConfirmed: boolean
+  ckReimbursementConfirmedAt?: string | null
 }) {
+  const router = useRouter()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [confirmed, setConfirmed] = useState(ckReimbursementConfirmed)
+  const [isPending, startTransition] = useTransition()
+
+  function handleConfirm() {
+    startTransition(async () => {
+      const r = await confirmCKReimbursementHandoff(ckStoreId, date)
+      if ('error' in r && r.error) {
+        toast.error('點交失敗：' + r.error)
+        return
+      }
+      setConfirmed(true)
+      setConfirmOpen(false)
+      toast.success('補款已點交完成')
+      router.refresh()
+    })
+  }
+
   return (
     <div className="min-h-[70vh] flex items-center justify-center px-5 py-10" style={{ background: '#fafafa' }}>
       <div className="w-full max-w-sm flex flex-col items-center text-center">
@@ -177,7 +215,73 @@ function CKDoneCard({
           </div>
         </div>
 
-        <p className="text-xs mb-6" style={{ color: '#a1a1aa' }}>總公司收到後會在帳目中心審核與補款。</p>
+        {hqPaid ? (
+          <div className="w-full rounded-2xl p-4 mb-6 text-left"
+            style={{ background: confirmed ? '#f0fdf4' : '#FFFBEB', border: `1px solid ${confirmed ? '#bbf7d0' : '#FDE68A'}` }}>
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0"
+                style={{ background: confirmed ? '#dcfce7' : '#FEF3C7', color: confirmed ? '#15803d' : '#92400e' }}>
+                {confirmed ? <CheckCircle2 className="h-5 w-5" /> : <Banknote className="h-5 w-5" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold" style={{ color: confirmed ? '#15803d' : '#92400e' }}>
+                  {confirmed ? '補款已點交完成' : '總公司已補款，請點交確認'}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: confirmed ? '#16a34a' : '#a16207' }}>
+                  {hqReimbursementSentAt ? `送出時間：${new Date(hqReimbursementSentAt).toLocaleString('zh-TW')}` : '請確認信封金額與照片內容'}
+                </p>
+                {confirmed && ckReimbursementConfirmedAt && (
+                  <p className="text-xs mt-0.5" style={{ color: '#16a34a' }}>
+                    點交時間：{new Date(ckReimbursementConfirmedAt).toLocaleString('zh-TW')}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {hqReimbursementPhotoUrls.length > 0 && (
+              <div className="grid grid-cols-4 gap-2 mt-3">
+                {hqReimbursementPhotoUrls.map((url, i) => (
+                  <button key={`${url}-${i}`} type="button" onClick={() => setLightboxUrl(url)} style={{ aspectRatio: '1' }}>
+                    <img src={url} alt={`補款照片 ${i + 1}`} className="h-full w-full rounded-lg object-cover"
+                      style={{ border: `1px solid ${confirmed ? '#bbf7d0' : '#FDE68A'}` }} />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!confirmed && (
+              <div className="mt-3 space-y-2">
+                {!confirmOpen ? (
+                  <button type="button" onClick={() => setConfirmOpen(true)}
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold text-white"
+                    style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+                    點交補款
+                  </button>
+                ) : (
+                  <div className="rounded-xl p-3 space-y-3" style={{ background: 'white', border: '1px solid #FDE68A' }}>
+                    <p className="text-xs leading-relaxed" style={{ color: '#92400e' }}>
+                      請再次確認：已收到總公司補款信封，照片與實際金額都正確。確認後會回報總公司「央廚已點交」。
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => setConfirmOpen(false)}
+                        className="py-2 rounded-lg text-xs font-semibold"
+                        style={{ background: '#f4f4f5', color: '#52525b' }}>
+                        先不要
+                      </button>
+                      <button type="button" onClick={handleConfirm} disabled={isPending}
+                        className="py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-60"
+                        style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+                        {isPending ? '確認中...' : '確認點交'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs mb-6" style={{ color: '#a1a1aa' }}>總公司收到後會在帳目中心審核與補款。</p>
+        )}
 
         <div className="flex flex-col gap-3 w-full">
           <Link href="/manager/history"
@@ -194,6 +298,19 @@ function CKDoneCard({
           </Link>
         </div>
       </div>
+      {lightboxUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.85)' }}
+          onClick={() => setLightboxUrl(null)}>
+          <button type="button" onClick={() => setLightboxUrl(null)}
+            className="absolute top-4 right-4 p-2 rounded-full"
+            style={{ background: 'rgba(255,255,255,0.15)', color: 'white' }}>
+            <X className="h-5 w-5" />
+          </button>
+          <img src={lightboxUrl} alt="補款照片" className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl"
+            onClick={e => e.stopPropagation()} />
+        </div>
+      )}
     </div>
   )
 }
@@ -426,12 +543,18 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   if (isLocked) {
     return (
       <CKDoneCard
+        ckStoreId={ckStoreId}
         ckStoreName={ckStoreName}
         date={date}
         revenueTotal={revenueTotal}
         expenseTotal={expenseTotal}
         payerName={payerName}
         photoCount={photoUrls.length}
+        hqPaid={existing?.hq_paid ?? false}
+        hqReimbursementPhotoUrls={existing?.hq_reimbursement_photo_urls ?? []}
+        hqReimbursementSentAt={existing?.hq_reimbursement_sent_at ?? null}
+        ckReimbursementConfirmed={existing?.ck_reimbursement_confirmed ?? false}
+        ckReimbursementConfirmedAt={existing?.ck_reimbursement_confirmed_at ?? null}
       />
     )
   }
