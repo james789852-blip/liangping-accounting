@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn } from 'lucide-react'
+import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn, Pencil, BarChart3, ClipboardList } from 'lucide-react'
 import { saveCKDailyRecord, confirmCKOrder } from '@/app/actions/ck'
 import CKHelp from './ck-help'
 import { uploadToStorage } from '@/app/actions/upload'
@@ -131,6 +132,72 @@ const CAT_COLORS: Record<string, { bg: string; text: string }> = {
   '雜項': { bg: '#f4f4f5', text: '#52525b' },
 }
 
+function CKDoneCard({
+  ckStoreName,
+  date,
+  revenueTotal,
+  expenseTotal,
+  payerName,
+  photoCount,
+}: {
+  ckStoreName: string
+  date: string
+  revenueTotal: number
+  expenseTotal: number
+  payerName: string
+  photoCount: number
+}) {
+  return (
+    <div className="min-h-[70vh] flex items-center justify-center px-5 py-10" style={{ background: '#fafafa' }}>
+      <div className="w-full max-w-sm flex flex-col items-center text-center">
+        <div className="h-24 w-24 rounded-3xl flex items-center justify-center mb-6"
+          style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 12px 32px rgba(245,158,11,0.3)' }}>
+          <CheckCircle2 className="h-12 w-12 text-white" />
+        </div>
+        <h1 className="text-2xl font-bold mb-1" style={{ color: '#18181b' }}>央廚帳目已送出</h1>
+        <p className="text-sm mb-6" style={{ color: '#a1a1aa' }}>{date} · {ckStoreName}</p>
+
+        <div className="w-full rounded-2xl p-5 mb-6 space-y-3"
+          style={{ background: 'white', border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+          <div className="flex justify-between items-center">
+            <span className="text-sm" style={{ color: '#52525b' }}>營業額</span>
+            <span className="text-lg font-bold tabular-nums" style={{ color: '#10b981' }}>${fmt(revenueTotal)}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-sm" style={{ color: '#52525b' }}>當日支出</span>
+            <span className="text-lg font-bold tabular-nums" style={{ color: '#f97316' }}>${fmt(expenseTotal)}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-sm" style={{ color: '#52525b' }}>貨款代墊</span>
+            <span className="text-sm font-semibold" style={{ color: payerName ? '#18181b' : '#a1a1aa' }}>{payerName || '未填寫'}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-sm" style={{ color: '#52525b' }}>收據照片</span>
+            <span className="text-sm font-semibold" style={{ color: photoCount > 0 ? '#15803d' : '#a1a1aa' }}>{photoCount} 張</span>
+          </div>
+        </div>
+
+        <p className="text-xs mb-6" style={{ color: '#a1a1aa' }}>總公司收到後會在帳目中心審核與補款。</p>
+
+        <div className="flex flex-col gap-3 w-full">
+          <Link href="/manager/history"
+            className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-semibold text-white"
+            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 14px rgba(245,158,11,0.2)' }}>
+            <BarChart3 className="h-4 w-4" />
+            查看歷史紀錄
+          </Link>
+          <Link href="/manager/dashboard"
+            className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-semibold"
+            style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b' }}>
+            <ClipboardList className="h-4 w-4" />
+            回到今日狀態
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 interface MappingItem { item_name: string; vendor_group: string | null; item_category: string; excel_column: string; sort_order: number | null }
 interface ReceiptCat { id: string; name: string; vendors: { id: string; name: string }[] }
 interface Props {
@@ -169,6 +236,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   }>({
     category: '食材', item_name: '', amount: '', payer_name: '', vendor_group: '', doc_type: '發票', note: '',
   })
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null)
   // 支出：類別 → 廠商 → 品項 三層 dropdown（跟店面版一致）
   const [activeCat, setActiveCat] = useState<string>(receiptCategories[0]?.name ?? '廠商類別')
   const [activeVendor, setActiveVendor] = useState<string>('')
@@ -262,17 +330,49 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   }
 
   function addExpense() {
-    if (!newExpense.item_name.trim() || !newExpense.amount) { toast.error('請填寫品項名稱與金額'); return }
-    setExpenses(prev => [...prev, {
+    const fallbackItemName = activeVendor.trim() && (useVendorAsItem || !hasMappedExpenseItems)
+      ? activeVendor.trim()
+      : ''
+    const itemName = newExpense.item_name.trim() || fallbackItemName
+    if (!itemName || !newExpense.amount) { toast.error('請選擇廠商/品項並填寫金額'); return }
+    const nextExpense: Expense = {
       id: crypto.randomUUID(),
       category: newExpense.category,
-      item_name: newExpense.item_name.trim(),
+      item_name: itemName,
       amount: Number(newExpense.amount) || 0,
       payer_name: newExpense.payer_name.trim(),
-      vendor_group: newExpense.vendor_group.trim(),
+      vendor_group: newExpense.vendor_group.trim() || activeVendor.trim(),
       doc_type: newExpense.doc_type,
       note: newExpense.note.trim(),
-    }])
+    }
+    if (editingExpenseId) {
+      setExpenses(prev => prev.map(e => e.id === editingExpenseId ? { ...nextExpense, id: editingExpenseId } : e))
+      setEditingExpenseId(null)
+      toast.success('支出已更新')
+    } else {
+      setExpenses(prev => [...prev, nextExpense])
+    }
+    setNewExpense(p => ({ ...p, item_name: '', amount: '', payer_name: '', note: '' }))
+  }
+
+  function startEditExpense(expense: Expense) {
+    setEditingExpenseId(expense.id)
+    setActiveVendor(expense.vendor_group)
+    setActiveCat(expense.category === '雜項' ? '雜項' : expense.category === '耗材' ? '耗材' : '廠商類別')
+    setNewExpense({
+      category: expense.category,
+      item_name: expense.item_name,
+      amount: String(expense.amount || ''),
+      payer_name: expense.payer_name,
+      vendor_group: expense.vendor_group,
+      doc_type: expense.doc_type,
+      note: expense.note,
+    })
+    setShowExpenses(true)
+  }
+
+  function cancelEditExpense() {
+    setEditingExpenseId(null)
     setNewExpense(p => ({ ...p, item_name: '', amount: '', payer_name: '', note: '' }))
   }
 
@@ -323,6 +423,19 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   const INPUT = 'w-full px-3 py-2 rounded-xl text-sm outline-none border transition-colors'
   const INPUT_STYLE: React.CSSProperties = { border: '1.5px solid #e4e4e7', background: 'white', color: '#18181b', fontFamily: 'inherit' }
 
+  if (isLocked) {
+    return (
+      <CKDoneCard
+        ckStoreName={ckStoreName}
+        date={date}
+        revenueTotal={revenueTotal}
+        expenseTotal={expenseTotal}
+        payerName={payerName}
+        photoCount={photoUrls.length}
+      />
+    )
+  }
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-28 space-y-4">
 
@@ -343,19 +456,10 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
           title="切換日期（可補做過往帳目）" />
       </div>
 
-      {/* 狀態 banner */}
-      {isLocked && (
-        <div className="flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold"
-          style={{ background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          今日帳目已送出
-        </div>
-      )}
-
       {/* 摘要卡片 */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: '叫貨收入', value: revenueTotal, color: '#10b981' },
+          { label: '營業額', value: revenueTotal, color: '#10b981' },
           { label: '當日支出', value: expenseTotal, color: '#f97316' },
           { label: '當日結餘', value: balance, color: balance >= 0 ? '#F59E0B' : '#dc2626' },
         ].map(({ label, value, color }) => (
@@ -477,14 +581,33 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                 </div>
                 <span className="text-sm font-bold tabular-nums shrink-0" style={{ color: '#18181b' }}>${fmt(e.amount)}</span>
                 {!isLocked && (
-                  <button type="button" onClick={() => removeExpense(e.id)} style={{ color: '#a1a1aa', background: 'none', border: 'none', cursor: 'pointer' }}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button type="button" onClick={() => startEditExpense(e)}
+                      aria-label="編輯支出"
+                      style={{ color: '#a1a1aa', background: 'none', border: 'none', cursor: 'pointer' }}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button type="button" onClick={() => removeExpense(e.id)}
+                      aria-label="刪除支出"
+                      style={{ color: '#a1a1aa', background: 'none', border: 'none', cursor: 'pointer' }}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
             {!isLocked && (
               <div className="px-4 py-4 space-y-2" style={{ borderTop: expenses.length > 0 ? '1px solid #f4f4f5' : 'none', background: '#fafafa' }}>
+                {editingExpenseId && (
+                  <div className="flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold"
+                    style={{ background: '#fff7ed', color: '#92400e', border: '1px solid #fed7aa' }}>
+                    <span>正在編輯支出</span>
+                    <button type="button" onClick={cancelEditExpense}
+                      style={{ background: 'transparent', border: 'none', color: '#92400e', cursor: 'pointer', fontWeight: 700 }}>
+                      取消編輯
+                    </button>
+                  </div>
+                )}
                 {/* 類別 tab（廠商類別/雜項/其他） */}
                 <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.max(1, receiptCategories.length)}, 1fr)` }}>
                   {receiptCategories.map(c => (
@@ -582,7 +705,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                 <button type="button" onClick={addExpense}
                   className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl"
                   style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white' }}>
-                  <Plus className="h-3.5 w-3.5" />新增支出
+                  <Plus className="h-3.5 w-3.5" />{editingExpenseId ? '更新支出' : '新增支出'}
                 </button>
               </div>
             )}
