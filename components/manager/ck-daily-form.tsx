@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn } from 'lucide-react'
-import { saveCKDailyRecord, addCKExternalStore, deleteCKExternalStore, confirmCKOrder } from '@/app/actions/ck'
+import { saveCKDailyRecord, confirmCKOrder } from '@/app/actions/ck'
 import CKHelp from './ck-help'
 import { uploadToStorage } from '@/app/actions/upload'
 import { compressImage } from '@/lib/compress-image'
@@ -179,10 +179,6 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
-  // 新增體系外店家
-  const [addingExt, setAddingExt] = useState(false)
-  const [newExtName, setNewExtName] = useState('')
-
   // 顯示折疊
   const [showMember, setShowMember] = useState(true)
   const [showExternal, setShowExternal] = useState(true)
@@ -196,6 +192,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999) || a.item_name.localeCompare(b.item_name, 'zh-Hant'))
   }, [activeVendor, mappingItems])
   const hasMappedExpenseItems = expenseItemOptions.length > 0
+  const useVendorAsItem = activeCat === '雜項'
 
   useEffect(() => {
     if (isLocked || typeof window === 'undefined') return
@@ -281,16 +278,6 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
 
   function removeExpense(id: string) {
     setExpenses(prev => prev.filter(e => e.id !== id))
-  }
-
-  async function handleAddExtStore() {
-    if (!newExtName.trim()) return
-    const r = await addCKExternalStore(ckStoreId, newExtName.trim())
-    if (r.error) { toast.error(r.error); return }
-    setExtOrders(prev => [...prev, { name: newExtName.trim(), amount: 0 }])
-    setNewExtName('')
-    setAddingExt(false)
-    router.refresh()
   }
 
   async function handlePhotoUpload(files: FileList | null) {
@@ -444,27 +431,9 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
             ))}
             {!isLocked && (
               <div className="px-4 py-3" style={{ borderTop: extOrders.length > 0 ? '1px solid #f4f4f5' : 'none' }}>
-                {addingExt ? (
-                  <div className="flex gap-2">
-                    <input autoFocus className={INPUT} style={INPUT_STYLE}
-                      placeholder="體系外店家名稱"
-                      value={newExtName} onChange={e => setNewExtName(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleAddExtStore()}
-                    />
-                    <button type="button" onClick={handleAddExtStore}
-                      className="px-3 py-2 rounded-xl text-sm font-semibold text-white shrink-0"
-                      style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>新增</button>
-                    <button type="button" onClick={() => setAddingExt(false)}
-                      className="px-3 py-2 rounded-xl text-sm font-semibold shrink-0"
-                      style={{ background: '#f4f4f5', color: '#52525b' }}>取消</button>
-                  </div>
-                ) : (
-                  <button type="button" onClick={() => setAddingExt(true)}
-                    className="flex items-center gap-1.5 text-sm font-semibold"
-                    style={{ color: '#F59E0B' }}>
-                    <Plus className="h-3.5 w-3.5" />新增體系外店家
-                  </button>
-                )}
+                <p className="text-xs" style={{ color: '#a1a1aa' }}>
+                  體系外店家清單請至「店家管理」設定，避免每日帳目異動影響 Excel 匯出欄位。
+                </p>
               </div>
             )}
             <div className="flex items-center justify-between px-4 py-3" style={{ background: '#fafafa', borderTop: '1px solid #f4f4f5' }}>
@@ -542,6 +511,16 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                     setActiveVendor(v)
                     const vgRec = vendorGroups.find(g => g.name === v)
                     const fallbackCategory = activeCat === '耗材' ? '耗材' : activeCat === '其他' || activeCat === '雜項' ? '雜項' : '食材'
+                    if (activeCat === '雜項') {
+                      setNewExpense(p => ({
+                        ...p,
+                        item_name: v,
+                        vendor_group: v,
+                        category: '雜項',
+                        doc_type: vgRec?.doc_type ?? p.doc_type,
+                      }))
+                      return
+                    }
                     setNewExpense(p => ({
                       ...p,
                       item_name: '',
@@ -556,31 +535,38 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                   ))}
                 </select>
                 {/* 品項選擇：所有類別都可以選；無對應時用群組名稱當品項，避免無法新增 */}
-                <select className={INPUT} style={INPUT_STYLE}
-                  value={newExpense.item_name}
-                  disabled={!activeVendor}
-                  onChange={e => {
-                    const name = e.target.value
-                    const m = expenseItemOptions.find(x => x.item_name === name)
-                    const vgRec = vendorGroups.find(g => g.name === activeVendor)
-                    const cat = (m?.item_category === '食材' || m?.item_category === '耗材' || m?.item_category === '雜項')
-                      ? m.item_category as '食材' | '耗材' | '雜項'
-                      : (activeCat === '耗材' ? '耗材' : activeCat === '其他' || activeCat === '雜項' ? '雜項' : '食材') as '食材' | '耗材' | '雜項'
-                    setNewExpense(p => ({
-                      ...p,
-                      item_name: name,
-                      vendor_group: activeVendor,
-                      category: cat,
-                      doc_type: vgRec?.doc_type ?? p.doc_type,
-                    }))
-                  }}>
-                  <option value="">{activeVendor ? '— 選擇品項 —' : '（先選廠商）'}</option>
-                  {activeVendor && hasMappedExpenseItems
-                    ? expenseItemOptions.map(m => <option key={m.item_name} value={m.item_name}>{m.item_name}</option>)
-                    : activeVendor && <option value={activeVendor}>{activeVendor}</option>
-                  }
-                </select>
-                {activeVendor && !hasMappedExpenseItems && (
+                {!useVendorAsItem && (
+                  <select className={INPUT} style={INPUT_STYLE}
+                    value={newExpense.item_name}
+                    disabled={!activeVendor}
+                    onChange={e => {
+                      const name = e.target.value
+                      const m = expenseItemOptions.find(x => x.item_name === name)
+                      const vgRec = vendorGroups.find(g => g.name === activeVendor)
+                      const cat = (m?.item_category === '食材' || m?.item_category === '耗材' || m?.item_category === '雜項')
+                        ? m.item_category as '食材' | '耗材' | '雜項'
+                        : (activeCat === '耗材' ? '耗材' : activeCat === '其他' ? '雜項' : '食材') as '食材' | '耗材' | '雜項'
+                      setNewExpense(p => ({
+                        ...p,
+                        item_name: name,
+                        vendor_group: activeVendor,
+                        category: cat,
+                        doc_type: vgRec?.doc_type ?? p.doc_type,
+                      }))
+                    }}>
+                    <option value="">{activeVendor ? '— 選擇品項 —' : '（先選廠商）'}</option>
+                    {activeVendor && hasMappedExpenseItems
+                      ? expenseItemOptions.map(m => <option key={m.item_name} value={m.item_name}>{m.item_name}</option>)
+                      : activeVendor && <option value={activeVendor}>{activeVendor}</option>
+                    }
+                  </select>
+                )}
+                {activeVendor && useVendorAsItem && (
+                  <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
+                    雜項會直接以「{activeVendor}」作為品項名稱。
+                  </p>
+                )}
+                {activeVendor && !useVendorAsItem && !hasMappedExpenseItems && (
                   <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
                     此群組尚未設定細項，會先以「{activeVendor}」作為品項名稱。
                   </p>

@@ -17,6 +17,7 @@ interface Store {
 interface Props {
   store: Store
   canEdit: boolean
+  canEditCKRelations?: boolean
   memberStoreOptions?: { id: string; name: string }[]
   externalStores?: { id: string; name: string }[]
 }
@@ -44,7 +45,7 @@ function Toggle({ label, checked, onChange, disabled }: { label: string; checked
   )
 }
 
-export default function StoreEditor({ store, canEdit, memberStoreOptions = [], externalStores: initExternal = [] }: Props) {
+export default function StoreEditor({ store, canEdit, canEditCKRelations = canEdit, memberStoreOptions = [], externalStores: initExternal = [] }: Props) {
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [storeName, setStoreName] = useState(store.name)
@@ -86,8 +87,7 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
     const r = await addCKExternalStore(store.id, name)
     if (r.error) { toast.error(r.error) }
     else {
-      // 重新 fetch 最新清單（id 由後端產生）
-      setExtStores(prev => [...prev, { id: 'pending-' + Date.now(), name }])
+      setExtStores(prev => [...prev, { id: (r as any).store?.id ?? 'pending-' + Date.now(), name: (r as any).store?.name ?? name }])
       setNewExtName('')
       setAddingExt(false)
       toast.success(`已新增「${name}」`)
@@ -124,20 +124,23 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
     if (!storeName.trim()) { toast.error('請填寫店家名稱'); return }
     setSaving(true)
     const [result, ckResult] = await Promise.all([
-      updateStoreSettings(store.id, {
-        name: storeName.trim(),
-        type: storeType,
-        mode, ichef_uber_linked: ichefLinked, uber_enabled: uberEnabled, uber_accounts: uberAccounts,
-        panda_enabled: pandaEnabled, twpay_enabled: twpayEnabled,
-        online_enabled: onlineEnabled, online_cash_enabled: onlineCashEnabled,
-        petty_cash: pettyCash,
-      }),
-      storeType === '央廚'
+      canEdit
+        ? updateStoreSettings(store.id, {
+            name: storeName.trim(),
+            type: storeType,
+            mode, ichef_uber_linked: ichefLinked, uber_enabled: uberEnabled, uber_accounts: uberAccounts,
+            panda_enabled: pandaEnabled, twpay_enabled: twpayEnabled,
+            online_enabled: onlineEnabled, online_cash_enabled: onlineCashEnabled,
+            petty_cash: pettyCash,
+          })
+        : Promise.resolve({ success: true }),
+      storeType === '央廚' && canEditCKRelations
         ? updateCKAssignedStores(store.id, assignedStoreIds)
         : Promise.resolve({ success: true }),
     ])
+    const baseErr = (result as { error?: string }).error
     const ckErr = (ckResult as { error?: string }).error
-    if (result.error || ckErr) { toast.error(result.error ?? ckErr) }
+    if (baseErr || ckErr) { toast.error(baseErr ?? ckErr) }
     else { toast.success(`${storeName} 設定已儲存`); setEditingName(false); setOpen(false) }
     setSaving(false)
   }
@@ -242,7 +245,7 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
                     <label key={s.id}
                       className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors"
                       style={{ borderTop: i > 0 ? '1px solid #f4f4f5' : 'none', background: checked ? '#FFFBEB' : 'white' }}>
-                      <input type="checkbox" checked={checked} disabled={!canEdit}
+                      <input type="checkbox" checked={checked} disabled={!canEditCKRelations}
                         onChange={e => {
                           if (e.target.checked) setAssignedStoreIds(prev => [...prev, s.id])
                           else setAssignedStoreIds(prev => prev.filter(id => id !== s.id))
@@ -296,7 +299,7 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
                     ) : (
                       <div className="flex items-center gap-2 px-3 py-2.5">
                         <span className="flex-1 text-sm font-medium" style={{ color: '#18181b' }}>{s.name}</span>
-                        {canEdit && (
+                        {canEditCKRelations && (
                           <>
                             <button type="button"
                               onClick={() => { setEditingExtId(s.id); setEditingExtName(s.name) }}
@@ -319,7 +322,7 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
                     )}
                   </div>
                 ))}
-                {canEdit && addingExt && (
+                {canEditCKRelations && addingExt && (
                   <div className="flex gap-2 px-3 py-2.5" style={{ borderTop: extStores.length > 0 ? '1px solid #f4f4f5' : 'none' }}>
                     <input
                       autoFocus
@@ -344,7 +347,7 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
                   </div>
                 )}
               </div>
-              {canEdit && !addingExt && (
+              {canEditCKRelations && !addingExt && (
                 <button type="button" onClick={() => setAddingExt(true)}
                   className="flex items-center gap-1.5 text-xs font-semibold"
                   style={{ color: '#F59E0B', background: 'none', border: 'none', cursor: 'pointer' }}>
@@ -466,7 +469,7 @@ export default function StoreEditor({ store, canEdit, memberStoreOptions = [], e
             </>
           )}
 
-          {canEdit && (
+          {(canEdit || canEditCKRelations) && (
             <button type="button" onClick={handleSave} disabled={saving}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
               style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)', opacity: saving ? 0.7 : 1 }}>

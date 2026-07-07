@@ -114,6 +114,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const searchParams = useSearchParams()
   const router = useRouter()
   const isManagerPath = pathname.startsWith('/manager')
+  const isCKManager = ['廠長', '副廠長'].includes(role)
   const time = useClock()
   // 待審核紅點暫時隱藏（之後確定要開再改 true）
   const showPendingBadge = false
@@ -142,12 +143,23 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
 
   const hasStores = allStores.length > 0
   const initial = userName ? userName.slice(0, 1) : '?'
-  const mobileTabs = isManagerPath ? mobileManagerTabs : mobileHQTabs
+  const mobileTabs = isManagerPath
+    ? mobileManagerTabs
+    : isCKManager
+      ? mobileHQTabs.filter(tab => tab.href === '/hq/stores')
+      : mobileHQTabs
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false)
 
   // 依權限過濾：非老闆且沒 can_manage_users → 不顯示帳號管理
   const canSeeUsers = role === '老闆' || canManageUsers
-  const filteredHqSections = canSeeUsers
+  const filteredHqSections = isCKManager
+    ? [{
+        label: '央廚管理',
+        items: [
+          { href: '/hq/stores', label: '店家管理', icon: Store },
+        ],
+      }]
+    : canSeeUsers
     ? hqSections
     : hqSections.map(sec => ({
         ...sec,
@@ -205,7 +217,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         {hasStores && (
           <div className="px-4 pb-3">
             <Link
-              href={isManagerPath ? '/hq/dashboard' : '/manager/dashboard'}
+              href={isManagerPath ? (isCKManager ? '/hq/stores' : '/hq/dashboard') : '/manager/dashboard'}
               className="flex items-center justify-center gap-2 w-full py-2 rounded-[10px] text-xs font-semibold transition-all hover:opacity-80"
               style={isManagerPath
                 ? { backgroundColor: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }
@@ -280,7 +292,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
           {isManagerPath && hasStores ? (
             <>
-              <Link href="/hq/dashboard" className="text-xs font-medium shrink-0 transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>總公司</Link>
+              <Link href={isCKManager ? '/hq/stores' : '/hq/dashboard'} className="text-xs font-medium shrink-0 transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>總公司</Link>
               <span className="shrink-0" style={{ color: '#e4e4e7' }}>/</span>
               {allStores.length > 1 ? (
                 <StoreSwitcher stores={allStores} currentStoreId={currentStoreId}
@@ -312,7 +324,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
             </Link>
           )}
           {isManagerPath && hasStores && (
-            <Link href="/hq/dashboard"
+            <Link href={isCKManager ? '/hq/stores' : '/hq/dashboard'}
               className="text-xs font-bold text-white rounded-lg px-2 py-1.5 whitespace-nowrap"
               style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)' }}>
               總公司

@@ -11,7 +11,9 @@ export default async function HQLayout({ children }: { children: React.ReactNode
 
   const profile = await getCachedUserProfile(user.id)
 
-  if (!profile || (!profile.is_hq && profile.role !== '老闆')) {
+  const isCKManager = ['廠長', '副廠長'].includes(profile?.role ?? '')
+
+  if (!profile || (!profile.is_hq && profile.role !== '老闆' && !isCKManager)) {
     redirect('/manager')
   }
 
@@ -26,7 +28,7 @@ export default async function HQLayout({ children }: { children: React.ReactNode
   } else if (profile.store_ids?.length) {
     const all = await getCachedAllStores()
     const storeIds: string[] = profile.store_ids
-    allStores = all.filter((s: any) => storeIds.includes(s.id))
+    allStores = all.filter((s: any) => storeIds.includes(s.id) && (!isCKManager || s.type === '央廚'))
   }
 
   if (allStores.length) {

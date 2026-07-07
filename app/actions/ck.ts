@@ -6,6 +6,10 @@ import { revalidatePath } from 'next/cache'
 import { getAuthContext, canAccessStore } from '@/lib/permissions'
 import { logAudit } from '@/lib/audit'
 
+function canManageCKSettings(ctx: NonNullable<Awaited<ReturnType<typeof getAuthContext>>>, ckStoreId: string) {
+  return ctx.isHQ || (['廠長', '副廠長'].includes(ctx.role ?? '') && canAccessStore(ctx, ckStoreId))
+}
+
 // Google Sheets 同步已停用；保留 stub 讓可能存在的舊 client 收到明確錯誤
 export async function syncCKMonthToSheets(_ckStoreId: string, _month: string) {
   return { error: 'Google Sheets 同步已停用' as const }
@@ -188,7 +192,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
 export async function updateCKAssignedStores(ckStoreId: string, assignedStoreIds: string[]) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
-  if (!ctx.isHQ) return { error: '權限不足（僅總公司可調整）' }
+  if (!canManageCKSettings(ctx, ckStoreId)) return { error: '權限不足，僅限總公司或央廚管理人員調整' }
 
   const admin = createAdminClient()
   const { error } = await admin
@@ -213,15 +217,18 @@ export async function updateCKAssignedStores(ckStoreId: string, assignedStoreIds
 export async function addCKExternalStore(ckStoreId: string, name: string) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
-  if (!canAccessStore(ctx, ckStoreId)) return { error: '無權限存取此央廚' }
+  if (!canManageCKSettings(ctx, ckStoreId)) return { error: '權限不足，僅限總公司或央廚管理人員調整' }
 
   const admin = createAdminClient()
-  const { error } = await admin
+  const { data, error } = await admin
     .from('ck_external_stores')
     .insert({ ck_store_id: ckStoreId, name })
+    .select('id, name')
+    .single()
   if (error) return { error: error.message }
   revalidatePath('/manager/ck')
-  return { success: true }
+  revalidatePath('/hq/stores')
+  return { success: true, store: data }
 }
 
 // 刪除體系外店家
@@ -232,11 +239,12 @@ export async function deleteCKExternalStore(id: string) {
   const admin = createAdminClient()
   const { data: ext } = await admin.from('ck_external_stores').select('ck_store_id').eq('id', id).single()
   if (!ext) return { error: '找不到此體系外店家' }
-  if (!canAccessStore(ctx, ext.ck_store_id as string)) return { error: '無權限存取' }
+  if (!canManageCKSettings(ctx, ext.ck_store_id as string)) return { error: '權限不足，僅限總公司或央廚管理人員調整' }
 
   const { error } = await admin.from('ck_external_stores').delete().eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/manager/ck')
+  revalidatePath('/hq/stores')
   return { success: true }
 }
 
@@ -248,11 +256,12 @@ export async function updateCKExternalStore(id: string, name: string) {
   const admin = createAdminClient()
   const { data: ext } = await admin.from('ck_external_stores').select('ck_store_id').eq('id', id).single()
   if (!ext) return { error: '找不到此體系外店家' }
-  if (!canAccessStore(ctx, ext.ck_store_id as string)) return { error: '無權限存取' }
+  if (!canManageCKSettings(ctx, ext.ck_store_id as string)) return { error: '權限不足，僅限總公司或央廚管理人員調整' }
 
   const { error } = await admin.from('ck_external_stores').update({ name }).eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/manager/ck')
+  revalidatePath('/hq/stores')
   return { success: true }
 }
 
