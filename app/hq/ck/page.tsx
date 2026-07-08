@@ -104,7 +104,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       const orders = (storeOrders ?? []).filter((o: any) => o.ck_daily_record_id === record.id)
       memberOrders = orders
         .filter((o: any) => o.store_id !== null)
-        .map((o: any) => ({ store_id: o.store_id, store_name: assignedStoreMap[o.store_id] ?? o.store_id, amount: Number(o.ck_confirmed_amount ?? o.amount ?? 0) }))
+        .map((o: any) => ({ store_id: o.store_id, store_name: assignedStoreMap[o.store_id] ?? o.store_id, amount: Number(o.ck_confirmed_amount ?? 0) }))
       externalOrders = orders
         .filter((o: any) => o.store_id === null)
         .map((o: any) => ({ name: o.external_store_name, amount: Number(o.amount ?? 0) }))

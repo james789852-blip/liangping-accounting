@@ -50,7 +50,7 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
   const nameMap = Object.fromEntries((assignedStores ?? []).map((s: any) => [s.id, s.name as string]))
   const memberOrders = ((orderRes.data ?? []) as any[])
     .filter(o => o.store_id !== null)
-    .map(o => ({ store_id: o.store_id, store_name: nameMap[o.store_id] ?? o.store_id, amount: Number(o.ck_confirmed_amount ?? o.amount ?? 0) }))
+    .map(o => ({ store_id: o.store_id, store_name: nameMap[o.store_id] ?? o.store_id, amount: Number(o.ck_confirmed_amount ?? 0) }))
   const externalOrders = ((orderRes.data ?? []) as any[])
     .filter(o => o.store_id === null)
     .map(o => ({ name: o.external_store_name, amount: Number(o.amount ?? 0) }))

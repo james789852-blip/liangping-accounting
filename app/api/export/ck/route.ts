@@ -257,25 +257,14 @@ export async function GET(req: NextRequest) {
 
   const recordIds = (records ?? []).map(r => r.id)
 
-  const [{ data: storeOrders }, { data: expenseItems }, { data: validClosings }] = await Promise.all([
+  const [{ data: storeOrders }, { data: expenseItems }] = await Promise.all([
     recordIds.length > 0
       ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount').in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
       ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount').in('ck_daily_record_id', recordIds).order('sort_order')
       : Promise.resolve({ data: [] }),
-    assignedIds.length > 0
-      ? admin.from('daily_closings')
-          .select('store_id, business_date')
-          .in('store_id', assignedIds)
-          .gte('business_date', firstDay)
-          .lte('business_date', lastDay)
-          .in('status', ['submitted', 'verified'])
-      : Promise.resolve({ data: [] }),
   ])
-  const validClosingKeys = new Set(
-    (validClosings ?? []).map((c: any) => `${c.business_date}||${c.store_id}`)
-  )
 
   // Build per-date data
   const days = getDaysInMonth(year, monthNum)
@@ -288,12 +277,11 @@ export async function GET(req: NextRequest) {
 
     const storeRevenues: Record<string, number> = {}
     for (const o of orders) {
-      if ((o as any).store_id && !validClosingKeys.has(`${date}||${(o as any).store_id}`)) continue
       const name = (o as any).store_id
         ? storeNameMap[(o as any).store_id] ?? (o as any).store_id
         : (o as any).external_store_name
       const amount = (o as any).store_id
-        ? Number((o as any).ck_confirmed_amount ?? (o as any).amount ?? 0)
+        ? Number((o as any).ck_confirmed_amount ?? 0)
         : Number((o as any).amount ?? 0)
       if (name) storeRevenues[name] = (storeRevenues[name] ?? 0) + amount
     }

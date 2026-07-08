@@ -31,7 +31,7 @@ export interface CKDailyStats {
   externalRevenue: number
   revenue: number
   // Expense
-  expenses: Array<{ category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; receipt_photo_url?: string }>
+  expenses: Array<{ category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }>
   food: number
   pack: number
   misc: number
@@ -119,7 +119,7 @@ export async function getCKRangeStats(
       ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount').in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
-      ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type, receipt_photo_url').in('ck_daily_record_id', recordIds).order('sort_order')
+      ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type, note, receipt_photo_url').in('ck_daily_record_id', recordIds).order('sort_order')
       : Promise.resolve({ data: [] }),
   ])
 
@@ -145,7 +145,7 @@ export async function getCKRangeStats(
       const ords = (orders ?? []).filter((o: any) => o.ck_daily_record_id === rec.id)
       for (const o of ords) {
         if (o.store_id) {
-          const effectiveAmount = Number(o.ck_confirmed_amount ?? o.amount ?? 0)
+          const effectiveAmount = Number(o.ck_confirmed_amount ?? 0)
           dd.memberOrders.push({ store_id: o.store_id, store_name: memberStoreMap[o.store_id] ?? o.store_id, amount: effectiveAmount })
           dd.memberRevenue += effectiveAmount
         } else {
@@ -160,10 +160,12 @@ export async function getCKRangeStats(
       for (const e of exps) {
         const vg = (e.vendor_group ?? '') as string
         const doc = (e.doc_type ?? '') as string
+        const note = typeof e.note === 'string' ? e.note.trim() : ''
         dd.expenses.push({
           category: e.category, item_name: e.item_name, amount: e.amount ?? 0,
           payer_name: e.payer_name ?? undefined,
           vendor_group: vg || undefined, doc_type: doc || undefined,
+          note: note || undefined,
           receipt_photo_url: e.receipt_photo_url ?? undefined,
         })
         const amt = e.amount ?? 0

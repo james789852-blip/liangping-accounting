@@ -19,7 +19,7 @@ export interface ReconciliationRow {
   ck_store_name: string       // 央廚
   member_store_id: string
   member_store_name: string   // 店家
-  ck_reported_amount: number  // 央廚該日輸入該店叫貨金額 (ck_store_orders.amount)
+  ck_reported_amount: number  // 央廚該日輸入該店叫貨金額 (ck_store_orders.ck_confirmed_amount)
   ck_confirmed_amount: number | null // 央廚確認後金額 (ck_store_orders.ck_confirmed_amount)
   store_reported_amount: number      // 店家該日 daily_closings.total_cost
   variance: number            // 央廚 - 店家 差額
@@ -88,10 +88,10 @@ export async function fetchCKReconciliation(ckStoreId: string, year: number, mon
     const date = recordDateById[(o.ck_daily_record_id as string)]
     if (!date || !o.store_id) continue
     const key = `${date}||${o.store_id}`
-    if (!(key in storeMap)) continue
+    const confirmed = o.ck_confirmed_amount as number | null
     ckMap[key] = {
-      reported: (o.amount as number) ?? 0,
-      confirmed: o.ck_confirmed_amount as number | null,
+      reported: confirmed ?? 0,
+      confirmed,
     }
   }
 
@@ -104,8 +104,10 @@ export async function fetchCKReconciliation(ckStoreId: string, year: number, mon
     const ckAmt = ck?.reported ?? 0
     const variance = ckAmt - storeAmt
     let status: ReconciliationRow['status']
-    if (ck && !storeMap[k]) status = 'ck_only'
-    else if (!ck && storeAmt > 0) status = 'store_only'
+    const hasCK = ck?.confirmed != null
+    const hasStore = storeAmt > 0
+    if (hasCK && !hasStore) status = 'ck_only'
+    else if (!hasCK && hasStore) status = 'store_only'
     else if (variance === 0) status = 'match'
     else status = 'mismatch'
     rows.push({

@@ -109,6 +109,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
   payerName?: string
   note?: string
   status?: 'draft' | 'submitted'
+  memberOrders?: { storeId: string; confirmedAmount: number | null }[]
   externalOrders?: { name: string; amount: number }[]
   expenses?: { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }[]
   receiptPhotoUrls?: string[]
@@ -159,6 +160,54 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
     }
   }
 
+  // 體系內店家叫貨：央廚自報金額寫入 ck_confirmed_amount，店家自報 amount 保留供隔日對帳
+  if (data.memberOrders !== undefined) {
+    const cleaned = data.memberOrders.filter(o => o.storeId)
+    const storeIds = cleaned.map(o => o.storeId)
+    const existingAmountByStore: Record<string, number> = {}
+
+    if (storeIds.length > 0) {
+      const { data: existingOrders, error: existingErr } = await admin
+        .from('ck_store_orders')
+        .select('store_id, amount')
+        .eq('ck_daily_record_id', recordId)
+        .in('store_id', storeIds)
+      if (existingErr) return { error: existingErr.message }
+      for (const row of existingOrders ?? []) {
+        existingAmountByStore[row.store_id as string] = Number(row.amount ?? 0)
+      }
+    }
+
+    const clearIds = cleaned
+      .filter(o => o.confirmedAmount === null)
+      .map(o => o.storeId)
+    if (clearIds.length > 0) {
+      const { error: clearErr } = await admin
+        .from('ck_store_orders')
+        .update({ ck_confirmed_amount: null, ck_confirmed_at: null, ck_confirmed_by: null })
+        .eq('ck_daily_record_id', recordId)
+        .in('store_id', clearIds)
+      if (clearErr) return { error: clearErr.message }
+    }
+
+    const upsertRows = cleaned
+      .filter(o => o.confirmedAmount !== null)
+      .map(o => ({
+        ck_daily_record_id: recordId,
+        store_id: o.storeId,
+        amount: existingAmountByStore[o.storeId] ?? 0,
+        ck_confirmed_amount: o.confirmedAmount,
+        ck_confirmed_at: new Date().toISOString(),
+        ck_confirmed_by: ctx.userId,
+      }))
+    if (upsertRows.length > 0) {
+      const { error: memberErr } = await admin
+        .from('ck_store_orders')
+        .upsert(upsertRows, { onConflict: 'ck_daily_record_id,store_id' })
+      if (memberErr) return { error: memberErr.message }
+    }
+  }
+
   // 支出明細：全部刪除後重新寫入
   if (data.expenses !== undefined) {
     await admin.from('ck_expense_items').delete().eq('ck_daily_record_id', recordId)
@@ -188,7 +237,10 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
   })
 
   revalidatePath('/manager/ck')
+  revalidatePath('/manager/dashboard')
+  revalidatePath('/manager/history')
   revalidatePath('/hq/ck')
+  revalidatePath('/hq/accounting')
   return { success: true, id: recordId }
 }
 

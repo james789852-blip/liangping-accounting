@@ -928,12 +928,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       extraPhotosLsKey, voidInvoiceLsKey, notePhotoLsKey,
       receiptFormsDraftKey, saveBkKey, verifyDoneLsKey, verifyResetLsKey,
     ]
-    let hasLocalDraftTrace = false
-    try { hasLocalDraftTrace = stale.some(k => localStorage.getItem(k) != null) } catch {}
+    let hasFinishedTrace = wasFinishedBefore
+    try {
+      hasFinishedTrace =
+        hasFinishedTrace ||
+        localStorage.getItem(submitDoneSsKey) === '1' ||
+        localStorage.getItem(verifyDoneLsKey) === '1'
+    } catch {}
 
-    // 偵測「HQ 刪除帳目」情境：本地有該日暫存/完成 flag，但 DB 卻沒有 closing 記錄
-    // → 表示總公司把帳目刪了，店長需要重新做帳，清掉所有 localStorage 殘留並重置步驟
-    if (!existingClosing && (wasFinishedBefore || hasLocalDraftTrace)) {
+    // 偵測「HQ 刪除帳目」情境：只有已完成/送出的本機痕跡，但 DB 卻沒有 closing 記錄時才清空。
+    // 單純上傳照片或草稿不代表總公司刪除，否則尚未輸入內容的照片會在返回時被清掉。
+    if (!existingClosing && hasFinishedTrace) {
       for (const k of stale) try { localStorage.removeItem(k) } catch {}
       setCurrentStep(0)
       setHqDeletedReset(true)

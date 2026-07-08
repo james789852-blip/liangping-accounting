@@ -72,6 +72,12 @@ function storeStatusMeta(status: string, variance: number, isHoliday: boolean) {
   return { label: '未輸入', bg: '#f4f4f5', color: '#a1a1aa' }
 }
 function ckStatusMeta(status: string, hqPaid: boolean) {
+  if (status === 'verified') {
+    return hqPaid
+      ? { label: '已點交', bg: '#d1fae5', color: '#047857' }
+      : { label: '已審核', bg: '#d1fae5', color: '#047857' }
+  }
+  if (status === 'disputed') return { label: '已退回', bg: '#ffe4e6', color: '#be123c' }
   if (status === 'submitted') {
     return hqPaid
       ? { label: '已補款', bg: '#d1fae5', color: '#047857' }

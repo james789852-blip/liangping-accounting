@@ -66,7 +66,7 @@ export default async function HistoryPage({
     const ckRecordIds = ckList.map((r: any) => r.id)
     const [{ data: ckOrders }, { data: ckExpenses }] = await Promise.all([
       ckRecordIds.length > 0
-        ? admin.from('ck_store_orders').select('ck_daily_record_id, amount, ck_confirmed_amount').in('ck_daily_record_id', ckRecordIds)
+        ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, amount, ck_confirmed_amount').in('ck_daily_record_id', ckRecordIds)
         : Promise.resolve({ data: [] }),
       ckRecordIds.length > 0
         ? admin.from('ck_expense_items').select('ck_daily_record_id, amount').in('ck_daily_record_id', ckRecordIds)
@@ -75,7 +75,7 @@ export default async function HistoryPage({
     const ckRows = ckList.map((r: any) => {
       const revenue = (ckOrders ?? [])
         .filter((o: any) => o.ck_daily_record_id === r.id)
-        .reduce((s: number, o: any) => s + Number(o.ck_confirmed_amount ?? o.amount ?? 0), 0)
+        .reduce((s: number, o: any) => s + (o.store_id ? Number(o.ck_confirmed_amount ?? 0) : Number(o.amount ?? 0)), 0)
       const expense = (ckExpenses ?? [])
         .filter((e: any) => e.ck_daily_record_id === r.id)
         .reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0)

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn, Pencil, BarChart3, ClipboardList, Banknote, ArrowLeft, ArrowRight, ClipboardCheck } from 'lucide-react'
-import { saveCKDailyRecord, confirmCKOrder, confirmCKReimbursementHandoff } from '@/app/actions/ck'
+import { saveCKDailyRecord, confirmCKReimbursementHandoff } from '@/app/actions/ck'
 import CKHelp from './ck-help'
 import { uploadToStorage } from '@/app/actions/upload'
 import { compressImage } from '@/lib/compress-image'
@@ -16,34 +16,17 @@ function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
  * 央廚對帳列：顯示店家自報金額 + 央廚自輸入金額 + 比對狀態
  * 不一致時紅色警告，相符顯示綠色 ✓
  */
-function CrossCheckRow({ order, ckDailyRecordId, disabled }: {
-  order: MemberOrder; ckDailyRecordId: string | null; disabled: boolean
+function CrossCheckRow({ order, value, onChange, disabled }: {
+  order: MemberOrder
+  value: string
+  onChange: (value: string) => void
+  disabled: boolean
 }) {
-  const router = useRouter()
-  const [editValue, setEditValue] = useState<string>(
-    order.confirmed_amount != null ? String(order.confirmed_amount) : ''
-  )
-  const [saving, setSaving] = useState(false)
-
   const storeAmount = order.amount || 0
-  const ckAmount = order.confirmed_amount
-  const isConfirmed = ckAmount != null
+  const isConfirmed = value.trim() !== ''
+  const ckAmount = isConfirmed ? Number(value) || 0 : 0
   const matched = isConfirmed && ckAmount === storeAmount
   const diff = isConfirmed ? (ckAmount - storeAmount) : 0
-
-  async function save() {
-    if (!ckDailyRecordId) { toast.error('請先儲存央廚日報'); return }
-    const num = parseInt(editValue) || 0
-    setSaving(true)
-    const r = await confirmCKOrder({
-      ckDailyRecordId,
-      storeId: order.store_id,
-      confirmedAmount: editValue === '' ? null : num,
-    })
-    setSaving(false)
-    if ('error' in r && r.error) toast.error(r.error)
-    else { toast.success('已對帳'); router.refresh() }
-  }
 
   return (
     <div className="px-4 py-3" style={{ borderBottom: '1px solid #f9f9f9' }}>
@@ -76,38 +59,18 @@ function CrossCheckRow({ order, ckDailyRecordId, disabled }: {
           </p>
         </div>
         <div className="rounded-lg px-3 py-2" style={{ background: matched ? '#d1fae5' : isConfirmed ? '#ffe4e6' : '#fef3c7', border: '1px solid #f4f4f5' }}>
-          <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#a1a1aa' }}>央廚對帳</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#a1a1aa' }}>央廚自報</p>
           <div className="flex items-center gap-1">
             <span className="text-sm font-bold" style={{ color: '#52525b' }}>$</span>
             <input
               type="number" inputMode="numeric" placeholder="輸入"
-              value={editValue} onChange={e => setEditValue(e.target.value)}
-              disabled={disabled || saving}
+              value={value} onChange={e => onChange(e.target.value)}
+              disabled={disabled}
               style={{ width: '100%', padding: '2px 4px', border: 'none', background: 'transparent', fontSize: 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}
             />
           </div>
         </div>
       </div>
-
-      {/* 動作按鈕 */}
-      <div className="flex gap-2 mt-2">
-        <button onClick={save} disabled={disabled || saving || !ckDailyRecordId}
-          className="flex-1 py-2 rounded-lg text-xs font-semibold text-white"
-          style={{ background: 'linear-gradient(135deg,#10b981,#059669)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', opacity: (disabled || saving) ? 0.6 : 1 }}>
-          {saving ? '處理中…' : isConfirmed ? '更新對帳' : '確認對帳'}
-        </button>
-        {isConfirmed && !disabled && (
-          <button onClick={() => { setEditValue(''); save() }} disabled={saving}
-            className="px-3 py-2 rounded-lg text-xs font-semibold"
-            style={{ background: 'white', border: '1px solid #e4e4e7', color: '#71717a', cursor: 'pointer', fontFamily: 'inherit' }}>
-            取消
-          </button>
-        )}
-      </div>
-
-      {!ckDailyRecordId && (
-        <p className="text-[10px] mt-2" style={{ color: '#a1a1aa' }}>💡 請先在下方按「儲存草稿」建立日報，才能對帳</p>
-      )}
     </div>
   )
 }
@@ -153,10 +116,62 @@ const CAT_COLORS: Record<string, { bg: string; text: string }> = {
   '雜項': { bg: '#f4f4f5', text: '#52525b' },
 }
 
+function isMiscCategoryName(categoryName: string) {
+  return categoryName === '雜項' || categoryName === '其他'
+}
+
+function shouldUseVendorAsItem(categoryName: string, vendorName: string) {
+  const vendor = vendorName.trim()
+  return categoryName === '雜項' || (categoryName === '其他' && vendor === '日常用品')
+}
+
+function shouldRequireExplicitItem(categoryName: string, vendorName: string) {
+  return categoryName === '其他' && vendorName.trim() === '購買-選擇單據類型'
+}
+
 function inferExpenseCategory(categoryName: string): '食材' | '耗材' | '雜項' {
   if (categoryName === '耗材') return '耗材'
-  if (categoryName === '雜項' || categoryName === '其他') return '雜項'
+  if (isMiscCategoryName(categoryName)) return '雜項'
   return '食材'
+}
+
+function normalizeExpenseCategory(value?: string | null): '食材' | '耗材' | '雜項' | null {
+  return value === '食材' || value === '耗材' || value === '雜項' ? value : null
+}
+
+function findMappedExpenseCategory(
+  mappingItems: MappingItem[],
+  vendorGroup: string,
+  itemName: string,
+): '食材' | '耗材' | '雜項' | null {
+  const vendor = vendorGroup.trim()
+  const item = itemName.trim()
+  if (!item) return null
+
+  const exact = mappingItems.find(m =>
+    (m.vendor_group ?? '') === vendor &&
+    (m.item_name === item || m.excel_column === item)
+  )
+  const fallback = exact ?? mappingItems.find(m => m.item_name === item || m.excel_column === item)
+  return normalizeExpenseCategory(fallback?.item_category)
+}
+
+function resolveExpenseCategory(
+  categoryName: string,
+  vendorGroup: string,
+  itemName: string,
+  fallbackCategory: string | undefined,
+  mappingItems: MappingItem[],
+): '食材' | '耗材' | '雜項' {
+  const mapped = findMappedExpenseCategory(mappingItems, vendorGroup, itemName)
+  if (mapped) return mapped
+
+  if (vendorGroup.trim() === '日常用品') return '耗材'
+
+  const fallback = normalizeExpenseCategory(fallbackCategory)
+  if (fallback) return fallback
+
+  return inferExpenseCategory(categoryName)
 }
 
 function resolveReceiptCategoryName(form: PhotoExpenseForm, receiptCategories: ReceiptCat[]) {
@@ -410,7 +425,6 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   const isRejected = existing?.status === 'disputed'
   const draftKey = `lp_ck_daily_draft:${ckStoreId}:${date}`
   const [currentStep, setCurrentStep] = useState(1)
-  const [ckRecordId, setCkRecordId] = useState<string | null>(existing?.id ?? null)
 
   const [payerName, setPayerName] = useState(existing?.payer_name ?? '')
   const [note, setNote] = useState(existing?.note ?? '')
@@ -440,6 +454,13 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   const [photoForms, setPhotoForms] = useState<PhotoExpenseForm[]>(
     () => buildPhotoExpenseForms(existing?.receiptPhotoUrls ?? [], existing?.expenses ?? [])
   )
+  const [expandedPhotoFormIds, setExpandedPhotoFormIds] = useState<string[]>([])
+  const [memberOrderInputs, setMemberOrderInputs] = useState<Record<string, string>>(
+    () => Object.fromEntries(memberOrders.map(o => [
+      o.store_id,
+      o.confirmed_amount != null ? String(o.confirmed_amount) : '',
+    ]))
+  )
   const [photoUploading, setPhotoUploading] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
@@ -457,7 +478,22 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999) || a.item_name.localeCompare(b.item_name, 'zh-Hant'))
   }, [activeVendor, mappingItems])
   const hasMappedExpenseItems = expenseItemOptions.length > 0
-  const useVendorAsItem = activeCat === '雜項'
+  const useVendorAsItem = shouldUseVendorAsItem(activeCat, activeVendor)
+  const requiresExplicitItem = shouldRequireExplicitItem(activeCat, activeVendor)
+
+  useEffect(() => {
+    setMemberOrderInputs(prev => {
+      let changed = false
+      const next = { ...prev }
+      for (const order of memberOrders) {
+        if (!(order.store_id in next)) {
+          next[order.store_id] = order.confirmed_amount != null ? String(order.confirmed_amount) : ''
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [memberOrders])
 
   useEffect(() => {
     if (isLocked || typeof window === 'undefined') return
@@ -470,6 +506,12 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       if (Array.isArray(draft.expenses)) setExpenses(draft.expenses)
       if (Array.isArray(draft.photoUrls)) setPhotoUrls(draft.photoUrls)
       if (Array.isArray(draft.photoForms)) setPhotoForms(draft.photoForms)
+      if (draft.memberOrderInputs && typeof draft.memberOrderInputs === 'object') {
+        setMemberOrderInputs(Object.fromEntries(
+          Object.entries(draft.memberOrderInputs as Record<string, unknown>)
+            .map(([key, value]) => [key, typeof value === 'string' ? value : String(value ?? '')])
+        ))
+      }
       if (typeof draft.selectedPhotoUrl === 'string') setSelectedPhotoUrl(draft.selectedPhotoUrl)
       if (typeof draft.payerName === 'string') setPayerName(draft.payerName)
       if (typeof draft.note === 'string') setNote(draft.note)
@@ -492,6 +534,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         note.trim() ||
         photoUrls.length > 0 ||
         photoForms.some(f => f.item_name.trim() || f.amount || f.vendor_group.trim() || f.note.trim()) ||
+        Object.values(memberOrderInputs).some(v => String(v).trim()) ||
         expenses.length > 0 ||
         extOrders.some(o => Number(o.amount || 0) > 0) ||
         newExpense.item_name.trim() ||
@@ -515,13 +558,14 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         activeVendor,
         photoUrls,
         photoForms,
+        memberOrderInputs,
         selectedPhotoUrl,
       }))
     }, 300)
     return () => window.clearTimeout(timer)
-  }, [activeCat, activeVendor, ckStoreId, date, draftKey, expenses, extOrders, isLocked, newExpense, note, payerName, photoForms, photoUrls, selectedPhotoUrl])
+  }, [activeCat, activeVendor, ckStoreId, date, draftKey, expenses, extOrders, isLocked, memberOrderInputs, newExpense, note, payerName, photoForms, photoUrls, selectedPhotoUrl])
 
-  const memberTotal = memberOrders.reduce((s, o) => s + Number(o.confirmed_amount ?? o.amount ?? 0), 0)
+  const memberTotal = memberOrders.reduce((s, o) => s + (Number(memberOrderInputs[o.store_id]) || 0), 0)
   const extTotal = extOrders.reduce((s, o) => s + (Number(o.amount) || 0), 0)
   const revenueTotal = memberTotal + extTotal
   const expensesForSave = getExpensesForSave()
@@ -533,13 +577,17 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     const photoExpenses = photoForms
       .map(form => {
         const categoryName = resolveReceiptCategoryName(form, receiptCategories)
-        const itemName = categoryName === '雜項'
+        const useVendorItem = shouldUseVendorAsItem(categoryName, form.vendor_group)
+        const requiresItem = shouldRequireExplicitItem(categoryName, form.vendor_group)
+        const itemName = useVendorItem
           ? form.vendor_group.trim()
-          : form.item_name.trim() || form.vendor_group.trim()
+          : requiresItem
+            ? form.item_name.trim()
+            : form.item_name.trim() || form.vendor_group.trim()
         if (!itemName || !form.amount) return null
         return {
           id: form.savedExpenseId || form.id,
-          category: inferExpenseCategory(categoryName),
+          category: resolveExpenseCategory(categoryName, form.vendor_group, itemName, form.category, mappingItems),
           item_name: itemName,
           amount: Number(form.amount) || 0,
           payer_name: form.payer_name.trim(),
@@ -553,19 +601,29 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     return [...manualExpenses, ...photoExpenses]
   }
 
+  function getMemberOrdersForSave() {
+    return memberOrders.map(order => {
+      const raw = memberOrderInputs[order.store_id] ?? ''
+      return {
+        storeId: order.store_id,
+        confirmedAmount: raw.trim() === '' ? null : Number(raw) || 0,
+      }
+    })
+  }
+
   function updateExtAmount(name: string, val: string) {
     setExtOrders(prev => prev.map(o => o.name === name ? { ...o, amount: Number(val) || 0 } : o))
   }
 
   function addExpense() {
-    const fallbackItemName = activeVendor.trim() && (useVendorAsItem || !hasMappedExpenseItems)
+    const fallbackItemName = activeVendor.trim() && (useVendorAsItem || (!requiresExplicitItem && !hasMappedExpenseItems))
       ? activeVendor.trim()
       : ''
     const itemName = newExpense.item_name.trim() || fallbackItemName
     if (!itemName || !newExpense.amount) { toast.error('請選擇廠商/品項並填寫金額'); return }
     const nextExpense: Expense = {
       id: crypto.randomUUID(),
-      category: newExpense.category,
+      category: resolveExpenseCategory(activeCat, newExpense.vendor_group.trim() || activeVendor.trim(), itemName, newExpense.category, mappingItems),
       item_name: itemName,
       amount: Number(newExpense.amount) || 0,
       payer_name: newExpense.payer_name.trim(),
@@ -625,7 +683,13 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   function savePhotoExpense(form: PhotoExpenseForm) {
     const categoryName = resolveReceiptCategoryName(form, receiptCategories)
     const fallbackItemName = form.vendor_group.trim()
-    const itemName = categoryName === '雜項' ? fallbackItemName : form.item_name.trim() || fallbackItemName
+    const useVendorItem = shouldUseVendorAsItem(categoryName, form.vendor_group)
+    const requiresItem = shouldRequireExplicitItem(categoryName, form.vendor_group)
+    const itemName = useVendorItem
+      ? fallbackItemName
+      : requiresItem
+        ? form.item_name.trim()
+        : form.item_name.trim() || fallbackItemName
     if (!itemName || !form.amount) {
       toast.error('請選擇廠商/品項並填寫金額')
       return
@@ -633,7 +697,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     const expenseId = form.savedExpenseId || crypto.randomUUID()
     const nextExpense: Expense = {
       id: expenseId,
-      category: inferExpenseCategory(categoryName),
+      category: resolveExpenseCategory(categoryName, form.vendor_group, itemName, form.category, mappingItems),
       item_name: itemName,
       amount: Number(form.amount) || 0,
       payer_name: form.payer_name.trim(),
@@ -652,12 +716,14 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       item_name: itemName,
       amount: String(Number(form.amount) || 0),
     } : f))
+    setExpandedPhotoFormIds(prev => prev.filter(id => id !== form.id))
     toast.success(form.savedExpenseId ? '此張照片支出已更新' : '此張照片支出已儲存')
   }
 
   function removeReceiptPhoto(url: string) {
     setPhotoUrls(prev => prev.filter(item => item !== url))
     setPhotoForms(prev => prev.filter(form => form.photoUrl !== url))
+    setExpandedPhotoFormIds(prev => prev.filter(id => !photoForms.some(form => form.id === id && form.photoUrl === url)))
     setExpenses(prev => prev.filter(e => e.receipt_photo_url !== url))
     if (selectedPhotoUrl === url) {
       const next = photoUrls.find(item => item !== url) || ''
@@ -704,6 +770,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       payerName: payerName || undefined,
       note: note || undefined,
       status: asSubmit ? 'submitted' : 'draft',
+      memberOrders: getMemberOrdersForSave(),
       externalOrders: extOrders.filter(o => o.amount > 0),
       expenses: expensesForSave.map(e => ({
         category: e.category, item_name: e.item_name, amount: e.amount,
@@ -717,7 +784,6 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     })
     if (r.error) { toast.error('儲存失敗：' + r.error) }
     else {
-      if (r.id) setCkRecordId(r.id)
       if (typeof window !== 'undefined') window.localStorage.removeItem(draftKey)
       if (!opts.silent) toast.success(asSubmit ? '已送出！' : '草稿已儲存')
       if (!opts.silent) router.refresh()
@@ -899,7 +965,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
               memberOrders.map(o => (
                 <CrossCheckRow key={o.store_id}
                   order={o}
-                  ckDailyRecordId={ckRecordId}
+                  value={memberOrderInputs[o.store_id] ?? ''}
+                  onChange={value => setMemberOrderInputs(prev => ({ ...prev, [o.store_id]: value }))}
                   disabled={isLocked}
                 />
               ))
@@ -975,7 +1042,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         </button>
         {showExpenses && (
           <div style={{ borderTop: '1px solid #f4f4f5' }}>
-            {expenses.map(e => (
+            {expenses.filter(e => !e.receipt_photo_url).map(e => (
               <div key={e.id} className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: '1px solid #f9f9f9' }}>
                 {(e as any).receipt_photo_url && (
                   <button type="button" onClick={() => setLightboxUrl((e as any).receipt_photo_url)}
@@ -1029,8 +1096,54 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                     const formVendors = receiptCategories.find(c => c.name === activeCategoryName)?.vendors ?? []
                     const itemOptions = photoItemOptions(form.vendor_group)
                     const hasItemOptions = itemOptions.length > 0
-                    const useVendorAsPhotoItem = activeCategoryName === '雜項'
+                    const useVendorAsPhotoItem = shouldUseVendorAsItem(activeCategoryName, form.vendor_group)
+                    const requiresPhotoItem = shouldRequireExplicitItem(activeCategoryName, form.vendor_group)
                     const saved = !!form.savedExpenseId
+                    const expanded = !saved || expandedPhotoFormIds.includes(form.id)
+                    const displayName = useVendorAsPhotoItem ? form.vendor_group : (form.item_name || form.vendor_group)
+                    if (!expanded) {
+                      return (
+                        <div key={form.id} className="rounded-2xl p-3 flex items-center gap-3"
+                          style={{ background: '#fff', border: '1.5px solid #BBF7D0' }}>
+                          <button type="button" onClick={() => setLightboxUrl(form.photoUrl)}
+                            className="relative h-16 w-16 rounded-xl overflow-hidden shrink-0"
+                            style={{ border: '1px solid #e4e4e7', background: '#f4f4f5' }}>
+                            <img src={form.photoUrl} alt={`支出照片 ${index + 1}`} className="h-full w-full object-cover" />
+                            <span className="absolute bottom-1 right-1 h-5 w-5 rounded-full flex items-center justify-center"
+                              style={{ background: 'rgba(0,0,0,0.55)', color: 'white' }}>
+                              <ZoomIn className="h-3 w-3" />
+                            </span>
+                          </button>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0"
+                            style={{ background: CAT_COLORS[form.category]?.bg, color: CAT_COLORS[form.category]?.text }}>
+                            {form.category}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold truncate" style={{ color: '#18181b' }}>
+                              {displayName || `單據照片 ${index + 1}`}
+                            </p>
+                            <p className="text-[11px] truncate" style={{ color: '#a1a1aa' }}>
+                              {[form.vendor_group, form.doc_type].filter(Boolean).join(' · ') || '已儲存'}
+                            </p>
+                          </div>
+                          <span className="text-sm font-bold tabular-nums shrink-0" style={{ color: '#18181b' }}>
+                            ${fmt(Number(form.amount) || 0)}
+                          </span>
+                          <button type="button" onClick={() => setExpandedPhotoFormIds(prev => prev.includes(form.id) ? prev : [...prev, form.id])}
+                            className="p-1.5 rounded-lg shrink-0"
+                            style={{ background: '#f4f4f5', color: '#71717a', border: 'none' }}
+                            aria-label="編輯此張">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button type="button" onClick={() => removeReceiptPhoto(form.photoUrl)}
+                            className="p-1.5 rounded-lg shrink-0"
+                            style={{ background: '#fff1f2', color: '#e11d48', border: '1px solid #fecdd3' }}
+                            aria-label="刪除照片">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )
+                    }
                     return (
                       <div key={form.id} className="rounded-2xl p-3 md:p-4 space-y-3"
                         style={{ background: '#fff', border: `1.5px solid ${saved ? '#BBF7D0' : '#FDE68A'}` }}>
@@ -1122,9 +1235,15 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                     <option value="">{form.vendor_group ? '— 選擇品項 —' : '（先選廠商）'}</option>
                                     {form.vendor_group && hasItemOptions
                                       ? itemOptions.map(item => <option key={item.item_name} value={item.item_name}>{item.item_name}</option>)
-                                      : form.vendor_group && <option value={form.vendor_group}>{form.vendor_group}</option>
+                                      : form.vendor_group && !requiresPhotoItem && <option value={form.vendor_group}>{form.vendor_group}</option>
                                     }
                                   </select>
+                                )}
+                                {form.vendor_group && !hasItemOptions && !useVendorAsPhotoItem && !requiresPhotoItem && (
+                                  <p className="text-xs text-zinc-400">此廠商尚未設定細項，會以廠商名稱作為品項。</p>
+                                )}
+                                {form.vendor_group && requiresPhotoItem && !hasItemOptions && (
+                                  <p className="text-xs text-rose-500">此廠商需要選擇品項，請先在品項管理新增可選品項。</p>
                                 )}
                               </div>
                               <input type="number" min="0" className={INPUT}

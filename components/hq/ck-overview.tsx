@@ -522,7 +522,7 @@ function TotalRow({ label, value, color = '#18181b' }: { label: string; value: n
 export default function CKOverview({ data, date }: Props) {
   const totalRevenue = data.reduce((s, d) => s + d.revenueTotal, 0)
   const totalExpense = data.reduce((s, d) => s + d.expenseTotal, 0)
-  const submittedCount = data.filter(d => d.status === 'submitted').length
+  const submittedCount = data.filter(d => d.status === 'submitted' || d.status === 'verified').length
   const paidCount = data.filter(d => d.hqPaid).length
   const unpaidExpense = data.filter(d => !d.hqPaid && d.expenseTotal > 0).reduce((s, d) => s + d.expenseTotal, 0)
 

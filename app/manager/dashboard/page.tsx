@@ -5,8 +5,9 @@ import Link from 'next/link'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
 import { getCachedUserProfile, getCachedStoreById } from '@/lib/cached-queries'
-import { ArrowRight, CalendarDays, Banknote, ClipboardList, CheckCircle2 } from 'lucide-react'
+import { ArrowRight, CalendarDays, ClipboardList, CheckCircle2 } from 'lucide-react'
 import RecentClosingsList from '@/components/manager/recent-closings'
+import CKReimbursementHandoffCard from '@/components/manager/ck-reimbursement-handoff-card'
 
 export const dynamic = 'force-dynamic'
 
@@ -88,7 +89,7 @@ export default async function ManagerDashboard() {
         .eq('id', storeId)
         .single()
       const assignedStoreIds: string[] = ((ckStoreFull as any)?.assigned_store_ids as string[] | null) ?? []
-      const [ckRecordRes, todayClosingsRes, pendingReimbursementRes] = await Promise.all([
+      const [ckRecordRes, todayClosingsRes, pendingReimbursementRes, returnedRecordsRes] = await Promise.all([
         admin.from('ck_daily_records')
           .select('id, status, payer_name, note, receipt_photo_urls, hq_paid, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed')
           .eq('ck_store_id', storeId)
@@ -105,6 +106,12 @@ export default async function ManagerDashboard() {
           .eq('ck_store_id', storeId)
           .eq('hq_paid', true)
           .eq('ck_reimbursement_confirmed', false)
+          .order('business_date', { ascending: false })
+          .limit(6),
+        admin.from('ck_daily_records')
+          .select('id, business_date, status, review_note, reviewed_at, updated_at')
+          .eq('ck_store_id', storeId)
+          .eq('status', 'disputed')
           .order('business_date', { ascending: false })
           .limit(6),
       ])
@@ -126,7 +133,10 @@ export default async function ManagerDashboard() {
           .map((c: any) => c.store_id as string)
       )
       const validOrders = ((ckOrders ?? []) as any[])
-      const revenueTotal = validOrders.reduce((sum: number, o: any) => sum + Number(o.amount || 0), 0)
+      const revenueTotal = validOrders.reduce((sum: number, o: any) => {
+        const amount = o.store_id ? Number(o.ck_confirmed_amount ?? 0) : Number(o.amount || 0)
+        return sum + amount
+      }, 0)
       const expenseTotal = ((ckExpenses ?? []) as any[]).reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0)
       const pendingConfirmCount = validOrders.filter((o: any) => o.store_id && Number(o.amount || 0) > 0 && o.ck_confirmed_amount == null).length
       const mismatchCount = validOrders.filter((o: any) => o.store_id && o.ck_confirmed_amount != null && Number(o.ck_confirmed_amount) !== Number(o.amount)).length
@@ -137,16 +147,25 @@ export default async function ManagerDashboard() {
           sent_at: (r.hq_reimbursement_sent_at ?? null) as string | null,
           photos: ((r.hq_reimbursement_photo_urls as string[] | null) ?? []),
         }))
+      const returnedRecords = ((returnedRecordsRes.data ?? []) as any[])
+        .map(r => ({
+          id: r.id as string,
+          business_date: r.business_date as string,
+          note: ((r.review_note as string | null) || '').trim() || '總公司已退回，請修正後重新送出',
+        }))
       const reimbursementNeedsConfirm = pendingReimbursements.length > 0
       const statusLabel = ckRecord?.status === 'submitted' ? '已送出，等待總公司審核'
         : ckRecord?.status === 'draft' ? '草稿進行中'
         : ckRecord?.status === 'verified' ? '已對帳完成'
+        : ckRecord?.status === 'disputed' ? '總公司已退回，請修正'
         : '今日尚未建立央廚帳目'
       const ckActionLabel = ckRecord?.status === 'submitted' || ckRecord?.status === 'verified'
         ? '查看今日結果'
-        : ckRecord?.status === 'draft'
-          ? '繼續央廚結帳'
-          : '開始央廚結帳'
+        : ckRecord?.status === 'disputed'
+          ? '修正退回帳目'
+          : ckRecord?.status === 'draft'
+            ? '繼續央廚結帳'
+            : '開始央廚結帳'
 
       return (
         <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -205,51 +224,39 @@ export default async function ManagerDashboard() {
               </div>
             </div>
 
-            {reimbursementNeedsConfirm && (
-              <div className="rounded-3xl p-5 mb-4 bg-white"
-                style={{ border: '1.5px solid #FDE68A', boxShadow: '0 12px 36px rgba(245,158,11,0.10)' }}>
-                <div className="flex items-start gap-4">
-                  <div className="h-12 w-12 rounded-2xl flex items-center justify-center shrink-0" style={{ background: '#FEF3C7', color: '#92400E' }}>
-                    <Banknote className="h-6 w-6" />
+            {returnedRecords.length > 0 && (
+              <div className="rounded-3xl p-5 mb-4" style={{ background: '#FFF1F2', border: '1.5px solid #FDA4AF' }}>
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <div>
+                    <p className="text-xl font-black" style={{ color: '#BE123C' }}>有帳目被總公司退回</p>
+                    <p className="text-sm font-bold mt-1" style={{ color: '#9F1239' }}>請先修正退回日期的帳目，再重新送出。</p>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-base font-extrabold" style={{ color: '#92400E' }}>
-                      {pendingReimbursements.length === 1 ? '有一筆補款等待點交' : `有 ${pendingReimbursements.length} 筆補款等待點交`}
-                    </p>
-                    <p className="text-sm mt-1" style={{ color: '#a16207' }}>
-                      總公司已上傳補款信封照片，請確認收到後完成點交。
-                    </p>
-                    <div className="space-y-3 mt-3">
-                      {pendingReimbursements.map(item => (
-                        <div key={item.id} className="rounded-2xl p-3" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-sm font-bold" style={{ color: '#78350F' }}>{item.business_date}</p>
-                              <p className="text-xs truncate" style={{ color: '#a16207' }}>
-                                {item.sent_at ? `送出時間：${new Date(item.sent_at).toLocaleString('zh-TW')}` : '總公司已送出補款照片'}
-                              </p>
-                            </div>
-                            <Link href={`/manager/ck?date=${item.business_date}`}
-                              className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold text-white"
-                              style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
-                              去點交
-                            </Link>
-                          </div>
-                          {item.photos.length > 0 && (
-                            <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
-                              {item.photos.slice(0, 5).map((url, i) => (
-                                <img key={`${url}-${i}`} src={url} alt={`補款照片 ${i + 1}`}
-                                  className="h-16 w-16 rounded-xl object-cover shrink-0"
-                                  style={{ border: '1px solid #FDE68A' }} />
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                  <span className="px-3 py-1 rounded-full text-sm font-black" style={{ background: '#FFE4E6', color: '#BE123C' }}>
+                    {returnedRecords.length} 筆
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {returnedRecords.map(item => (
+                    <div key={item.id} className="rounded-2xl bg-white p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3" style={{ border: '1px solid #FECDD3' }}>
+                      <div>
+                        <p className="text-lg font-black text-gray-900">{item.business_date}</p>
+                        <p className="text-sm font-bold mt-1" style={{ color: '#BE123C' }}>{item.note}</p>
+                      </div>
+                      <Link
+                        href={`/manager/ck?date=${item.business_date}`}
+                        className="inline-flex items-center justify-center rounded-full px-5 py-2 text-sm font-black text-white"
+                        style={{ background: '#E11D48' }}
+                      >
+                        去修正
+                      </Link>
                     </div>
-                  </div>
+                  ))}
                 </div>
               </div>
+            )}
+
+            {reimbursementNeedsConfirm && (
+              <CKReimbursementHandoffCard ckStoreId={storeId} items={pendingReimbursements} />
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">

@@ -35,6 +35,10 @@ function colLetter(colNum: number): string {
   return s
 }
 
+function expenseKey(category: string, vendorGroup?: string | null, docType?: string | null, itemName = '') {
+  return `${category}||${vendorGroup || ''}||${docType || ''}||${itemName}`
+}
+
 const CK_FONT = 'Microsoft JhengHei'
 const CK_GRID = 'FF000000'
 const CK_PAPER = 'FFFFFFCC'
@@ -227,13 +231,59 @@ export async function addCKSheet(
   //   即使當月沒錄，layout 也顯示所有已設定品項欄；已錄金額自動填入
   const memberStores = monthly.memberByStore
   const externalNames = monthly.externalByName
-  const expenseByName = new Map(monthly.expenseByItem.map(e => [e.item_name, e]))
+
+  const findMappedExpenseItem = (vendorGroup?: string | null, docType?: string | null, itemName = '') => {
+    const vendor = vendorGroup || ''
+    const doc = docType || ''
+    const item = itemName || ''
+    if (!item) return null
+
+    return mappingItems.find(m =>
+      (m.vendor_group || '') === vendor &&
+      (m.doc_type || '') === doc &&
+      m.name === item
+    ) ?? mappingItems.find(m =>
+      (m.vendor_group || '') === vendor &&
+      m.name === item
+    ) ?? mappingItems.find(m => m.name === item) ?? null
+  }
+
+  const normalizeSummaryExpense = (expense: typeof monthly.expenseByItem[number]) => {
+    const mapped = findMappedExpenseItem(expense.vendor_group, expense.doc_type, expense.item_name)
+    return mapped && mapped.category !== expense.category
+      ? { ...expense, category: mapped.category }
+      : expense
+  }
+
+  const normalizeDailyExpense = (expense: typeof monthly.daily[number]['expenses'][number]) => {
+    const mapped = findMappedExpenseItem(expense.vendor_group, expense.doc_type, expense.item_name)
+    return mapped && mapped.category !== expense.category
+      ? { ...expense, category: mapped.category }
+      : expense
+  }
+
+  const normalizedExpenseByItem = monthly.expenseByItem.map(normalizeSummaryExpense)
+  const normalizedDaily = monthly.daily.map(day => ({
+    ...day,
+    expenses: day.expenses.map(normalizeDailyExpense),
+  }))
+
+  const expenseByKey = new Map<string, typeof normalizedExpenseByItem[number]>()
+  for (const expense of normalizedExpenseByItem) {
+    const key = expenseKey(expense.category, expense.vendor_group, expense.doc_type, expense.item_name)
+    const existing = expenseByKey.get(key)
+    if (existing) {
+      existing.total += expense.total
+    } else {
+      expenseByKey.set(key, { ...expense })
+    }
+  }
   // 用 mapping 為主，若 mapping 沒有但實際有錄 → 也補進來（避免資料消失）
-  const seen = new Set(mappingItems.map(m => m.name))
-  const orphanFromReceipts = monthly.expenseByItem.filter(e => !seen.has(e.item_name))
+  const seen = new Set(mappingItems.map(m => expenseKey(m.category, m.vendor_group, m.doc_type ?? '', m.name)))
+  const orphanFromReceipts = normalizedExpenseByItem.filter(e => !seen.has(expenseKey(e.category, e.vendor_group, e.doc_type, e.item_name)))
   const expenseItems: typeof monthly.expenseByItem = [
     ...mappingItems.map(m => {
-      const rec = expenseByName.get(m.name)
+      const rec = expenseByKey.get(expenseKey(m.category, m.vendor_group, m.doc_type ?? '', m.name))
       return {
         item_name: m.name,
         category: m.category,
@@ -282,7 +332,7 @@ export async function addCKSheet(
       category: e.category as any,
       vendorGroup: e.vendor_group || '',
       docType: e.doc_type || '',
-      itemKey: `${e.category}||${e.vendor_group || ''}||${e.doc_type || ''}||${e.item_name}`,
+      itemKey: expenseKey(e.category, e.vendor_group, e.doc_type, e.item_name),
     })
   }
 
@@ -405,7 +455,7 @@ export async function addCKSheet(
       italic: c.kind !== 'member' && c.kind !== 'external' && c.statKey !== 'revenue',
     }
     cell.alignment = { horizontal: 'right', vertical: 'middle', shrinkToFit: false }
-    cell.numFmt = '#,##0;-#,##0;"-"'
+    cell.numFmt = c.kind === 'member' || c.kind === 'external' ? '#,##0;-#,##0;0' : '#,##0;-#,##0;"-"'
     cell.border = thinBorder() as ExcelJS.Borders
     if (c.kind === 'member' || c.kind === 'external') {
       const headerCell = ws.getRow(HEADER_ROW).getCell(c.index)
@@ -417,7 +467,7 @@ export async function addCKSheet(
   }
 
   // Row 5+ 每日
-  const dayByDate = new Map(monthly.daily.map(d => [d.date, d] as const))
+  const dayByDate = new Map(normalizedDaily.map(d => [d.date, d] as const))
   for (let dayIdx = 0; dayIdx < daysInMonth; dayIdx++) {
     const rowNum = DATA_START + dayIdx
     const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(dayIdx + 1).padStart(2, '0')}`
@@ -435,18 +485,26 @@ export async function addCKSheet(
       } else if (c.kind === 'weekday') {
         cell.value = `星期${WEEKDAYS[dow]}`
         if (isWeekend) cell.font = { color: { argb: dow === 0 ? 'FFDC2626' : 'FF0369A1' }, bold: true }
-      } else if (c.kind === 'member' && dd) {
-        const v = dd.memberOrders.find(o => o.store_id === c.itemKey)?.amount ?? 0
+    } else if (c.kind === 'member' && dd) {
+      const v = dd.memberOrders.find(o => o.store_id === c.itemKey)?.amount ?? 0
+      cell.value = v
+      cell.numFmt = '#,##0;-#,##0;0'
+    } else if (c.kind === 'external' && dd) {
+      const v = dd.externalOrders.find(o => o.name === c.itemKey)?.amount ?? 0
+      cell.value = v
+      cell.numFmt = '#,##0;-#,##0;0'
+    } else if (c.kind === 'expense' && dd) {
+        const matchingExpenses = dd.expenses.filter(e =>
+          expenseKey(e.category, e.vendor_group, e.doc_type, e.item_name) === c.itemKey
+        )
+        const v = matchingExpenses.reduce((s, e) => s + e.amount, 0)
         if (v !== 0) cell.value = v
-        cell.numFmt = '#,##0;-#,##0;'
-      } else if (c.kind === 'external' && dd) {
-        const v = dd.externalOrders.find(o => o.name === c.itemKey)?.amount ?? 0
-        if (v !== 0) cell.value = v
-        cell.numFmt = '#,##0;-#,##0;'
-      } else if (c.kind === 'expense' && dd) {
-        const [cat, , , name] = (c.itemKey ?? '').split('||')
-        const v = dd.expenses.filter(e => e.category === cat && e.item_name === name).reduce((s, e) => s + e.amount, 0)
-        if (v !== 0) cell.value = v
+        const notes = Array.from(new Set(
+          matchingExpenses
+            .map(e => typeof e.note === 'string' ? e.note.trim() : '')
+            .filter(Boolean)
+        ))
+        if (notes.length > 0) cell.note = notes.join('\n')
         cell.numFmt = '#,##0;-#,##0;'
       } else if (c.kind === 'stat' && c.statKey) {
         // 每日小計用 SUM range 公式
@@ -474,13 +532,15 @@ export async function addCKSheet(
   for (const c of cols) {
     const label = displayHeader(c.header ?? '')
     const headerLen = label.length
+    const isRevenue = c.kind === 'stat' && c.statKey === 'revenue'
     const base =
       c.kind === 'date' ? 11 :
       c.kind === 'weekday' ? 10 :
+      isRevenue ? 16 :
       c.kind === 'stat' ? 12 :
       c.kind === 'expense' ? 11 :
       14
-    const maxWidth = c.kind === 'expense' ? 24 : c.kind === 'member' || c.kind === 'external' ? 22 : 16
+    const maxWidth = isRevenue ? 22 : c.kind === 'expense' ? 24 : c.kind === 'member' || c.kind === 'external' ? 22 : 16
     const w = Math.min(maxWidth, Math.max(base, headerLen * 2.2 + 4))
     ws.getColumn(c.index).width = w
     ws.getColumn(c.index).alignment = { shrinkToFit: false, wrapText: false, vertical: 'middle' }
