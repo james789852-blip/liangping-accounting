@@ -538,7 +538,6 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       }
       if (typeof draft.activeCat === 'string') setActiveCat(draft.activeCat)
       if (typeof draft.activeVendor === 'string') setActiveVendor(draft.activeVendor)
-      toast.info('已恢復上次未儲存的央廚資料')
     } catch {
       window.localStorage.removeItem(draftKey)
     }

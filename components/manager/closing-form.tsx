@@ -1062,7 +1062,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (bk.ckPriceOverrides && typeof bk.ckPriceOverrides === 'object') setCkPriceOverrides(bk.ckPriceOverrides)
       if (bk.pettyCounts && typeof bk.pettyCounts === 'object') setPettyCounts(bk.pettyCounts)
       if (bk.pettyLumps && typeof bk.pettyLumps === 'object') setPettyLumps(bk.pettyLumps)
-      toast.success('已自動套回上次未儲存的資料')
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

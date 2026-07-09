@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useTransition } from 'react'
+import { useEffect, useState, useRef, useTransition } from 'react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/compress-image'
@@ -50,6 +50,58 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
   const [isPending, startTransition] = useTransition()
   const [openItemIdx, setOpenItemIdx] = useState<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const draftKey = `receipt_upload_draft_${storeId}_${today}`
+
+  function handleCancel() {
+    try { localStorage.removeItem(draftKey) } catch {}
+    onCancel()
+  }
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(draftKey)
+      if (!raw) return
+      const draft = JSON.parse(raw)
+      if (draft?.storeId !== storeId || draft?.date !== today) { localStorage.removeItem(draftKey); return }
+      if (typeof draft.photoUrl === 'string' && draft.photoUrl) {
+        setPhotoUrl(draft.photoUrl)
+        setPhotoPreview(draft.photoUrl)
+        setStep('review')
+      }
+      if (typeof draft.vendorName === 'string') setVendorName(draft.vendorName)
+      if (typeof draft.receiptType === 'string') setReceiptType(draft.receiptType)
+      if (typeof draft.totalAmount === 'number') setTotalAmount(draft.totalAmount)
+      if (typeof draft.taxAmount === 'number') setTaxAmount(draft.taxAmount)
+      if (typeof draft.notes === 'string') setNotes(draft.notes)
+      if (Array.isArray(draft.items)) setItems(draft.items)
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const hasDraft = photoUrl || vendorName.trim() || totalAmount > 0 || taxAmount > 0 || notes.trim() || items.length > 0
+        if (!hasDraft || step === 'saving') {
+          localStorage.removeItem(draftKey)
+          return
+        }
+        localStorage.setItem(draftKey, JSON.stringify({
+          storeId,
+          date: today,
+          photoUrl,
+          vendorName,
+          receiptType,
+          totalAmount,
+          taxAmount,
+          notes,
+          items,
+          savedAt: new Date().toISOString(),
+        }))
+      } catch {}
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [draftKey, items, notes, photoUrl, receiptType, step, storeId, taxAmount, today, totalAmount, vendorName])
 
   function selectMappedItem(i: number, name: string) {
     const m = mappings[name]
@@ -149,7 +201,9 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
         })),
       })
       if (result?.error) { setError(result.error); setStep('review') }
-      else onSaved({
+      else {
+        try { localStorage.removeItem(draftKey) } catch {}
+        onSaved({
         id: result.id!,
         business_date: today,
         vendor_name: vendorName,
@@ -168,6 +222,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
           item_category: it.item_category,
         })),
       })
+      }
     })
   }
 
@@ -175,7 +230,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-slate-800">新增收據 / 發票</h2>
-        <button onClick={onCancel}><X className="h-5 w-5 text-slate-400" /></button>
+        <button onClick={handleCancel}><X className="h-5 w-5 text-slate-400" /></button>
       </div>
       <button onClick={() => fileRef.current?.click()}
         className="w-full h-40 rounded-xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-colors bg-slate-50"
@@ -206,7 +261,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
             <Sparkles className="h-3 w-3" /> AI 已辨識
           </span>
         </div>
-        <button onClick={onCancel}><X className="h-5 w-5 text-slate-400" /></button>
+        <button onClick={handleCancel}><X className="h-5 w-5 text-slate-400" /></button>
       </div>
 
       {photoPreview && (

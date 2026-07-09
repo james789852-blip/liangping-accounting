@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useTransition, useCallback } from 'react'
+import { useEffect, useState, useRef, useTransition, useCallback } from 'react'
 import { Calculator, CheckCircle2, AlertTriangle, Info, Save, History } from 'lucide-react'
 import { savePettyCashCount } from '@/app/actions/petty-cash'
 
@@ -100,6 +100,43 @@ export default function CashCountForm({
   const [isPending, startTransition] = useTransition()
   const valuesRef = useRef(values)
   valuesRef.current = values
+  const draftKey = `petty_cash_count_draft_${storeId}_${today}`
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(draftKey)
+      if (!raw) return
+      const draft = JSON.parse(raw)
+      if (draft?.storeId !== storeId || draft?.date !== today) { localStorage.removeItem(draftKey); return }
+      if (!draft?.values || typeof draft.values !== 'object') return
+      const draftTotal = calcTotal(draft.values)
+      const savedTotal = calcTotal(initValues(savedPettyCashCount))
+      if (draftTotal > 0 && draftTotal !== savedTotal) {
+        setValues(prev => ({ ...prev, ...draft.values }))
+        setSaveStatus('idle')
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const total = calcTotal(values)
+        if (total > 0) {
+          localStorage.setItem(draftKey, JSON.stringify({
+            storeId,
+            date: today,
+            values,
+            savedAt: new Date().toISOString(),
+          }))
+        } else {
+          localStorage.removeItem(draftKey)
+        }
+      } catch {}
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [draftKey, storeId, today, values])
 
   // inputRefs[0..6] = 左欄（張/枚），inputRefs[7..13] = 右欄（整筆金額）
   const inputRefs = useRef<(HTMLInputElement | null)[]>(Array(14).fill(null))
@@ -140,6 +177,7 @@ export default function CashCountForm({
         setSaveError(result.error)
         setSaveStatus('error')
       } else {
+        try { localStorage.removeItem(draftKey) } catch {}
         setSaveStatus('saved')
       }
     })
