@@ -65,6 +65,7 @@ export default async function ClosingPage({
     itemOrder,
     newItems,
     mappingBasedItems,
+    { data: latestBackfillDraft },
   ] = await Promise.all([
     getCachedStoreFull(storeId),
     getFreshActiveCKPrices(),
@@ -95,6 +96,17 @@ export default async function ClosingPage({
     getStoreItemsResolved(storeId),
     // 也撈 mapping-based items（跟 xlsx 匯出同源，確保下拉品項齊全）
     getStoreItemsFromMappings(storeId),
+    !requested
+      ? supabase
+          .from('daily_closings')
+          .select('business_date')
+          .eq('store_id', storeId)
+          .lt('business_date', realToday)
+          .in('status', ['draft', 'disputed'])
+          .order('business_date', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
   ] as const)
 
   if (existingClosing) {
@@ -108,6 +120,12 @@ export default async function ClosingPage({
 
   // 央廚店家使用專屬流程
   if ((store as any)?.type === '央廚') redirect('/manager/ck')
+
+  // 進入 /manager/closing 沒帶日期時，優先接回未送出的補做草稿。
+  // 避免補做 7/7 後，下次從底部選單回來落到今日頁面，繼續輸入時誤存到 7/8。
+  if (!requested && !existingClosing && latestBackfillDraft?.business_date) {
+    redirect(`/manager/closing?date=${encodeURIComponent(latestBackfillDraft.business_date as string)}`)
+  }
 
   if (existingClosing?.status === 'disputed') {
     redirect(`/manager/edit/${existingClosing.id}`)

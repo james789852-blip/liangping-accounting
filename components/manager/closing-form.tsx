@@ -2133,7 +2133,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             style={{ background: '#FEF3C7', color: '#92400E', borderBottom: '1px solid #FDE68A' }}>
             <span>📅 你正在補做 <b>{today}</b> 的帳目（非今日）</span>
             {realToday && (
-              <a href="/manager/closing" className="font-semibold underline shrink-0" style={{ color: '#78350F' }}>
+              <a href={`/manager/closing?date=${encodeURIComponent(realToday)}`} className="font-semibold underline shrink-0" style={{ color: '#78350F' }}>
                 回到 {realToday}
               </a>
             )}
