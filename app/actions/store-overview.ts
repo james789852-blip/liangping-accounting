@@ -179,6 +179,17 @@ function buildDailyAccountingStats({
       }
     }
 
+    const receiptItems = (receipt.receipt_items ?? []) as any[]
+    const itemSum = receiptItems.reduce((sum, item) => sum + ((item.amount ?? 0) as number), 0)
+    const untaxedTotal = Math.round(((receipt.total_amount ?? 0) as number) - ((receipt.tax_amount ?? 0) as number))
+    const remainder = untaxedTotal - itemSum
+    if (remainder !== 0 && receiptItems.length > 0) {
+      const target = receiptItems.find(item => (item.item_name ?? '').trim())
+      if (target?.item_name) {
+        day.items[target.item_name] = (day.items[target.item_name] ?? 0) + remainder
+      }
+    }
+
     const tax = (receipt.tax_amount ?? 0) as number
     if (tax > 0) {
       const hasPack = (receipt.receipt_items ?? []).some((it: any) => itemMeta.get(it.item_name)?.category === '耗材')

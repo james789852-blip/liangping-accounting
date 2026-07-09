@@ -25,6 +25,14 @@ interface SaveReceiptPayload {
   items: ReceiptItemPayload[]
 }
 
+function normalizeReceiptItemsForTotal(items: ReceiptItemPayload[], totalAmount: number, taxAmount = 0): ReceiptItemPayload[] {
+  const validItems = items.filter(item => item.item_name.trim())
+  const untaxedTotal = Math.round(totalAmount - taxAmount)
+  const itemTotal = validItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+  if (validItems.length !== 1 || untaxedTotal <= 0 || itemTotal !== 0) return validItems
+  return validItems.map(item => ({ ...item, amount: untaxedTotal }))
+}
+
 export async function saveReceipt(payload: SaveReceiptPayload) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
@@ -52,9 +60,10 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
 
   if (rErr || !receipt) return { error: rErr?.message ?? '儲存失敗' }
 
-  if (payload.items.length > 0) {
+  const normalizedItems = normalizeReceiptItemsForTotal(payload.items, payload.totalAmount, payload.taxAmount)
+  if (normalizedItems.length > 0) {
     await admin.from('receipt_items').insert(
-      payload.items.map(item => ({ ...item, amount: normalizeItemAmount(item.item_name, item.amount), receipt_id: receipt.id }))
+      normalizedItems.map(item => ({ ...item, amount: normalizeItemAmount(item.item_name, item.amount), receipt_id: receipt.id }))
     )
   }
 
@@ -126,9 +135,10 @@ export async function updateReceipt(
   if (rErr) return { error: rErr.message }
 
   await admin.from('receipt_items').delete().eq('receipt_id', receiptId)
-  if (payload.items.length > 0) {
+  const normalizedItems = normalizeReceiptItemsForTotal(payload.items, payload.totalAmount, payload.taxAmount)
+  if (normalizedItems.length > 0) {
     await admin.from('receipt_items').insert(
-      payload.items.map(item => ({ ...item, amount: normalizeItemAmount(item.item_name, item.amount), receipt_id: receiptId }))
+      normalizedItems.map(item => ({ ...item, amount: normalizeItemAmount(item.item_name, item.amount), receipt_id: receiptId }))
     )
   }
 

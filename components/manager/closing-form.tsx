@@ -393,6 +393,14 @@ function findReceiptItemMapping(
   )
 }
 
+function fillSingleReceiptItemAmount(items: ReceiptFormItem[], totalAmount: number, taxAmount = 0): ReceiptFormItem[] {
+  const validItems = items.filter(i => i.item_name.trim())
+  const untaxedTotal = Math.round(totalAmount - taxAmount)
+  const itemTotal = validItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+  if (validItems.length !== 1 || untaxedTotal <= 0 || itemTotal !== 0) return validItems
+  return validItems.map(item => ({ ...item, amount: untaxedTotal }))
+}
+
 const DENOMINATIONS = [
   { label: '千元鈔', countKey: 'bills_1000' as const, lumpKey: 'lump_1000' as const, unit: 1000, unitLabel: '張' },
   { label: '五百元', countKey: 'bills_500'  as const, lumpKey: 'lump_500'  as const, unit: 500,  unitLabel: '張' },
@@ -1367,7 +1375,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
 
     const finalTotal = editHasTax ? editAmount + editTaxAmount : editAmount
-    let validItems = editItems.filter(i => i.item_name.trim())
+    let validItems = fillSingleReceiptItemAmount(editItems, finalTotal, editHasTax ? editTaxAmount : 0)
     if (validItems.length === 0 && (isNoItemMode || mappingColumns.some(c => c.name === editVendor.trim()))) {
       validItems = [{ id: crypto.randomUUID(), item_name: editVendor.trim(), unit: '', quantity: 1, unit_price: 0, amount: finalTotal }]
     }
@@ -1523,7 +1531,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: false } : f))
       return
     }
-    let validItems = (form.items ?? []).filter(i => i.item_name.trim())
+    let validItems = fillSingleReceiptItemAmount(form.items ?? [], finalTotal, form.has_tax ? form.tax_amount : 0)
     if (validItems.length === 0 && (isNoItemMode || mappingColumns.some(c => c.name === form.vendor_name.trim()))) {
       // 廠商本身就是品項 → 自動用 vendor_name 建 1 個 item
       validItems = [{ id: crypto.randomUUID(), item_name: form.vendor_name.trim(), unit: '', quantity: 1, unit_price: 0, amount: finalTotal }]

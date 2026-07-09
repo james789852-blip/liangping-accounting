@@ -244,6 +244,18 @@ export async function getRangeStats(
         notedItemNames.add(itemKey)
       }
     }
+
+    const receiptItems = (r.receipt_items ?? []) as any[]
+    const itemSum = receiptItems.reduce((sum, it) => sum + ((it.amount ?? 0) as number), 0)
+    const untaxedTotal = Math.round(((r.total_amount ?? 0) as number) - ((r.tax_amount ?? 0) as number))
+    const remainder = untaxedTotal - itemSum
+    if (remainder !== 0 && receiptItems.length > 0) {
+      const target = receiptItems.find(it => (it.item_name ?? '').trim())
+      if (target?.item_name) {
+        dd.items[target.item_name] = (dd.items[target.item_name] ?? 0) + remainder
+      }
+    }
+
     // 稅金分流：receipt 內有耗材品項 → 稅算「免洗稅金」；否則歸雜項
     const tax = (r.tax_amount ?? 0) as number
     if (tax > 0) {
