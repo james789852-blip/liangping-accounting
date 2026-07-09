@@ -321,13 +321,13 @@ export default function ItemMappingsClient({
     groupDocMap.set(vg, docs.size === 1 ? [...docs][0] : null)
   }
   const groupOrder = Object.keys(grouped).sort((a, b) => {
-    const sa = groupSortMap.get(a) ?? 99999
-    const sb = groupSortMap.get(b) ?? 99999
-    if (sa !== sb) return sa - sb
-    // 同 sort_order：未分類最後 / 文件類型次後
+    // 未分類固定最後，避免它的 sort_order 影響其他黃色分類與 Excel 欄位順序。
     const rank = (g: string) => g === '未分類' ? 2 : DOC_TYPES.has(g) ? 1 : 0
     const ra = rank(a), rb = rank(b)
     if (ra !== rb) return ra - rb
+    const sa = groupSortMap.get(a) ?? 99999
+    const sb = groupSortMap.get(b) ?? 99999
+    if (sa !== sb) return sa - sb
     return a.localeCompare(b, 'zh-Hant')
   })
 
@@ -713,6 +713,9 @@ export default function ItemMappingsClient({
                       <ChevronDown className="h-3 w-3" />
                     </button>
                   </div>
+                )}
+                {sortMode && vg === '未分類' && (
+                  <span className="text-[11px] font-medium" style={{ color: '#a1a1aa' }}>固定最後</span>
                 )}
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                   style={{ background: vgSt.bg, color: vgSt.color }}>

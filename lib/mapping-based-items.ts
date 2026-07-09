@@ -18,8 +18,8 @@ export function compareResolvedItemsByMappingOrder(a: ResolvedStoreItem, b: Reso
     return 0
   }
 
-  return ((a.vendor_group_sort_order ?? 9999) - (b.vendor_group_sort_order ?? 9999))
-    || (groupRank(a.vendor_group) - groupRank(b.vendor_group))
+  return (groupRank(a.vendor_group) - groupRank(b.vendor_group))
+    || ((a.vendor_group_sort_order ?? 9999) - (b.vendor_group_sort_order ?? 9999))
     || (a.vendor_group ?? '').localeCompare(b.vendor_group ?? '', 'zh-Hant')
     || ((a.sort_order ?? 1000) - (b.sort_order ?? 1000))
     || a.name.localeCompare(b.name, 'zh-Hant')

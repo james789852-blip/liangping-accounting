@@ -612,41 +612,36 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
   colOfKey['sub_pack'] = col++
   colOfKey['sub_misc'] = col++
 
-  // 品項欄（依分類 → vendor_group 群組）
-  // 央廚 items 算在食材分類但 vendor_group=央廚配送
-  const itemSections = [
-    { key: 'food', items: foodItems },
-    { key: 'pack', items: packItems },
-    { key: 'misc', items: miscItems },
-  ]
+  // 品項欄依「品項對應管理」的黃色分類順序排；同一 vendor_group 的不同小類別
+  // 仍放在同一區，避免「菜商 / 折扣」因為是雜項就被拆到後面。
+  const exportItems = filteredItems
   const vendorGroupRanges: Array<{ name: string; doc: string | null; start: number; end: number; isTax: boolean }> = []
 
-  for (const sec of itemSections) {
-    const byVG: Record<string, ItemDef[]> = {}
-    const vgSort: Record<string, number> = {}
-    for (const it of sec.items) {
-      const vg = it.vendor_group || '未分類'
-      if (!byVG[vg]) byVG[vg] = []
-      byVG[vg].push(it)
-      // 取每組品項中最小（最前）的 vendor_group_sort_order 作為該 vg 的排序基準
-      const cur = it.vendor_group_sort_order ?? 9999
-      if (vgSort[vg] === undefined || cur < vgSort[vg]) vgSort[vg] = cur
+  const byVG: Record<string, ItemDef[]> = {}
+  const vgSort: Record<string, number> = {}
+  for (const it of exportItems) {
+    const vg = it.vendor_group || '未分類'
+    if (!byVG[vg]) byVG[vg] = []
+    byVG[vg].push(it)
+    const cur = it.vendor_group_sort_order ?? 9999
+    if (vgSort[vg] === undefined || cur < vgSort[vg]) vgSort[vg] = cur
+  }
+  const vgRank = (name: string) => name === '未分類' ? 2 : ['發票', '收據', '估價單', '公司開'].includes(name) ? 1 : 0
+  const vgOrder = Object.keys(byVG).sort((a, b) =>
+    (vgRank(a) - vgRank(b))
+    || ((vgSort[a] ?? 9999) - (vgSort[b] ?? 9999))
+    || a.localeCompare(b, 'zh-Hant'),
+  )
+  for (const vg of vgOrder) {
+    const groupItems = byVG[vg]
+    const startCol = col
+    const docType = groupItems[0]?.doc_type ?? null
+    const isTax = /退稅|稅金|感熱稅/.test(vg)
+    for (const it of groupItems) {
+      colOfItem[itemKey(it)] = col++
     }
-    // 依 system_vendor_groups.sort_order 排序，總公司可在系統設定調整
-    const vgOrder = Object.keys(byVG).sort((a, b) =>
-      (vgSort[a] ?? 9999) - (vgSort[b] ?? 9999) || a.localeCompare(b, 'zh-Hant'),
-    )
-    for (const vg of vgOrder) {
-      const groupItems = byVG[vg]
-      const startCol = col
-      const docType = groupItems[0]?.doc_type ?? null
-      const isTax = /退稅|稅金|感熱稅/.test(vg)
-      for (const it of groupItems) {
-        colOfItem[itemKey(it)] = col++
-      }
-      const endCol = col - 1
-      vendorGroupRanges.push({ name: vg, doc: docType, start: startCol, end: endCol, isTax })
-    }
+    const endCol = col - 1
+    vendorGroupRanges.push({ name: vg, doc: docType, start: startCol, end: endCol, isTax })
   }
 
   const totalCols = col - 1
@@ -705,7 +700,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
     if (vg.end > vg.start) ws.mergeCells(1, vg.start, 1, vg.end)
   }
   // Row 2 改成 per-item 寫 doc_type，並依連續相同值自動 merge（讓「梁鑫開」「公司開」混在同 vg 內也能正確顯示）
-  const allItems = [...foodItems, ...packItems, ...miscItems]
+  const allItems = exportItems
   let row2MergeStart = -1
   let row2MergeDoc: string | null = null
   let row2MergeIsTax = false
@@ -808,7 +803,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
     colOfKey['deducted'], colOfKey['onsite'], colOfKey['actual'], colOfKey['ck'],
     colOfKey['result'], colOfKey['revenue'],
     colOfKey['sub_all'], colOfKey['sub_food'], colOfKey['sub_pack'], colOfKey['sub_misc'],
-    ...Object.values(colOfItem),
+    ...exportItems.map(i => colOfItem[itemKey(i)]).filter(Boolean),
   ]
   for (const c of allDataCols) {
     const letter = colLetter(c)
