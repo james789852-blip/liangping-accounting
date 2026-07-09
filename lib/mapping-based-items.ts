@@ -11,7 +11,14 @@ import type { ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { fetchAllPaged } from '@/lib/supabase-paged'
 
 export function compareResolvedItemsByMappingOrder(a: ResolvedStoreItem, b: ResolvedStoreItem): number {
+  const groupRank = (name?: string | null) => {
+    if ((name ?? '') === '未分類') return 2
+    if (['發票', '收據', '估價單', '公司開'].includes(name ?? '')) return 1
+    return 0
+  }
+
   return ((a.vendor_group_sort_order ?? 9999) - (b.vendor_group_sort_order ?? 9999))
+    || (groupRank(a.vendor_group) - groupRank(b.vendor_group))
     || (a.vendor_group ?? '').localeCompare(b.vendor_group ?? '', 'zh-Hant')
     || ((a.sort_order ?? 1000) - (b.sort_order ?? 1000))
     || a.name.localeCompare(b.name, 'zh-Hant')
@@ -63,9 +70,9 @@ async function loadStoreItemsFromMappings(storeId: string): Promise<ResolvedStor
       vendor_group: vgName,
       vendor_group_id: vg?.id ?? null,
       doc_type: effectiveDocType,
-      // 品項管理畫面的群組順序以 system_vendor_groups.sort_order 為準；
-      // 舊資料中的 vg_sort_order 只作為沒有系統群組時的 fallback。
-      vendor_group_sort_order: (vg?.sort_order ?? m.vg_sort_order ?? 9999) as number,
+      // 品項管理畫面的群組順序以 system_vendor_groups.sort_order 為準。
+      // 沒有系統群組的分類（例如未分類）跟 UI 一樣排後面；不再吃舊 vg_sort_order。
+      vendor_group_sort_order: (vg?.sort_order ?? 9999) as number,
       tax_mode: ((vg?.tax_mode ?? 'inclusive') as 'inclusive' | 'free'),
       is_system: true,
       sort_order: (m.sort_order ?? 1000) as number,
