@@ -486,7 +486,7 @@ function StoreDetail({
           <HolidaysEditor storeId={storeId} storeName={storeName} year={y} monthNum={m} onClose={() => setShowHolidays(false)} />
         )}
         {visibleStats ? (
-          <StoreStatsGrid data={visibleStats} />
+          <StoreStatsGrid data={visibleStats} closing={visibleDetail?.closing ?? quickClosing} />
         ) : quickClosing ? (
           <QuickClosingSummary closing={quickClosing} />
         ) : loading ? (
@@ -580,7 +580,15 @@ function Stat({ label, value, color }: { label: string; value: number; color: st
   )
 }
 
-function StoreStatsGrid({ data }: { data: DailyStats }) {
+function StoreStatsGrid({ data, closing }: { data: DailyStats; closing?: ClosingRow | null }) {
+  const storedActual = closing?.actual_remit
+  const storedCk = closing?.total_cost
+  const storedVariance = closing?.variance
+  const displayActual = storedActual != null ? Number(storedActual) : data.actual
+  const displayCk = storedCk != null ? Number(storedCk) : data.ck
+  const displayVariance = storedVariance != null ? Number(storedVariance) : data.variance
+  const displayAfterDeduct = displayActual - displayCk - displayVariance
+  const displayRevenue = data.onsite > 0 ? data.onsite + displayVariance : data.revenue
   const uberEntries = Object.entries(data.uber).filter(([, v]) => v > 0)
   const handwriteEntries = Object.entries(data.handwrite).filter(([, v]) => v > 0)
   return (
@@ -601,11 +609,11 @@ function StoreStatsGrid({ data }: { data: DailyStats }) {
         <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>結算</p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           <Stat label="現場" value={data.onsite} color="#f97316" />
-          <Stat label="(手動)實際$" value={data.actual} color="#dc2626" />
-          <Stat label="配送(月底結)" value={data.ck} color="#f97316" />
-          <Stat label="結果" value={data.variance} color="#0369a1" />
-          <Stat label="扣除後的$" value={data.after_deduct} color="#71717a" />
-          <Stat label="營業額" value={data.revenue} color="#16a34a" />
+          <Stat label="(手動)實際$" value={displayActual} color="#dc2626" />
+          <Stat label="配送(月底結)" value={displayCk} color="#f97316" />
+          <Stat label="結果" value={displayVariance} color="#0369a1" />
+          <Stat label="扣除後的$" value={displayAfterDeduct} color="#71717a" />
+          <Stat label="營業額" value={displayRevenue} color="#16a34a" />
         </div>
       </div>
       <div className="border-t pt-3" style={{ borderColor: '#f4f4f5' }}>
