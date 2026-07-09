@@ -63,7 +63,6 @@ export interface DailyStats {
   ck: number             // 配送(月底結)（DB total_cost）
   onsite: number         // 現場 = 純現場交易金額
   variance: number       // 結果 = 實際 - 現場 - 配送
-  storedVariance?: number | null // DB daily_closings.variance；送出/審核後以此為準
   after_deduct: number   // 扣除後的$ = 實際 - 配送 - 結果
   revenue: number        // 營業額 = 現場 + 結果
   totalRevenue: number   // DB 記錄的 total_revenue（含所有 channel）
@@ -160,7 +159,7 @@ export async function getRangeStats(
       .eq('id', storeId).single(),
     getStoreItemsFromMappings(storeId),  // 跟 xlsx 匯出用同源，確保成本 category 分類一致
     admin.from('daily_closings')
-      .select('business_date, status, updated_at, actual_remit, total_revenue, total_cost, variance, revenue_items(channel, account_name, gross_amount), order_items(item_name, total_amount)')
+      .select('business_date, status, updated_at, actual_remit, total_revenue, total_cost, revenue_items(channel, account_name, gross_amount), order_items(item_name, total_amount)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay)
       .order('updated_at', { ascending: true }),
@@ -195,7 +194,6 @@ export async function getRangeStats(
       .reduce((s: number, oi: any) => s + (oi.total_amount ?? 0), 0)
     dd.ck = (best.total_cost ?? 0) > 0 ? (best.total_cost ?? 0) : ckFromOrders
     dd.totalRevenue = best.total_revenue ?? 0
-    dd.storedVariance = best.variance ?? null
     dd.closingStatus = (best.status ?? 'none') as DailyStats['closingStatus']
     for (const rv of (best.revenue_items ?? []) as any[]) {
       const ch = rv.channel
@@ -334,22 +332,14 @@ export async function getRangeStats(
       : dd.pos
     ) + dd.handwriteTotal
 
-    const storedVariance = dd.storedVariance
-    if (typeof storedVariance === 'number') {
-      // 已送出的店面帳目以 daily_closings.variance 為審核依據；
-      // 避免 Excel / 帳目中心用另一套成本分類公式重算後跟店面端結果不同。
-      dd.variance = storedVariance
-      dd.after_deduct = dd.actual - dd.ck - dd.variance
-    } else {
-      // Step 3: 扣除後 = 現場 − 總成本
-      dd.after_deduct = dd.onsite - dd.totalCost
+    // Step 3: 扣除後 = 現場 − 總成本
+    dd.after_deduct = dd.onsite - dd.totalCost
 
-      // Step 4: 結果 = 實際 − 扣除後 − 配送
-      dd.variance = dd.actual - dd.after_deduct - dd.ck
-    }
+    // Step 4: 結果 = 實際 − 扣除後 − 配送
+    dd.variance = dd.actual - dd.after_deduct - dd.ck
 
     // Step 5: 營業額以 daily_closings.total_revenue 為準；沒有時才用通路加總補齊。
-    dd.revenue = dd.onsite > 0 ? dd.onsite + dd.variance : getDisplayPosTotal(dd, store)
+    dd.revenue = getDisplayPosTotal(dd, store)
   }
 
   return { store, items, days }
