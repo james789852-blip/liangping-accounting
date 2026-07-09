@@ -9,16 +9,20 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { fetchAllPaged } from '@/lib/supabase-paged'
+import { unstable_cache } from 'next/cache'
 
 /**
  * 從 mappings 撈出該店的品項清單，附帶完整的 vg / doc_type / category / sort_order
  * 優先序：store-specific mapping > global mapping
  */
-export async function getStoreItemsFromMappings(storeId: string): Promise<ResolvedStoreItem[]> {
+async function loadStoreItemsFromMappings(storeId: string): Promise<ResolvedStoreItem[]> {
   const admin = createAdminClient()
   const [mappings, { data: vgs }] = await Promise.all([
     // 分頁撈：避免 PostgREST 1000 max-rows 截斷
-    fetchAllPaged<any>(() => admin.from('item_column_mappings').select('*').or(`store_id.is.null,store_id.eq.${storeId}`)),
+    fetchAllPaged<any>(() => admin
+      .from('item_column_mappings')
+      .select('id,item_name,item_category,vendor_group,doc_type_override,sort_order,vg_sort_order,store_id,is_refund')
+      .or(`store_id.is.null,store_id.eq.${storeId}`)),
     admin.from('system_vendor_groups').select('id, name, doc_type, sort_order, tax_mode, merge_across_category').eq('active', true),
   ])
 
@@ -53,7 +57,7 @@ export async function getStoreItemsFromMappings(storeId: string): Promise<Resolv
       vendor_group: vgName,
       vendor_group_id: vg?.id ?? null,
       doc_type: effectiveDocType,
-      vendor_group_sort_order: (vg?.sort_order ?? 9999) as number,
+      vendor_group_sort_order: (m.vg_sort_order ?? vg?.sort_order ?? 9999) as number,
       tax_mode: ((vg?.tax_mode ?? 'inclusive') as 'inclusive' | 'free'),
       is_system: true,
       sort_order: (m.sort_order ?? 1000) as number,
@@ -64,4 +68,12 @@ export async function getStoreItemsFromMappings(storeId: string): Promise<Resolv
 
   // 依 sort_order 排（xlsx workbook 內會再依 vg 排一次）
   return items.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+}
+
+export async function getStoreItemsFromMappings(storeId: string): Promise<ResolvedStoreItem[]> {
+  return unstable_cache(
+    () => loadStoreItemsFromMappings(storeId),
+    ['mapping-based-items', storeId],
+    { revalidate: 300, tags: ['item-mappings'] }
+  )()
 }

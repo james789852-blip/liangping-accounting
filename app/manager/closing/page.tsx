@@ -6,22 +6,11 @@ import { Store, CKPrice } from '@/lib/types'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate } from '@/lib/business-date'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
-import { getCachedUserProfile, getCachedStoreFull, getCachedStoreMappings, getCachedItemOrder } from '@/lib/cached-queries'
+import { getCachedUserProfile, getCachedStoreFull, getCachedStoreMappings, getCachedItemOrder, getCachedActiveCKPrices } from '@/lib/cached-queries'
 import { getStoreItemsResolved, toMappingColumns } from '@/lib/store-items-resolver'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 export const dynamic = 'force-dynamic'
-
-async function getFreshActiveCKPrices(): Promise<CKPrice[]> {
-  const admin = createAdminClient()
-  const { data } = await admin
-    .from('central_kitchen_prices')
-    .select('id, item_name, unit_price, unit, excel_column')
-    .eq('active', true)
-    .order('sort_order')
-    .order('item_name')
-  return (data ?? []) as CKPrice[]
-}
 
 export default async function ClosingPage({
   searchParams,
@@ -63,12 +52,11 @@ export default async function ClosingPage({
     mappingRows,
     { data: prevClosing },
     itemOrder,
-    newItems,
     mappingBasedItems,
     { data: latestBackfillDraft },
   ] = await Promise.all([
     getCachedStoreFull(storeId),
-    getFreshActiveCKPrices(),
+    getCachedActiveCKPrices(),
     supabase
       .from('daily_closings')
       .select('*, revenue_items(*), order_items(*), expense_items(*), handwrite_orders(*), cash_counts(*)')
@@ -93,7 +81,6 @@ export default async function ClosingPage({
       .limit(1)
       .maybeSingle(),
     getCachedItemOrder(storeId),
-    getStoreItemsResolved(storeId),
     // 也撈 mapping-based items（跟 xlsx 匯出同源，確保下拉品項齊全）
     getStoreItemsFromMappings(storeId),
     !requested
@@ -142,6 +129,7 @@ export default async function ClosingPage({
     : null
 
   const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
+  const newItems = mappingBasedItems.length > 0 ? [] : await getStoreItemsResolved(storeId)
 
   // 優先用 item_column_mappings（跟 xlsx 匯出同源，確保收據下拉品項跟 xlsx 一致）
   // 若 mapping 空才 fallback 舊資料源

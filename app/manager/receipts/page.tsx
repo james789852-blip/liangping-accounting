@@ -6,6 +6,7 @@ import { getBusinessDate } from '@/lib/business-date'
 import ReceiptsClient from '@/components/manager/receipts-client'
 import { getStoreItemsResolved } from '@/lib/store-items-resolver'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
+import { getCachedStoreById, getCachedUserProfile } from '@/lib/cached-queries'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,8 +15,7 @@ export default async function ReceiptsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
-    .from('user_profiles').select('name, role, store_ids, is_hq').eq('user_id', user.id).single()
+  const profile = await getCachedUserProfile(user.id)
 
   const storeId = await getEffectiveStoreId(profile)
   if (!storeId) {
@@ -39,12 +39,17 @@ export default async function ReceiptsPage() {
     .order('business_date', { ascending: false })
     .order('created_at', { ascending: false })
 
-  const [{ data: store }, { data: mappingRows }, newItems, mappingBasedItems] = await Promise.all([
-    supabase.from('stores').select('name').eq('id', storeId).single(),
-    admin.from('item_column_mappings').select('item_name, excel_column, item_category, vendor_group').eq('store_id', storeId),
-    getStoreItemsResolved(storeId),
+  const [store, mappingBasedItems] = await Promise.all([
+    getCachedStoreById(storeId),
     getStoreItemsFromMappings(storeId),
   ])
+
+  const [newItems, { data: mappingRows }] = mappingBasedItems.length > 0
+    ? [[], { data: [] }] as const
+    : await Promise.all([
+        getStoreItemsResolved(storeId),
+        admin.from('item_column_mappings').select('item_name, excel_column, item_category, vendor_group').eq('store_id', storeId),
+      ])
 
   // 優先用 mapping-based（跟 xlsx 匯出同源）→ newItems → 舊 mapping
   const mappings = mappingBasedItems.length > 0
@@ -58,7 +63,7 @@ export default async function ReceiptsPage() {
   return (
     <ReceiptsClient
       storeId={storeId}
-      storeName={store?.name ?? ''}
+      storeName={(store as any)?.name ?? ''}
       today={today}
       receipts={receipts ?? []}
       mappings={mappings}
