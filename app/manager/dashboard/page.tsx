@@ -89,12 +89,15 @@ export default async function ManagerDashboard() {
         .eq('id', storeId)
         .single()
       const assignedStoreIds: string[] = ((ckStoreFull as any)?.assigned_store_ids as string[] | null) ?? []
-      const [ckRecordRes, todayClosingsRes, pendingReimbursementRes, returnedRecordsRes] = await Promise.all([
+      const [ckRecordRes, assignedStoresRes, todayClosingsRes, pendingReimbursementRes, returnedRecordsRes] = await Promise.all([
         admin.from('ck_daily_records')
           .select('id, status, payer_name, note, receipt_photo_urls, hq_paid, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed')
           .eq('ck_store_id', storeId)
           .eq('business_date', today)
           .maybeSingle(),
+        assignedStoreIds.length > 0
+          ? admin.from('stores').select('id, name').in('id', assignedStoreIds)
+          : Promise.resolve({ data: [] }),
         assignedStoreIds.length > 0
           ? supabase.from('daily_closings')
               .select('store_id, status')
@@ -140,6 +143,14 @@ export default async function ManagerDashboard() {
       const expenseTotal = ((ckExpenses ?? []) as any[]).reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0)
       const pendingConfirmCount = validOrders.filter((o: any) => o.store_id && Number(o.amount || 0) > 0 && o.ck_confirmed_amount == null).length
       const mismatchCount = validOrders.filter((o: any) => o.store_id && o.ck_confirmed_amount != null && Number(o.ck_confirmed_amount) !== Number(o.amount)).length
+      const assignedStoreNames = new Map(((assignedStoresRes.data ?? []) as any[]).map(s => [s.id as string, s.name as string]))
+      const ckMismatchRows = validOrders
+        .filter((o: any) => o.store_id && o.ck_confirmed_amount != null && Number(o.ck_confirmed_amount) !== Number(o.amount))
+        .map((o: any) => ({
+          store_name: assignedStoreNames.get(o.store_id as string) ?? '未命名店家',
+          amount: Number(o.amount),
+          ck_confirmed_amount: Number(o.ck_confirmed_amount),
+        }))
       const pendingReimbursements = ((pendingReimbursementRes.data ?? []) as any[])
         .map(r => ({
           id: r.id as string,
@@ -296,6 +307,33 @@ export default async function ManagerDashboard() {
                 </div>
               </div>
             </div>
+
+            {ckMismatchRows.length > 0 && (
+              <div className="rounded-3xl overflow-hidden mb-4" style={{ background: '#FEF2F2', border: '1.5px solid #FECACA' }}>
+                <div className="px-5 py-3" style={{ borderBottom: '1px solid #FECACA', background: '#FEE2E2' }}>
+                  <p className="text-sm font-black" style={{ color: '#991B1B' }}>今日對帳異常提醒</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#7F1D1D' }}>店家輸入金額與央廚確認金額不同，請在今日帳目內核對。</p>
+                </div>
+                <div>
+                  {ckMismatchRows.map((m, i) => {
+                    const diff = m.ck_confirmed_amount - m.amount
+                    return (
+                      <div key={`${m.store_name}-${i}`} className="px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm"
+                        style={{ borderBottom: i < ckMismatchRows.length - 1 ? '1px solid #FECACA' : 'none' }}>
+                        <span className="font-bold" style={{ color: '#18181b' }}>{m.store_name}</span>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums text-xs sm:text-sm">
+                          <span style={{ color: '#71717a' }}>店家 ${fmt(m.amount)}</span>
+                          <span style={{ color: '#71717a' }}>央廚 ${fmt(m.ck_confirmed_amount)}</span>
+                          <span className="font-black" style={{ color: diff > 0 ? '#dc2626' : '#0369a1' }}>
+                            {diff > 0 ? '+' : ''}{fmt(diff)}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="rounded-2xl p-4 text-sm bg-white" style={{ border: '1px solid #f4f4f5', color: '#71717a' }}>
               央廚每日流程：先上傳支出單據，再輸入店家叫貨金額，最後填寫貨款代墊人並送出。若總公司已補款，會在這裡直接提醒點交。

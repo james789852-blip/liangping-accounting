@@ -19,7 +19,7 @@ interface Closing {
   remittance_adjustments?: RemittanceAdjustment[]
   ck_delivery_photo_url?: string; channel_photo_urls?: Record<string, string>
   envelope_photo_url?: string; void_invoice_photo_urls?: string[]; note_photo_url?: string
-  extra_photo_urls?: { url: string; label: string }[]
+  extra_photo_urls?: Array<string | { url?: string | null; label?: string | null }> | null
   stores: { id: string; name: string }
   revenue_items: { channel: string; account_name?: string; gross_amount: number }[]
   order_items: { item_name: string; quantity: number; unit_price: number; total_amount: number }[]
@@ -55,6 +55,29 @@ const CHANNEL_LABEL: Record<string, string> = { pos: 'iChef POS', panda: '熊貓
 function channelName(key: string) {
   if (key.startsWith('uber_')) return `Uber ${key.slice(5)}`
   return CHANNEL_LABEL[key] ?? key
+}
+
+type PhotoInfo = { url: string; label: string }
+
+function normalizeExtraPhotos(extraPhotoUrls: Closing['extra_photo_urls']): PhotoInfo[] {
+  return (extraPhotoUrls ?? [])
+    .map((photo, index) => {
+      if (typeof photo === 'string') {
+        const url = photo.trim()
+        return url ? { url, label: `附加照片 ${index + 1}` } : null
+      }
+
+      if (!photo || typeof photo !== 'object') return null
+
+      const url = (photo.url ?? '').trim()
+      if (!url) return null
+
+      return {
+        url,
+        label: (photo.label ?? '').trim() || `附加照片 ${index + 1}`,
+      }
+    })
+    .filter((photo): photo is PhotoInfo => Boolean(photo))
 }
 
 function Lightbox({ photos, index, onClose, onPrev, onNext }: {
@@ -306,7 +329,7 @@ function ClosingCard({
   const envelopePhoto = closing.envelope_photo_url
   const voidInvoicePhotos = closing.void_invoice_photo_urls ?? []
   const notePhoto = closing.note_photo_url
-  const extraPhotos = Array.isArray(closing.extra_photo_urls) ? closing.extra_photo_urls : []
+  const extraPhotos = normalizeExtraPhotos(closing.extra_photo_urls)
 
   // allPhotos: receipt photos first, then CK + channel (for lightbox continuity)
   const allPhotos: { url: string; label: string }[] = [
@@ -316,7 +339,7 @@ function ClosingCard({
     ...(envelopePhoto ? [{ url: envelopePhoto, label: '信封袋' }] : []),
     ...voidInvoicePhotos.map((url, i) => ({ url, label: `作廢發票 ${i + 1}` })),
     ...(notePhoto ? [{ url: notePhoto, label: '備註照片' }] : []),
-    ...extraPhotos.map(p => ({ url: p.url, label: p.label || '更多照片' })),
+    ...extraPhotos,
   ]
   // non-receipt photos (CK + channels + 信封袋/作廢/備註), 顯示在「其他照片」區塊
   const otherPhotos: { url: string; label: string }[] = [

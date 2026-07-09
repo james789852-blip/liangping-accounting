@@ -86,7 +86,9 @@ function ReviewActions({ ckStoreId, date, status }: { ckStoreId: string; date: s
     })
   }
 
-  const canReview = ['submitted', 'verified', 'disputed', 'draft'].includes(status)
+  if (status === 'verified') return null
+
+  const canReview = ['submitted', 'disputed', 'draft'].includes(status)
 
   return (
     <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>

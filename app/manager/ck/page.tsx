@@ -189,30 +189,6 @@ export default async function CKPage({
     submitted: submittedStores.has(s.id),
   }))
 
-  // 過去 7 天該央廚下旗下店家的對帳異常（不一致）+ 待對帳統計
-  const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-  const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10)
-  const { data: recentCkOrders } = await admin
-    .from('ck_store_orders')
-    .select('amount, ck_confirmed_amount, store_id, ck_daily_records!inner(business_date, ck_store_id)')
-    .eq('ck_daily_records.ck_store_id', storeId)
-    .gte('ck_daily_records.business_date', sevenDaysAgoStr)
-  const recentValidCkOrders = recentCkOrders ?? []
-  const storeNameMap = new Map((assignedStores ?? []).map((s: any) => [s.id as string, s.name as string]))
-  const recentMismatches = recentValidCkOrders
-    .filter((o: any) => o.ck_confirmed_amount != null && Number(o.ck_confirmed_amount) !== Number(o.amount))
-    .map((o: any) => ({
-      business_date: (o.ck_daily_records as any)?.business_date as string,
-      store_id: o.store_id as string,
-      store_name: storeNameMap.get(o.store_id as string) ?? '',
-      amount: Number(o.amount),
-      ck_confirmed_amount: Number(o.ck_confirmed_amount),
-    }))
-    .sort((a, b) => b.business_date.localeCompare(a.business_date))
-  const recentPending = recentValidCkOrders
-    .filter((o: any) => o.ck_confirmed_amount == null && Number(o.amount) > 0)
-    .length
-
   return (
     <div>
       {/* 頁首 */}
@@ -229,51 +205,6 @@ export default async function CKPage({
             央廚
           </div>
         </div>
-        {/* 過去 7 天對帳狀態 */}
-        {(recentMismatches.length > 0 || recentPending > 0) && (
-          <div className="mt-3 flex gap-2 text-xs">
-            {recentMismatches.length > 0 && (
-              <div className="flex-1 px-3 py-2 rounded-xl font-semibold flex items-center gap-1.5"
-                style={{ background: '#FEF2F2', color: '#991B1B', border: '1px solid #FECACA' }}>
-                ⚠️ 過去 7 天 {recentMismatches.length} 筆不一致
-              </div>
-            )}
-            {recentPending > 0 && (
-              <div className="flex-1 px-3 py-2 rounded-xl font-semibold flex items-center gap-1.5"
-                style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
-                ⏳ {recentPending} 筆待對帳
-              </div>
-            )}
-          </div>
-        )}
-        {recentMismatches.length > 0 && (
-          <div className="mt-3 rounded-2xl overflow-hidden" style={{ background: '#FEF2F2', border: '1.5px solid #FECACA' }}>
-            <div className="px-4 py-2.5" style={{ borderBottom: '1px solid #FECACA', background: '#FEE2E2' }}>
-              <p className="text-xs font-bold" style={{ color: '#991B1B' }}>對帳異常清單（過去 7 天）</p>
-            </div>
-            <div>
-              {recentMismatches.slice(0, 10).map((m, i) => {
-                const diff = m.ck_confirmed_amount - m.amount
-                return (
-                  <div key={i} className="px-4 py-2 flex items-center justify-between text-xs"
-                    style={{ borderBottom: i < Math.min(recentMismatches.length, 10) - 1 ? '1px solid #FECACA' : 'none' }}>
-                    <div className="flex items-center gap-2">
-                      <span style={{ color: '#52525b' }}>{m.business_date}</span>
-                      <span className="font-semibold" style={{ color: '#18181b' }}>{m.store_name}</span>
-                    </div>
-                    <div className="flex items-center gap-3 tabular-nums">
-                      <span style={{ color: '#71717a' }}>店家 ${Math.round(m.amount).toLocaleString()}</span>
-                      <span style={{ color: '#71717a' }}>央廚 ${Math.round(m.ck_confirmed_amount).toLocaleString()}</span>
-                      <span className="font-bold" style={{ color: diff > 0 ? '#dc2626' : '#0369a1' }}>
-                        {diff > 0 ? '+' : ''}{Math.round(diff).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
       </div>
 
       <CKDailyForm

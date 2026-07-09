@@ -1006,20 +1006,20 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
     ws.getRow(row).getCell(resultCol).value   = { formula: `${ref(actualCol)}-${ref(deductedCol)}-${ref(ckCol)}` } as any
     ws.getRow(row).getCell(revenueCol).value  = { formula: `IF(${ref(onsiteCol)}>0,${ref(resultCol)}+${ref(onsiteCol)},"")` } as any
 
-    // 小計公式（對齊原版：用範圍 SUM 而非分項加總，公式更簡潔）
+    // 小計公式：明列同分類品項欄位，避免 Excel 誤判「公式省略相鄰儲存格」而顯示驚嘆號。
     //   O 總   = P + Q + R
-    //   P 食材 = SUM(食材範圍)
-    //   Q 耗材 = SUM(耗材範圍)
-    //   R 雜項 = SUM(雜項範圍)
-    const rangeOf = (cols: number[]) => cols.length > 0
-      ? `${colLetter(Math.min(...cols))}${row}:${colLetter(Math.max(...cols))}${row}`
+    //   P 食材 = SUM(食材欄位...)
+    //   Q 耗材 = SUM(耗材欄位...)
+    //   R 雜項 = SUM(雜項欄位...)
+    const sumOfCols = (cols: number[]) => cols.length > 0
+      ? cols.map(c => `${colLetter(c)}${row}`).join(',')
       : null
-    const foodRange = rangeOf(foodCols)
-    const packRange = rangeOf(packCols)
-    const miscRange = rangeOf(miscCols)
-    ws.getRow(row).getCell(colOfKey['sub_food']).value = foodRange ? { formula: `SUM(${foodRange})` } as any : 0
-    ws.getRow(row).getCell(colOfKey['sub_pack']).value = packRange ? { formula: `SUM(${packRange})` } as any : 0
-    ws.getRow(row).getCell(colOfKey['sub_misc']).value = miscRange ? { formula: `SUM(${miscRange})` } as any : 0
+    const foodRefs = sumOfCols(foodCols)
+    const packRefs = sumOfCols(packCols)
+    const miscRefs = sumOfCols(miscCols)
+    ws.getRow(row).getCell(colOfKey['sub_food']).value = foodRefs ? { formula: `SUM(${foodRefs})` } as any : 0
+    ws.getRow(row).getCell(colOfKey['sub_pack']).value = packRefs ? { formula: `SUM(${packRefs})` } as any : 0
+    ws.getRow(row).getCell(colOfKey['sub_misc']).value = miscRefs ? { formula: `SUM(${miscRefs})` } as any : 0
     ws.getRow(row).getCell(colOfKey['sub_all']).value  = {
       formula: `${ref(colOfKey['sub_food'])}+${ref(colOfKey['sub_pack'])}+${ref(colOfKey['sub_misc'])}`,
     } as any

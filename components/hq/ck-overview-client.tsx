@@ -210,7 +210,16 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
 }
 
 function CKDailyPanel({ data, storeName, ckStoreId }: { data: CKDailyStats; storeName: string; ckStoreId: string }) {
-  const statusLabel = data.status === 'submitted' ? '已送出' : data.status === 'draft' ? '草稿' : '未輸入'
+  const statusLabel = data.status === 'verified' ? '已審核' : data.status === 'submitted' ? '已送出' : data.status === 'draft' ? '草稿' : data.status === 'disputed' ? '已退回' : '未輸入'
+  const statusStyle = data.status === 'verified'
+    ? { bg: '#dcfce7', color: '#15803d' }
+    : data.status === 'submitted'
+    ? { bg: '#d1fae5', color: '#047857' }
+    : data.status === 'draft'
+    ? { bg: '#fef3c7', color: '#92400e' }
+    : data.status === 'disputed'
+    ? { bg: '#ffe4e6', color: '#be123c' }
+    : { bg: '#f4f4f5', color: '#a1a1aa' }
   const [detail, setDetail] = useState<any | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   useEffect(() => {
@@ -225,8 +234,7 @@ function CKDailyPanel({ data, storeName, ckStoreId }: { data: CKDailyStats; stor
         <div className="flex items-baseline gap-2 flex-wrap">
           <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{storeName} · {data.date} {data.weekday}</h2>
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-            style={{ background: data.status === 'submitted' ? '#d1fae5' : data.status === 'draft' ? '#fef3c7' : '#f4f4f5',
-                     color: data.status === 'submitted' ? '#047857' : data.status === 'draft' ? '#92400e' : '#a1a1aa' }}>
+            style={{ background: statusStyle.bg, color: statusStyle.color }}>
             {statusLabel}
           </span>
         </div>
@@ -458,15 +466,23 @@ function CKMonthlyPanel({ data }: { data: CKMonthlyStats }) {
                 const dt = new Date(d.date + 'T12:00:00+08:00')
                 const dow = dt.getDay()
                 const rowBg = dow === 0 || dow === 6 ? '#fff7ed' : undefined
+                const st = d.status === 'verified'
+                  ? { bg: '#dcfce7', color: '#15803d', label: '已審' }
+                  : d.status === 'submitted'
+                  ? { bg: '#d1fae5', color: '#047857', label: '已送' }
+                  : d.status === 'draft'
+                  ? { bg: '#fef3c7', color: '#92400e', label: '草稿' }
+                  : d.status === 'disputed'
+                  ? { bg: '#ffe4e6', color: '#be123c', label: '退回' }
+                  : { bg: '#f4f4f5', color: '#a1a1aa', label: '無' }
                 return (
                   <tr key={i} style={{ borderTop: '1px solid #f4f4f5', background: rowBg }}>
                     <td className="px-2 py-1.5 sticky left-0" style={{ background: rowBg ?? 'white', zIndex: 1 }}>{d.date.slice(5)}</td>
                     <td className="px-2 py-1.5" style={{ color: dow === 0 ? '#dc2626' : dow === 6 ? '#0369a1' : '#52525b', fontWeight: (dow === 0 || dow === 6) ? 600 : 400 }}>{d.weekday}</td>
                     <td className="px-2 py-1.5 text-center">
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                        style={{ background: d.status === 'submitted' ? '#d1fae5' : d.status === 'draft' ? '#fef3c7' : '#f4f4f5',
-                                 color: d.status === 'submitted' ? '#047857' : d.status === 'draft' ? '#92400e' : '#a1a1aa' }}>
-                        {d.status === 'submitted' ? '已送' : d.status === 'draft' ? '草稿' : '無'}
+                        style={{ background: st.bg, color: st.color }}>
+                        {st.label}
                       </span>
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: '#16a34a' }}>{d.revenue ? fmt(d.revenue) : ''}</td>

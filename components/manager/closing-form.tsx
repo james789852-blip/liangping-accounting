@@ -591,6 +591,20 @@ function dropdownGroupRank(name: string): number {
   return 2 // 日用品/維護廠商
 }
 
+type MappingColumn = { name: string; category: string; vendor_group?: string; excel_column?: string }
+
+function receiptEntryGroups(mappingColumns: MappingColumn[]): string[] {
+  const groups = new Set<string>()
+  for (const col of mappingColumns) {
+    const group = col.vendor_group?.trim()
+    if (!group || group === '央廚配送' || group === '退稅') continue
+    groups.add(group)
+  }
+  return Array.from(groups).sort((a, b) =>
+    dropdownGroupRank(a) - dropdownGroupRank(b) || a.localeCompare(b, 'zh-Hant'),
+  )
+}
+
 function CategoryPicker({ categories, value, onChange }: {
   categories: CategoryWithVendors[]
   value: string
@@ -741,18 +755,32 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   // 更多照片（選填）：零用金核對、其他款項等。結構 [{ url, label }]
   type ExtraPhoto = { url: string; label: string }
+  function normalizeExtraPhotoList(saved: unknown): ExtraPhoto[] {
+    if (!Array.isArray(saved)) return []
+    return saved.flatMap((photo, index) => {
+      if (typeof photo === 'string') {
+        const url = photo.trim()
+        return url ? [{ url, label: `附加照片 ${index + 1}` }] : []
+      }
+      if (!photo || typeof photo !== 'object') return []
+      const row = photo as { url?: unknown; label?: unknown }
+      const url = typeof row.url === 'string' ? row.url.trim() : ''
+      if (!url) return []
+      const label = typeof row.label === 'string' && row.label.trim() ? row.label.trim() : `附加照片 ${index + 1}`
+      return [{ url, label }]
+    })
+  }
   const [extraPhotos, setExtraPhotos] = useState<ExtraPhoto[]>(() => {
     const saved = (existingClosing as any)?.extra_photo_urls
-    if (Array.isArray(saved)) return saved as ExtraPhoto[]
-    return []
+    return normalizeExtraPhotoList(saved)
   })
   const extraPhotosLsKey = `extra_photos_${store.id}_${today}`
   useEffect(() => {
     const saved = (existingClosing as any)?.extra_photo_urls
     if (!Array.isArray(saved) || saved.length === 0) {
       try {
-        const stored = JSON.parse(localStorage.getItem(extraPhotosLsKey) ?? '[]')
-        if (Array.isArray(stored) && stored.length > 0) setExtraPhotos(stored)
+        const stored = normalizeExtraPhotoList(JSON.parse(localStorage.getItem(extraPhotosLsKey) ?? '[]'))
+        if (stored.length > 0) setExtraPhotos(stored)
       } catch {}
     }
   }, [])
@@ -1125,7 +1153,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     return () => clearInterval(t)
     // 任何會寫進 handleSave payload 的 state 都要列依賴，否則 60 秒定時器拿到的是 stale closure
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, channelPhotos, ckPhotoUrl, envelopePhotoUrl, voidInvoicePhotos, notePhotoUrl, ckQuantities, ckPriceOverrides, isLocked, isDisputed, submitDone])
+  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, channelPhotos, ckPhotoUrl, envelopePhotoUrl, extraPhotos, voidInvoicePhotos, notePhotoUrl, ckQuantities, ckPriceOverrides, isLocked, isDisputed, submitDone])
 
   // 主要 state 變動 debounced 寫 localStorage backup（每 500ms）— 切頁前一定有最新 snapshot
   useEffect(() => {
@@ -1324,6 +1352,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (validItems.length === 0 && (isNoItemMode || mappingColumns.some(c => c.name === editVendor.trim()))) {
       validItems = [{ id: crypto.randomUUID(), item_name: editVendor.trim(), unit: '', quantity: 1, unit_price: 0, amount: finalTotal }]
     }
+    const resolveEditItemMapping = (item: ReceiptFormItem) => item.vendor_group_hint
+      ? mappingColumns.find(c => c.name === item.item_name && c.vendor_group === item.vendor_group_hint)
+      : findReceiptItemMapping(item.item_name, editVendor, editCategory, mappingColumns)
 
     const updatedReceipts = localReceipts.map(r =>
       r.id === editingReceiptId ? {
@@ -1350,7 +1381,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     await supabase.from('receipt_items').delete().eq('receipt_id', editingReceiptId)
     if (validItems.length > 0) {
       await supabase.from('receipt_items').insert(
-        validItems.map(i => ({ receipt_id: editingReceiptId, item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: normalizeItemAmount(i.item_name, i.amount), item_category: '食材', excel_column: '' }))
+        validItems.map(i => {
+          const match = resolveEditItemMapping(i)
+          return {
+            receipt_id: editingReceiptId,
+            item_name: i.item_name,
+            unit: i.unit ?? '',
+            quantity: i.quantity ?? 1,
+            unit_price: i.unit_price ?? 0,
+            amount: normalizeItemAmount(i.item_name, i.amount),
+            item_category: match?.category ?? '食材',
+            excel_column: match?.excel_column ?? match?.name ?? '',
+          }
+        })
       )
     }
     setEditUploading(false)
@@ -1468,18 +1511,24 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       // 廠商本身就是品項 → 自動用 vendor_name 建 1 個 item
       validItems = [{ id: crypto.randomUUID(), item_name: form.vendor_name.trim(), unit: '', quantity: 1, unit_price: 0, amount: finalTotal }]
     }
+    const resolveFormItemMapping = (item: ReceiptFormItem) => item.vendor_group_hint
+      ? mappingColumns.find(c => c.name === item.item_name && c.vendor_group === item.vendor_group_hint)
+      : findReceiptItemMapping(item.item_name, form.vendor_name, form.category, mappingColumns)
     if (validItems.length > 0) {
       await supabase.from('receipt_items').insert(
-        validItems.map(i => ({
-          receipt_id: saved.id,
-          item_name: i.item_name.trim(),
-          unit: i.unit,
-          quantity: i.quantity,
-          unit_price: i.unit_price ?? 0,
-          amount: normalizeItemAmount(i.item_name, i.amount),
-          item_category: '食材',
-          excel_column: '',
-        }))
+        validItems.map(i => {
+          const match = resolveFormItemMapping(i)
+          return {
+            receipt_id: saved.id,
+            item_name: i.item_name.trim(),
+            unit: i.unit,
+            quantity: i.quantity,
+            unit_price: i.unit_price ?? 0,
+            amount: normalizeItemAmount(i.item_name, i.amount),
+            item_category: match?.category ?? '食材',
+            excel_column: match?.excel_column ?? match?.name ?? '',
+          }
+        })
       )
     }
 
@@ -2421,21 +2470,49 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           function addItem() {
                             syncItems([...(form.items ?? []), { id: crypto.randomUUID(), item_name: '', unit: '', quantity: 1, unit_price: 0, amount: 0 }])
                           }
+                          function addItemFromVendor(vendorGroup: string) {
+                            if (!vendorGroup) return
+                            syncItems([...(form.items ?? []), {
+                              id: crypto.randomUUID(),
+                              item_name: '',
+                              unit: '',
+                              quantity: 1,
+                              unit_price: 0,
+                              amount: 0,
+                              vendor_group_hint: vendorGroup,
+                            }])
+                          }
                           function updateItem(itemId: string, field: string, value: any) {
                             syncItems((form.items ?? []).map(i => i.id !== itemId ? i : { ...i, [field]: value }))
                           }
                           function removeItem(itemId: string) {
                             syncItems((form.items ?? []).filter(i => i.id !== itemId))
                           }
+                          const vendorGroups = receiptEntryGroups(mappingColumns)
 
                           return (
                             <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                                 <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>品項 *</label>
-                                <button type="button" onClick={addItem}
-                                  style={{ fontSize: '11px', color: '#F59E0B', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px', padding: 0 }}>
-                                  <Plus style={{ width: '12px', height: '12px' }} />新增
-                                </button>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  {vendorGroups.length > 0 && (
+                                    <select
+                                      aria-label="指定廠商品項"
+                                      value=""
+                                      onChange={e => {
+                                        addItemFromVendor(e.target.value)
+                                        e.currentTarget.value = ''
+                                      }}
+                                      style={{ maxWidth: '128px', fontSize: '11px', color: '#92400E', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '8px', padding: '4px 7px', cursor: 'pointer', fontFamily: 'inherit', outline: 'none' }}>
+                                      <option value="">＋指定廠商</option>
+                                      {vendorGroups.map(group => <option key={group} value={group}>{group}</option>)}
+                                    </select>
+                                  )}
+                                  <button type="button" onClick={addItem}
+                                    style={{ fontSize: '11px', color: '#F59E0B', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px', padding: 0 }}>
+                                    <Plus style={{ width: '12px', height: '12px' }} />新增
+                                  </button>
+                                </div>
                               </div>
 
                               {/* 細項列表：品項 + 金額 */}
@@ -2445,8 +2522,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                     {mappingColumns.length > 0 ? (
                                       <select
                                         value={(() => {
-                                          const hint = (item as any).vendor_group_hint as string | undefined
-                                          if (hint) return `${hint}|${item.item_name}`
+                                          const hint = item.vendor_group_hint
+                                          if (hint && item.item_name) return `${hint}|${item.item_name}`
                                           const match = findReceiptItemMapping(item.item_name, form.vendor_name, form.category, mappingColumns)
                                           return match?.vendor_group ? `${match.vendor_group}|${item.item_name}` : item.item_name
                                         })()}
@@ -2458,12 +2535,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           const name = sepIdx > 0 ? raw.slice(sepIdx + 1) : raw
                                           // 一次 syncItems 同時更新兩欄位，避免兩個連續 setState 因 closure 看到舊 state 互相覆蓋
                                           syncItems((form.items ?? []).map(i =>
-                                            i.id !== item.id ? i : { ...i, item_name: name, vendor_group_hint: vg } as any
+                                            i.id !== item.id ? i : { ...i, item_name: name, vendor_group_hint: vg || undefined }
                                           ))
                                         }}
                                         className="receipt-field"
                                         style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
-                                        <option value="">— 選擇品項 —</option>
+                                        <option value="">— 選擇{item.vendor_group_hint ? item.vendor_group_hint : ''}品項 —</option>
                                         {(() => {
                                           // 央廚配送品項不在收據錄入內
                                           const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送' && c.vendor_group !== '退稅')
@@ -2472,7 +2549,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           //   2. form.category（如「叫貨廠商」「固定成本」）→ fallback 寬鬆匹配
                                           //   3. 都沒選 → 顯示全部
                                           let base = baseAll
-                                          if (form.vendor_name) {
+                                          const rowVendorHint = item.vendor_group_hint
+                                          if (rowVendorHint) {
+                                            const filtered = baseAll.filter(c => c.vendor_group === rowVendorHint)
+                                            if (filtered.length > 0) base = filtered
+                                          } else if (form.vendor_name) {
                                             const filtered = baseAll.filter(c => c.vendor_group === form.vendor_name)
                                             if (filtered.length > 0) base = filtered
                                           } else if (form.category) {
@@ -2520,17 +2601,24 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                     )}
                                     {/* Excel 對應提示：讓店長知道這品項會出現在 Excel 哪一欄 */}
                                     {item.item_name && mappingColumns.length > 0 && (() => {
-                                      const vgHint = (item as any).vendor_group_hint as string | undefined
+                                      const vgHint = item.vendor_group_hint
                                       const match = vgHint
                                         ? mappingColumns.find(c => c.name === item.item_name && c.vendor_group === vgHint)
                                         : mappingColumns.find(c => c.name === item.item_name)
                                       const col = match?.excel_column || match?.name
                                       if (!col) return null
                                       return (
-                                        <span className="text-[10px] shrink-0" style={{ color: '#059669', background: '#d1fae5', padding: '2px 6px', borderRadius: 4 }}
-                                          title="這品項會匯出到 Excel 的這一欄">
-                                          → {col}
-                                        </span>
+                                        <>
+                                          {vgHint && vgHint !== form.vendor_name && (
+                                            <span className="text-[10px] shrink-0" style={{ color: '#92400E', background: '#FEF3C7', padding: '2px 6px', borderRadius: 4 }}>
+                                              {vgHint}
+                                            </span>
+                                          )}
+                                          <span className="text-[10px] shrink-0" style={{ color: '#059669', background: '#d1fae5', padding: '2px 6px', borderRadius: 4 }}
+                                            title="這品項會匯出到 Excel 的這一欄">
+                                            → {col}
+                                          </span>
+                                        </>
                                       )
                                     })()}
                                     {(() => {
@@ -2737,21 +2825,49 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               function addEditItemFn() {
                                 syncEditItems([...editItems, { id: crypto.randomUUID(), item_name: '', unit: '', quantity: 1, unit_price: 0, amount: 0 }])
                               }
+                              function addEditItemFromVendor(vendorGroup: string) {
+                                if (!vendorGroup) return
+                                syncEditItems([...editItems, {
+                                  id: crypto.randomUUID(),
+                                  item_name: '',
+                                  unit: '',
+                                  quantity: 1,
+                                  unit_price: 0,
+                                  amount: 0,
+                                  vendor_group_hint: vendorGroup,
+                                }])
+                              }
                               function updateEditItemFn(idx: number, field: string, value: any) {
                                 syncEditItems(editItems.map((item, i) => i !== idx ? item : { ...item, [field]: value }))
                               }
                               function removeEditItemFn(idx: number) {
                                 syncEditItems(editItems.filter((_, i) => i !== idx))
                               }
+                              const vendorGroups = receiptEntryGroups(mappingColumns)
 
                               return (
                                 <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                                     <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>品項 *</label>
-                                    <button type="button" onClick={() => addEditItemFn()}
-                                      style={{ fontSize: '11px', color: '#F59E0B', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px', padding: 0 }}>
-                                      <Plus style={{ width: '12px', height: '12px' }} />新增
-                                    </button>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      {vendorGroups.length > 0 && (
+                                        <select
+                                          aria-label="指定廠商品項"
+                                          value=""
+                                          onChange={e => {
+                                            addEditItemFromVendor(e.target.value)
+                                            e.currentTarget.value = ''
+                                          }}
+                                          style={{ maxWidth: '128px', fontSize: '11px', color: '#92400E', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '8px', padding: '4px 7px', cursor: 'pointer', fontFamily: 'inherit', outline: 'none' }}>
+                                          <option value="">＋指定廠商</option>
+                                          {vendorGroups.map(group => <option key={group} value={group}>{group}</option>)}
+                                        </select>
+                                      )}
+                                      <button type="button" onClick={() => addEditItemFn()}
+                                        style={{ fontSize: '11px', color: '#F59E0B', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px', padding: 0 }}>
+                                        <Plus style={{ width: '12px', height: '12px' }} />新增
+                                      </button>
+                                    </div>
                                   </div>
                                   <div className="space-y-1.5">
                                     {editItems.map((item, idx) => (
@@ -2760,7 +2876,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           <select
                                             value={(() => {
                                               const hint = item.vendor_group_hint
-                                              if (hint) return `${hint}|${item.item_name}`
+                                              if (hint && item.item_name) return `${hint}|${item.item_name}`
                                               const match = findReceiptItemMapping(item.item_name, editVendor, editCategory, mappingColumns)
                                               return match?.vendor_group ? `${match.vendor_group}|${item.item_name}` : item.item_name
                                             })()}
@@ -2775,11 +2891,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             }}
                                             className="receipt-field"
                                             style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
-                                            <option value="">— 選擇品項 —</option>
+                                            <option value="">— 選擇{item.vendor_group_hint ? item.vendor_group_hint : ''}品項 —</option>
                                             {(() => {
                                               const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送' && c.vendor_group !== '退稅')
                                               let base = baseAll
-                                              if (editVendor) {
+                                              if (item.vendor_group_hint) {
+                                                const filtered = baseAll.filter(c => c.vendor_group === item.vendor_group_hint)
+                                                if (filtered.length > 0) base = filtered
+                                              } else if (editVendor) {
                                                 const filtered = baseAll.filter(c => c.vendor_group === editVendor)
                                                 if (filtered.length > 0) base = filtered
                                               } else if (editCategory) {
@@ -2831,10 +2950,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           const col = match?.excel_column || match?.name
                                           if (!col) return null
                                           return (
-                                            <span className="text-[10px] shrink-0" style={{ color: '#059669', background: '#d1fae5', padding: '2px 6px', borderRadius: 4 }}
-                                              title="這品項會匯出到 Excel 的這一欄">
-                                              → {col}
-                                            </span>
+                                            <>
+                                              {item.vendor_group_hint && item.vendor_group_hint !== editVendor && (
+                                                <span className="text-[10px] shrink-0" style={{ color: '#92400E', background: '#FEF3C7', padding: '2px 6px', borderRadius: 4 }}>
+                                                  {item.vendor_group_hint}
+                                                </span>
+                                              )}
+                                              <span className="text-[10px] shrink-0" style={{ color: '#059669', background: '#d1fae5', padding: '2px 6px', borderRadius: 4 }}
+                                                title="這品項會匯出到 Excel 的這一欄">
+                                                → {col}
+                                              </span>
+                                            </>
                                           )
                                         })()}
                                         <input type="number" placeholder="金額"

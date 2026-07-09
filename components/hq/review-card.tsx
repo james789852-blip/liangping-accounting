@@ -29,7 +29,7 @@ interface Closing {
   envelope_photo_url?: string | null
   void_invoice_photo_urls?: string[] | null
   note_photo_url?: string | null
-  extra_photo_urls?: string[] | null
+  extra_photo_urls?: Array<string | { url?: string | null; label?: string | null }> | null
 }
 interface Props {
   closing: Closing; receipts: Receipt[]; canReview: boolean; canDispute: boolean
@@ -45,6 +45,29 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
   submitted: { bg: '#FFFBEB', color: '#92400E', label: '待審核' },
   disputed:  { bg: '#fff7ed', color: '#c2410c', label: '已退回' },
   verified:  { bg: '#d1fae5', color: '#047857', label: '已核准' },
+}
+
+type PhotoInfo = { url: string; label: string }
+
+function normalizeExtraPhotos(extraPhotoUrls: Closing['extra_photo_urls']): PhotoInfo[] {
+  return (extraPhotoUrls ?? [])
+    .map((photo, index) => {
+      if (typeof photo === 'string') {
+        const url = photo.trim()
+        return url ? { url, label: `附加照片 ${index + 1}` } : null
+      }
+
+      if (!photo || typeof photo !== 'object') return null
+
+      const url = (photo.url ?? '').trim()
+      if (!url) return null
+
+      return {
+        url,
+        label: (photo.label ?? '').trim() || `附加照片 ${index + 1}`,
+      }
+    })
+    .filter((photo): photo is PhotoInfo => Boolean(photo))
 }
 
 function SubLabel({ children }: { children: React.ReactNode }) {
@@ -67,6 +90,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const [photoId, setPhotoId] = useState<string | null>(null)
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
   const showCheckbox = canReview && closing.status === 'submitted' && !!onToggleSelect
+  const extraPhotos = normalizeExtraPhotos(closing.extra_photo_urls)
 
   // 統一收集所有照片給 lightbox（收據 + 其他）
   const allPhotos: { url: string; label: string }[] = [
@@ -78,7 +102,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
     ...(closing.envelope_photo_url ? [{ url: closing.envelope_photo_url, label: '信封袋' }] : []),
     ...(closing.void_invoice_photo_urls ?? []).map((url, i, arr) => ({ url, label: `作廢發票${arr.length > 1 ? ` ${i + 1}` : ''}` })),
     ...(closing.note_photo_url ? [{ url: closing.note_photo_url, label: '備註照片' }] : []),
-    ...(closing.extra_photo_urls ?? []).map((url, i) => ({ url, label: `附加照片 ${i + 1}` })),
+    ...extraPhotos,
   ]
 
   const absVar = Math.abs(closing.variance)
@@ -328,9 +352,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                 otherPhotos.push({ url, label: `作廢發票${(closing.void_invoice_photo_urls?.length ?? 1) > 1 ? ` ${i + 1}` : ''}` })
               }
               if (closing.note_photo_url) otherPhotos.push({ url: closing.note_photo_url, label: '備註照片' })
-              for (const [i, url] of (closing.extra_photo_urls ?? []).entries()) {
-                otherPhotos.push({ url, label: `附加照片 ${i + 1}` })
-              }
+              otherPhotos.push(...extraPhotos)
               if (otherPhotos.length === 0) return null
               return (
                 <div>

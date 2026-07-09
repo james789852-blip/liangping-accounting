@@ -70,6 +70,16 @@ const CK_DOC_COLOR: Record<string, string> = {
 }
 function ckDocColor(doc: string): string { return CK_DOC_COLOR[doc] ?? 'FFF2F2F2' }
 
+type ExpenseLayoutItem = {
+  item_name: string
+  category: string
+  vendor_group: string
+  doc_type: string
+  total: number
+  vendor_group_sort_order: number
+  sort_order: number
+}
+
 function thinBorder(color = CK_GRID): Partial<ExcelJS.Borders> {
   return {
     top: { style: 'thin', color: { argb: color } },
@@ -281,7 +291,7 @@ export async function addCKSheet(
   // 用 mapping 為主，若 mapping 沒有但實際有錄 → 也補進來（避免資料消失）
   const seen = new Set(mappingItems.map(m => expenseKey(m.category, m.vendor_group, m.doc_type ?? '', m.name)))
   const orphanFromReceipts = normalizedExpenseByItem.filter(e => !seen.has(expenseKey(e.category, e.vendor_group, e.doc_type, e.item_name)))
-  const expenseItems: typeof monthly.expenseByItem = [
+  const expenseItems: ExpenseLayoutItem[] = [
     ...mappingItems.map(m => {
       const rec = expenseByKey.get(expenseKey(m.category, m.vendor_group, m.doc_type ?? '', m.name))
       return {
@@ -290,9 +300,15 @@ export async function addCKSheet(
         vendor_group: m.vendor_group,
         doc_type: m.doc_type ?? '',
         total: rec?.total ?? 0,
+        vendor_group_sort_order: m.vendor_group_sort_order ?? 9999,
+        sort_order: m.sort_order ?? 9999,
       }
     }),
-    ...orphanFromReceipts,
+    ...orphanFromReceipts.map((e, index) => ({
+      ...e,
+      vendor_group_sort_order: 999999,
+      sort_order: 999999 + index,
+    })),
   ]
 
   const cols: ColumnDef[] = []
@@ -316,13 +332,15 @@ export async function addCKSheet(
   cols.push({ index: idx++, header: '耗材', kind: 'stat', statKey: 'pack' })
   cols.push({ index: idx++, header: '雜項', kind: 'stat', statKey: 'misc' })
 
-  // 支出品項欄（依 category → vendor_group → doc_type → item_name 排序）
+  // 支出品項欄：依品項管理的分類排序與品項排序輸出，不再用名稱或金額重排。
   const catOrder: Record<string, number> = { '食材': 0, '耗材': 1, '雜項': 2 }
   const sortedExpenseItems = [...expenseItems].sort((a, b) =>
     (catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3)
-    || (a.vendor_group || '').localeCompare(b.vendor_group || '')
+    || (a.vendor_group_sort_order ?? 9999) - (b.vendor_group_sort_order ?? 9999)
     || (a.doc_type || '').localeCompare(b.doc_type || '')
-    || b.total - a.total
+    || (a.sort_order ?? 9999) - (b.sort_order ?? 9999)
+    || (a.vendor_group || '').localeCompare(b.vendor_group || '', 'zh-Hant')
+    || (a.item_name || '').localeCompare(b.item_name || '', 'zh-Hant')
   )
   for (const e of sortedExpenseItems) {
     cols.push({

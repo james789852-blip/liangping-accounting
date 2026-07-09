@@ -163,7 +163,7 @@ export async function getRangeStats(
       .gte('business_date', firstDay).lte('business_date', lastDay)
       .order('updated_at', { ascending: true }),
     admin.from('receipts')
-      .select('business_date, vendor_name, total_amount, tax_amount, notes, receipt_type, receipt_items(item_name, amount)')
+      .select('business_date, vendor_name, total_amount, tax_amount, notes, receipt_type, receipt_items(item_name, amount, item_category, excel_column)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('store_holidays')
@@ -234,18 +234,20 @@ export async function getRangeStats(
     })
     for (const it of (r.receipt_items ?? []) as any[]) {
       if (!it.amount) continue
-      dd.items[it.item_name] = (dd.items[it.item_name] ?? 0) + it.amount
-      if (noteText && !notedItemNames.has(it.item_name)) {
-        dd.notes[it.item_name] = dd.notes[it.item_name]
-          ? `${dd.notes[it.item_name]}\n${noteText}`
+      const itemKey = it.item_name
+      dd.items[itemKey] = (dd.items[itemKey] ?? 0) + it.amount
+      if (noteText && !notedItemNames.has(itemKey)) {
+        dd.notes[itemKey] = dd.notes[itemKey]
+          ? `${dd.notes[itemKey]}\n${noteText}`
           : noteText
-        notedItemNames.add(it.item_name)
+        notedItemNames.add(itemKey)
       }
     }
     // 稅金分流：receipt 內有耗材品項 → 稅算「免洗稅金」；否則歸雜項
     const tax = (r.tax_amount ?? 0) as number
     if (tax > 0) {
       const hasPack = (r.receipt_items ?? []).some((it: any) => {
+        if (it.item_category === '耗材') return true
         const m = itemMeta.get(it.item_name)
         return m?.category === '耗材'
       })

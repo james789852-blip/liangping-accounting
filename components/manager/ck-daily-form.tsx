@@ -180,6 +180,7 @@ function resolveReceiptCategoryName(form: PhotoExpenseForm, receiptCategories: R
     const containing = receiptCategories.find(c => c.vendors.some(v => v.name === form.vendor_group))
     if (containing) return containing.name
   }
+  if (!form.category_name && !form.vendor_group && !form.item_name) return ''
   if (form.category === '耗材' && receiptCategories.some(c => c.name === '耗材')) return '耗材'
   if (form.category === '雜項') {
     if (receiptCategories.some(c => c.name === '雜項')) return '雜項'
@@ -187,6 +188,19 @@ function resolveReceiptCategoryName(form: PhotoExpenseForm, receiptCategories: R
   }
   if (receiptCategories.some(c => c.name === '廠商類別')) return '廠商類別'
   return receiptCategories[0]?.name ?? '廠商類別'
+}
+
+function mergeExternalOrders(configuredStores: ExternalStore[], existingOrders?: ExternalOrder[] | null) {
+  const byName = new Map<string, ExternalOrder>()
+  for (const store of configuredStores) {
+    const name = store.name.trim()
+    if (name) byName.set(name, { name, amount: 0 })
+  }
+  for (const order of existingOrders ?? []) {
+    const name = order.name.trim()
+    if (name) byName.set(name, { name, amount: Number(order.amount) || 0 })
+  }
+  return Array.from(byName.values())
 }
 
 function buildPhotoExpenseForms(photoUrls: string[], expenses: Expense[]): PhotoExpenseForm[] {
@@ -433,7 +447,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
 
   // 體系外叫貨
   const [extOrders, setExtOrders] = useState<ExternalOrder[]>(
-    existing?.externalOrders ?? externalStores.map(s => ({ name: s.name, amount: 0 }))
+    () => mergeExternalOrders(externalStores, existing?.externalOrders)
   )
 
   // 支出明細
@@ -445,7 +459,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   })
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null)
   // 支出：類別 → 廠商 → 品項 三層 dropdown（跟店面版一致）
-  const [activeCat, setActiveCat] = useState<string>(receiptCategories[0]?.name ?? '廠商類別')
+  const [activeCat, setActiveCat] = useState<string>('')
   const [activeVendor, setActiveVendor] = useState<string>('')
 
   // 收據照片
@@ -494,6 +508,10 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       return changed ? next : prev
     })
   }, [memberOrders])
+
+  useEffect(() => {
+    setExtOrders(prev => mergeExternalOrders(externalStores, prev))
+  }, [externalStores])
 
   useEffect(() => {
     if (isLocked || typeof window === 'undefined') return
@@ -751,7 +769,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
           id: `photo-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           photoUrl: result.publicUrl,
           category: '食材',
-          category_name: undefined,
+          category_name: '',
           item_name: '',
           amount: '',
           payer_name: '',
@@ -1187,12 +1205,14 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                     item_name: '',
                                   })
                                 }}>
+                                <option value="">選擇類別</option>
                                 {receiptCategories.map(c => (
                                   <option key={c.id} value={c.name}>{c.name}</option>
                                 ))}
                               </select>
                               <select className={INPUT} style={{ ...INPUT_STYLE, minWidth: 0, fontSize: 16 }}
                                 value={form.vendor_group}
+                                disabled={!activeCategoryName}
                                 onChange={e => {
                                   const vendor = e.target.value
                                   const vgRec = vendorGroups.find(g => g.name === vendor)
@@ -1202,7 +1222,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                     doc_type: vgRec?.doc_type ?? form.doc_type,
                                   })
                                 }}>
-                                <option value="">— 選擇廠商/群組 —</option>
+                                <option value="">{activeCategoryName ? '— 選擇廠商/群組 —' : '（先選類別）'}</option>
                                 {formVendors.map(v => (
                                   <option key={v.id} value={v.name}>{v.name}</option>
                                 ))}
@@ -1221,7 +1241,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                 ) : (
                                   <select className={INPUT} style={{ ...INPUT_STYLE, minWidth: 0, fontSize: 16 }}
                                     value={form.item_name}
-                                    disabled={!form.vendor_group}
+                                    disabled={!activeCategoryName || !form.vendor_group}
                                     onChange={e => {
                                       const itemName = e.target.value
                                       const mapped = itemOptions.find(item => item.item_name === itemName)
@@ -1232,7 +1252,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                           : form.category,
                                       })
                                     }}>
-                                    <option value="">{form.vendor_group ? '— 選擇品項 —' : '（先選廠商）'}</option>
+                                    <option value="">{!activeCategoryName ? '（先選類別）' : form.vendor_group ? '— 選擇品項 —' : '（先選廠商）'}</option>
                                     {form.vendor_group && hasItemOptions
                                       ? itemOptions.map(item => <option key={item.item_name} value={item.item_name}>{item.item_name}</option>)
                                       : form.vendor_group && !requiresPhotoItem && <option value={form.vendor_group}>{form.vendor_group}</option>
