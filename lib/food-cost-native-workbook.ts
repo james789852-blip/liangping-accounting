@@ -368,10 +368,10 @@ export async function addFoodCostSheet(
   }
   for (const r of docRanges) {
     if (!r.doc) continue
-    const cell = ws.getRow(2).getCell(r.start)
-    fillHeaderCell(cell, r.doc, docColor(r.doc), 'FF000000', true, 12)
-    if (r.end > r.start) {
-      ws.mergeCells(2, r.start, 2, r.end)
+    // Row 2 是總發票/總收據 SUMIFS 的條件列；不能合併儲存格。
+    // Excel 合併格只有左上角保留值，會讓同一段後面的欄位被 SUMIFS 漏算。
+    for (let col = r.start; col <= r.end; col++) {
+      fillHeaderCell(ws.getRow(2).getCell(col), r.doc, docColor(r.doc), 'FF000000', true, 12)
     }
   }
 
