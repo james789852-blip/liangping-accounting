@@ -13,7 +13,7 @@
 import ExcelJS from 'exceljs'
 import { getDisplayPosTotal, getMonthlyStats, type DailyStats, type MonthlyStats } from '@/lib/store-aggregator'
 import { type ResolvedStoreItem } from '@/lib/store-items-resolver'
-import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
+import { compareResolvedItemsByMappingOrder, getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
@@ -88,47 +88,9 @@ function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAcco
   cols.push({ index: idx++, header: '耗材', kind: 'stat', statKey: 'pack' })
   cols.push({ index: idx++, header: '雜項', kind: 'stat', statKey: 'misc' })
 
-  // 品項欄排序：預設 category 優先（食→耗→雜分區），但**允許 vg 標記為「跨 category 合併」**
-  // 標記後該 vg 的所有品項會連續顯示（不被 category 拆散）
-  const catOrder: Record<string, number> = { '食材': 0, '耗材': 1, '雜項': 2 }
-  const mergedVgs = new Set(
-    items.filter(i => i.vg_merge_across_category).map(i => i.vendor_group)
-  )
-  // 「退稅」品項按名稱推導原廠商，讓同來源在 xlsx 內連續排（自然形成獨立區塊）
-  const refundSrc = (name: string) => {
-    if (name.endsWith('稅金')) return name.slice(0, -2)
-    if (name.endsWith('稅')) return name.slice(0, -1)
-    return name
-  }
-  const sortedItems = [...items].sort((a, b) => {
-    // 同 vg=退稅：先按 refundSource 分組（同來源連續），再按 sort_order
-    if (a.vendor_group === '退稅' && b.vendor_group === '退稅') {
-      const sa = refundSrc(a.name)
-      const sb = refundSrc(b.name)
-      if (sa !== sb) return sa.localeCompare(sb, 'zh-Hant')
-      return (a.sort_order - b.sort_order) || a.name.localeCompare(b.name)
-    }
-    const aMerge = mergedVgs.has(a.vendor_group)
-    const bMerge = mergedVgs.has(b.vendor_group)
-    // 若兩者都在 merge vg 且同 vg → 直接 vg 內連續排
-    if (aMerge && bMerge && a.vendor_group === b.vendor_group) {
-      return (catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3)
-        || (a.sort_order - b.sort_order)
-        || a.name.localeCompare(b.name)
-    }
-    // 兩者都 merge 但不同 vg → 依 vg_sort_order
-    if (aMerge && bMerge) {
-      return (a.vendor_group_sort_order - b.vendor_group_sort_order)
-        || a.vendor_group.localeCompare(b.vendor_group)
-    }
-    // 排序：vg_sort_order → vg name → category → item.sort_order → name
-    // vg 優先確保同一廠商群組的品項永遠連續（不被 category 邊界拆散）
-    return (a.vendor_group_sort_order - b.vendor_group_sort_order)
-      || a.vendor_group.localeCompare(b.vendor_group)
-      || (catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3)
-      || (a.sort_order - b.sort_order)
-      || a.name.localeCompare(b.name)
-  })
+  // 品項欄順序以「品項對應管理」為準：廠商排序 → 廠商內品項排序。
+  // 食材/耗材/雜項月合計仍用各欄 category 公式計算，不依欄位是否相鄰。
+  const sortedItems = [...items].sort(compareResolvedItemsByMappingOrder)
   for (const it of sortedItems) {
     cols.push({
       index: idx++,

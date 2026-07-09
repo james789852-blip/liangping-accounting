@@ -14,7 +14,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMonthLastDay } from '@/lib/business-date'
 import { type ResolvedStoreItem } from '@/lib/store-items-resolver'
-import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
+import { compareResolvedItemsByMappingOrder, getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -113,6 +113,7 @@ export interface MonthlyStats {
     doc_type: string
     item_name: string
     category: '食材' | '耗材' | '雜項'
+    sort_order: number
     total: number
   }>
   // ── 特殊統計欄 ──
@@ -393,15 +394,24 @@ export async function getMonthlyStats(storeId: string, year: number, monthNum: n
       doc_type: meta.doc_type ?? '',
       item_name: itemName,
       category: meta.category,
+      sort_order: meta.sort_order,
       total,
     })
   }
-  itemMonthlyTotals.sort((a, b) =>
-    a.vendor_group_sort_order - b.vendor_group_sort_order
-    || a.vendor_group.localeCompare(b.vendor_group)
-    || a.doc_type.localeCompare(b.doc_type)
-    || a.item_name.localeCompare(b.item_name)
-  )
+  itemMonthlyTotals.sort((a, b) => compareResolvedItemsByMappingOrder(
+    {
+      name: a.item_name,
+      vendor_group: a.vendor_group,
+      vendor_group_sort_order: a.vendor_group_sort_order,
+      sort_order: a.sort_order,
+    } as ResolvedStoreItem,
+    {
+      name: b.item_name,
+      vendor_group: b.vendor_group,
+      vendor_group_sort_order: b.vendor_group_sort_order,
+      sort_order: b.sort_order,
+    } as ResolvedStoreItem
+  ))
 
   const channels = {
     twpay: !!store.twpay_enabled,

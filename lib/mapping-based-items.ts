@@ -11,6 +11,13 @@ import type { ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { fetchAllPaged } from '@/lib/supabase-paged'
 import { unstable_cache } from 'next/cache'
 
+export function compareResolvedItemsByMappingOrder(a: ResolvedStoreItem, b: ResolvedStoreItem): number {
+  return ((a.vendor_group_sort_order ?? 9999) - (b.vendor_group_sort_order ?? 9999))
+    || (a.vendor_group ?? '').localeCompare(b.vendor_group ?? '', 'zh-Hant')
+    || ((a.sort_order ?? 1000) - (b.sort_order ?? 1000))
+    || a.name.localeCompare(b.name, 'zh-Hant')
+}
+
 /**
  * 從 mappings 撈出該店的品項清單，附帶完整的 vg / doc_type / category / sort_order
  * 優先序：store-specific mapping > global mapping
@@ -66,8 +73,8 @@ async function loadStoreItemsFromMappings(storeId: string): Promise<ResolvedStor
     })
   }
 
-  // 依 sort_order 排（xlsx workbook 內會再依 vg 排一次）
-  return items.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+  // 對齊「品項對應管理」：廠商/分類排序優先，廠商內再依品項排序。
+  return items.sort(compareResolvedItemsByMappingOrder)
 }
 
 export async function getStoreItemsFromMappings(storeId: string): Promise<ResolvedStoreItem[]> {
