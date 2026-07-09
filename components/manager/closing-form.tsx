@@ -848,6 +848,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const notePhotoInputRef = useRef<HTMLInputElement>(null)
 
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
+  const handwriteOrdersLsKey = `handwrite_orders_${store.id}_${today}`
+  useEffect(() => {
+    if ((existingClosing?.handwrite_orders ?? []).length > 0) return
+    try {
+      const stored = JSON.parse(localStorage.getItem(handwriteOrdersLsKey) ?? '[]')
+      if (Array.isArray(stored) && stored.length > 0) setHandwriteOrders(stored)
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [adjustments, setAdjustments] = useState<RemittanceAdjustment[]>(() => {
     const saved = existingClosing?.remittance_adjustments
     if (Array.isArray(saved) && saved.length > 0) return saved
@@ -1138,6 +1147,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const isLocked = (status === 'submitted' || status === 'verified') && !submitDone
   const isDisputed = status === 'disputed'
   const disputeNote = existingClosing?.dispute_note ?? ''
+
+  useEffect(() => {
+    if (isLocked || submitDone) return
+    try {
+      if (handwriteOrders.length > 0) localStorage.setItem(handwriteOrdersLsKey, JSON.stringify(handwriteOrders))
+      else localStorage.removeItem(handwriteOrdersLsKey)
+    } catch {}
+  }, [handwriteOrders, handwriteOrdersLsKey, isLocked, submitDone])
 
   const absVar = Math.abs(s.variance)
   const varColor = absVar === 0 ? '#047857' : absVar <= 200 ? '#b45309' : '#be123c'
@@ -1689,6 +1706,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (newOrderAmt <= 0) { toast.error('請填寫金額'); return }
     if (handwriteOrders.some(o => o.order_number === num)) { toast.error('該單號已存在'); return }
     setHandwriteOrders(prev => [...prev, { id: crypto.randomUUID(), order_number: num, amount: newOrderAmt, voided: false, void_reason: '' }])
+    scheduleBackgroundSave()
     setNewOrderNum('')
     setNewOrderAmt(0)
     setTimeout(() => newOrderNumRef.current?.focus(), 50)
@@ -1705,20 +1723,25 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
     if (newOrders.length === 0) { toast.info('該範圍內的單號已全部存在'); return }
     setHandwriteOrders(prev => [...prev, ...newOrders])
+    scheduleBackgroundSave()
     toast.success(`已建立 ${newOrders.length} 筆單號`)
   }
 
   function updateHandwriteOrderAmount(id: string, amount: number) {
     setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, amount } : o))
+    scheduleBackgroundSave()
   }
   function toggleVoidOrder(id: string) {
     setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, voided: !o.voided } : o))
+    scheduleBackgroundSave()
   }
   function updateVoidReason(id: string, reason: string) {
     setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, void_reason: reason } : o))
+    scheduleBackgroundSave()
   }
   function removeHandwriteOrder(id: string) {
     setHandwriteOrders(prev => prev.filter(o => o.id !== id))
+    scheduleBackgroundSave()
   }
 
   async function handleSave(silent = false) {
@@ -1861,6 +1884,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (ckTotal > 0) {
         syncStoreCKOrder(store.id, today, ckTotal).catch(() => {})
       }
+      try {
+        if (hwItems.length > 0) localStorage.setItem(handwriteOrdersLsKey, JSON.stringify(handwriteOrders))
+        else localStorage.removeItem(handwriteOrdersLsKey)
+      } catch {}
       try { localStorage.removeItem(saveBkKey) } catch {}
       if (!silent) toast.success('草稿已儲存')
       return cid
@@ -1917,6 +1944,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       localStorage.removeItem(voidInvoiceLsKey)
       localStorage.removeItem(notePhotoLsKey)
       localStorage.removeItem(receiptFormsDraftKey)
+      localStorage.removeItem(handwriteOrdersLsKey)
       localStorage.removeItem(cashLsKey)
       localStorage.removeItem(stepLsKey)
       toast.success('今日結帳已送出！')
