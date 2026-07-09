@@ -425,7 +425,7 @@ export default async function ManagerDashboard() {
 
         {/* ── 大 CTA 卡片 ── */}
         <Link href={actionHref}>
-          <div className="rounded-3xl p-8 text-white mb-5 relative overflow-hidden cursor-pointer transition-all hover:-translate-y-0.5"
+          <div className="rounded-3xl p-5 sm:p-8 text-white mb-5 relative overflow-hidden cursor-pointer transition-all hover:-translate-y-0.5"
             style={{
               background: ctaGradient,
               boxShadow: isDisputed
@@ -446,7 +446,7 @@ export default async function ManagerDashboard() {
                 {dateLabel} · {weekdayLabel}
               </p>
 
-              <h2 style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '16px' }}>
+              <h2 className="text-[28px] sm:text-[36px] leading-tight" style={{ fontWeight: 800, marginBottom: '16px' }}>
                 {storeName || '今日結帳'}
               </h2>
 
@@ -461,7 +461,7 @@ export default async function ManagerDashboard() {
               </div>
 
               {/* 按鈕 */}
-              <button className="inline-flex items-center gap-2 rounded-xl font-bold transition-all hover:-translate-y-0.5"
+              <button className="w-full sm:w-auto justify-center inline-flex items-center gap-2 rounded-xl font-bold transition-all hover:-translate-y-0.5"
                 style={{
                   background: 'white', color: isDisputed ? '#9f1239' : '#92400E',
                   padding: '14px 28px', fontSize: '15px', border: 'none', cursor: 'pointer',

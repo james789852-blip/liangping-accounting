@@ -175,8 +175,14 @@
   box-shadow: 0 -4px 16px rgba(0,0,0,0.06);
   border-top: 1px solid #f4f4f5;
 }
+.manager-sticky-action-bar {
+  bottom: calc(64px + env(safe-area-inset-bottom));
+}
 @media (min-width: 1024px) {
   .closing-form-bottom-bar {
+    bottom: 0;
+  }
+  .manager-sticky-action-bar {
     bottom: 0;
   }
 }

@@ -156,7 +156,7 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
     .reduce((s: number, r: any) => s + r.gross_amount, 0)
 
   return (
-    <div className="max-w-xl mx-auto px-4 py-4 space-y-4 pb-8">
+    <div className="max-w-xl mx-auto px-4 py-4 space-y-4 pb-28 lg:pb-8">
       <Link href="/manager/history" className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition-colors">
         <ArrowLeft className="h-4 w-4" /> 歷史紀錄
       </Link>

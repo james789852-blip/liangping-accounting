@@ -1406,7 +1406,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
 
       {/* 操作按鈕 */}
       {!isLocked && (
-        <div className="sticky bottom-0 -mx-4 px-4 py-3 flex gap-3"
+        <div className="sticky manager-sticky-action-bar -mx-4 px-4 py-3 flex gap-3"
           style={{ background: 'rgba(250,250,250,0.94)', backdropFilter: 'blur(16px)', borderTop: '1px solid #f4f4f5' }}>
           {currentStep > 1 && (
             <button type="button" onClick={goPrev}

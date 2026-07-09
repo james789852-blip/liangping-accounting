@@ -313,7 +313,7 @@ export default function EditClient({ report: initial, storeName, thisReportItems
         </Card>
 
         {/* 底部操作 */}
-        <div className="sticky bottom-0 -mx-4 px-4 py-3 bg-white" style={{ borderTop: '1px solid #f4f4f5', boxShadow: '0 -4px 12px rgba(0,0,0,0.04)' }}>
+        <div className="sticky manager-sticky-action-bar -mx-4 px-4 py-3 bg-white" style={{ borderTop: '1px solid #f4f4f5', boxShadow: '0 -4px 12px rgba(0,0,0,0.04)' }}>
           <div className="flex gap-2 flex-wrap">
             <button onClick={handleExportPDF}
               className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl text-sm font-bold"
