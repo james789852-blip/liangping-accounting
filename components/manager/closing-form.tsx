@@ -1028,7 +1028,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (existingClosing?.status === 'draft' || existingClosing?.status === 'disputed') return false
     try { return localStorage.getItem(`submit_done_${store.id}_${today}`) === '1' } catch { return false }
   })
-  // On mount: if a previous save was interrupted, offer to restore backed-up form data
+  // On mount: if a previous save was interrupted, automatically restore backed-up form data.
   useEffect(() => {
     try {
       const raw = localStorage.getItem(saveBkKey)
@@ -1050,29 +1050,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       const dbCashEmpty = CASH_KEYS.every(k => ((existingClosing?.cash_counts as any)?.[0]?.[k] ?? 0) === 0)
       const bkHasCash = bk.data && CASH_KEYS.some(k => (bk.data[k] ?? 0) > 0)
       const isDisputedWithLostCash = existingClosing?.status === 'disputed' && dbCashEmpty && bkHasCash
-      if (!isDisputedWithLostCash && bk.ts <= dbUpdatedAt + 3000) return  // DB 較新（含 3 秒容差） → 不 prompt
-      toast('上次未儲存的資料還在（切頁/關閉前的自動備份）', {
-        duration: 15000,
-        action: {
-          label: '恢復資料',
-          onClick: () => {
-            try {
-              if (bk.data) setData(bk.data)
-              if (Array.isArray(bk.expenses)) setExpenses(bk.expenses)
-              if (Array.isArray(bk.handwriteOrders)) setHandwriteOrders(bk.handwriteOrders)
-              if (Array.isArray(bk.adjustments)) setAdjustments(bk.adjustments)
-              if (Array.isArray(bk.reserves)) setReserves(bk.reserves)
-              if (Array.isArray(bk.largeCashExpenses)) setLargeCashExpenses(bk.largeCashExpenses)
-              if (bk.ckQuantities && typeof bk.ckQuantities === 'object') setCkQuantities(bk.ckQuantities)
-              if (bk.ckPriceOverrides && typeof bk.ckPriceOverrides === 'object') setCkPriceOverrides(bk.ckPriceOverrides)
-              if (bk.pettyCounts && typeof bk.pettyCounts === 'object') setPettyCounts(bk.pettyCounts)
-              if (bk.pettyLumps && typeof bk.pettyLumps === 'object') setPettyLumps(bk.pettyLumps)
-              toast.success('資料已從備份恢復，請確認後重新儲存')
-              localStorage.removeItem(saveBkKey)
-            } catch { toast.error('恢復失敗') }
-          },
-        },
-      })
+      if (!isDisputedWithLostCash && bk.ts <= dbUpdatedAt + 3000) return  // DB 較新（含 3 秒容差） → 不套用暫存
+
+      if (bk.data) setData(bk.data)
+      if (Array.isArray(bk.expenses)) setExpenses(bk.expenses)
+      if (Array.isArray(bk.handwriteOrders)) setHandwriteOrders(bk.handwriteOrders)
+      if (Array.isArray(bk.adjustments)) setAdjustments(bk.adjustments)
+      if (Array.isArray(bk.reserves)) setReserves(bk.reserves)
+      if (Array.isArray(bk.largeCashExpenses)) setLargeCashExpenses(bk.largeCashExpenses)
+      if (bk.ckQuantities && typeof bk.ckQuantities === 'object') setCkQuantities(bk.ckQuantities)
+      if (bk.ckPriceOverrides && typeof bk.ckPriceOverrides === 'object') setCkPriceOverrides(bk.ckPriceOverrides)
+      if (bk.pettyCounts && typeof bk.pettyCounts === 'object') setPettyCounts(bk.pettyCounts)
+      if (bk.pettyLumps && typeof bk.pettyLumps === 'object') setPettyLumps(bk.pettyLumps)
+      toast.success('已自動套回上次未儲存的資料')
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
