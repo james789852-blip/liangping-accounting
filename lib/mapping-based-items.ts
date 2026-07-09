@@ -64,7 +64,9 @@ async function loadStoreItemsFromMappings(storeId: string): Promise<ResolvedStor
       vendor_group: vgName,
       vendor_group_id: vg?.id ?? null,
       doc_type: effectiveDocType,
-      vendor_group_sort_order: (m.vg_sort_order ?? vg?.sort_order ?? 9999) as number,
+      // 品項管理畫面的群組順序以 system_vendor_groups.sort_order 為準；
+      // 舊資料中的 vg_sort_order 只作為沒有系統群組時的 fallback。
+      vendor_group_sort_order: (vg?.sort_order ?? m.vg_sort_order ?? 9999) as number,
       tax_mode: ((vg?.tax_mode ?? 'inclusive') as 'inclusive' | 'free'),
       is_system: true,
       sort_order: (m.sort_order ?? 1000) as number,
