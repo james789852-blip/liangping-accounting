@@ -172,7 +172,7 @@ export default async function FoodCostPreviewPage({
       .order('business_date'),
     admin.from('item_column_mappings')
       .select('id, item_name, excel_column, item_category, vendor_group, store_id')
-      .or(`store_id.is.null,store_id.eq.${storeId}`),
+      .eq('store_id', storeId),
     admin.from('daily_closings')
       .select('business_date, total_revenue')
       .eq('store_id', storeId)
@@ -207,18 +207,11 @@ export default async function FoodCostPreviewPage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const storeMappings: { id: string; item_name: string; excel_column: string; item_category: string; vendor_group: string | null }[] = []
   const mappingMap: Record<string, { excel_column: string; item_category: string; vendor_group: string | null }> = {}
-  const storeOverrides: typeof mappingMap = {}
   for (const m of (mappings ?? []) as any[]) {
     const entry = { excel_column: m.excel_column, item_category: m.item_category, vendor_group: m.vendor_group ?? null }
-    if (!m.store_id) {
-      mappingMap[m.item_name] = entry
-    } else if (m.store_id === storeId) {
-      storeOverrides[m.item_name] = entry
-      storeMappings.push({ id: m.id as string, item_name: m.item_name as string, ...entry })
-    }
+    mappingMap[m.item_name] = entry
+    storeMappings.push({ id: m.id as string, item_name: m.item_name as string, ...entry })
   }
-  // 套用 store-specific overrides 後勝（與原本 global → store 順序相同）
-  Object.assign(mappingMap, storeOverrides)
 
   const revenueMap: Record<string, number> = {}
   for (const c of closings ?? []) {

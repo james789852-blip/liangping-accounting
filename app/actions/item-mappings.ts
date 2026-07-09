@@ -329,8 +329,8 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
     updated_at: new Date().toISOString(),
   }).eq('id', mappingId)
 
-  // 同步 system_items 名稱，讓 store_items / doc override 仍能接到同一品項。
-  if (trimmedName !== oldName) {
+  // 只有全域 mapping 才同步 system_items；店家專屬改名不可牽動其他店。
+  if (!mapping.store_id && trimmedName !== oldName) {
     const { data: sys } = await admin.from('system_items')
       .select('id').eq('name', oldName).eq('active', true).maybeSingle()
     if (sys) {
@@ -448,6 +448,31 @@ export async function reorderItemMappings(ids: string[]) {
   return { success: true }
 }
 
+/** 每店獨立調整黃色分類順序（Excel Row 1 群組順序）。 */
+export async function reorderStoreVendorGroups(storeId: string, vendorGroups: string[]) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+  if (!storeId) return { error: '缺少店家 ID' }
+
+  const admin = createAdminClient()
+  await Promise.all(
+    vendorGroups.map((vgName, i) => {
+      const order = (i + 1) * 10
+      const query = admin
+        .from('item_column_mappings')
+        .update({ vg_sort_order: order, updated_at: new Date().toISOString() })
+        .eq('store_id', storeId)
+      return vgName === '未分類'
+        ? query.or('vendor_group.is.null,vendor_group.eq.未分類')
+        : query.eq('vendor_group', vgName)
+    })
+  )
+
+  revalidate()
+  return { success: true as const }
+}
+
 /**
  * 設定「品項層級 doc_type override」
  * 若指定 storeId → 存到 store_items.doc_type_override（該店專屬）
@@ -461,6 +486,27 @@ export async function setItemDocOverride(itemName: string, storeId: string | nul
   const { error } = await admin.from('item_column_mappings')
     .update({ doc_type_override: docOverride || null, updated_at: new Date().toISOString() })
     .eq('item_name', itemName).eq('store_id', storeId)
+  if (error) return { error: error.message }
+  revalidateLight()
+  return { success: true as const }
+}
+
+/** 設定本店某個黃色分類底下所有品項的單據類型。 */
+export async function setStoreVendorGroupDocType(storeId: string, vendorGroup: string, docOverride: string | null) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+  if (!storeId) return { error: '缺少店家 ID' }
+
+  const admin = createAdminClient()
+  const query = admin.from('item_column_mappings')
+    .update({ doc_type_override: docOverride || null, updated_at: new Date().toISOString() })
+    .eq('store_id', storeId)
+
+  const { error } = vendorGroup === '未分類'
+    ? await query.or('vendor_group.is.null,vendor_group.eq.未分類')
+    : await query.eq('vendor_group', vendorGroup)
+
   if (error) return { error: error.message }
   revalidateLight()
   return { success: true as const }
@@ -583,21 +629,4 @@ export async function copyStoreMappingsToStore(fromStoreId: string, toStoreId: s
   if (error) return { error: error.message }
   revalidate()
   return { success: true, count: src.length }
-}
-
-export async function copyGlobalMappingsToStore(storeId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
-  const admin = createAdminClient()
-  const { data: globals } = await admin
-    .from('item_column_mappings').select('item_name, excel_column, item_category')
-    .is('store_id', null)
-  if (!globals?.length) return { error: '尚無全域對應可複製' }
-  await admin.from('item_column_mappings').delete().eq('store_id', storeId)
-  await admin.from('item_column_mappings').insert(
-    globals.map(g => ({ ...g, store_id: storeId, updated_at: new Date().toISOString() }))
-  )
-  revalidate()
-  return { success: true, count: globals.length }
 }

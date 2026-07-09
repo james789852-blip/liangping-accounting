@@ -83,17 +83,14 @@ export default async function CKPage({
     // 央廚品項對應（跟店面版一樣，xlsx 匯出對應 excel_column）
     admin.from('item_column_mappings')
       .select('store_id, item_name, vendor_group, item_category, excel_column, sort_order')
-      .or(`store_id.is.null,store_id.eq.${storeId}`)
+      .eq('store_id', storeId)
       .order('sort_order'),
   ])
 
   const mappingMap = new Map<string, any>()
   for (const item of (rawMappings ?? []) as any[]) {
     const key = `${item.vendor_group ?? ''}||${item.item_name}`
-    const existingItem = mappingMap.get(key)
-    if (!existingItem || (!existingItem.store_id && item.store_id === storeId)) {
-      mappingMap.set(key, item)
-    }
+    mappingMap.set(key, item)
   }
   const mappings = Array.from(mappingMap.values())
     .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999) || String(a.item_name).localeCompare(String(b.item_name), 'zh-Hant'))

@@ -63,7 +63,6 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     receiptCategories,
     { data: mappingRows },
     itemOrderText,
-    newItems,
     mappingBasedItems,
   ] = await Promise.all([
     supabase.from('stores').select('*').eq('id', storeId).single(),
@@ -83,13 +82,14 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     admin2.storage.from('excel-templates').download(`${storeId}-item-order.json`)
       .then(async ({ data }) => (data ? data.text() : null))
       .catch((): null => null),
-    getStoreItemsResolved(storeId),
     getStoreItemsFromMappings(storeId),
   ])
 
   let itemOrder: string[] = []
   try { if (itemOrderText) itemOrder = JSON.parse(itemOrderText) } catch {}
   const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
+
+  const newItems = mappingBasedItems.length > 0 ? [] : await getStoreItemsResolved(storeId)
 
   // 優先用 mapping-based（跟 xlsx 匯出同源）→ newItems → 舊 mapping
   const mappingColumns = mappingBasedItems.length > 0

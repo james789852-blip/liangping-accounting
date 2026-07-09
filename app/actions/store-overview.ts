@@ -57,34 +57,16 @@ function emptyAccountingDay(date: string): DailyStats {
 
 async function getAccountingItemMeta(storeId: string): Promise<Map<string, AccountingItemMeta>> {
   const admin = createAdminClient()
-  const [{ data: mappings }, { data: vendorGroups }] = await Promise.all([
-    admin.from('item_column_mappings')
-      .select('item_name, item_category, vendor_group, doc_type_override, is_refund, store_id')
-      .or(`store_id.is.null,store_id.eq.${storeId}`),
-    admin.from('system_vendor_groups')
-      .select('name, doc_type')
-      .eq('active', true),
-  ])
-
-  const docByVendorGroup = new Map(
-    (vendorGroups ?? []).map((group: any) => [group.name as string, (group.doc_type as string | null) ?? null]),
-  )
-  const byName = new Map<string, any>()
-
-  for (const mapping of (mappings ?? []) as any[]) {
-    const existing = byName.get(mapping.item_name)
-    if (!existing || (mapping.store_id === storeId && existing.store_id !== storeId)) {
-      byName.set(mapping.item_name, mapping)
-    }
-  }
-
+  const { data: mappings } = await admin.from('item_column_mappings')
+    .select('item_name, item_category, vendor_group, doc_type_override, is_refund, store_id')
+    .eq('store_id', storeId)
   return new Map(
-    [...byName.values()].map((mapping: any) => {
+    ((mappings ?? []) as any[]).map((mapping: any) => {
       const vendorGroup = (mapping.vendor_group ?? '未分類') as string
       return [mapping.item_name as string, {
         category: (mapping.item_category ?? '雜項') as AccountingItemMeta['category'],
         vendor_group: vendorGroup,
-        doc_type: (mapping.doc_type_override ?? docByVendorGroup.get(vendorGroup) ?? null) as string | null,
+        doc_type: (mapping.doc_type_override ?? null) as string | null,
         is_refund: !!mapping.is_refund,
       }]
     }),

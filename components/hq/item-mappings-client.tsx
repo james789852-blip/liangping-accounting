@@ -3,11 +3,11 @@
 import { useState, useTransition, useEffect, useRef, createContext, useContext } from 'react'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import {
-  deleteItemMapping, updateItemMapping, saveItemMapping, copyGlobalMappingsToStore, reorderItemMappings, setItemDocOverride,
+  deleteItemMapping, updateItemMapping, saveItemMapping, reorderItemMappings, setItemDocOverride, reorderStoreVendorGroups,
 } from '@/app/actions/item-mappings'
 import { setManagerStore } from '@/app/actions/store-select'
 import { useRouter } from 'next/navigation'
-import { Trash2, Edit2, Check, X, Plus, Tag, Copy, ChevronLeft, ChevronUp, ChevronDown, GripVertical } from 'lucide-react'
+import { Trash2, Edit2, Check, X, Plus, Tag, ChevronLeft, ChevronUp, ChevronDown, GripVertical } from 'lucide-react'
 import { toast } from 'sonner'
 import HelpBox from './help-box'
 import {
@@ -201,22 +201,14 @@ export default function ItemMappingsClient({
       .catch(e => toast.error('排序儲存失敗：' + (e instanceof Error ? e.message : String(e))))
   }
 
-  // 店家 tab 顯示 = 該店 override + 未被 override 的全域繼承（即 xlsx 實際會用到的完整品項清單）
-  // 全域 tab 只顯示全域 mapping
-  // 依 sort_order 排序（不分專屬/全域），確保拖曳排序能正確反映
+  // 各店完全獨立：品項對應頁與 Excel 匯出都只讀目前店家的 mapping。
   const sortByOrder = (a: Mapping, b: Mapping) =>
     ((a as any).sort_order ?? 999999) - ((b as any).sort_order ?? 999999)
-  const displayMappings = activeStoreId === ''
-    ? mappings.filter(m => !m.store_id).sort(sortByOrder)
-    : (() => {
-        const storeOverride = mappings.filter(m => m.store_id === activeStoreId)
-        const overriddenNames = new Set(storeOverride.map(m => m.item_name))
-        const globalInherited = mappings.filter(m => !m.store_id && !overriddenNames.has(m.item_name))
-        return [...storeOverride, ...globalInherited].sort(sortByOrder)
-      })()
+  const displayMappings = mappings
+    .filter(m => m.store_id === activeStoreId)
+    .sort(sortByOrder)
 
-  const globalCount = mappings.filter(m => !m.store_id).length
-  const isStorePage = activeStoreId !== ''
+  const isStorePage = true
   const docTypeOptions = Array.from(new Set([
     ...BUILTIN_DOC_TYPES,
     ...vgsState.map(v => v.doc_type).filter((v): v is string => !!v),
@@ -246,12 +238,7 @@ export default function ItemMappingsClient({
     if (!newName.trim()) return
     const excelCol = newCol.trim() || newName.trim()
     startTransition(async () => {
-      // 若在全域頁且勾了店家 → 批次建立 store-specific mapping（不建全域）
-      // 若在全域頁沒勾店家 → 建全域 mapping（store_id=null）
-      // 若在店家頁 → 只建該店 mapping
-      const targets: (string | undefined)[] = activeStoreId
-        ? [activeStoreId]
-        : (batchStoreIds.length > 0 ? batchStoreIds : [undefined])
+      const targets: string[] = [activeStoreId]
       const results = await Promise.all(
         targets.map(sid => saveItemMapping(newName.trim(), excelCol, newCat, sid, newVendorGroup.trim() || undefined))
       )
@@ -303,16 +290,6 @@ export default function ItemMappingsClient({
       })
   }
 
-  function handleCopyGlobal() {
-    const storeName = stores.find(s => s.id === activeStoreId)?.name ?? '此店'
-    if (!confirm(`確定要把全域對應（${globalCount} 筆）複製到「${storeName}」嗎？\n這會覆蓋此店現有的所有對應。`)) return
-    startTransition(async () => {
-      const result = await copyGlobalMappingsToStore(activeStoreId)
-      if ('error' in result) { alert(result.error); return }
-      router.refresh()
-    })
-  }
-
   // UI 直接顯示完整 item_name（不剝 vg 前綴），避免「你看到什麼 vs 實際名字」的混淆
   // xlsx 匯出時另有 displayHeader 邏輯剝離前綴（保持 xlsx layout 整齊）
   function displayName(m: Mapping): string {
@@ -331,12 +308,21 @@ export default function ItemMappingsClient({
     if (!grouped[vg]) grouped[vg] = []
   }
 
-  // 排序：優先用 system_vendor_groups.sort_order（對齊各店 Excel 順序），
-  //       不在 system_vendor_groups 內的分類往後排
-  const vgSortMap = new Map(vgsState.map(v => [v.name, v.sort_order] as const))
+  const groupSortMap = new Map<string, number>()
+  const groupDocMap = new Map<string, string | null>()
+  for (const m of displayMappings) {
+    const vg = (m.vendor_group?.trim() || '未分類')
+    const currentSort = groupSortMap.get(vg)
+    const nextSort = m.vg_sort_order ?? 99999
+    groupSortMap.set(vg, currentSort == null ? nextSort : Math.min(currentSort, nextSort))
+  }
+  for (const vg of Object.keys(grouped)) {
+    const docs = new Set((grouped[vg] ?? []).map(m => m.doc_type_override ?? '').filter(Boolean))
+    groupDocMap.set(vg, docs.size === 1 ? [...docs][0] : null)
+  }
   const groupOrder = Object.keys(grouped).sort((a, b) => {
-    const sa = vgSortMap.has(a) ? vgSortMap.get(a)! : 99999
-    const sb = vgSortMap.has(b) ? vgSortMap.get(b)! : 99999
+    const sa = groupSortMap.get(a) ?? 99999
+    const sb = groupSortMap.get(b) ?? 99999
     if (sa !== sb) return sa - sb
     // 同 sort_order：未分類最後 / 文件類型次後
     const rank = (g: string) => g === '未分類' ? 2 : DOC_TYPES.has(g) ? 1 : 0
@@ -377,23 +363,19 @@ export default function ItemMappingsClient({
     if (newIdx < 0 || newIdx >= groupOrder.length) return
     const reordered = [...groupOrder]
     ;[reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]]
-    const ids = reordered.map(name => vgsState.find(v => v.name === name)?.id).filter((x): x is string => !!x)
-    if (ids.length === 0) return
-    // optimistic：更新 local vgsState.sort_order
-    setVgsState(prev => prev.map(v => {
-      const i = ids.indexOf(v.id)
-      return i >= 0 ? { ...v, sort_order: (i + 1) * 10 } : v
+    setMappings(prev => prev.map(m => {
+      if (m.store_id !== activeStoreId) return m
+      const group = m.vendor_group?.trim() || '未分類'
+      const orderIdx = reordered.indexOf(group)
+      return orderIdx >= 0 ? { ...m, vg_sort_order: (orderIdx + 1) * 10 } : m
     }))
-    // fire-and-forget server update
-    import('@/app/actions/system-config').then(({ reorderVendorGroups }) => {
-      reorderVendorGroups(ids)
-        .then(r => {
-          if (r && 'error' in r) toast.error('分類排序失敗：' + r.error)
-        })
-        .catch(e => {
-          toast.error('分類排序失敗：' + (e instanceof Error ? e.message : String(e)))
-        })
-    })
+    reorderStoreVendorGroups(activeStoreId, reordered)
+      .then(r => {
+        if (r && 'error' in r) toast.error('分類排序失敗：' + r.error)
+      })
+      .catch(e => {
+        toast.error('分類排序失敗：' + (e instanceof Error ? e.message : String(e)))
+      })
   }
 
   async function handleBatchDelete() {
@@ -616,7 +598,7 @@ export default function ItemMappingsClient({
         {showAdd && (
           <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1.5px solid #FEF3C7', boxShadow: '0 2px 8px rgba(245,158,11,0.12)' }}>
             <p className="text-sm font-semibold" style={{ color: '#92400E' }}>
-              新增品項對應{isStorePage ? `（${stores.find(s => s.id === activeStoreId)?.name ?? '此店'} 專屬）` : '（全域）'}
+              新增品項對應（{stores.find(s => s.id === activeStoreId)?.name ?? '此店'} 專屬）
             </p>
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -665,47 +647,11 @@ export default function ItemMappingsClient({
                 </select>
               </div>
             </div>
-            {/* 全域頁專屬：批次選店 */}
-            {!isStorePage && (
-              <div className="rounded-lg p-3" style={{ background: '#fefce8', border: '1.5px solid #fde68a' }}>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-semibold" style={{ color: '#713f12' }}>
-                    套用到店家（{batchStoreIds.length > 0 ? `${batchStoreIds.length} 家店` : '不勾＝建全域'}）
-                  </p>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => setBatchStoreIds(stores.map(s => s.id))}
-                      className="text-[11px] font-semibold px-2 py-0.5 rounded"
-                      style={{ background: 'white', border: '1px solid #fbbf24', color: '#92400e', cursor: 'pointer' }}>全選</button>
-                    <button type="button" onClick={() => setBatchStoreIds([])}
-                      className="text-[11px] font-semibold px-2 py-0.5 rounded"
-                      style={{ background: 'white', border: '1px solid #e4e4e7', color: '#71717a', cursor: 'pointer' }}>清除</button>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {stores.map(s => {
-                    const checked = batchStoreIds.includes(s.id)
-                    return (
-                      <button key={s.id} type="button"
-                        onClick={() => setBatchStoreIds(prev => checked ? prev.filter(x => x !== s.id) : [...prev, s.id])}
-                        className="text-xs px-2.5 py-1 rounded-full font-semibold transition-colors"
-                        style={checked
-                          ? { background: '#F59E0B', color: 'white', border: '1.5px solid #F59E0B' }
-                          : { background: 'white', color: '#52525b', border: '1.5px solid #e4e4e7' }}>
-                        {checked ? '✓ ' : ''}{s.name}
-                      </button>
-                    )
-                  })}
-                </div>
-                <p className="text-[10px] mt-2" style={{ color: '#a1a1aa' }}>
-                  💡 不勾任何店家 → 建全域預設（所有店繼承）；勾了店家 → 只建到勾選店家的專屬 mapping
-                </p>
-              </div>
-            )}
             <div className="flex gap-2">
               <button onClick={handleAdd} disabled={!newName.trim() || isPending}
                 className="px-4 py-2 rounded-xl text-sm font-semibold text-white"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', opacity: !newName.trim() || isPending ? 0.5 : 1 }}>
-                儲存{!isStorePage && batchStoreIds.length > 0 && `（${batchStoreIds.length} 家）`}
+                儲存
               </button>
               <button onClick={() => setShowAdd(false)}
                 className="px-4 py-2 rounded-xl text-sm font-semibold"
@@ -720,14 +666,7 @@ export default function ItemMappingsClient({
         {isStorePage && displayMappings.length === 0 && !showAdd ? (
           <div className="text-center py-16">
             <p className="text-sm font-medium" style={{ color: '#a1a1aa' }}>此店尚無自訂品項對應</p>
-            <p className="text-xs mt-1" style={{ color: '#d4d4d8' }}>自訂對應優先於全域預設</p>
-            {globalCount > 0 && (
-              <button onClick={handleCopyGlobal} disabled={isPending}
-                className="mt-4 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
-                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
-                <Copy className="h-4 w-4" /> 從全域預設複製 ({globalCount} 筆)
-              </button>
-            )}
+            <p className="text-xs mt-1" style={{ color: '#d4d4d8' }}>請新增品項，或從其他店手動複製一次性設定</p>
           </div>
         ) : null}
 
@@ -782,10 +721,8 @@ export default function ItemMappingsClient({
                 <span className="text-xs" style={{ color: '#a1a1aa' }}>{items.length} 項</span>
                 {/* 單據類型（doc_type）— Excel Row 2 顯示的內容 */}
                 {(() => {
-                  const vgRec = vgsState.find(v => v.name === vg)
-                  if (!vgRec) return null
                   return (
-                    <VgDocTypeSelector vgId={vgRec.id} vgName={vg} currentDoc={vgRec.doc_type ?? null} />
+                    <VgDocTypeSelector storeId={activeStoreId} vgName={vg} currentDoc={groupDocMap.get(vg) ?? null} />
                   )
                 })()}
                 {/* Rename / 刪除 */}
@@ -795,7 +732,7 @@ export default function ItemMappingsClient({
                 {/* 分類內快速新增品項（inline，就地展開輸入框） */}
                 <button onClick={() => {
                   if (inlineAddVg === vg) { setInlineAddVg(null); return }
-                  setInlineAddVg(vg); setInlineAddName(''); setInlineAddCat('食材'); setInlineAddDocType(vgsState.find(v => v.name === vg)?.doc_type ?? '')
+                  setInlineAddVg(vg); setInlineAddName(''); setInlineAddCat('食材'); setInlineAddDocType(groupDocMap.get(vg) ?? '')
                 }}
                   className="ml-auto flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
                   style={inlineAddVg === vg
@@ -1437,8 +1374,8 @@ function CopyToStoreButton({ fromStoreId, stores }: { fromStoreId: string; store
   )
 }
 
-/** 廠商群組的單據類型（doc_type）快速編輯 */
-function VgDocTypeSelector({ vgId, vgName, currentDoc }: { vgId: string; vgName: string; currentDoc: string | null }) {
+/** 廠商群組的單據類型（doc_type）快速編輯：每店獨立寫入該店分類底下的 mapping */
+function VgDocTypeSelector({ storeId, vgName, currentDoc }: { storeId: string; vgName: string; currentDoc: string | null }) {
   const [doc, setDoc] = useState(currentDoc ?? '')
   const [saving, setSaving] = useState(false)
   // refresh 後同步 server 傳回的新值
@@ -1448,8 +1385,8 @@ function VgDocTypeSelector({ vgId, vgName, currentDoc }: { vgId: string; vgName:
     setDoc(next)
     setSaving(true)
     try {
-      const { updateVendorGroup } = await import('@/app/actions/system-config')
-      const r = await updateVendorGroup(vgId, { doc_type: next || null })
+      const { setStoreVendorGroupDocType } = await import('@/app/actions/item-mappings')
+      const r = await setStoreVendorGroupDocType(storeId, vgName, next || null)
       if ('error' in r) { toast.error(String((r as any).error)); return }
     } finally {
       setSaving(false)
@@ -1468,7 +1405,7 @@ function VgDocTypeSelector({ vgId, vgName, currentDoc }: { vgId: string; vgName:
   }
   return (
     <select value={doc} onChange={e => handleChange(e.target.value)} disabled={saving}
-      title={`「${vgName}」的預設單據類型（會顯示在 Excel Row 2）`}
+      title={`「${vgName}」在本店的預設單據類型（會顯示在 Excel Row 2）`}
       style={{
         height: 22, padding: '0 4px', fontSize: 11, borderRadius: 4,
         border: `1px solid ${docColor(doc).bd}`,

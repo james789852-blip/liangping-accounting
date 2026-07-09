@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMonthLastDay } from '@/lib/business-date'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
-import { getStoreItemsResolved } from '@/lib/store-items-resolver'
+import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 export interface MonthlyStats {
   revenue: number
@@ -20,7 +20,7 @@ export interface MonthlyStats {
 /**
  * 以「食耗成本 Excel 匯出」為主邏輯的月度統計。
  * 邏輯必須跟 app/api/export/food-cost/route.ts 對齊：
- * - categoryLookup 從 item_column_mappings (global + store 覆寫)
+ * - categoryLookup 從 item_column_mappings（各店專屬）
  * - storeColumns 從 storage `{storeId}-columns.json`，fallback EXCEL_COLUMNS
  * - Receipts.items + Closings.order_items 都加總
  * - Tax 分流：受影響品項含耗材 → 加到 pack；否則 → 加到 misc
@@ -47,20 +47,15 @@ export async function getMonthlyStats(storeId: string, year: number, monthNum: n
     admin.from('stores').select('name').eq('id', storeId).single(),
     admin.from('item_column_mappings')
       .select('item_name, excel_column, item_category, vendor_group, store_id')
-      .or(`store_id.is.null,store_id.eq.${storeId}`),
+      .eq('store_id', storeId),
     admin.from('central_kitchen_prices').select('item_name, excel_column').eq('active', true),
   ])
 
-  // Build lookups (global first, then store-specific override)
+  // Build lookups from store-specific mappings only.
   const mappingLookup: Record<string, string> = {}
   const categoryLookup: Record<string, string> = {}
   const vendorGroupLookup: Record<string, string> = {}
-  for (const m of (mappingsRaw ?? []).filter((m: any) => !m.store_id)) {
-    mappingLookup[m.item_name] = m.excel_column
-    categoryLookup[m.item_name] = m.item_category
-    if (m.vendor_group) { vendorGroupLookup[m.item_name] = m.vendor_group; vendorGroupLookup[m.excel_column] = m.vendor_group }
-  }
-  for (const m of (mappingsRaw ?? []).filter((m: any) => m.store_id === storeId)) {
+  for (const m of (mappingsRaw ?? []) as any[]) {
     mappingLookup[m.item_name] = m.excel_column
     categoryLookup[m.item_name] = m.item_category
     if (m.vendor_group) { vendorGroupLookup[m.item_name] = m.vendor_group; vendorGroupLookup[m.excel_column] = m.vendor_group }
@@ -98,7 +93,7 @@ export async function getMonthlyStats(storeId: string, year: number, monthNum: n
   }
 
   // resolver 取 doc_type / vendor_group 顯示名（vendorBreakdown 用）
-  const resolved = await getStoreItemsResolved(storeId)
+  const resolved = await getStoreItemsFromMappings(storeId)
   const docTypeByName: Record<string, string> = {}
   const vgNameByName: Record<string, string> = {}
   for (const r of resolved) {

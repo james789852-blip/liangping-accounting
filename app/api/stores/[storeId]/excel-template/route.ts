@@ -254,11 +254,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
     if (columns) { wsUsed = ws; break }
   }
   if (!columns) {
-    // Build category map from EXCEL_COLUMNS + existing store/global mappings
+    // Build category map from EXCEL_COLUMNS + existing store mappings.
     const { data: existingMappings } = await admin
       .from('item_column_mappings')
       .select('item_name, item_category, excel_column')
-      .or(`store_id.is.null,store_id.eq.${storeId}`)
+      .eq('store_id', storeId)
     const categoryMap: Record<string, string> = {}
     for (const [cat, names] of Object.entries(EXCEL_COLUMNS)) {
       for (const n of names) categoryMap[n] = cat
@@ -311,16 +311,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
     const nameCount: Record<string, number> = {}
     for (const c of allCols) nameCount[c.name] = (nameCount[c.name] || 0) + 1
 
-    // Fetch both global and store-specific existing mappings (含 id 與 vendor_group)
+    // Fetch store-specific existing mappings (含 id 與 vendor_group)
     const { data: allExisting } = await admin.from('item_column_mappings')
       .select('id, item_name, vendor_group, store_id')
-      .or(`store_id.is.null,store_id.eq.${storeId}`)
+      .eq('store_id', storeId)
 
-    const globalKeys = new Set<string>()
     const storeMappingMap = new Map<string, { id: string; vendor_group: string | null }>()
     for (const m of (allExisting ?? []) as any[]) {
-      if (!m.store_id) globalKeys.add(`${m.item_name}|${m.vendor_group ?? ''}`)
-      else storeMappingMap.set(m.item_name, { id: m.id as string, vendor_group: (m.vendor_group as string | null) ?? null })
+      storeMappingMap.set(m.item_name, { id: m.id as string, vendor_group: (m.vendor_group as string | null) ?? null })
     }
 
     const seenCombo: Record<string, number> = {}
@@ -345,8 +343,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
       }
 
       orderedItemNames.push(itemName)
-
-      if (occurrence === 1 && globalKeys.has(comboKey)) continue
 
       const existing = storeMappingMap.get(itemName)
       if (existing) {

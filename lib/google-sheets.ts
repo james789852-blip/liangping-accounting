@@ -87,19 +87,14 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('item_column_mappings')
       .select('item_name, excel_column, item_category, store_id, vendor_group')
-      .or(`store_id.is.null,store_id.eq.${storeId}`),
+      .eq('store_id', storeId),
     admin.from('central_kitchen_prices').select('item_name, excel_column').eq('active', true),
   ])
 
   const mappingLookup: Record<string, string> = {}
   const categoryLookup: Record<string, string> = {}
   const vendorGroupLookup: Record<string, string> = {}
-  for (const m of (mappingsRaw ?? []).filter((m: AnyRecord) => !m.store_id)) {
-    mappingLookup[m.item_name] = m.excel_column
-    categoryLookup[m.item_name] = m.item_category
-    if (m.vendor_group) { vendorGroupLookup[m.item_name] = m.vendor_group; vendorGroupLookup[m.excel_column] = m.vendor_group }
-  }
-  for (const m of (mappingsRaw ?? []).filter((m: AnyRecord) => m.store_id === storeId)) {
+  for (const m of (mappingsRaw ?? []) as AnyRecord[]) {
     mappingLookup[m.item_name] = m.excel_column
     categoryLookup[m.item_name] = m.item_category
     if (m.vendor_group) { vendorGroupLookup[m.item_name] = m.vendor_group; vendorGroupLookup[m.excel_column] = m.vendor_group }
