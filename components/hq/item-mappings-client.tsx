@@ -317,8 +317,12 @@ export default function ItemMappingsClient({
     groupSortMap.set(vg, currentSort == null ? nextSort : Math.min(currentSort, nextSort))
   }
   for (const vg of Object.keys(grouped)) {
-    const docs = new Set((grouped[vg] ?? []).map(m => m.doc_type_override ?? '').filter(Boolean))
-    groupDocMap.set(vg, docs.size === 1 ? [...docs][0] : null)
+    const groupItems = grouped[vg] ?? []
+    const docs = new Set(groupItems.map(m => m.doc_type_override ?? '').filter(Boolean))
+    const allItemsUseSameDoc = groupItems.length > 0
+      && docs.size === 1
+      && groupItems.every(m => !!m.doc_type_override)
+    groupDocMap.set(vg, allItemsUseSameDoc ? [...docs][0] : null)
   }
   const groupOrder = Object.keys(grouped).sort((a, b) => {
     // 未分類固定最後，避免它的 sort_order 影響其他黃色分類與 Excel 欄位順序。
@@ -722,12 +726,10 @@ export default function ItemMappingsClient({
                   {vg}
                 </span>
                 <span className="text-xs" style={{ color: '#a1a1aa' }}>{items.length} 項</span>
-                {/* 單據類型（doc_type）— Excel Row 2 顯示的內容 */}
-                {(() => {
-                  return (
-                    <VgDocTypeSelector storeId={activeStoreId} vgName={vg} currentDoc={groupDocMap.get(vg) ?? null} />
-                  )
-                })()}
+                {/* 單據類型（doc_type）— 非未分類才提供分類層級批次設定；未分類常是混合項目，只保留品項列設定 */}
+                {vg !== '未分類' && (
+                  <VgDocTypeSelector storeId={activeStoreId} vgName={vg} currentDoc={groupDocMap.get(vg) ?? null} />
+                )}
                 {/* Rename / 刪除 */}
                 {hasVgRecord && vg !== '未分類' && (
                   <VgActions vgName={vg} storeId={activeStoreId || null} itemCount={items.length} onDone={() => router.refresh()} />
