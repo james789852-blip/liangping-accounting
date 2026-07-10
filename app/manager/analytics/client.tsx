@@ -68,9 +68,38 @@ interface RevData { total: number; pos: number; uber: number; panda: number; twp
 interface DayRev { date: string; total: number }
 interface VendorItem { name: string; curAvg: number; prevAvg: number; curCount: number; prevCount: number }
 interface Vendor { name: string; cur: number; prev: number; items: VendorItem[] }
+interface CostCategory { name: string; cur: number; prev: number }
+interface DocStats {
+  invoice: number
+  receipt: number
+  estimate: number
+  other: number
+  taxAmount: number
+  missingActualAmount: number
+  missingActualCount: number
+  totalDocs: number
+}
 interface Alert { title: string; msg: string; meta?: string; level: 'danger' | 'warn' | 'good' }
 
 const ZERO: RevData = { total: 0, pos: 0, uber: 0, panda: 0, twpay: 0, online: 0, handwrite: 0 }
+const EMPTY_DOC_STATS: DocStats = {
+  invoice: 0,
+  receipt: 0,
+  estimate: 0,
+  other: 0,
+  taxAmount: 0,
+  missingActualAmount: 0,
+  missingActualCount: 0,
+  totalDocs: 0,
+}
+
+function normalizeDocType(raw: unknown) {
+  const v = String(raw ?? '').trim()
+  if (v === 'invoice' || v === '發票') return 'invoice'
+  if (v === 'receipt' || v === '收據') return 'receipt'
+  if (v === 'delivery_note' || v === '估價單' || v === '送貨單') return 'estimate'
+  return 'other'
+}
 
 const AVATAR_GRADS = [
   'linear-gradient(135deg,#f97316,#f59e0b)',
@@ -179,7 +208,8 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
   const [prevRev, setPrevRev] = useState<RevData>(ZERO)
   const [dailyRevs, setDailyRevs] = useState<DayRev[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
-  const [alerts, setAlerts] = useState<Alert[]>([])
+  const [categoryCosts, setCategoryCosts] = useState<CostCategory[]>([])
+  const [docStats, setDocStats] = useState<DocStats>(EMPTY_DOC_STATS)
 
   // Excel 匯出狀態
   const todayDate = new Date()
@@ -289,6 +319,31 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
         }
         return map
       }
+      function ckCategoryTotals(data: Awaited<ReturnType<typeof loadCKRange>>) {
+        const map: Record<string, number> = {}
+        for (const expense of data.expenses as any[]) {
+          const category = expense.category?.trim() || '未分類'
+          map[category] = (map[category] ?? 0) + Number(expense.amount ?? 0)
+        }
+        return map
+      }
+      function ckDocStats(data: Awaited<ReturnType<typeof loadCKRange>>): DocStats {
+        const stats = { ...EMPTY_DOC_STATS }
+        for (const expense of data.expenses as any[]) {
+          const amount = Number(expense.amount ?? 0)
+          const doc = normalizeDocType(expense.doc_type)
+          if (doc === 'invoice') stats.invoice += amount
+          else if (doc === 'receipt') stats.receipt += amount
+          else if (doc === 'estimate') stats.estimate += amount
+          else stats.other += amount
+          if (!expense.payer_name?.trim()) {
+            stats.missingActualAmount += amount
+            stats.missingActualCount += 1
+          }
+          stats.totalDocs += 1
+        }
+        return stats
+      }
       const cm = groupCK(cur)
       const pm = groupCK(prevData)
       const allNames = new Set([...Object.keys(cm), ...Object.keys(pm)])
@@ -309,7 +364,15 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
           })),
         }
       }).sort((a, b) => b.cur - a.cur))
-      setAlerts([])
+      const curCats = ckCategoryTotals(cur)
+      const prevCats = ckCategoryTotals(prevData)
+      const allCats = new Set([...Object.keys(curCats), ...Object.keys(prevCats)])
+      setCategoryCosts(Array.from(allCats).map(name => ({
+        name,
+        cur: curCats[name] ?? 0,
+        prev: prevCats[name] ?? 0,
+      })).sort((a, b) => b.cur - a.cur))
+      setDocStats(ckDocStats(cur))
       setLoading(false)
       return
     }
@@ -324,10 +387,10 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
         .eq('store_id', storeId).gte('business_date', prev.start).lte('business_date', prev.end)
         .in('status', ['submitted', 'verified']),
       supabase.from('receipts')
-        .select('vendor_name, actual_vendor_name, total_amount, receipt_items(item_name, amount)')
+        .select('vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, receipt_items(item_name, amount, item_category)')
         .eq('store_id', storeId).gte('business_date', start).lte('business_date', end),
       supabase.from('receipts')
-        .select('vendor_name, actual_vendor_name, total_amount, receipt_items(item_name, amount)')
+        .select('vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, receipt_items(item_name, amount, item_category)')
         .eq('store_id', storeId).gte('business_date', prev.start).lte('business_date', prev.end),
     ])
 
@@ -374,6 +437,40 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
       }
       return map
     }
+    function categoryTotals(rows: any[]) {
+      const map: Record<string, number> = {}
+      for (const r of rows) {
+        const items = r.receipt_items ?? []
+        if (items.length === 0) {
+          const category = r.vendor_name?.trim() || '未分類'
+          map[category] = (map[category] ?? 0) + Number(r.total_amount ?? 0)
+          continue
+        }
+        for (const item of items) {
+          const category = item.item_category?.trim() || r.vendor_name?.trim() || '未分類'
+          map[category] = (map[category] ?? 0) + Number(item.amount ?? 0)
+        }
+      }
+      return map
+    }
+    function receiptDocStats(rows: any[]): DocStats {
+      const stats = { ...EMPTY_DOC_STATS }
+      for (const r of rows) {
+        const amount = Number(r.total_amount ?? 0)
+        const doc = normalizeDocType(r.receipt_type)
+        if (doc === 'invoice') stats.invoice += amount
+        else if (doc === 'receipt') stats.receipt += amount
+        else if (doc === 'estimate') stats.estimate += amount
+        else stats.other += amount
+        stats.taxAmount += Number(r.tax_amount ?? 0)
+        if (!r.actual_vendor_name?.trim()) {
+          stats.missingActualAmount += amount
+          stats.missingActualCount += 1
+        }
+        stats.totalDocs += 1
+      }
+      return stats
+    }
     const cm = groupVendors(curRec.data ?? [])
     const pm = groupVendors(prevRec.data ?? [])
     const allNames = new Set([...Object.keys(cm), ...Object.keys(pm)])
@@ -395,35 +492,15 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
       }
     }).sort((a, b) => b.cur - a.cur)
     setVendors(vList)
-
-    const newAlerts: Alert[] = []
-    if (pr.total > 0) {
-      const rc = pct(cr.total, pr.total)
-      if (rc >= 10) newAlerts.push({ level: 'good', title: `✨ 好消息：總營業額成長 ${rc}%`, msg: `本期 $${fmt(cr.total)}，較前期 $${fmt(pr.total)} 成長 $${fmt(cr.total - pr.total)}。`, meta: '維持目前運作節奏，繼續加油！' })
-      else if (rc <= -10) newAlerts.push({ level: 'danger', title: `⚠ 總營業額下滑 ${Math.abs(rc)}%`, msg: `本期 $${fmt(cr.total)}，較前期 $${fmt(pr.total)} 減少 $${fmt(pr.total - cr.total)}。`, meta: '請留意近期營運狀況' })
-    }
-    const delCur2 = cr.uber + cr.panda, delPrev2 = pr.uber + pr.panda
-    if (delPrev2 > 0) {
-      const dc = pct(delCur2, delPrev2)
-      if (dc <= -15) newAlerts.push({ level: 'warn', title: `⚠ 外送平台持續下滑 ${Math.abs(dc)}%`, msg: `本期外送 $${fmt(delCur2)}，較前期少 $${fmt(delPrev2 - delCur2)}。`, meta: '建議檢視促銷方案或平台上架狀況' })
-    }
-    if (cr.online > 0 && pr.online > 0) {
-      const oc = pct(cr.online, pr.online)
-      if (oc <= -20) newAlerts.push({ level: 'warn', title: `⚠ 線上點餐下降 ${Math.abs(oc)}%`, msg: `本期線上 $${fmt(cr.online)}，較前期下滑。`, meta: '可能原因：客流習慣改變？建議調查' })
-    }
-    for (const v of vList) {
-      if (v.prev > 500) {
-        const vc = pct(v.cur, v.prev)
-        if (vc >= 20) newAlerts.push({ level: 'warn', title: `⚠ 「${v.name}」採購成本增加 ${vc}%`, msg: `前期 $${fmt(v.prev)} → 本期 $${fmt(v.cur)}，多出 $${fmt(v.cur - v.prev)}。`, meta: '建議確認叫貨量是否合理' })
-      }
-      for (const item of v.items) {
-        if (item.prevAvg > 0 && item.curAvg > 0 && item.curCount >= 2 && item.prevCount >= 2) {
-          const ic = pct(item.curAvg, item.prevAvg)
-          if (ic >= 20) newAlerts.push({ level: 'danger', title: `⚠ 「${v.name}」${item.name} 疑似漲價 ${ic}%`, msg: `每次費用從 $${fmt(item.prevAvg)} 提高到 $${fmt(item.curAvg)}，共記錄 ${item.curCount} 次。`, meta: `估計多支出約 $${fmt((item.curAvg - item.prevAvg) * item.curCount)}` })
-        }
-      }
-    }
-    setAlerts(newAlerts)
+    const curCats = categoryTotals(curRec.data ?? [])
+    const prevCats = categoryTotals(prevRec.data ?? [])
+    const allCats = new Set([...Object.keys(curCats), ...Object.keys(prevCats)])
+    setCategoryCosts(Array.from(allCats).map(name => ({
+      name,
+      cur: curCats[name] ?? 0,
+      prev: prevCats[name] ?? 0,
+    })).sort((a, b) => b.cur - a.cur))
+    setDocStats(receiptDocStats(curRec.data ?? []))
     setLoading(false)
   }, [storeId, storeType, start, end])
 
@@ -452,11 +529,60 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
   const deliveryRatio = curRev.total > 0 ? Math.round(delCur / curRev.total * 1000) / 10 : 0
   const prevDeliveryRatio = prevRev.total > 0 && delPrev > 0 ? Math.round(delPrev / prevRev.total * 1000) / 10 : 0
 
-  const priceChanges = vendors.flatMap(v =>
-    v.items
-      .filter(i => i.prevAvg > 0 && i.curAvg > 0 && i.curCount >= 1 && i.prevCount >= 1)
-      .map(i => ({ vendor: v.name, item: i.name, prevAvg: i.prevAvg, curAvg: i.curAvg, chg: pct(i.curAvg, i.prevAvg) }))
-  ).sort((a, b) => Math.abs(b.chg) - Math.abs(a.chg)).slice(0, 8)
+  const topVendor = vendors.find(v => v.cur > 0)
+  const topVendorShare = topVendor && totalCost > 0 ? Math.round(topVendor.cur / totalCost * 1000) / 10 : 0
+  const topCategory = categoryCosts.find(c => c.cur > 0)
+  const topCategoryShare = topCategory && totalCost > 0 ? Math.round(topCategory.cur / totalCost * 1000) / 10 : 0
+  const maxCategory = Math.max(...categoryCosts.map(c => c.cur), 1)
+  const managementItems: Alert[] = []
+  if (docStats.missingActualAmount > 0) {
+    managementItems.push({
+      level: docStats.missingActualAmount / Math.max(totalCost, 1) >= 0.2 ? 'danger' : 'warn',
+      title: `有 $${fmt(docStats.missingActualAmount)} 尚未指定實際廠商`,
+      msg: `共 ${docStats.missingActualCount} 筆，會影響廠商叫貨金額分析。`,
+      meta: '建議先補齊實際廠商名稱，營運統計會更準。',
+    })
+  }
+  if (topVendor && topVendorShare >= 35) {
+    managementItems.push({
+      level: topVendorShare >= 50 ? 'danger' : 'warn',
+      title: `最大支出集中在「${topVendor.name}」`,
+      msg: `本期 $${fmt(topVendor.cur)}，佔所有支出 ${topVendorShare}%。`,
+      meta: '適合優先確認叫貨內容、付款條件與是否有替代廠商。',
+    })
+  }
+  if (topCategory && topCategoryShare >= 35) {
+    managementItems.push({
+      level: 'warn',
+      title: `「${topCategory.name}」是本期最大成本類別`,
+      msg: `本期 $${fmt(topCategory.cur)}，佔總支出 ${topCategoryShare}%。`,
+      meta: '這不是漲價判斷，而是提醒你優先看最大支出來源。',
+    })
+  }
+  if (prevCost > 0 && totalCost - prevCost >= 3000 && pct(totalCost, prevCost) >= 15) {
+    managementItems.push({
+      level: 'warn',
+      title: `本期總支出較前期增加 ${pct(totalCost, prevCost)}%`,
+      msg: `前期 $${fmt(prevCost)} → 本期 $${fmt(totalCost)}，增加 $${fmt(totalCost - prevCost)}。`,
+      meta: '請用下方成本類別佔比確認是哪一類支出拉高。',
+    })
+  }
+  if (curRev.total > 0 && foodCostRatio >= 35) {
+    managementItems.push({
+      level: foodCostRatio >= 45 ? 'danger' : 'warn',
+      title: `成本佔營業額 ${foodCostRatio}%`,
+      msg: `本期支出 $${fmt(totalCost)}，營業額 $${fmt(curRev.total)}。`,
+      meta: '這個比率只看目前已輸入的支出金額，適合拿來看趨勢。',
+    })
+  }
+  if (managementItems.length === 0) {
+    managementItems.push({
+      level: 'good',
+      title: '本期資料看起來完整',
+      msg: '目前沒有未指定實際廠商，也沒有單一支出過度集中的狀況。',
+      meta: '可直接看下方成本類別與廠商分布。',
+    })
+  }
 
   const PRESETS: { key: PresetKey; label: string }[] = [
     { key: 'week', label: '本週' },
@@ -476,7 +602,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
         <h1 className="text-2xl font-extrabold" style={{ letterSpacing: '-0.02em', background: 'linear-gradient(135deg,#F59E0B,#F97316,#FBBF24)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
           營運洞察
         </h1>
-        <p className="text-sm mt-0.5" style={{ color: '#71717a' }}>{storeName} · 營業額、成本、廠商與單價變動分析</p>
+        <p className="text-sm mt-0.5" style={{ color: '#71717a' }}>{storeName} · 營業額、成本結構、單據與實際廠商分析</p>
       </div>
 
       <div className="px-4 py-5 max-w-5xl mx-auto space-y-4">
@@ -584,18 +710,18 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
               </div>
             </div>
 
-            {/* Alerts */}
-            {alerts.length > 0 && (
-              <div className="rounded-2xl p-5" style={{ background: 'linear-gradient(135deg,#fef3c7,#fce7f3)' }}>
+            {/* Management focus */}
+            {managementItems.length > 0 && (
+              <div className="rounded-2xl p-5" style={{ background: 'linear-gradient(135deg,#fff7ed,#f8fafc)' }}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
-                    <span className="h-8 w-8 bg-white rounded-[9px] flex items-center justify-center text-base">🔔</span>
-                    系統自動偵測 · 需要你關注
+                    <span className="h-8 w-8 bg-white rounded-[9px] flex items-center justify-center text-base">📌</span>
+                    營運管理重點
                   </h3>
-                  <span className="text-xs font-bold" style={{ color: '#92400e' }}>{alerts.length} 項警示</span>
+                  <span className="text-xs font-bold" style={{ color: '#92400e' }}>依已輸入金額整理</span>
                 </div>
                 <div className="space-y-2.5">
-                  {alerts.map((a, i) => {
+                  {managementItems.map((a, i) => {
                     const s = {
                       danger: { bg: '#ffe4e6', lc: '#f43f5e', ic: '#be123c' },
                       warn:   { bg: '#fef3c7', lc: '#f59e0b', ic: '#b45309' },
@@ -703,7 +829,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
                   <div className="grid grid-cols-2 gap-3">
                     {[
                       {
-                        label: '食耗成本佔比',
+                        label: '總支出佔營業額',
                         value: `${foodCostRatio}%`,
                         sub: prevFoodCostRatio > 0
                           ? `${foodCostRatio < prevFoodCostRatio ? '↓' : '↑'} 較上期 ${prevFoodCostRatio}%`
@@ -752,50 +878,86 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
               </div>
             </div>
 
-            {/* Price Changes */}
-            {priceChanges.length > 0 && (
+            {/* Cost structure and data quality */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5' }}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
-                    <span className="h-8 w-8 rounded-[9px] flex items-center justify-center text-base" style={{ background: '#ffe4e6' }}>📉</span>
-                    單價變動偵測
+                    <span className="h-8 w-8 rounded-[9px] flex items-center justify-center text-base" style={{ background: '#FEF3C7' }}>📊</span>
+                    成本類別佔比
                   </h3>
-                  <span className="text-xs" style={{ color: '#a1a1aa' }}>與前一期相比</span>
+                  <span className="text-xs" style={{ color: '#a1a1aa' }}>看錢主要花在哪</span>
                 </div>
-                <div className="grid text-[11px] font-semibold uppercase tracking-wide px-3 pb-2.5"
-                  style={{ gridTemplateColumns: '1fr 90px 90px 72px', color: '#a1a1aa', borderBottom: '1px solid #f4f4f5' }}>
-                  <span>品項 / 廠商</span>
-                  <span className="text-right">前期均價</span>
-                  <span className="text-right">本期均價</span>
-                  <span className="text-right">變動</span>
+                {categoryCosts.filter(c => c.cur > 0).length === 0 ? (
+                  <p className="text-sm text-center py-8" style={{ color: '#a1a1aa' }}>本期沒有成本資料</p>
+                ) : (
+                  <div className="space-y-3">
+                    {categoryCosts.filter(c => c.cur > 0).map((c, i) => {
+                      const share = totalCost > 0 ? Math.round(c.cur / totalCost * 1000) / 10 : 0
+                      const diff = c.cur - c.prev
+                      const barW = Math.max(Math.round(c.cur / maxCategory * 100), 4)
+                      return (
+                        <div key={c.name}>
+                          <div className="flex items-center justify-between gap-3 mb-1.5">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold truncate">{c.name}</p>
+                              <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
+                                佔總支出 {share}%{c.prev > 0 ? ` · 較前期 ${diff >= 0 ? '+' : ''}$${fmt(diff)}` : ' · 本期新增'}
+                              </p>
+                            </div>
+                            <p className="text-sm font-bold tabular-nums">${fmt(c.cur)}</p>
+                          </div>
+                          <div className="h-2 rounded-full overflow-hidden" style={{ background: '#f4f4f5' }}>
+                            <div className="h-full rounded-full" style={{ width: `${barW}%`, background: AVATAR_GRADS[i % AVATAR_GRADS.length] }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5' }}>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <span className="h-8 w-8 rounded-[9px] flex items-center justify-center text-base" style={{ background: '#d1fae5' }}>🧾</span>
+                    單據與資料完整度
+                  </h3>
+                  <span className="text-xs" style={{ color: '#a1a1aa' }}>{docStats.totalDocs} 筆單據</span>
                 </div>
-                <div>
-                  {priceChanges.map((p, i) => (
-                    <div key={i} className="grid items-center px-3 py-2.5"
-                      style={{ gridTemplateColumns: '1fr 90px 90px 72px', borderBottom: i !== priceChanges.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
-                      <div>
-                        <p className="text-sm font-semibold">{p.item}</p>
-                        <p className="text-[11px]" style={{ color: '#a1a1aa' }}>{p.vendor}</p>
-                      </div>
-                      <p className="text-sm font-semibold tabular-nums text-right">${fmt(p.prevAvg)}</p>
-                      <p className="text-sm font-semibold tabular-nums text-right"
-                        style={{ color: p.chg > 5 ? '#be123c' : p.chg < -5 ? '#047857' : '#52525b' }}>
-                        ${fmt(p.curAvg)}
-                      </p>
-                      <div className="flex justify-end">
-                        <span className="text-[11px] font-bold px-2 py-1 rounded-lg"
-                          style={{
-                            background: p.chg > 5 ? '#ffe4e6' : p.chg < -5 ? '#d1fae5' : '#f4f4f5',
-                            color: p.chg > 5 ? '#be123c' : p.chg < -5 ? '#047857' : '#71717a',
-                          }}>
-                          {p.chg > 0 ? `+${p.chg}%↑` : p.chg < 0 ? `${p.chg}%↓` : '未變動'}
-                        </span>
-                      </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label: '發票金額', value: docStats.invoice, color: '#047857', bg: '#d1fae5' },
+                    { label: '收據金額', value: docStats.receipt, color: '#92400E', bg: '#FEF3C7' },
+                    { label: '估價單 / 其他', value: docStats.estimate + docStats.other, color: '#52525b', bg: '#f4f4f5' },
+                    { label: '稅額紀錄', value: docStats.taxAmount, color: '#be123c', bg: '#ffe4e6' },
+                  ].map(card => (
+                    <div key={card.label} className="rounded-[14px] p-3" style={{ background: card.bg }}>
+                      <p className="text-xs mb-1" style={{ color: '#71717a' }}>{card.label}</p>
+                      <p className="text-lg font-bold tabular-nums" style={{ color: card.color }}>${fmt(card.value)}</p>
                     </div>
                   ))}
                 </div>
+                <div className="mt-3 rounded-[14px] p-3"
+                  style={{ background: docStats.missingActualAmount > 0 ? '#fff7ed' : '#ecfdf5', border: `1px solid ${docStats.missingActualAmount > 0 ? '#fed7aa' : '#a7f3d0'}` }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: docStats.missingActualAmount > 0 ? '#9a3412' : '#047857' }}>
+                        {docStats.missingActualAmount > 0 ? '尚未指定實際廠商' : '實際廠商資料完整'}
+                      </p>
+                      <p className="text-xs mt-0.5" style={{ color: '#71717a' }}>
+                        {docStats.missingActualAmount > 0
+                          ? `${docStats.missingActualCount} 筆會影響廠商叫貨統計`
+                          : '可用於廠商叫貨金額分析'}
+                      </p>
+                    </div>
+                    <p className="text-lg font-bold tabular-nums" style={{ color: docStats.missingActualAmount > 0 ? '#c2410c' : '#047857' }}>
+                      ${fmt(docStats.missingActualAmount)}
+                    </p>
+                  </div>
+                </div>
               </div>
-            )}
+            </div>
 
             {/* Excel 匯出 */}
             <div className="bg-white rounded-2xl p-5 space-y-4" style={{ border: '1px solid #f4f4f5' }}>
