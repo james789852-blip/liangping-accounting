@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink, BarChart3 } from 'lucide-react'
+import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink, BarChart3, Settings } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
@@ -41,6 +41,7 @@ const STORE_NAV_ITEMS = [
   { href: '/manager/closing',        label: '今日結帳', icon: ClipboardList },
   { href: '/manager/dashboard',      label: '今日狀態', icon: LayoutDashboard },
   { href: '/manager/analytics',      label: '營運統計', icon: BarChart3 },
+  { href: '/manager/settings',       label: '廠商設定', icon: Settings },
   { href: '/manager/history',        label: '歷史紀錄', icon: History },
 ]
 
@@ -48,6 +49,7 @@ const CK_NAV_ITEMS = [
   { href: '/manager/ck',         label: '今日帳目', icon: ChefHat },
   { href: '/manager/dashboard',  label: '今日狀態', icon: LayoutDashboard },
   { href: '/manager/analytics',  label: '營運統計', icon: BarChart3 },
+  { href: '/manager/settings',   label: '廠商設定', icon: Settings },
   { href: '/manager/history',    label: '歷史紀錄', icon: History },
 ]
 
@@ -61,7 +63,7 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
   const { date, time } = useTaipeiNow()
 
   useEffect(() => {
-    for (const href of ['/manager/dashboard', '/manager/closing', '/manager/ck', '/manager/analytics', '/manager/history']) {
+    for (const href of ['/manager/dashboard', '/manager/closing', '/manager/ck', '/manager/analytics', '/manager/settings', '/manager/history']) {
       router.prefetch(href)
     }
   }, [router])
