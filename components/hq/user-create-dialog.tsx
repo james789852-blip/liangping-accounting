@@ -7,7 +7,15 @@ import { createUser } from '@/app/actions/users'
 
 interface Store { id: string; name: string; type?: string }
 
-const ROLES = ['老闆', '總監', '經理', '顧問', '廠長', '副廠長', '店長', '副店長', '助理']
+const ROLES = ['老闆', '總監', '經理', '顧問', '助理', '廠長', '副廠長', '店長', '副店長', '小幫手']
+
+const PERMISSION_TOGGLES = [
+  { key: 'can_manage_users', label: '可管理帳號', desc: '新增、修改、停用使用者帳號' },
+  { key: 'can_manage_stores', label: '可管理店家', desc: '修改店家設定、外送帳號、央廚服務店家' },
+  { key: 'can_manage_items', label: '可管理品項', desc: '修改品項對應、收據廠商與 Excel 對應' },
+  { key: 'can_review_closings', label: '可審核帳目', desc: '審核、退回、刪除店家帳目' },
+  { key: 'can_export_reports', label: '可匯出報表', desc: '匯出管理用 Excel / 報表' },
+] as const
 
 const INPUT_STYLE: React.CSSProperties = {
   width: '100%', padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px',
@@ -21,6 +29,13 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
     name: '', account: '', password: '', role: '店長', title: '', employee_id: '',
   })
   const [isHQ, setIsHQ] = useState(false)
+  const [permissions, setPermissions] = useState<Record<(typeof PERMISSION_TOGGLES)[number]['key'], boolean>>({
+    can_manage_users: false,
+    can_manage_stores: false,
+    can_manage_items: false,
+    can_review_closings: false,
+    can_export_reports: false,
+  })
   const [selectedStores, setSelectedStores] = useState<string[]>([])
   const [primaryStoreId, setPrimaryStoreId] = useState<string | null>(null)
 
@@ -38,6 +53,13 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
     setOpen(false)
     setForm({ name: '', account: '', password: '', role: '店長', title: '', employee_id: '' })
     setIsHQ(false)
+    setPermissions({
+      can_manage_users: false,
+      can_manage_stores: false,
+      can_manage_items: false,
+      can_review_closings: false,
+      can_export_reports: false,
+    })
     setSelectedStores([])
     setPrimaryStoreId(null)
   }
@@ -55,6 +77,7 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
       title: form.title || undefined,
       employee_id: form.employee_id || undefined,
       is_hq: isOwner ? true : isHQ,
+      ...permissions,
       store_ids: isOwner ? [] : selectedStores,
       primary_store_id: isOwner ? null : primaryStoreId,
     })
@@ -156,6 +179,34 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
                       transform: isHQ ? 'translateX(16px)' : 'translateX(0)', transition: 'transform 0.2s',
                     }} />
                   </button>
+                </div>
+              )}
+
+              {!isOwner && (
+                <div className="rounded-xl p-3 space-y-2" style={{ border: '1px solid #f4f4f5', background: '#fafafa' }}>
+                  <p className="text-xs font-bold" style={{ color: '#52525b' }}>功能權限</p>
+                  {PERMISSION_TOGGLES.map(item => (
+                    <div key={item.key} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2" style={{ border: '1px solid #f4f4f5' }}>
+                      <div>
+                        <p className="text-sm font-semibold" style={{ color: '#18181b' }}>{item.label}</p>
+                        <p className="text-[10px]" style={{ color: '#a1a1aa' }}>{item.desc}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPermissions(prev => ({ ...prev, [item.key]: !prev[item.key] }))}
+                        style={{
+                          position: 'relative', width: '36px', height: '20px', borderRadius: '10px', flexShrink: 0,
+                          background: permissions[item.key] ? '#F59E0B' : '#d4d4d8', border: 'none', cursor: 'pointer',
+                          transition: 'background 0.2s',
+                        }}>
+                        <span style={{
+                          position: 'absolute', top: '2px', left: '2px', width: '16px', height: '16px',
+                          background: 'white', borderRadius: '50%', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                          transform: permissions[item.key] ? 'translateX(16px)' : 'translateX(0)', transition: 'transform 0.2s',
+                        }} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
 

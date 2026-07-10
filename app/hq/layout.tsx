@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import HQNav from '@/components/hq/nav'
 import { getCachedUserProfile, getCachedAllStores } from '@/lib/cached-queries'
+import { hasAnyHQPermission } from '@/lib/user-permissions'
 
 export default async function HQLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -13,7 +14,7 @@ export default async function HQLayout({ children }: { children: React.ReactNode
 
   const isCKManager = ['廠長', '副廠長'].includes(profile?.role ?? '')
 
-  if (!profile || (!profile.is_hq && profile.role !== '老闆' && !isCKManager)) {
+  if (!profile || (!hasAnyHQPermission(profile) && !isCKManager)) {
     redirect('/manager')
   }
 
@@ -23,7 +24,7 @@ export default async function HQLayout({ children }: { children: React.ReactNode
   const cookieStore = await cookies()
   const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
 
-  if (profile.is_hq || profile.role === '老闆') {
+  if (hasAnyHQPermission(profile)) {
     allStores = await getCachedAllStores()
   } else if (profile.store_ids?.length) {
     const all = await getCachedAllStores()
@@ -47,7 +48,13 @@ export default async function HQLayout({ children }: { children: React.ReactNode
         role={profile?.role ?? ''}
         allStores={allStores}
         currentStoreId={currentStoreId}
-        canManageUsers={!!(profile as any)?.can_manage_users}
+        permissions={{
+          canManageUsers: !!((profile as any)?.role === '老闆' || (profile as any)?.can_manage_users),
+          canManageStores: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_manage_stores),
+          canManageItems: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_manage_items),
+          canReviewClosings: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_review_closings),
+          canExportReports: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_export_reports),
+        }}
       />
       <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
         {children}

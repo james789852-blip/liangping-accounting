@@ -68,7 +68,13 @@ export default async function ManagerLayout({ children }: { children: React.Reac
           role={profile?.role ?? ''}
           allStores={allStores}
           currentStoreId={storeId ?? ''}
-          canManageUsers={!!(profile as any)?.can_manage_users}
+          permissions={{
+            canManageUsers: !!((profile as any)?.role === '老闆' || (profile as any)?.can_manage_users),
+            canManageStores: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_manage_stores),
+            canManageItems: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_manage_items),
+            canReviewClosings: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_review_closings),
+            canExportReports: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_export_reports),
+          }}
         />
         <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
           {children}

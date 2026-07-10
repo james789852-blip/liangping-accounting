@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import ClosingsBrowser from '@/components/hq/closings-browser'
 import { getMonthLastDay } from '@/lib/business-date'
 import { sortStores } from '@/lib/store-order'
+import { canReviewClosings } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,12 +22,12 @@ export default async function ClosingsPage({
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile || !profile.is_hq) {
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  if (!canReviewClosings(profile)) {
     return <div className="p-6" style={{ color: '#be123c' }}>權限不足</div>
   }
 
-  const canReview = ['經理', '總監', '老闆'].includes(profile.role ?? '')
+  const canReview = canReviewClosings(profile)
 
   const params = await searchParams
   const now = getTaipeiDate()

@@ -8,6 +8,7 @@ import { redirect } from 'next/navigation'
 // 保留 import 註解讓 refactor 時容易找回：syncClosingToSheets, syncMonthToSheets from '@/lib/google-sheets'
 import { logAudit } from '@/lib/audit'
 import { getAuthContext, canAccessStore, getClosingMeta } from '@/lib/permissions'
+import { canReviewClosings } from '@/lib/user-permissions'
 
 interface CashCountsPayload {
   bills_1000: number; bills_500: number; bills_100: number
@@ -142,8 +143,8 @@ export async function verifyClosing(closingId: string) {
   if (!user) return { error: '未登入' }
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq, name').eq('user_id', user.id).single()
-  if (!profile || (!profile.is_hq && profile.role !== '老闆')) return { error: '權限不足' }
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  if (!canReviewClosings(profile)) return { error: '權限不足' }
 
   // 撈帳目資訊用於 audit 描述
   const { data: closing } = await supabase
@@ -183,8 +184,8 @@ export async function verifyClosingsBatch(closingIds: string[]) {
   if (!user) return { error: '未登入' }
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq, name').eq('user_id', user.id).single()
-  if (!profile || (!profile.is_hq && profile.role !== '老闆')) return { error: '權限不足' }
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  if (!canReviewClosings(profile)) return { error: '權限不足' }
 
   if (!Array.isArray(closingIds) || closingIds.length === 0) return { error: '未選擇帳目' }
 
@@ -252,8 +253,8 @@ export async function deleteClosing(closingId: string) {
   if (!user) return { error: '未登入' }
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile || (!profile.is_hq && profile.role !== '老闆')) return { error: '權限不足' }
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  if (!canReviewClosings(profile)) return { error: '權限不足' }
 
   const admin = createAdminClient()
   const { data: closing } = await admin
@@ -280,8 +281,8 @@ export async function disputeClosing(closingId: string, note: string) {
   if (!user) return { error: '未登入' }
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq, name').eq('user_id', user.id).single()
-  if (!profile || (!profile.is_hq && profile.role !== '老闆')) return { error: '權限不足' }
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  if (!canReviewClosings(profile)) return { error: '權限不足' }
 
   const { data: closing } = await supabase
     .from('daily_closings').select('store_id, business_date, status')

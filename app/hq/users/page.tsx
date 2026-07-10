@@ -5,6 +5,7 @@ import UserCreateDialog from '@/components/hq/user-create-dialog'
 import UserEditDialog from '@/components/hq/user-edit-dialog'
 import { Users, Building2 } from 'lucide-react'
 import { sortStores } from '@/lib/store-order'
+import { canManageUsers } from '@/lib/user-permissions'
 
 const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
   '老闆':   { bg: '#fef3c7', color: '#b45309' },
@@ -15,6 +16,7 @@ const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
   '副廠長': { bg: '#fefce8', color: '#a16207' },
   '店長':   { bg: '#d1fae5', color: '#047857' },
   '副店長': { bg: '#ecfdf5', color: '#059669' },
+  '小幫手': { bg: '#eef2ff', color: '#4f46e5' },
   '助理':   { bg: '#f4f4f5', color: '#71717a' },
 }
 
@@ -24,16 +26,15 @@ export default async function UsersPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, can_manage_users').eq('user_id', user.id).single()
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
 
-  const canAccess = profile?.role === '老闆' || (profile as any)?.can_manage_users === true
-  if (!canAccess) {
+  if (!canManageUsers(profile)) {
     return <div className="p-6" style={{ color: '#be123c' }}>權限不足，需要老闆或帳號管理權限</div>
   }
 
   const { data: users } = await supabase
     .from('user_profiles')
-    .select('user_id, name, role, title, employee_id, store_ids, primary_store_id, is_hq, active, created_at, can_manage_users')
+    .select('*')
     .order('created_at', { ascending: false })
 
   const { data: storesRaw } = await supabase

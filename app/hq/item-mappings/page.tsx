@@ -5,6 +5,7 @@ import ItemMappingsClient from '@/components/hq/item-mappings-client'
 import { sortStores } from '@/lib/store-order'
 import { fetchAllPaged } from '@/lib/supabase-paged'
 import { resolveHQStoreId } from '@/lib/hq-store-selection'
+import { canManageItems } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,8 +19,8 @@ export default async function ItemMappingsPage({
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile?.is_hq && profile?.role !== '老闆') redirect('/manager/dashboard')
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  if (!canManageItems(profile)) redirect('/manager/dashboard')
 
   const admin = createAdminClient()
   const [{ data: stores }, { data: vgsInitial }] = await Promise.all([

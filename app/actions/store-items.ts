@@ -3,15 +3,16 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { canManageItems } from '@/lib/user-permissions'
 
 async function checkStoreAccess(storeId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '未登入', user: null }
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq, store_ids').eq('user_id', user.id).single()
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
   if (!profile) return { error: '找不到帳號', user: null }
-  const isHQ = profile.is_hq || ['老闆', '經理', '總監'].includes(profile.role ?? '')
+  const isHQ = canManageItems(profile)
   if (!isHQ) {
     const storeIds = (profile.store_ids as string[]) ?? []
     if (!storeIds.includes(storeId)) return { error: '無權限管理此店家', user: null }

@@ -3,6 +3,7 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { canManageUsers } from '@/lib/user-permissions'
 
 function getAdminClient() {
   return createAdminClient(
@@ -12,14 +13,12 @@ function getAdminClient() {
   )
 }
 
-const MANAGE_ROLES = ['經理', '總監', '老闆']
-
 async function getCallerProfile() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
   const { data } = await supabase
-    .from('user_profiles').select('role').eq('user_id', user.id).single()
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
   return data
 }
 
@@ -33,9 +32,14 @@ export async function createUser(formData: {
   store_ids: string[]
   is_hq?: boolean
   primary_store_id?: string | null
+  can_manage_users?: boolean
+  can_manage_stores?: boolean
+  can_manage_items?: boolean
+  can_review_closings?: boolean
+  can_export_reports?: boolean
 }) {
   const caller = await getCallerProfile()
-  if (!caller || !MANAGE_ROLES.includes(caller.role)) return { error: '權限不足' }
+  if (!canManageUsers(caller)) return { error: '權限不足' }
 
   const admin = getAdminClient()
   const email = `${formData.account.trim().toUpperCase()}@liang-ping.com`
@@ -63,6 +67,11 @@ export async function createUser(formData: {
     store_ids: storeIds,
     primary_store_id: primary,
     is_hq: isOwner ? true : (formData.is_hq ?? false),
+    can_manage_users: isOwner ? true : (formData.can_manage_users ?? false),
+    can_manage_stores: isOwner ? true : (formData.can_manage_stores ?? false),
+    can_manage_items: isOwner ? true : (formData.can_manage_items ?? false),
+    can_review_closings: isOwner ? true : (formData.can_review_closings ?? false),
+    can_export_reports: isOwner ? true : (formData.can_export_reports ?? false),
     active: true,
   })
   if (profileError) {
@@ -85,9 +94,13 @@ export async function updateUser(userId: string, formData: {
   active?: boolean
   primary_store_id?: string | null
   can_manage_users?: boolean
+  can_manage_stores?: boolean
+  can_manage_items?: boolean
+  can_review_closings?: boolean
+  can_export_reports?: boolean
 }) {
   const caller = await getCallerProfile()
-  if (!caller || !MANAGE_ROLES.includes(caller.role)) return { error: '權限不足' }
+  if (!canManageUsers(caller)) return { error: '權限不足' }
 
   const admin = getAdminClient()
 
@@ -106,6 +119,10 @@ export async function updateUser(userId: string, formData: {
   if (formData.store_ids !== undefined) patch.store_ids = [...new Set(formData.store_ids)]
   if (formData.is_hq !== undefined) patch.is_hq = formData.is_hq
   if (formData.can_manage_users !== undefined) patch.can_manage_users = formData.can_manage_users
+  if (formData.can_manage_stores !== undefined) patch.can_manage_stores = formData.can_manage_stores
+  if (formData.can_manage_items !== undefined) patch.can_manage_items = formData.can_manage_items
+  if (formData.can_review_closings !== undefined) patch.can_review_closings = formData.can_review_closings
+  if (formData.can_export_reports !== undefined) patch.can_export_reports = formData.can_export_reports
   if (formData.active !== undefined) patch.active = formData.active
 
   // primary_store_id：若 store_ids 一起更新，要確保 primary 在 store_ids 內
@@ -133,7 +150,7 @@ export async function updateUser(userId: string, formData: {
 
 export async function updateUserPassword(userId: string, newPassword: string) {
   const caller = await getCallerProfile()
-  if (!caller || !MANAGE_ROLES.includes(caller.role)) return { error: '權限不足' }
+  if (!canManageUsers(caller)) return { error: '權限不足' }
 
   const admin = getAdminClient()
   const { error } = await admin.auth.admin.updateUserById(userId, { password: newPassword })
@@ -143,7 +160,7 @@ export async function updateUserPassword(userId: string, newPassword: string) {
 
 export async function updateUserStatus(userId: string, active: boolean) {
   const caller = await getCallerProfile()
-  if (!caller || !MANAGE_ROLES.includes(caller.role)) return { error: '權限不足' }
+  if (!canManageUsers(caller)) return { error: '權限不足' }
 
   const supabase = await createClient()
   const { error } = await supabase
@@ -155,7 +172,7 @@ export async function updateUserStatus(userId: string, active: boolean) {
 
 export async function deleteUser(userId: string) {
   const caller = await getCallerProfile()
-  if (!caller || !['總監', '老闆', '經理'].includes(caller.role)) return { error: '權限不足' }
+  if (!canManageUsers(caller)) return { error: '權限不足' }
 
   const admin = getAdminClient()
   const { error } = await admin.auth.admin.deleteUser(userId)
@@ -170,8 +187,8 @@ export async function updateUserHQ(userId: string, isHQ: boolean) {
   if (!caller) return { error: '未登入' }
 
   const { data: callerProfile } = await supabase
-    .from('user_profiles').select('role').eq('user_id', caller.id).single()
-  if (!callerProfile || !['總監', '老闆'].includes(callerProfile.role)) {
+    .from('user_profiles').select('*').eq('user_id', caller.id).single()
+  if (!canManageUsers(callerProfile)) {
     return { error: '權限不足' }
   }
 

@@ -5,6 +5,7 @@ import { Store as StoreIcon } from 'lucide-react'
 import StoreEditor from '@/components/hq/store-editor'
 import AddStoreForm from '@/components/hq/add-store-form'
 import { sortStores } from '@/lib/store-order'
+import { canManageStores } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,18 +15,18 @@ export default async function StoresPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq, store_ids').eq('user_id', user.id).single()
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
 
   const role = profile?.role ?? ''
   const isCKManager = ['廠長', '副廠長'].includes(role)
-  const isHQManager = !!profile?.is_hq || ['老闆', '經理', '總監'].includes(role)
+  const isHQManager = !!profile?.is_hq || canManageStores(profile)
 
   if (!isHQManager && !isCKManager) {
     return <div className="p-6" style={{ color: '#be123c' }}>權限不足</div>
   }
 
-  const canEdit = ['老闆', '經理', '總監'].includes(role)
-  const isAdmin = profile?.is_hq || role === '老闆'
+  const canEdit = canManageStores(profile)
+  const isAdmin = canEdit
 
   const admin = createAdminClient()
 
@@ -109,7 +110,7 @@ export default async function StoresPage() {
 
         {!canEdit && (
           <p className="text-xs text-center pt-2" style={{ color: '#a1a1aa' }}>
-            {isCKManager ? '央廚管理人員僅可調整央廚服務店家設定' : '顧問角色僅可檢視，無法修改設定'}
+            {isCKManager ? '央廚管理人員僅可調整央廚服務店家設定' : '此帳號僅可檢視，未開啟「可管理店家」權限'}
           </p>
         )}
       </div>

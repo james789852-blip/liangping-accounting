@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath, revalidateTag } from 'next/cache'
+import { canManageStores } from '@/lib/user-permissions'
 
 interface StoreSettings {
   mode: string
@@ -24,9 +25,9 @@ async function requireManager() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { user: null, profile: null, error: '未登入' as string }
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile || !['經理', '總監', '老闆'].includes(profile.role ?? '')) {
-    return { user: null, profile: null, error: '權限不足，僅限經理以上操作' as string }
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  if (!canManageStores(profile)) {
+    return { user: null, profile: null, error: '權限不足，未開啟「可管理店家」權限' as string }
   }
   return { user, profile, error: null }
 }

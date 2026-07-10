@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { after } from 'next/server'
 import { syncMiscVendorsFromMappingChange } from '@/lib/misc-sync'
+import { canManageItems } from '@/lib/user-permissions'
 
 // 用 defer 執行 sync：response 送回 client 後才跑，不阻塞使用者
 function deferSyncMisc(storeId: string | null | undefined) {
@@ -31,9 +32,24 @@ function revalidateLight() {
   revalidateTag('item-mappings', 'default')
 }
 
+async function requireCanManageItems() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' as const }
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('*')
+    .eq('user_id', user.id)
+    .single()
+  if (!canManageItems(profile)) return { error: '權限不足，未開啟「可管理品項」權限' as const }
+  return { user, profile, error: null }
+}
+
 export async function saveItemMapping(
   itemName: string, excelColumn: string, itemCategory: string, storeId?: string, vendorGroup?: string
 ) {
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
   const admin = createAdminClient()
 
   // 檢查是否已存在（避免 unique constraint 錯誤）
@@ -152,6 +168,8 @@ export async function saveItemMappingsBatch(
   items: { item_name: string; excel_column: string; item_category: string }[],
   storeId?: string
 ) {
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
   if (!items.length) return { success: true }
   const admin = createAdminClient()
   await admin.from('item_column_mappings').insert(
@@ -162,12 +180,8 @@ export async function saveItemMappingsBatch(
 }
 
 export async function deleteItemMapping(id: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile?.is_hq && profile?.role !== '老闆') return { error: '權限不足' }
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
   const admin = createAdminClient()
 
   // 先撈 mapping 資料，用來反查 system_item + store_item
@@ -199,9 +213,8 @@ export async function deleteItemMapping(id: string) {
 }
 
 export async function updateItemMapping(id: string, excelColumn: string, itemCategory: string, vendorGroup?: string | null) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
   const admin = createAdminClient()
 
   // 撈原 mapping 拿 item_name + store_id + 舊 vg
@@ -248,6 +261,8 @@ export async function updateItemMapping(id: string, excelColumn: string, itemCat
 export async function setItemMapping(
   itemName: string, excelColumn: string, itemCategory: string, storeId: string
 ) {
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
   const admin = createAdminClient()
   await admin.from('item_column_mappings').delete().eq('item_name', itemName).eq('store_id', storeId)
   await admin.from('item_column_mappings').insert({
@@ -260,12 +275,8 @@ export async function setItemMapping(
 
 /** 批次刪除品項 */
 export async function batchDeleteItemMappings(ids: string[]) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile?.is_hq && profile?.role !== '老闆') return { error: '權限不足' }
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
   if (ids.length === 0) return { success: true as const, deleted: 0 }
   const admin = createAdminClient()
 
@@ -302,6 +313,8 @@ export async function batchDeleteItemMappings(ids: string[]) {
 
 /** 改品項名稱：同步更新 mapping.item_name + 選擇性同步 receipt_items 舊資料 */
 export async function renameItem(mappingId: string, newName: string, syncReceipts = false, syncExcelColumn = false) {
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
   const admin = createAdminClient()
   const { data: mapping } = await admin.from('item_column_mappings')
     .select('id, item_name, store_id, excel_column, vendor_group').eq('id', mappingId).maybeSingle()
@@ -397,9 +410,8 @@ async function syncHistoricalItemNames(oldName: string, newName: string, storeId
 }
 
 export async function reorderItemMappings(ids: string[]) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
   const admin = createAdminClient()
 
   // 1. 更新 item_column_mappings.sort_order（UI 排序）
@@ -450,9 +462,8 @@ export async function reorderItemMappings(ids: string[]) {
 
 /** 每店獨立調整黃色分類順序（Excel Row 1 群組順序）。 */
 export async function reorderStoreVendorGroups(storeId: string, vendorGroups: string[]) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
   if (!storeId) return { error: '缺少店家 ID' }
 
   const admin = createAdminClient()
@@ -479,6 +490,8 @@ export async function reorderStoreVendorGroups(storeId: string, vendorGroups: st
  * 若沒 storeId → 存到 system_items.doc_type_override（全域）
  */
 export async function setItemDocOverride(itemName: string, storeId: string | null, docOverride: string | null) {
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
   // 每店獨立：單據類型直接寫該店那筆 item_column_mappings.doc_type_override（明確值、無 fallback）。
   // 空值 = 明確「無單據」，不會再回退到類別預設。
   if (!storeId) return { error: '缺少店家 ID' }
@@ -493,9 +506,8 @@ export async function setItemDocOverride(itemName: string, storeId: string | nul
 
 /** 設定本店某個黃色分類底下所有品項的單據類型。 */
 export async function setStoreVendorGroupDocType(storeId: string, vendorGroup: string, docOverride: string | null) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
   if (!storeId) return { error: '缺少店家 ID' }
 
   const admin = createAdminClient()
@@ -514,6 +526,8 @@ export async function setStoreVendorGroupDocType(storeId: string, vendorGroup: s
 
 /** 設定該 mapping 是否納入「梁平退稅」總額 */
 export async function setItemRefundFlag(id: string, isRefund: boolean) {
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
   const admin = createAdminClient()
   const { error } = await admin.from('item_column_mappings')
     .update({ is_refund: isRefund, updated_at: new Date().toISOString() })
@@ -525,12 +539,8 @@ export async function setItemRefundFlag(id: string, isRefund: boolean) {
 
 /** 修改廠商群組名稱（同步更新 system_vendor_groups + item_column_mappings） */
 export async function renameVendorGroup(oldName: string, newName: string, storeId?: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile?.is_hq && profile?.role !== '老闆') return { error: '權限不足' }
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
   const trimmed = newName.trim()
   if (!trimmed) return { error: '名稱不能空' }
   if (trimmed === oldName) return { success: true as const }
@@ -563,12 +573,8 @@ export async function renameVendorGroup(oldName: string, newName: string, storeI
  * @param storeId - 若有 → 只刪該店 mappings；若沒 → 也 deactivate 全域 vg
  */
 export async function deleteVendorGroupWithItems(vgName: string, storeId?: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile?.is_hq && profile?.role !== '老闆') return { error: '權限不足' }
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
 
   const admin = createAdminClient()
 
@@ -605,12 +611,8 @@ export async function deleteVendorGroupWithItems(vgName: string, storeId?: strin
 
 /** 把 fromStoreId 的整份品項對應複製到 toStoreId（會清除目標店的現有對應）。 */
 export async function copyStoreMappingsToStore(fromStoreId: string, toStoreId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '未登入' }
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile?.is_hq && profile?.role !== '老闆') return { error: '權限不足' }
+  const auth = await requireCanManageItems()
+  if (auth.error) return { error: auth.error }
 
   const admin = createAdminClient()
   const { data: src } = await admin

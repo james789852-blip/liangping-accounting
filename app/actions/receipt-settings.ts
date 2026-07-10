@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { canManageItems } from '@/lib/user-permissions'
 
 /** 精準 revalidate 只清跟收據設定相關的頁面（不 nuke 整站） */
 function revalidateReceipt() {
@@ -22,6 +23,12 @@ async function requireAuth() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('未登入')
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('*')
+    .eq('user_id', user.id)
+    .single()
+  if (!canManageItems(profile)) throw new Error('權限不足，未開啟「可管理品項」權限')
   return user
 }
 
@@ -162,4 +169,3 @@ export async function reorderVendors(ids: string[]) {
   revalidateReceipt()
   return { success: true }
 }
-

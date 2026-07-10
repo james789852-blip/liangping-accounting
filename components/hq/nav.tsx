@@ -107,10 +107,16 @@ interface Props {
   role: string
   allStores?: { id: string; name: string; type?: string }[]
   currentStoreId?: string
-  canManageUsers?: boolean
+  permissions?: {
+    canManageUsers?: boolean
+    canManageStores?: boolean
+    canManageItems?: boolean
+    canReviewClosings?: boolean
+    canExportReports?: boolean
+  }
 }
 
-export default function HQNav({ userName, role, allStores = [], currentStoreId = '', canManageUsers = false }: Props) {
+export default function HQNav({ userName, role, allStores = [], currentStoreId = '', permissions = {} }: Props) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -144,15 +150,13 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
 
   const hasStores = allStores.length > 0
   const initial = userName ? userName.slice(0, 1) : '?'
-  const mobileTabs = isManagerPath
-    ? mobileManagerTabs
-    : isCKManager
-      ? mobileHQTabs.filter(tab => tab.href === '/hq/stores')
-      : mobileHQTabs
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false)
 
-  // 依權限過濾：非老闆且沒 can_manage_users → 不顯示帳號管理
-  const canSeeUsers = role === '老闆' || canManageUsers
+  const canSeeUsers = role === '老闆' || !!permissions.canManageUsers
+  const canSeeStores = role === '老闆' || !!permissions.canManageStores
+  const canSeeItems = role === '老闆' || !!permissions.canManageItems
+  const canSeeReviews = role === '老闆' || !!permissions.canReviewClosings
+  const canSeeExports = role === '老闆' || !!permissions.canExportReports
   const filteredHqSections = isCKManager
     ? [{
         label: '央廚管理',
@@ -160,12 +164,32 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           { href: '/hq/stores', label: '店家管理', icon: Store },
         ],
       }]
-    : canSeeUsers
-    ? hqSections
     : hqSections.map(sec => ({
         ...sec,
-        items: sec.items.filter(it => it.href !== '/hq/users'),
-      }))
+        items: sec.items.filter(it => {
+          if (it.href === '/hq/accounting') return canSeeReviews
+          if (it.href === '/hq/dashboard') return canSeeReviews || canSeeExports
+          if (it.href === '/hq/item-mappings') return canSeeItems
+          if (it.href === '/hq/receipt-settings') return canSeeItems
+          if (it.href === '/hq/ck-prices') return canSeeItems
+          if (it.href === '/hq/stores') return canSeeStores
+          if (it.href === '/hq/users') return canSeeUsers
+          if (it.href === '/hq/audit') return canSeeUsers || canSeeStores || canSeeItems || canSeeReviews
+          return true
+        }),
+      })).filter(sec => sec.items.length > 0)
+  const filteredMobileHQTabs = mobileHQTabs.filter(tab => {
+    if (tab.href === '/hq/accounting') return canSeeReviews
+    if (tab.href === '/hq/dashboard') return canSeeReviews || canSeeExports
+    if (tab.href === '/hq/item-mappings') return canSeeItems
+    if (tab.href === '/hq/stores') return canSeeStores
+    return true
+  })
+  const mobileTabs = isManagerPath
+    ? mobileManagerTabs
+    : isCKManager
+      ? mobileHQTabs.filter(tab => tab.href === '/hq/stores')
+      : filteredMobileHQTabs
   const activeSections = isManagerPath ? managerSections : filteredHqSections
   const activeColor = isManagerPath ? '#b45309' : '#92400E'
   const activeBg = isManagerPath ? '#fef3c7' : '#FFFBEB'

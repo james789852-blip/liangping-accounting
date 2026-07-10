@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { CheckSquare, AlertTriangle, ClipboardCheck } from 'lucide-react'
 import ReviewActions from '@/components/hq/review-actions'
 import ReviewsList from '@/components/hq/reviews-list'
+import { canReviewClosings } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,13 +16,13 @@ export default async function ReviewsPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile || (!profile.is_hq && profile.role !== '老闆')) {
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  if (!canReviewClosings(profile)) {
     return <div className="p-6" style={{ color: '#be123c' }}>權限不足</div>
   }
 
-  const canReview = ['經理', '總監', '老闆'].includes(profile.role)
-  const canDispute = ['經理', '總監', '老闆'].includes(profile.role)
+  const canReview = canReviewClosings(profile)
+  const canDispute = canReview
 
   const admin = createAdminClient()
 

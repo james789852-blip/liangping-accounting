@@ -1,4 +1,4 @@
-export type Role = '店長' | '副店長' | '助理' | '顧問' | '經理' | '總監' | '老闆' | '廠長' | '副廠長'
+export type Role = '店長' | '副店長' | '小幫手' | '助理' | '顧問' | '經理' | '總監' | '老闆' | '廠長' | '副廠長'
 export type StoreMode = 'ichef' | 'handwrite' | 'mixed'
 export type ClosingStatus = 'draft' | 'submitted' | 'verified' | 'disputed'
 
@@ -36,4 +36,9 @@ export interface UserProfile {
   store_ids: string[]
   is_hq: boolean
   active?: boolean
+  can_manage_users?: boolean
+  can_manage_stores?: boolean
+  can_manage_items?: boolean
+  can_review_closings?: boolean
+  can_export_reports?: boolean
 }

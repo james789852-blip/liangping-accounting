@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { sortStores } from '@/lib/store-order'
 import AccountingClient from '@/components/hq/accounting-client'
 import { resolveHQStoreId } from '@/lib/hq-store-selection'
+import { canReviewClosings } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,8 +22,8 @@ export default async function AccountingPage({
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile?.is_hq && profile?.role !== '老闆') redirect('/manager/dashboard')
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  if (!canReviewClosings(profile)) redirect('/manager/dashboard')
 
   const admin = createAdminClient()
   const [{ data: storesRaw }, { data: ckStoresRaw }] = await Promise.all([

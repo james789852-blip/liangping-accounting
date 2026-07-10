@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Package } from 'lucide-react'
 import CKPriceEditor from '@/components/hq/ck-price-editor'
+import { canManageItems } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,16 +13,16 @@ export default async function CKPricesPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role').eq('user_id', user.id).single()
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
 
   // 可瀏覽：總公司各角色 + 央廚管理人員
   const VIEW_ROLES = ['顧問', '經理', '總監', '老闆', '廠長', '副廠長']
-  if (!profile || !VIEW_ROLES.includes(profile.role ?? '')) {
+  if (!profile || (!VIEW_ROLES.includes(profile.role ?? '') && !canManageItems(profile))) {
     return <div className="p-6" style={{ color: '#be123c' }}>權限不足</div>
   }
 
   // 可編輯：經理以上 + 央廚廠長/副廠長
-  const canEdit = ['經理', '總監', '老闆', '廠長', '副廠長'].includes(profile.role ?? '')
+  const canEdit = canManageItems(profile) || ['廠長', '副廠長'].includes(profile.role ?? '')
 
   const admin = createAdminClient()
   const { data: pricesRaw } = await admin

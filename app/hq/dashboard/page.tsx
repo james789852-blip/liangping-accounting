@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { sortStores } from '@/lib/store-order'
 import { getCachedAllStores } from '@/lib/cached-queries'
 import HQAlertsCard from '@/components/hq/hq-alerts-card'
+import { canExportReports, canReviewClosings } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,8 +44,8 @@ export default async function HQDashboard() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('name, role, is_hq').eq('user_id', user.id).single()
-  if (!profile?.is_hq && profile?.role !== '老闆') redirect('/manager/dashboard')
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  if (!canReviewClosings(profile) && !canExportReports(profile)) redirect('/manager/dashboard')
 
   const admin = createAdminClient()
   const today = getBusinessDate()
