@@ -81,6 +81,7 @@ const managerSections = [
     items: [
       { href: '/manager/closing',    label: '今日結帳', icon: ClipboardList },
       { href: '/manager/dashboard',  label: '今日狀態', icon: LayoutDashboard },
+      { href: '/manager/analytics',  label: '營運統計', icon: FileBarChart2 },
       { href: '/manager/history',    label: '歷史紀錄', icon: History },
     ],
   },
@@ -96,6 +97,7 @@ const mobileHQTabs = [
 const mobileManagerTabs = [
   { href: '/manager/closing',    label: '今日結帳', icon: ClipboardList },
   { href: '/manager/dashboard',  label: '今日狀態', icon: LayoutDashboard },
+  { href: '/manager/analytics',  label: '營運統計', icon: FileBarChart2 },
   { href: '/manager/history',    label: '歷史紀錄', icon: History },
 ]
 
@@ -172,7 +174,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   useEffect(() => { setMobileSheetOpen(false) }, [pathname])
 
   useEffect(() => {
-    for (const href of ['/hq/accounting', '/hq/dashboard', '/hq/item-mappings', '/manager/dashboard', '/manager/closing']) {
+    for (const href of ['/hq/accounting', '/hq/dashboard', '/hq/item-mappings', '/manager/dashboard', '/manager/closing', '/manager/analytics']) {
       router.prefetch(href)
     }
   }, [router])
