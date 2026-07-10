@@ -2,7 +2,7 @@
 
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { canManageUsers } from '@/lib/user-permissions'
 
 function getAdminClient() {
@@ -100,6 +100,7 @@ export async function createUser(formData: {
   }
 
   revalidatePath('/hq/users')
+  revalidateTag('user-profile', 'default')
   return { success: true }
 }
 
@@ -195,6 +196,7 @@ export async function updateUser(userId: string, formData: {
 
   if (error) return { error: error.message }
   revalidatePath('/hq/users')
+  revalidateTag('user-profile', 'default')
   return { success: true }
 }
 
@@ -217,6 +219,7 @@ export async function updateUserStatus(userId: string, active: boolean) {
     .from('user_profiles').update({ active }).eq('user_id', userId)
   if (error) return { error: error.message }
   revalidatePath('/hq/users')
+  revalidateTag('user-profile', 'default')
   return { success: true }
 }
 
@@ -228,6 +231,7 @@ export async function deleteUser(userId: string) {
   const { error } = await admin.auth.admin.deleteUser(userId)
   if (error) return { error: error.message }
   revalidatePath('/hq/users')
+  revalidateTag('user-profile', 'default')
   return { success: true }
 }
 
@@ -246,5 +250,6 @@ export async function updateUserHQ(userId: string, isHQ: boolean) {
     .from('user_profiles').update({ is_hq: isHQ }).eq('user_id', userId)
   if (error) return { error: error.message }
   revalidatePath('/hq/users')
+  revalidateTag('user-profile', 'default')
   return { success: true }
 }

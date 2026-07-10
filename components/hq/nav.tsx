@@ -170,7 +170,8 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
     ? [{
         label: '央廚管理',
         items: [
-          { href: '/hq/stores', label: '店家管理', icon: Store },
+          ...(canSeeStores ? [{ href: '/hq/stores', label: '店家管理', icon: Store }] : []),
+          ...(canSeeCKPrices ? [{ href: '/hq/ck-prices', label: '央廚單價', icon: Package }] : []),
         ],
       }]
     : hqSections.map(sec => ({
@@ -197,7 +198,10 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const mobileTabs = isManagerPath
     ? mobileManagerTabs
     : isCKManager
-      ? mobileHQTabs.filter(tab => tab.href === '/hq/stores')
+      ? [
+          ...(canSeeStores ? mobileHQTabs.filter(tab => tab.href === '/hq/stores') : []),
+          ...(canSeeCKPrices ? [{ href: '/hq/ck-prices', label: '單價', icon: Package }] : []),
+        ]
       : filteredMobileHQTabs
   const activeSections = isManagerPath ? managerSections : filteredHqSections
   const activeColor = isManagerPath ? '#b45309' : '#92400E'
