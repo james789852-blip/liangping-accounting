@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
-import { isStoreRole } from '@/lib/user-permissions'
+import { hasAnyHQPermission, isStoreRole } from '@/lib/user-permissions'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -47,13 +47,13 @@ export default function LoginPage() {
 
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('role, is_hq')
+      .select('role, is_hq, can_manage_users, can_manage_stores, can_manage_store_settings, can_manage_ck_settings, can_manage_items, can_manage_store_items, can_manage_ck_items, can_manage_store_receipts, can_manage_ck_receipts, can_manage_ck_prices, can_review_closings, can_export_reports')
       .eq('user_id', user.id)
       .single()
 
     // 店家角色（店長/副店長/小幫手/廠長/副廠長）一律進 manager dashboard，不論 is_hq
     const storeRole = isStoreRole(profile?.role)
-    const isHQ = !storeRole && !!(profile && (profile.is_hq || profile.role === '老闆'))
+    const isHQ = hasAnyHQPermission(profile)
     toast.success('登入成功')
     router.push(isHQ ? '/hq/dashboard' : '/manager/dashboard')
     router.refresh()

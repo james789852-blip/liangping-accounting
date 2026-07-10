@@ -5,7 +5,7 @@ import { Store as StoreIcon } from 'lucide-react'
 import StoreEditor from '@/components/hq/store-editor'
 import AddStoreForm from '@/components/hq/add-store-form'
 import { sortStores } from '@/lib/store-order'
-import { canManageStores } from '@/lib/user-permissions'
+import { canManageCKSettings, canManageStoreSettings } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,13 +19,15 @@ export default async function StoresPage() {
 
   const role = profile?.role ?? ''
   const isCKManager = ['廠長', '副廠長'].includes(role)
-  const isHQManager = !!profile?.is_hq || canManageStores(profile)
+  const canEditStoreSettings = canManageStoreSettings(profile)
+  const canEditCKSettings = canManageCKSettings(profile)
+  const isHQManager = !!profile?.is_hq || canEditStoreSettings || canEditCKSettings
 
   if (!isHQManager && !isCKManager) {
     return <div className="p-6" style={{ color: '#be123c' }}>權限不足</div>
   }
 
-  const canEdit = canManageStores(profile)
+  const canEdit = canEditStoreSettings || canEditCKSettings
   const isAdmin = canEdit
 
   const admin = createAdminClient()
@@ -36,7 +38,11 @@ export default async function StoresPage() {
     .select('id, name, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled, petty_cash, type, assigned_store_ids, google_sheets_id')
     .eq('active', true)
 
-  if (isCKManager && !isAdmin) {
+  if (canEditStoreSettings && !canEditCKSettings) {
+    query = query.neq('type', '央廚') as typeof query
+  } else if (!canEditStoreSettings && canEditCKSettings) {
+    query = query.eq('type', '央廚') as typeof query
+  } else if (isCKManager && !isAdmin) {
     if (profile?.store_ids?.length) {
       query = query.in('id', profile.store_ids).eq('type', '央廚') as typeof query
     } else {
@@ -95,8 +101,8 @@ export default async function StoresPage() {
                   <StoreEditor
                     key={store.id}
                     store={{ ...store, uber_accounts: store.uber_accounts ?? [], type: (store as any).type ?? '店面', assigned_store_ids: (store as any).assigned_store_ids ?? [], google_sheets_id: (store as any).google_sheets_id ?? '' }}
-                    canEdit={canEdit}
-                    canEditCKRelations={canEdit || (isCKManager && (profile?.store_ids ?? []).includes(store.id))}
+                    canEdit={(store as any).type === '央廚' ? canEditCKSettings : canEditStoreSettings}
+                    canEditCKRelations={canEditCKSettings || (isCKManager && (profile?.store_ids ?? []).includes(store.id))}
                     memberStoreOptions={type === '央廚' ? memberStoreOptions : []}
                     externalStores={type === '央廚' ? (allExternalStores ?? []).filter((e: any) => e.ck_store_id === store.id).map((e: any) => ({ id: e.id, name: e.name })) : []}
                   />
@@ -106,7 +112,14 @@ export default async function StoresPage() {
           )
         })}
 
-        {canEdit && <AddStoreForm />}
+        {canEdit && (
+          <AddStoreForm
+            allowedTypes={[
+              ...(canEditStoreSettings ? ['店面' as const] : []),
+              ...(canEditCKSettings ? ['央廚' as const] : []),
+            ]}
+          />
+        )}
 
         {!canEdit && (
           <p className="text-xs text-center pt-2" style={{ color: '#a1a1aa' }}>

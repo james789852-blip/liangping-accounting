@@ -3,7 +3,16 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import HQNav from '@/components/hq/nav'
 import { getCachedUserProfile, getCachedAllStores } from '@/lib/cached-queries'
-import { canManageCKPrices, hasAnyHQPermission } from '@/lib/user-permissions'
+import {
+  canManageCKItems,
+  canManageCKPrices,
+  canManageCKReceipts,
+  canManageCKSettings,
+  canManageStoreItems,
+  canManageStoreReceipts,
+  canManageStoreSettings,
+  hasAnyHQPermission,
+} from '@/lib/user-permissions'
 
 export default async function HQLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -51,7 +60,13 @@ export default async function HQLayout({ children }: { children: React.ReactNode
         permissions={{
           canManageUsers: !!((profile as any)?.role === '老闆' || (profile as any)?.can_manage_users),
           canManageStores: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_manage_stores),
+          canManageStoreSettings: canManageStoreSettings(profile),
+          canManageCKSettings: canManageCKSettings(profile),
           canManageItems: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_manage_items),
+          canManageStoreItems: canManageStoreItems(profile),
+          canManageCKItems: canManageCKItems(profile),
+          canManageStoreReceipts: canManageStoreReceipts(profile),
+          canManageCKReceipts: canManageCKReceipts(profile),
           canManageCKPrices: canManageCKPrices(profile),
           canReviewClosings: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_review_closings),
           canExportReports: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_export_reports),

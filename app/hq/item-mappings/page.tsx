@@ -5,7 +5,7 @@ import ItemMappingsClient from '@/components/hq/item-mappings-client'
 import { sortStores } from '@/lib/store-order'
 import { fetchAllPaged } from '@/lib/supabase-paged'
 import { resolveHQStoreId } from '@/lib/hq-store-selection'
-import { canManageItems } from '@/lib/user-permissions'
+import { canManageCKItems, canManageStoreItems } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,17 +20,22 @@ export default async function ItemMappingsPage({
 
   const { data: profile } = await supabase
     .from('user_profiles').select('*').eq('user_id', user.id).single()
-  if (!canManageItems(profile)) redirect('/manager/dashboard')
+  const canStoreItems = canManageStoreItems(profile)
+  const canCKItems = canManageCKItems(profile)
+  if (!canStoreItems && !canCKItems) redirect('/manager/dashboard')
 
   const admin = createAdminClient()
   const [{ data: stores }, { data: vgsInitial }] = await Promise.all([
-    admin.from('stores').select('id, name').eq('active', true).order('name'),
+    admin.from('stores').select('id, name, type').eq('active', true).order('name'),
     admin.from('system_vendor_groups').select('id, name, sort_order, doc_type').eq('active', true).order('sort_order'),
   ])
 
   const params = await searchParams
   // 沒有 URL storeId 時，跟隨總公司左側「切換店家」目前選擇，避免每次回第一家店。
-  const sortedStores = sortStores(stores ?? [])
+  const sortedStores = sortStores((stores ?? []).filter((s: any) => {
+    const type = (s.type ?? '店面') as string
+    return type === '央廚' ? canCKItems : canStoreItems
+  }))
   const storeId = await resolveHQStoreId(sortedStores, params.storeId)
   const mappings = await fetchAllPaged<any>(() =>
     admin.from('item_column_mappings')

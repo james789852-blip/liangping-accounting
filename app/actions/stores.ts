@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath, revalidateTag } from 'next/cache'
-import { canManageStores } from '@/lib/user-permissions'
+import { canManageCKSettings, canManageStoreSettings } from '@/lib/user-permissions'
 
 interface StoreSettings {
   mode: string
@@ -26,10 +26,14 @@ async function requireManager() {
   if (!user) return { user: null, profile: null, error: '未登入' as string }
   const { data: profile } = await supabase
     .from('user_profiles').select('*').eq('user_id', user.id).single()
-  if (!canManageStores(profile)) {
+  if (!canManageStoreSettings(profile) && !canManageCKSettings(profile)) {
     return { user: null, profile: null, error: '權限不足，未開啟「可管理店家」權限' as string }
   }
   return { user, profile, error: null }
+}
+
+function canManageStoreType(profile: any, type?: string | null) {
+  return (type === '央廚') ? canManageCKSettings(profile) : canManageStoreSettings(profile)
 }
 
 export async function updateStoreSettings(storeId: string, settings: StoreSettings) {
@@ -37,6 +41,12 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
   if (error) return { error }
 
   const admin = createAdminClient()
+  const { data: currentStore } = await admin.from('stores').select('type').eq('id', storeId).single()
+  const targetType = settings.type ?? currentStore?.type ?? '店面'
+  if (!canManageStoreType(profile, targetType)) {
+    return { error: targetType === '央廚' ? '權限不足，未開啟「可管理央廚店家」權限' : '權限不足，未開啟「可管理店面店家」權限' }
+  }
+
   const { error: dbErr } = await admin
     .from('stores')
     .update({
@@ -65,8 +75,11 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
 }
 
 export async function createStore(name: string, mode: string, type = '店面') {
-  const { error } = await requireManager()
+  const { profile, error } = await requireManager()
   if (error) return { error }
+  if (!canManageStoreType(profile, type)) {
+    return { error: type === '央廚' ? '權限不足，未開啟「可管理央廚店家」權限' : '權限不足，未開啟「可管理店面店家」權限' }
+  }
 
   const trimmed = name.trim()
   if (!trimmed) return { error: '請填寫店家名稱' }

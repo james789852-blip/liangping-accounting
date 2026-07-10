@@ -6,11 +6,11 @@ import { createStore } from '@/app/actions/stores'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
-export default function AddStoreForm() {
+export default function AddStoreForm({ allowedTypes = ['店面', '央廚'] }: { allowedTypes?: ('店面' | '央廚')[] }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [mode, setMode] = useState<'ichef' | 'handwrite' | 'mixed'>('ichef')
-  const [storeType, setStoreType] = useState<'店面' | '央廚'>('店面')
+  const [storeType, setStoreType] = useState<'店面' | '央廚'>(allowedTypes[0] ?? '店面')
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -22,7 +22,7 @@ export default function AddStoreForm() {
       toast.success(`${name.trim()} 已建立`)
       setName('')
       setMode('ichef')
-      setStoreType('店面')
+      setStoreType(allowedTypes[0] ?? '店面')
       setOpen(false)
       router.refresh()
     })
@@ -66,7 +66,7 @@ export default function AddStoreForm() {
       <div className="space-y-1.5">
         <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>店家類型</p>
         <div className="flex gap-2">
-          {(['店面', '央廚'] as const).map(t => (
+          {allowedTypes.map(t => (
             <button key={t} type="button" onClick={() => setStoreType(t)}
               className="px-3 py-1.5 rounded-xl text-sm font-medium"
               style={{

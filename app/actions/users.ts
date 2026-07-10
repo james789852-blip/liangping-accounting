@@ -34,7 +34,13 @@ export async function createUser(formData: {
   primary_store_id?: string | null
   can_manage_users?: boolean
   can_manage_stores?: boolean
+  can_manage_store_settings?: boolean
+  can_manage_ck_settings?: boolean
   can_manage_items?: boolean
+  can_manage_store_items?: boolean
+  can_manage_ck_items?: boolean
+  can_manage_store_receipts?: boolean
+  can_manage_ck_receipts?: boolean
   can_manage_ck_prices?: boolean
   can_review_closings?: boolean
   can_export_reports?: boolean
@@ -69,8 +75,20 @@ export async function createUser(formData: {
     primary_store_id: primary,
     is_hq: isOwner ? true : (formData.is_hq ?? false),
     can_manage_users: isOwner ? true : (formData.can_manage_users ?? false),
-    can_manage_stores: isOwner ? true : (formData.can_manage_stores ?? false),
-    can_manage_items: isOwner ? true : (formData.can_manage_items ?? false),
+    can_manage_stores: isOwner ? true : ((formData.can_manage_store_settings ?? false) || (formData.can_manage_ck_settings ?? false) || (formData.can_manage_stores ?? false)),
+    can_manage_store_settings: isOwner ? true : (formData.can_manage_store_settings ?? formData.can_manage_stores ?? false),
+    can_manage_ck_settings: isOwner ? true : (formData.can_manage_ck_settings ?? formData.can_manage_stores ?? false),
+    can_manage_items: isOwner ? true : (
+      (formData.can_manage_store_items ?? false) ||
+      (formData.can_manage_ck_items ?? false) ||
+      (formData.can_manage_store_receipts ?? false) ||
+      (formData.can_manage_ck_receipts ?? false) ||
+      (formData.can_manage_items ?? false)
+    ),
+    can_manage_store_items: isOwner ? true : (formData.can_manage_store_items ?? formData.can_manage_items ?? false),
+    can_manage_ck_items: isOwner ? true : (formData.can_manage_ck_items ?? formData.can_manage_items ?? false),
+    can_manage_store_receipts: isOwner ? true : (formData.can_manage_store_receipts ?? formData.can_manage_items ?? false),
+    can_manage_ck_receipts: isOwner ? true : (formData.can_manage_ck_receipts ?? formData.can_manage_items ?? false),
     can_manage_ck_prices: isOwner ? true : (formData.can_manage_ck_prices ?? false),
     can_review_closings: isOwner ? true : (formData.can_review_closings ?? false),
     can_export_reports: isOwner ? true : (formData.can_export_reports ?? false),
@@ -97,7 +115,13 @@ export async function updateUser(userId: string, formData: {
   primary_store_id?: string | null
   can_manage_users?: boolean
   can_manage_stores?: boolean
+  can_manage_store_settings?: boolean
+  can_manage_ck_settings?: boolean
   can_manage_items?: boolean
+  can_manage_store_items?: boolean
+  can_manage_ck_items?: boolean
+  can_manage_store_receipts?: boolean
+  can_manage_ck_receipts?: boolean
   can_manage_ck_prices?: boolean
   can_review_closings?: boolean
   can_export_reports?: boolean
@@ -123,7 +147,29 @@ export async function updateUser(userId: string, formData: {
   if (formData.is_hq !== undefined) patch.is_hq = formData.is_hq
   if (formData.can_manage_users !== undefined) patch.can_manage_users = formData.can_manage_users
   if (formData.can_manage_stores !== undefined) patch.can_manage_stores = formData.can_manage_stores
+  if (formData.can_manage_store_settings !== undefined) patch.can_manage_store_settings = formData.can_manage_store_settings
+  if (formData.can_manage_ck_settings !== undefined) patch.can_manage_ck_settings = formData.can_manage_ck_settings
+  if (formData.can_manage_store_settings !== undefined || formData.can_manage_ck_settings !== undefined) {
+    patch.can_manage_stores = !!(formData.can_manage_store_settings || formData.can_manage_ck_settings)
+  }
   if (formData.can_manage_items !== undefined) patch.can_manage_items = formData.can_manage_items
+  if (formData.can_manage_store_items !== undefined) patch.can_manage_store_items = formData.can_manage_store_items
+  if (formData.can_manage_ck_items !== undefined) patch.can_manage_ck_items = formData.can_manage_ck_items
+  if (formData.can_manage_store_receipts !== undefined) patch.can_manage_store_receipts = formData.can_manage_store_receipts
+  if (formData.can_manage_ck_receipts !== undefined) patch.can_manage_ck_receipts = formData.can_manage_ck_receipts
+  if (
+    formData.can_manage_store_items !== undefined ||
+    formData.can_manage_ck_items !== undefined ||
+    formData.can_manage_store_receipts !== undefined ||
+    formData.can_manage_ck_receipts !== undefined
+  ) {
+    patch.can_manage_items = !!(
+      formData.can_manage_store_items ||
+      formData.can_manage_ck_items ||
+      formData.can_manage_store_receipts ||
+      formData.can_manage_ck_receipts
+    )
+  }
   if (formData.can_manage_ck_prices !== undefined) patch.can_manage_ck_prices = formData.can_manage_ck_prices
   if (formData.can_review_closings !== undefined) patch.can_review_closings = formData.can_review_closings
   if (formData.can_export_reports !== undefined) patch.can_export_reports = formData.can_export_reports

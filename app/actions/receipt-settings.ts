@@ -3,7 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { canManageItems } from '@/lib/user-permissions'
+import { canManageCKReceipts, canManageStoreReceipts } from '@/lib/user-permissions'
 
 /** 精準 revalidate 只清跟收據設定相關的頁面（不 nuke 整站） */
 function revalidateReceipt() {
@@ -19,7 +19,7 @@ export interface CategoryWithVendors {
   vendors: { id: string; name: string }[]
 }
 
-async function requireAuth() {
+async function requireAuth(storeId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('未登入')
@@ -28,8 +28,25 @@ async function requireAuth() {
     .select('*')
     .eq('user_id', user.id)
     .single()
-  if (!canManageItems(profile)) throw new Error('權限不足，未開啟「可管理品項」權限')
+  const admin = createAdminClient()
+  const { data: store } = await admin.from('stores').select('type').eq('id', storeId).single()
+  const isCK = store?.type === '央廚'
+  if (isCK ? !canManageCKReceipts(profile) : !canManageStoreReceipts(profile)) {
+    throw new Error(isCK ? '權限不足，未開啟「可管理央廚收據廠商」權限' : '權限不足，未開啟「可管理店面收據廠商」權限')
+  }
   return user
+}
+
+async function storeIdByCategory(categoryId: string) {
+  const admin = createAdminClient()
+  const { data } = await admin.from('receipt_categories').select('store_id').eq('id', categoryId).single()
+  return data?.store_id as string | undefined
+}
+
+async function storeIdByVendor(vendorId: string) {
+  const admin = createAdminClient()
+  const { data } = await admin.from('receipt_vendors').select('store_id').eq('id', vendorId).single()
+  return data?.store_id as string | undefined
 }
 
 export async function getReceiptSettings(storeId: string): Promise<CategoryWithVendors[]> {
@@ -69,7 +86,7 @@ async function nextVendorSort(categoryId: string): Promise<number> {
 }
 
 export async function addCategory(storeId: string, name: string) {
-  await requireAuth()
+  await requireAuth(storeId)
   if (!name.trim()) return { error: '請輸入類別名稱' }
   const admin = createAdminClient()
   const sortOrder = await nextCatSort(storeId)
@@ -80,7 +97,7 @@ export async function addCategory(storeId: string, name: string) {
 }
 
 export async function addCategoryWithVendors(storeId: string, categoryName: string, vendorNames: string[]) {
-  await requireAuth()
+  await requireAuth(storeId)
   if (!categoryName.trim()) return { error: '請輸入類別名稱' }
   const admin = createAdminClient()
   const sortOrder = await nextCatSort(storeId)
@@ -100,7 +117,9 @@ export async function addCategoryWithVendors(storeId: string, categoryName: stri
 }
 
 export async function updateCategoryName(categoryId: string, name: string) {
-  await requireAuth()
+  const storeId = await storeIdByCategory(categoryId)
+  if (!storeId) return { error: '找不到類別' }
+  await requireAuth(storeId)
   if (!name.trim()) return { error: '請輸入類別名稱' }
   const admin = createAdminClient()
   const { error } = await admin.from('receipt_categories').update({ name: name.trim() }).eq('id', categoryId)
@@ -110,7 +129,9 @@ export async function updateCategoryName(categoryId: string, name: string) {
 }
 
 export async function deleteCategory(categoryId: string) {
-  await requireAuth()
+  const storeId = await storeIdByCategory(categoryId)
+  if (!storeId) return { error: '找不到類別' }
+  await requireAuth(storeId)
   const admin = createAdminClient()
   const { error } = await admin.from('receipt_categories').delete().eq('id', categoryId)
   if (error) return { error: error.message }
@@ -119,7 +140,7 @@ export async function deleteCategory(categoryId: string) {
 }
 
 export async function addVendor(storeId: string, categoryId: string, name: string) {
-  await requireAuth()
+  await requireAuth(storeId)
   if (!name.trim()) return { error: '請輸入廠商名稱' }
   const admin = createAdminClient()
   const sortOrder = await nextVendorSort(categoryId)
@@ -130,7 +151,9 @@ export async function addVendor(storeId: string, categoryId: string, name: strin
 }
 
 export async function updateVendor(vendorId: string, name: string) {
-  await requireAuth()
+  const storeId = await storeIdByVendor(vendorId)
+  if (!storeId) return { error: '找不到廠商' }
+  await requireAuth(storeId)
   if (!name.trim()) return { error: '請輸入廠商名稱' }
   const admin = createAdminClient()
   const { error } = await admin.from('receipt_vendors').update({ name: name.trim() }).eq('id', vendorId)
@@ -140,7 +163,9 @@ export async function updateVendor(vendorId: string, name: string) {
 }
 
 export async function deleteVendor(vendorId: string) {
-  await requireAuth()
+  const storeId = await storeIdByVendor(vendorId)
+  if (!storeId) return { error: '找不到廠商' }
+  await requireAuth(storeId)
   const admin = createAdminClient()
   const { error } = await admin.from('receipt_vendors').delete().eq('id', vendorId)
   if (error) return { error: error.message }
@@ -150,7 +175,10 @@ export async function deleteVendor(vendorId: string) {
 
 /** 重新排序類別（依傳入 ids 順序賦 sort_order） */
 export async function reorderCategories(ids: string[]) {
-  await requireAuth()
+  if (ids.length === 0) return { success: true }
+  const firstStoreId = ids[0] ? await storeIdByCategory(ids[0]) : undefined
+  if (!firstStoreId) return { error: '找不到類別' }
+  await requireAuth(firstStoreId)
   const admin = createAdminClient()
   for (let i = 0; i < ids.length; i++) {
     await admin.from('receipt_categories').update({ sort_order: (i + 1) * 10 }).eq('id', ids[i])
@@ -161,7 +189,10 @@ export async function reorderCategories(ids: string[]) {
 
 /** 重新排序類別內廠商 */
 export async function reorderVendors(ids: string[]) {
-  await requireAuth()
+  if (ids.length === 0) return { success: true }
+  const firstStoreId = ids[0] ? await storeIdByVendor(ids[0]) : undefined
+  if (!firstStoreId) return { error: '找不到廠商' }
+  await requireAuth(firstStoreId)
   const admin = createAdminClient()
   for (let i = 0; i < ids.length; i++) {
     await admin.from('receipt_vendors').update({ sort_order: (i + 1) * 10 }).eq('id', ids[i])

@@ -38,7 +38,13 @@ export interface UserProfile {
   active?: boolean
   can_manage_users?: boolean
   can_manage_stores?: boolean
+  can_manage_store_settings?: boolean
+  can_manage_ck_settings?: boolean
   can_manage_items?: boolean
+  can_manage_store_items?: boolean
+  can_manage_ck_items?: boolean
+  can_manage_store_receipts?: boolean
+  can_manage_ck_receipts?: boolean
   can_manage_ck_prices?: boolean
   can_review_closings?: boolean
   can_export_reports?: boolean

@@ -6,7 +6,7 @@ import { sortStores } from '@/lib/store-order'
 import { Settings } from 'lucide-react'
 import ReceiptSettingsClient from '@/components/hq/receipt-settings-client'
 import { resolveHQStoreId } from '@/lib/hq-store-selection'
-import { canManageItems } from '@/lib/user-permissions'
+import { canManageCKReceipts, canManageStoreReceipts } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,11 +21,16 @@ export default async function HQReceiptSettingsPage({
 
   const { data: profile } = await supabase
     .from('user_profiles').select('*').eq('user_id', user.id).single()
-  if (!canManageItems(profile)) redirect('/manager/dashboard')
+  const canStoreReceipts = canManageStoreReceipts(profile)
+  const canCKReceipts = canManageCKReceipts(profile)
+  if (!canStoreReceipts && !canCKReceipts) redirect('/manager/dashboard')
 
   const admin = createAdminClient()
   const params = await searchParams
-  const type = params.type ?? 'store'
+  const requestedType = params.type ?? 'store'
+  const type = requestedType === 'ck'
+    ? (canCKReceipts ? 'ck' : 'store')
+    : (canStoreReceipts ? 'store' : 'ck')
 
   const { data: storesRaw } = type === 'ck'
     ? await admin.from('stores').select('id, name').eq('active', true).eq('type', '央廚')
@@ -62,6 +67,8 @@ export default async function HQReceiptSettingsPage({
       <div className="max-w-xl mx-auto px-4 py-4">
         <ReceiptSettingsClient
           type={type}
+          allowStoreType={canStoreReceipts}
+          allowCKType={canCKReceipts}
           stores={stores}
           currentStoreId={storeId}
           initialCategories={initialData}

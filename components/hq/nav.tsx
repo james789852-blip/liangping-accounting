@@ -110,7 +110,13 @@ interface Props {
   permissions?: {
     canManageUsers?: boolean
     canManageStores?: boolean
+    canManageStoreSettings?: boolean
+    canManageCKSettings?: boolean
     canManageItems?: boolean
+    canManageStoreItems?: boolean
+    canManageCKItems?: boolean
+    canManageStoreReceipts?: boolean
+    canManageCKReceipts?: boolean
     canManageCKPrices?: boolean
     canReviewClosings?: boolean
     canExportReports?: boolean
@@ -154,8 +160,9 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false)
 
   const canSeeUsers = role === '老闆' || !!permissions.canManageUsers
-  const canSeeStores = role === '老闆' || !!permissions.canManageStores
-  const canSeeItems = role === '老闆' || !!permissions.canManageItems
+  const canSeeStores = role === '老闆' || !!permissions.canManageStores || !!permissions.canManageStoreSettings || !!permissions.canManageCKSettings
+  const canSeeItems = role === '老闆' || !!permissions.canManageItems || !!permissions.canManageStoreItems || !!permissions.canManageCKItems
+  const canSeeReceipts = role === '老闆' || !!permissions.canManageItems || !!permissions.canManageStoreReceipts || !!permissions.canManageCKReceipts
   const canSeeCKPrices = role === '老闆' || !!permissions.canManageCKPrices
   const canSeeReviews = role === '老闆' || !!permissions.canReviewClosings
   const canSeeExports = role === '老闆' || !!permissions.canExportReports
@@ -172,11 +179,11 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           if (it.href === '/hq/accounting') return canSeeReviews
           if (it.href === '/hq/dashboard') return canSeeReviews || canSeeExports
           if (it.href === '/hq/item-mappings') return canSeeItems
-          if (it.href === '/hq/receipt-settings') return canSeeItems
+          if (it.href === '/hq/receipt-settings') return canSeeReceipts
           if (it.href === '/hq/ck-prices') return canSeeCKPrices
           if (it.href === '/hq/stores') return canSeeStores
           if (it.href === '/hq/users') return canSeeUsers
-          if (it.href === '/hq/audit') return canSeeUsers || canSeeStores || canSeeItems || canSeeCKPrices || canSeeReviews
+          if (it.href === '/hq/audit') return canSeeUsers || canSeeStores || canSeeItems || canSeeReceipts || canSeeCKPrices || canSeeReviews
           return true
         }),
       })).filter(sec => sec.items.length > 0)

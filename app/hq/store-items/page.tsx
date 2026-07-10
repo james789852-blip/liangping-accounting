@@ -5,7 +5,7 @@ import { Boxes } from 'lucide-react'
 import StoreItemsClient from '@/components/store-items-client'
 import { sortStores } from '@/lib/store-order'
 import { resolveHQStoreId } from '@/lib/hq-store-selection'
-import { canManageItems } from '@/lib/user-permissions'
+import { canManageStoreItems } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +20,7 @@ export default async function HQStoreItemsPage({
 
   const { data: profile } = await supabase
     .from('user_profiles').select('*').eq('user_id', user.id).single()
-  if (!canManageItems(profile)) {
+  if (!canManageStoreItems(profile)) {
     return <div className="p-6" style={{ color: '#be123c' }}>權限不足</div>
   }
 

@@ -16,9 +16,11 @@ import HelpBox from './help-box'
 interface Store { id: string; name: string }
 
 export default function ReceiptSettingsClient({
-  type, stores, currentStoreId, initialCategories, initialCKGroups,
+  type, allowStoreType = true, allowCKType = true, stores, currentStoreId, initialCategories, initialCKGroups,
 }: {
   type: 'store' | 'ck'
+  allowStoreType?: boolean
+  allowCKType?: boolean
   stores: Store[]
   currentStoreId: string
   initialCategories: CategoryWithVendors[]
@@ -37,9 +39,9 @@ export default function ReceiptSettingsClient({
   return (
     <div className="space-y-4">
       {/* 類型 tab */}
-      <div className="grid grid-cols-2 gap-2">
-        <button onClick={() => changeType('store')} style={tabBtn(type === 'store')}>店面</button>
-        <button onClick={() => changeType('ck')} style={tabBtn(type === 'ck')}>央廚</button>
+      <div className={`grid gap-2 ${allowStoreType && allowCKType ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        {allowStoreType && <button onClick={() => changeType('store')} style={tabBtn(type === 'store')}>店面</button>}
+        {allowCKType && <button onClick={() => changeType('ck')} style={tabBtn(type === 'ck')}>央廚</button>}
       </div>
 
       {/* 店家 selector */}
