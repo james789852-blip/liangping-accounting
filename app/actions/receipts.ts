@@ -34,8 +34,12 @@ function normalizeReceiptItemsForTotal(items: ReceiptItemPayload[], totalAmount:
   return validItems.map(item => ({ ...item, amount: untaxedTotal }))
 }
 
+function normalizeActualVendorName(name?: string | null) {
+  return (name ?? '').replace(/[\s　]+/g, '').trim()
+}
+
 async function rememberActualVendor(admin: ReturnType<typeof createAdminClient>, storeId: string, vendorGroup: string, name?: string) {
-  const trimmed = name?.trim()
+  const trimmed = normalizeActualVendorName(name)
   if (!trimmed) return
   await admin.from('store_actual_vendors').upsert({
     store_id: storeId,
@@ -59,7 +63,7 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
       store_id: payload.storeId,
       business_date: payload.businessDate,
       vendor_name: payload.vendorName,
-      actual_vendor_name: payload.actualVendorName?.trim() || null,
+      actual_vendor_name: normalizeActualVendorName(payload.actualVendorName) || null,
       receipt_type: payload.receiptType,
       total_amount: payload.totalAmount,
       tax_amount: payload.taxAmount,
@@ -139,7 +143,7 @@ export async function updateReceipt(
     .update({
       business_date: payload.businessDate,
       vendor_name: payload.vendorName,
-      actual_vendor_name: payload.actualVendorName?.trim() || null,
+      actual_vendor_name: normalizeActualVendorName(payload.actualVendorName) || null,
       receipt_type: payload.receiptType,
       total_amount: payload.totalAmount,
       tax_amount: payload.taxAmount,

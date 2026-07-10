@@ -161,6 +161,12 @@ interface Props {
   realToday?: string    // 真實今日業務日，用於日期切換器顯示「回到今日」
 }
 
+const NEW_ACTUAL_VENDOR_VALUE = '__new_actual_vendor__'
+
+function normalizeActualVendorName(name?: string | null) {
+  return (name ?? '').replace(/[\s　]+/g, '').trim()
+}
+
 interface FormData {
   pos_cash: number
   uber_amounts: Record<string, number>
@@ -720,13 +726,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [finishingToday, setFinishingToday] = useState(false)
   const [finishError, setFinishError] = useState('')
   const categories = receiptCategories
+  const [knownActualVendors, setKnownActualVendors] = useState(actualVendors)
+  useEffect(() => { setKnownActualVendors(actualVendors) }, [actualVendors])
   const actualVendorOptions = useCallback((vendorGroup: string) => {
     const group = vendorGroup.trim()
-    return actualVendors
+    return knownActualVendors
       .filter(v => !group || v.vendor_group === group)
       .map(v => v.name)
       .filter((name, index, arr) => !!name && arr.indexOf(name) === index)
-  }, [actualVendors])
+  }, [knownActualVendors])
   const [ckQuantities, setCkQuantities] = useState<Record<string, number>>(() => {
     const result: Record<string, number> = {}
     ckPrices.forEach(p => { result[p.id] = 0 })
@@ -1396,7 +1404,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
     const updatedReceipts = localReceipts.map(r =>
       r.id === editingReceiptId ? {
-        ...r, vendor_name: editVendor, actual_vendor_name: editActualVendor.trim() || null, total_amount: finalTotal,
+        ...r, vendor_name: editVendor, actual_vendor_name: normalizeActualVendorName(editActualVendor) || null, total_amount: finalTotal,
         tax_amount: editHasTax ? editTaxAmount : 0,
         receipt_type: r.receipt_type,
         photo_url: newPhotoUrl,
@@ -1411,7 +1419,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
     await supabase.from('receipts').update({
       vendor_name: editVendor,
-      actual_vendor_name: editActualVendor.trim() || null,
+      actual_vendor_name: normalizeActualVendorName(editActualVendor) || null,
       total_amount: finalTotal,
       tax_amount: editHasTax ? editTaxAmount : 0,
       photo_url: newPhotoUrl,
@@ -1492,9 +1500,26 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setReceiptForms(prev => prev.map(f => f.id === id ? { ...f, [field]: value } : f))
   }
 
+  function addKnownActualVendor(vendorGroup: string, rawName: string) {
+    const name = normalizeActualVendorName(rawName)
+    if (!name) return ''
+    const group = vendorGroup.trim() || '未分類'
+    setKnownActualVendors(prev => {
+      if (prev.some(v => v.vendor_group === group && normalizeActualVendorName(v.name) === name)) return prev
+      return [...prev, { id: `local-${group}-${name}`, vendor_group: group, name }]
+    })
+    return name
+  }
+
+  function requestNewActualVendor(vendorGroup: string, onSelect: (name: string) => void) {
+    const name = addKnownActualVendor(vendorGroup, window.prompt('請輸入新的實際廠商名稱') ?? '')
+    if (name) onSelect(name)
+  }
+
   async function rememberActualVendor(supabase: ReturnType<typeof createClient>, vendorGroup: string, name?: string) {
-    const trimmed = name?.trim()
+    const trimmed = normalizeActualVendorName(name)
     if (!trimmed) return
+    addKnownActualVendor(vendorGroup, trimmed)
     await supabase.from('store_actual_vendors').upsert({
       store_id: store.id,
       vendor_group: vendorGroup.trim() || '未分類',
@@ -1547,7 +1572,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       store_id: store.id,
       business_date: today,
       vendor_name: form.vendor_name.trim(),
-      actual_vendor_name: form.actual_vendor_name.trim() || null,
+      actual_vendor_name: normalizeActualVendorName(form.actual_vendor_name) || null,
       receipt_type: 'receipt',
       total_amount: finalTotal,
       tax_amount: form.has_tax ? form.tax_amount : 0,
@@ -1589,7 +1614,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const newR: TodayReceipt = {
       id: saved.id,
       vendor_name: form.vendor_name.trim(),
-      actual_vendor_name: form.actual_vendor_name.trim() || null,
+      actual_vendor_name: normalizeActualVendorName(form.actual_vendor_name) || null,
       total_amount: finalTotal,
       tax_amount: form.has_tax ? form.tax_amount : 0,
       receipt_type: 'receipt',
@@ -2516,18 +2541,31 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                         {/* 實際廠商 */}
                         <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>實際廠商（可空）</label>
-                          <input
-                            list={`actual-vendor-${form.id}`}
-                            placeholder="例：昇威、有厲、某某菜行"
-                            className="receipt-field"
-                            style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
-                            value={form.actual_vendor_name}
-                            onChange={e => updateReceiptForm(form.id, 'actual_vendor_name', e.target.value)}
-                          />
-                          <datalist id={`actual-vendor-${form.id}`}>
-                            {actualVendorOptions(form.vendor_name).map(name => <option key={name} value={name} />)}
-                          </datalist>
+                          <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>實際廠商（選填，用於統計）</label>
+                          {(() => {
+                            const options = actualVendorOptions(form.vendor_name)
+                            const current = normalizeActualVendorName(form.actual_vendor_name)
+                            return (
+                              <select
+                                className="receipt-field"
+                                style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
+                                value={current}
+                                disabled={!form.vendor_name.trim()}
+                                onChange={e => {
+                                  if (e.target.value === NEW_ACTUAL_VENDOR_VALUE) {
+                                    requestNewActualVendor(form.vendor_name, name => updateReceiptForm(form.id, 'actual_vendor_name', name))
+                                    return
+                                  }
+                                  updateReceiptForm(form.id, 'actual_vendor_name', e.target.value)
+                                }}
+                              >
+                                <option value="">{form.vendor_name.trim() ? '— 選擇實際廠商 —' : '先選廠商類別'}</option>
+                                {current && !options.includes(current) && <option value={current}>目前：{current}</option>}
+                                {options.map(name => <option key={name} value={name}>{name}</option>)}
+                                <option value={NEW_ACTUAL_VENDOR_VALUE}>＋新增實際廠商</option>
+                              </select>
+                            )
+                          })()}
                         </div>
 
                         {/* 品項 — 若廠商下沒子品項（廠商本身就是品項，例：瓦斯/水費/電費）→ 隱藏 */}
@@ -2887,18 +2925,31 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                             {/* 實際廠商 */}
                             <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>實際廠商（可空）</label>
-                              <input
-                                list="edit-actual-vendor-options"
-                                placeholder="例：昇威、有厲、某某菜行"
-                                className="receipt-field"
-                                style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
-                                value={editActualVendor}
-                                onChange={e => setEditActualVendor(e.target.value)}
-                              />
-                              <datalist id="edit-actual-vendor-options">
-                                {actualVendorOptions(editVendor).map(name => <option key={name} value={name} />)}
-                              </datalist>
+                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>實際廠商（選填，用於統計）</label>
+                              {(() => {
+                                const options = actualVendorOptions(editVendor)
+                                const current = normalizeActualVendorName(editActualVendor)
+                                return (
+                                  <select
+                                    className="receipt-field"
+                                    style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
+                                    value={current}
+                                    disabled={!editVendor.trim()}
+                                    onChange={e => {
+                                      if (e.target.value === NEW_ACTUAL_VENDOR_VALUE) {
+                                        requestNewActualVendor(editVendor, setEditActualVendor)
+                                        return
+                                      }
+                                      setEditActualVendor(e.target.value)
+                                    }}
+                                  >
+                                    <option value="">{editVendor.trim() ? '— 選擇實際廠商 —' : '先選廠商類別'}</option>
+                                    {current && !options.includes(current) && <option value={current}>目前：{current}</option>}
+                                    {options.map(name => <option key={name} value={name}>{name}</option>)}
+                                    <option value={NEW_ACTUAL_VENDOR_VALUE}>＋新增實際廠商</option>
+                                  </select>
+                                )
+                              })()}
                             </div>
 
                             {/* 稅外加 UI 已移除 — 稅金請直接選稅金品項輸入金額 */}
