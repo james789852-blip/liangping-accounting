@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   CalendarRange, TrendingUp, TrendingDown, Minus,
   Store, Bike, Smartphone, AlertTriangle, Award,
-  Users, Download, FileText, FileSpreadsheet, Loader2,
+  Download, FileSpreadsheet, Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -60,25 +60,6 @@ function prevPeriod(start: string, end: string) {
   const pe = new Date(s); pe.setDate(pe.getDate() - 1)
   const ps = new Date(pe); ps.setDate(ps.getDate() - days)
   return { start: ps.toISOString().slice(0, 10), end: pe.toISOString().slice(0, 10) }
-}
-
-// 計算下一次會議（用該店設定）
-function getNextMeeting(today: string, anchorDate: string | null, frequencyDays: number) {
-  if (!anchorDate) return null
-  const REF = new Date(anchorDate + 'T00:00:00+08:00')
-  const t = new Date(today + 'T00:00:00+08:00')
-  let d = new Date(REF)
-  const freqMs = frequencyDays * 86400000
-  // 回溯：若 anchor 在未來，往後找最近一次未來的會議日
-  if (d > t) {
-    // 已經是未來，直接用
-  } else {
-    while (d <= t) d = new Date(d.getTime() + freqMs)
-  }
-  const diff = Math.round((d.getTime() - t.getTime()) / 86400000)
-  const dateStr = d.toISOString().slice(0, 10)
-  const dow = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()]
-  return { dateStr, dow, daysUntil: diff }
 }
 
 // ── Types ───────────────────────────────────────────────────────────────────────
@@ -180,15 +161,12 @@ function DailyTrendChart({ data }: { data: DayRev[] }) {
 
 // ── Main Component ──────────────────────────────────────────────────────────────
 
-export default function AnalyticsClient({ storeId, storeName, storeType, meetingAnchorDate, meetingFrequencyDays }: {
+export default function AnalyticsClient({ storeId, storeName, storeType }: {
   storeId: string
   storeName: string
   storeType?: string | null
-  meetingAnchorDate: string | null
-  meetingFrequencyDays: number
 }) {
   const today = getTodayTW()
-  const meeting = getNextMeeting(today, meetingAnchorDate, meetingFrequencyDays)
 
   const [preset, setPreset] = useState<PresetKey>('14d')
   const initRange = getPresetRange('14d', today)
@@ -498,32 +476,10 @@ export default function AnalyticsClient({ storeId, storeName, storeType, meeting
         <h1 className="text-2xl font-extrabold" style={{ letterSpacing: '-0.02em', background: 'linear-gradient(135deg,#F59E0B,#F97316,#FBBF24)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
           營運洞察
         </h1>
-        <p className="text-sm mt-0.5" style={{ color: '#71717a' }}>{storeName} · 系統幫你整理好雙週會議要報告的數字，並自動偵測異常</p>
+        <p className="text-sm mt-0.5" style={{ color: '#71717a' }}>{storeName} · 營業額、成本、廠商與單價變動分析</p>
       </div>
 
       <div className="px-4 py-5 max-w-5xl mx-auto space-y-4">
-
-        {/* Meeting Banner - show when meeting is within 7 days */}
-        {meeting && meeting.daysUntil <= 7 && (
-          <div className="rounded-2xl p-4 flex gap-3 items-center flex-wrap" style={{ background: 'linear-gradient(135deg,#fef3c7,#fce7f3)' }}>
-            <div className="h-11 w-11 bg-white rounded-xl flex items-center justify-center shrink-0" style={{ color: '#f97316' }}>
-              <Users className="h-5 w-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold" style={{ color: '#92400e' }}>
-                下次雙週會議 · {meeting.dateStr.replace(/-/g, '/')}（{meeting.dow}）下午 3:00
-              </p>
-              <p className="text-xs mt-0.5" style={{ color: '#b45309' }}>
-                {meeting.daysUntil === 0 ? '今天！' : meeting.daysUntil === 1 ? '明天' : `${meeting.daysUntil} 天後`}
-                　·　預設區間「近 14 天」已自動載入
-              </p>
-            </div>
-            <button className="shrink-0 flex items-center gap-1.5 text-xs font-bold text-white px-3 py-2.5 rounded-xl" style={{ background: '#18181b' }}>
-              <Download className="h-3.5 w-3.5" />
-              準備報告
-            </button>
-          </div>
-        )}
 
         {/* Time Range Picker */}
         <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
@@ -917,20 +873,6 @@ export default function AnalyticsClient({ storeId, storeName, storeType, meeting
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', border: 'none', cursor: exportLoading ? 'not-allowed' : 'pointer', opacity: exportLoading ? 0.6 : 1 }}>
                 {exportLoading ? <><Loader2 className="h-4 w-4 animate-spin" />匯出中…</> : <><Download className="h-4 w-4" />下載 Excel</>}
-              </button>
-            </div>
-
-            {/* Export Bar */}
-            <div className="rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap"
-              style={{ background: 'linear-gradient(135deg,#18181b,#92400E)', color: 'white' }}>
-              <div>
-                <p className="text-sm font-bold mb-1">📑 雙週會議報告</p>
-                <p className="text-xs" style={{ opacity: 0.85 }}>系統整理所有數字與警示，方便你會議時報告使用。</p>
-              </div>
-              <button className="flex items-center gap-2 bg-white text-sm font-semibold px-4 py-2.5 rounded-xl shrink-0"
-                style={{ color: '#18181b', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-                <FileText className="h-4 w-4" />
-                產出會議 PDF
               </button>
             </div>
           </>
