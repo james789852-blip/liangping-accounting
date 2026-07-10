@@ -162,15 +162,32 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const canSeeUsers = role === '老闆' || !!permissions.canManageUsers
   const canSeeStores = role === '老闆' || !!permissions.canManageStores || !!permissions.canManageStoreSettings || !!permissions.canManageCKSettings
   const canSeeItems = role === '老闆' || !!permissions.canManageItems || !!permissions.canManageStoreItems || !!permissions.canManageCKItems
-  const canSeeReceipts = role === '老闆' || !!permissions.canManageItems || !!permissions.canManageStoreReceipts || !!permissions.canManageCKReceipts
+  const canSeeStoreReceipts = role === '老闆' || !!permissions.canManageItems || !!permissions.canManageStoreReceipts
+  const canSeeCKReceipts = role === '老闆' || !!permissions.canManageItems || !!permissions.canManageCKReceipts
+  const canSeeReceipts = canSeeStoreReceipts || canSeeCKReceipts
   const canSeeCKPrices = role === '老闆' || !!permissions.canManageCKPrices
   const canSeeReviews = role === '老闆' || !!permissions.canReviewClosings
   const canSeeExports = role === '老闆' || !!permissions.canExportReports
+  const hqHomeHref = canSeeReviews
+    ? '/hq/accounting'
+    : canSeeExports
+      ? '/hq/dashboard'
+      : canSeeStores
+        ? '/hq/stores'
+        : canSeeItems
+          ? '/hq/item-mappings'
+          : canSeeReceipts
+            ? (canSeeStoreReceipts ? '/hq/receipt-settings' : '/hq/receipt-settings?type=ck')
+            : canSeeCKPrices
+              ? '/hq/ck-prices'
+              : '/hq/dashboard'
   const filteredHqSections = isCKManager
     ? [{
         label: '央廚管理',
         items: [
           ...(canSeeStores ? [{ href: '/hq/stores', label: '店家管理', icon: Store }] : []),
+          ...(canSeeItems ? [{ href: '/hq/item-mappings', label: '品項對應管理', icon: Package }] : []),
+          ...(canSeeReceipts ? [{ href: '/hq/receipt-settings?type=ck', label: '收據廠商設定', icon: Settings }] : []),
           ...(canSeeCKPrices ? [{ href: '/hq/ck-prices', label: '央廚單價', icon: Package }] : []),
         ],
       }]
@@ -194,12 +211,17 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
     if (tab.href === '/hq/item-mappings') return canSeeItems
     if (tab.href === '/hq/stores') return canSeeStores
     return true
-  })
+  }).concat([
+    ...(canSeeReceipts ? [{ href: canSeeStoreReceipts ? '/hq/receipt-settings' : '/hq/receipt-settings?type=ck', label: '收據', icon: Settings }] : []),
+    ...(canSeeCKPrices ? [{ href: '/hq/ck-prices', label: '單價', icon: Package }] : []),
+  ])
   const mobileTabs = isManagerPath
     ? mobileManagerTabs
     : isCKManager
       ? [
           ...(canSeeStores ? mobileHQTabs.filter(tab => tab.href === '/hq/stores') : []),
+          ...(canSeeItems ? mobileHQTabs.filter(tab => tab.href === '/hq/item-mappings') : []),
+          ...(canSeeReceipts ? [{ href: '/hq/receipt-settings?type=ck', label: '收據', icon: Settings }] : []),
           ...(canSeeCKPrices ? [{ href: '/hq/ck-prices', label: '單價', icon: Package }] : []),
         ]
       : filteredMobileHQTabs
@@ -255,7 +277,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         {hasStores && (
           <div className="px-4 pb-3">
             <Link
-              href={isManagerPath ? (isCKManager ? '/hq/stores' : '/hq/dashboard') : '/manager/dashboard'}
+              href={isManagerPath ? hqHomeHref : '/manager/dashboard'}
               className="flex items-center justify-center gap-2 w-full py-2 rounded-[10px] text-xs font-semibold transition-all hover:opacity-80"
               style={isManagerPath
                 ? { backgroundColor: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }
@@ -330,7 +352,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
           {isManagerPath && hasStores ? (
             <>
-              <Link href={isCKManager ? '/hq/stores' : '/hq/dashboard'} className="text-xs font-medium shrink-0 transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>總公司</Link>
+              <Link href={hqHomeHref} className="text-xs font-medium shrink-0 transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>總公司</Link>
               <span className="shrink-0" style={{ color: '#e4e4e7' }}>/</span>
               {allStores.length > 1 ? (
                 <StoreSwitcher stores={allStores} currentStoreId={currentStoreId}
@@ -362,7 +384,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
             </Link>
           )}
           {isManagerPath && hasStores && (
-            <Link href={isCKManager ? '/hq/stores' : '/hq/dashboard'}
+            <Link href={hqHomeHref}
               className="text-xs font-bold text-white rounded-lg px-2 py-1.5 whitespace-nowrap"
               style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)' }}>
               總公司
