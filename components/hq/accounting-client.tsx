@@ -29,7 +29,12 @@ interface ClosingRow {
   actual_remit?: number
   should_include_delivery?: number
 }
-interface CKRow { ck_store_id: string; status: string; hq_paid: boolean }
+interface CKRow {
+  ck_store_id: string
+  status: string
+  hq_paid: boolean
+  ck_reimbursement_confirmed?: boolean
+}
 type StoreDetailState = {
   stats: DailyStats | null
   detail: { closing: any; receipts: any[] } | null
@@ -71,20 +76,30 @@ function storeStatusMeta(status: string, variance: number, isHoliday: boolean) {
   if (status === 'draft') return { label: '草稿', bg: '#fef3c7', color: '#92400e' }
   return { label: '未輸入', bg: '#f4f4f5', color: '#a1a1aa' }
 }
-function ckStatusMeta(status: string, hqPaid: boolean) {
+type StatusBadge = { label: string; bg: string; color: string }
+
+function ckStatusBadges(status: string, hqPaid: boolean, handoffConfirmed: boolean): StatusBadge[] {
   if (status === 'verified') {
-    return hqPaid
-      ? { label: '已點交', bg: '#d1fae5', color: '#047857' }
-      : { label: '已審核', bg: '#d1fae5', color: '#047857' }
+    const badges: StatusBadge[] = [{ label: '已審核', bg: '#d1fae5', color: '#047857' }]
+    if (handoffConfirmed) {
+      badges.push({ label: '已點交', bg: '#dbeafe', color: '#1d4ed8' })
+    } else if (hqPaid) {
+      badges.push({ label: '待點交', bg: '#FFFBEB', color: '#92400E' })
+    }
+    return badges
   }
-  if (status === 'disputed') return { label: '已退回', bg: '#ffe4e6', color: '#be123c' }
+  if (status === 'disputed') return [{ label: '已退回', bg: '#ffe4e6', color: '#be123c' }]
   if (status === 'submitted') {
-    return hqPaid
-      ? { label: '已補款', bg: '#d1fae5', color: '#047857' }
-      : { label: '待補款', bg: '#FFFBEB', color: '#92400E' }
+    const badges: StatusBadge[] = [{ label: '待審核', bg: '#FFFBEB', color: '#92400E' }]
+    if (handoffConfirmed) {
+      badges.push({ label: '已點交', bg: '#dbeafe', color: '#1d4ed8' })
+    } else if (hqPaid) {
+      badges.push({ label: '待點交', bg: '#fef3c7', color: '#92400E' })
+    }
+    return badges
   }
-  if (status === 'draft') return { label: '草稿', bg: '#fef3c7', color: '#92400e' }
-  return { label: '未輸入', bg: '#f4f4f5', color: '#a1a1aa' }
+  if (status === 'draft') return [{ label: '草稿', bg: '#fef3c7', color: '#92400e' }]
+  return [{ label: '未輸入', bg: '#f4f4f5', color: '#a1a1aa' }]
 }
 
 export default function AccountingClient({
@@ -119,7 +134,10 @@ export default function AccountingClient({
 
   // 待審核總數（給 badge 用）
   const pendingCount = closings.filter(c => c.status === 'submitted' || c.status === 'disputed').length
-  const ckPendingCount = ckRecords.filter(r => r.status === 'submitted' && !r.hq_paid).length
+  const ckPendingCount = ckRecords.filter(r => (
+    r.status === 'submitted'
+    || (r.hq_paid && !r.ck_reimbursement_confirmed)
+  )).length
 
   useEffect(() => {
     setStoreDetailCache({})
@@ -283,7 +301,11 @@ export default function AccountingClient({
               )
             }) : ckStores.map(s => {
               const r = ckByStore[s.id]
-              const meta = ckStatusMeta(r?.status ?? 'none', r?.hq_paid ?? false)
+              const badges = ckStatusBadges(
+                r?.status ?? 'none',
+                r?.hq_paid ?? false,
+                r?.ck_reimbursement_confirmed ?? false,
+              )
               const isActive = selectedCkStoreId === s.id
               return (
                 <button key={s.id} onClick={() => selectCkStoreCard(s.id)}
@@ -292,8 +314,12 @@ export default function AccountingClient({
                     ? { background: 'white', border: '2px solid #F59E0B', boxShadow: '0 4px 12px rgba(245,158,11,0.15)' }
                     : { background: 'white', border: '1px solid #f4f4f5' }}>
                   <p className="text-sm font-bold truncate" style={{ color: '#18181b' }}>{s.name}</p>
-                  <span className="inline-block mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                    style={{ background: meta.bg, color: meta.color }}>{meta.label}</span>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {badges.map(badge => (
+                      <span key={badge.label} className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                        style={{ background: badge.bg, color: badge.color }}>{badge.label}</span>
+                    ))}
+                  </div>
                 </button>
               )
             })}

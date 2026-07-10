@@ -24,6 +24,7 @@ export interface CKDailyStats {
   status: 'submitted' | 'draft' | 'verified' | 'disputed' | 'none'
   payerName: string | null
   hqPaid: boolean
+  ckReimbursementConfirmed: boolean
   // Revenue
   memberOrders: Array<{ store_id: string; store_name: string; amount: number }>
   externalOrders: Array<{ name: string; amount: number }>
@@ -80,6 +81,7 @@ function emptyDay(date: string): CKDailyStats {
     status: 'none',
     payerName: null,
     hqPaid: false,
+    ckReimbursementConfirmed: false,
     memberOrders: [], externalOrders: [],
     memberRevenue: 0, externalRevenue: 0, revenue: 0,
     expenses: [],
@@ -99,7 +101,7 @@ export async function getCKRangeStats(
   const [{ data: storeRow }, { data: records }] = await Promise.all([
     admin.from('stores').select('id, name, assigned_store_ids').eq('id', ckStoreId).single(),
     admin.from('ck_daily_records')
-      .select('id, business_date, status, payer_name, hq_paid, receipt_photo_urls')
+      .select('id, business_date, status, payer_name, hq_paid, ck_reimbursement_confirmed, receipt_photo_urls')
       .eq('ck_store_id', ckStoreId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
   ])
@@ -140,6 +142,7 @@ export async function getCKRangeStats(
       dd.status = (rec.status ?? 'none') as CKDailyStats['status']
       dd.payerName = rec.payer_name ?? null
       dd.hqPaid = rec.hq_paid ?? false
+      dd.ckReimbursementConfirmed = rec.ck_reimbursement_confirmed ?? false
       dd.receiptPhotoUrls = ((rec.receipt_photo_urls as string[] | null) ?? [])
       // 訂單
       const ords = (orders ?? []).filter((o: any) => o.ck_daily_record_id === rec.id)

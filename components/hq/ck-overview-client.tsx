@@ -13,6 +13,25 @@ interface Store { id: string; name: string }
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
+function ckDailyBadges(data: Pick<CKDailyStats, 'status' | 'hqPaid' | 'ckReimbursementConfirmed'>) {
+  const primary = data.status === 'verified'
+    ? { label: '已審核', bg: '#dcfce7', color: '#15803d' }
+    : data.status === 'submitted'
+    ? { label: '已送出', bg: '#d1fae5', color: '#047857' }
+    : data.status === 'draft'
+    ? { label: '草稿', bg: '#fef3c7', color: '#92400e' }
+    : data.status === 'disputed'
+    ? { label: '已退回', bg: '#ffe4e6', color: '#be123c' }
+    : { label: '未輸入', bg: '#f4f4f5', color: '#a1a1aa' }
+  const badges = [primary]
+  if (data.ckReimbursementConfirmed) {
+    badges.push({ label: '已點交', bg: '#dbeafe', color: '#1d4ed8' })
+  } else if (data.hqPaid) {
+    badges.push({ label: '待點交', bg: '#FFFBEB', color: '#92400E' })
+  }
+  return badges
+}
+
 export default function CKOverviewClient({ stores, initialStoreId }: { stores: Store[]; initialStoreId?: string }) {
   const now = new Date()
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
@@ -210,16 +229,7 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
 }
 
 function CKDailyPanel({ data, storeName, ckStoreId }: { data: CKDailyStats; storeName: string; ckStoreId: string }) {
-  const statusLabel = data.status === 'verified' ? '已審核' : data.status === 'submitted' ? '已送出' : data.status === 'draft' ? '草稿' : data.status === 'disputed' ? '已退回' : '未輸入'
-  const statusStyle = data.status === 'verified'
-    ? { bg: '#dcfce7', color: '#15803d' }
-    : data.status === 'submitted'
-    ? { bg: '#d1fae5', color: '#047857' }
-    : data.status === 'draft'
-    ? { bg: '#fef3c7', color: '#92400e' }
-    : data.status === 'disputed'
-    ? { bg: '#ffe4e6', color: '#be123c' }
-    : { bg: '#f4f4f5', color: '#a1a1aa' }
+  const badges = ckDailyBadges(data)
   const [detail, setDetail] = useState<any | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   useEffect(() => {
@@ -233,10 +243,12 @@ function CKDailyPanel({ data, storeName, ckStoreId }: { data: CKDailyStats; stor
       <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1px solid #f4f4f5' }}>
         <div className="flex items-baseline gap-2 flex-wrap">
           <h2 className="text-base font-bold" style={{ color: '#18181b' }}>{storeName} · {data.date} {data.weekday}</h2>
-          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-            style={{ background: statusStyle.bg, color: statusStyle.color }}>
-            {statusLabel}
-          </span>
+          {badges.map(badge => (
+            <span key={badge.label} className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+              style={{ background: badge.bg, color: badge.color }}>
+              {badge.label}
+            </span>
+          ))}
         </div>
 
         <div>

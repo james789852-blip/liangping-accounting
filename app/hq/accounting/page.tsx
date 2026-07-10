@@ -48,7 +48,7 @@ export default async function AccountingPage({
       `)
       .eq('business_date', date),
     admin.from('ck_daily_records')
-      .select('ck_store_id, status, hq_paid, updated_at')
+      .select('ck_store_id, status, hq_paid, ck_reimbursement_confirmed, updated_at')
       .eq('business_date', date),
     admin.from('store_holidays').select('store_id').eq('holiday_date', date),
   ])

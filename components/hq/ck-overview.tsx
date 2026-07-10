@@ -86,27 +86,26 @@ function ReviewActions({ ckStoreId, date, status }: { ckStoreId: string; date: s
     })
   }
 
-  if (status === 'verified') return null
-
-  const canReview = ['submitted', 'disputed', 'draft'].includes(status)
+  const canApprove = ['submitted', 'disputed', 'draft'].includes(status)
+  const canRevise = ['submitted', 'verified', 'disputed', 'draft'].includes(status)
 
   return (
     <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
       <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>帳目審核</p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <button type="button" onClick={approve} disabled={isPending || !canReview}
+        <button type="button" onClick={approve} disabled={isPending || !canApprove}
           className="flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
           style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
           {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
           審核通過
         </button>
-        <button type="button" onClick={reject} disabled={isPending || !canReview}
+        <button type="button" onClick={reject} disabled={isPending || !canRevise}
           className="flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold disabled:opacity-50"
           style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
           <RotateCcw className="h-4 w-4" />
           退回修改
         </button>
-        <button type="button" onClick={remove} disabled={isPending || !canReview}
+        <button type="button" onClick={remove} disabled={isPending || !canRevise}
           className="flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold disabled:opacity-50"
           style={{ background: '#fff1f2', color: '#be123c', border: '1px solid #fecdd3' }}>
           <Trash2 className="h-4 w-4" />
@@ -115,6 +114,18 @@ function ReviewActions({ ckStoreId, date, status }: { ckStoreId: string; date: s
       </div>
     </div>
   )
+}
+
+function ckRecordBadges(status: string, hqPaid: boolean, handoffConfirmed: boolean) {
+  const badges: Array<{ label: string; bg: string; text: string; icon?: boolean }> = []
+  const st = STATUS_STYLE[status] ?? STATUS_STYLE.none
+  badges.push({ label: st.label, bg: st.bg, text: st.text })
+  if (handoffConfirmed) {
+    badges.push({ label: '已點交', bg: '#dbeafe', text: '#1d4ed8', icon: true })
+  } else if (hqPaid) {
+    badges.push({ label: '待點交', bg: '#FFFBEB', text: '#92400E', icon: true })
+  }
+  return badges
 }
 
 function PayButton({
@@ -285,7 +296,7 @@ function PayButton({
 function CKCard({ d, date }: { d: CKStoreData; date: string }) {
   const [open, setOpen] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
-  const st = STATUS_STYLE[d.status] ?? STATUS_STYLE.none
+  const badges = ckRecordBadges(d.status, d.hqPaid, d.ckReimbursementConfirmed ?? false)
   const hasData = d.status !== 'none'
 
   return (
@@ -302,14 +313,13 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
           <div className="min-w-0">
             <p className="text-sm font-bold" style={{ color: '#18181b' }}>{d.ckStore.name}</p>
             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-              <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full"
-                style={{ background: st.bg, color: st.text }}>{st.label}</span>
-              {d.hqPaid && (
-                <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1"
-                  style={{ background: d.ckReimbursementConfirmed ? '#f0fdf4' : '#FFFBEB', color: d.ckReimbursementConfirmed ? '#15803d' : '#92400E' }}>
-                  <CheckCircle2 className="h-2.5 w-2.5" />{d.ckReimbursementConfirmed ? '已點交' : '待點交'}
+              {badges.map(badge => (
+                <span key={badge.label} className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-1"
+                  style={{ background: badge.bg, color: badge.text }}>
+                  {badge.icon && <CheckCircle2 className="h-2.5 w-2.5" />}
+                  {badge.label}
                 </span>
-              )}
+              ))}
             </div>
           </div>
         </div>
