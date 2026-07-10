@@ -4,6 +4,7 @@ export type PermissionProfile = {
   can_manage_users?: boolean | null
   can_manage_stores?: boolean | null
   can_manage_items?: boolean | null
+  can_manage_ck_prices?: boolean | null
   can_review_closings?: boolean | null
   can_export_reports?: boolean | null
 }
@@ -35,6 +36,10 @@ export function canManageItems(profile?: PermissionProfile | null) {
   return hasManagementRole(profile) || profile?.can_manage_items === true
 }
 
+export function canManageCKPrices(profile?: PermissionProfile | null) {
+  return hasManagementRole(profile) || profile?.can_manage_ck_prices === true
+}
+
 export function canReviewClosings(profile?: PermissionProfile | null) {
   return hasManagementRole(profile) || profile?.can_review_closings === true
 }
@@ -50,8 +55,8 @@ export function hasAnyHQPermission(profile?: PermissionProfile | null) {
     canManageUsers(profile) ||
     canManageStores(profile) ||
     canManageItems(profile) ||
+    canManageCKPrices(profile) ||
     canReviewClosings(profile) ||
     canExportReports(profile)
   )
 }
-

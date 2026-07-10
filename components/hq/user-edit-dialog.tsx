@@ -20,6 +20,7 @@ interface UserData {
   can_manage_users?: boolean
   can_manage_stores?: boolean
   can_manage_items?: boolean
+  can_manage_ck_prices?: boolean
   can_review_closings?: boolean
   can_export_reports?: boolean
 }
@@ -30,6 +31,7 @@ const PERMISSION_TOGGLES = [
   { key: 'can_manage_users', label: '可管理帳號', desc: '新增、修改、停用使用者帳號' },
   { key: 'can_manage_stores', label: '可管理店家', desc: '修改店家設定、外送帳號、央廚服務店家' },
   { key: 'can_manage_items', label: '可管理品項', desc: '修改品項對應、收據廠商與 Excel 對應' },
+  { key: 'can_manage_ck_prices', label: '可管理央廚單價', desc: '修改央廚配送品項單價與單位' },
   { key: 'can_review_closings', label: '可審核帳目', desc: '審核、退回、刪除店家帳目' },
   { key: 'can_export_reports', label: '可匯出報表', desc: '匯出管理用 Excel / 報表' },
 ] as const
@@ -59,6 +61,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
     can_manage_users: (user as any).can_manage_users ?? false,
     can_manage_stores: user.can_manage_stores ?? false,
     can_manage_items: user.can_manage_items ?? false,
+    can_manage_ck_prices: user.can_manage_ck_prices ?? false,
     can_review_closings: user.can_review_closings ?? false,
     can_export_reports: user.can_export_reports ?? false,
   })
@@ -113,6 +116,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
       can_manage_users: isOwner ? true : form.can_manage_users,
       can_manage_stores: isOwner ? true : form.can_manage_stores,
       can_manage_items: isOwner ? true : form.can_manage_items,
+      can_manage_ck_prices: isOwner ? true : form.can_manage_ck_prices,
       can_review_closings: isOwner ? true : form.can_review_closings,
       can_export_reports: isOwner ? true : form.can_export_reports,
       active: form.active,
