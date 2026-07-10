@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink } from 'lucide-react'
+import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink, BarChart3 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
@@ -40,12 +40,14 @@ function useTaipeiNow() {
 const STORE_NAV_ITEMS = [
   { href: '/manager/closing',        label: '今日結帳', icon: ClipboardList },
   { href: '/manager/dashboard',      label: '今日狀態', icon: LayoutDashboard },
+  { href: '/manager/analytics',      label: '營運統計', icon: BarChart3 },
   { href: '/manager/history',        label: '歷史紀錄', icon: History },
 ]
 
 const CK_NAV_ITEMS = [
   { href: '/manager/ck',         label: '今日帳目', icon: ChefHat },
   { href: '/manager/dashboard',  label: '今日狀態', icon: LayoutDashboard },
+  { href: '/manager/analytics',  label: '營運統計', icon: BarChart3 },
   { href: '/manager/history',    label: '歷史紀錄', icon: History },
 ]
 
@@ -59,7 +61,7 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
   const { date, time } = useTaipeiNow()
 
   useEffect(() => {
-    for (const href of ['/manager/dashboard', '/manager/closing', '/manager/ck', '/manager/history']) {
+    for (const href of ['/manager/dashboard', '/manager/closing', '/manager/ck', '/manager/analytics', '/manager/history']) {
       router.prefetch(href)
     }
   }, [router])
@@ -166,7 +168,7 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
         </button>
       </header>
 
-      {/* ── 手機底部 Tab（3 項） */}
+      {/* ── 手機底部 Tab */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md"
         style={{ borderTop: '1px solid #f4f4f5', paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="flex px-2 pt-2 pb-2">

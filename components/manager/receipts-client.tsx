@@ -10,7 +10,7 @@ interface ReceiptItem {
   id: string; item_name: string; quantity?: number; unit?: string; unit_price?: number; amount: number; excel_column: string; item_category: string
 }
 interface ReceiptData {
-  id: string; business_date: string; vendor_name: string; receipt_type: string
+  id: string; business_date: string; vendor_name: string; actual_vendor_name?: string | null; receipt_type: string
   total_amount: number; tax_amount: number; photo_url: string; status: string
   notes: string; created_at: string; receipt_items: ReceiptItem[]
 }
@@ -77,6 +77,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
   }
 
   const [editVendor, setEditVendor] = useState(receipt.vendor_name)
+  const [editActualVendor, setEditActualVendor] = useState(receipt.actual_vendor_name ?? '')
   const [editType, setEditType] = useState(receipt.receipt_type)
   const [editDate, setEditDate] = useState(receipt.business_date)
   const [editTotal, setEditTotal] = useState(receipt.total_amount)
@@ -91,6 +92,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
 
   function startEdit() {
     setEditVendor(receipt.vendor_name); setEditType(receipt.receipt_type)
+    setEditActualVendor(receipt.actual_vendor_name ?? '')
     setEditDate(receipt.business_date); setEditTotal(receipt.total_amount)
     setEditTax(receipt.tax_amount); setEditNotes(receipt.notes ?? '')
     setEditItems(receipt.receipt_items.map(i => ({
@@ -104,7 +106,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
     setSaving(true)
     const filteredItems = editItems.filter(i => i.item_name.trim())
     const result = await updateReceipt(receipt.id, {
-      businessDate: editDate, vendorName: editVendor, receiptType: editType,
+      businessDate: editDate, vendorName: editVendor, actualVendorName: editActualVendor, receiptType: editType,
       totalAmount: editTotal, taxAmount: editTax, photoUrl: receipt.photo_url,
       notes: editNotes, items: filteredItems,
     })
@@ -113,7 +115,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
     setEditing(false)
     onUpdated({
       ...receipt,
-      business_date: editDate, vendor_name: editVendor, receipt_type: editType,
+      business_date: editDate, vendor_name: editVendor, actual_vendor_name: editActualVendor.trim() || null, receipt_type: editType,
       total_amount: editTotal, tax_amount: editTax, notes: editNotes,
       receipt_items: filteredItems.map((item, idx) => ({
         id: receipt.receipt_items[idx]?.id ?? `local-${idx}`,
@@ -144,6 +146,12 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
             <span className="text-sm font-semibold" style={{ color: '#18181b' }}>
               {receipt.vendor_name || '（未填廠商）'}
             </span>
+            {receipt.actual_vendor_name && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                style={{ background: '#ecfeff', color: '#0e7490' }}>
+                {receipt.actual_vendor_name}
+              </span>
+            )}
             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
               style={{ background: '#f8fafc', color: '#52525b' }}>
               {TYPE_LABEL[receipt.receipt_type] ?? receipt.receipt_type}
@@ -250,6 +258,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
             <div>
               <label className="block text-[11px] font-medium mb-1" style={{ color: '#71717a' }}>廠商名稱</label>
               <input style={inputStyle()} value={editVendor} onChange={e => setEditVendor(e.target.value)} placeholder="廠商" />
+              <input style={inputStyle()} value={editActualVendor} onChange={e => setEditActualVendor(e.target.value)} placeholder="實際廠商（可空）" />
             </div>
             <div>
               <label className="block text-[11px] font-medium mb-1" style={{ color: '#71717a' }}>單據類型</label>

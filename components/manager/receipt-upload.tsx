@@ -15,7 +15,7 @@ interface MappingMap {
 }
 
 interface NewReceiptData {
-  id: string; business_date: string; vendor_name: string; receipt_type: string
+  id: string; business_date: string; vendor_name: string; actual_vendor_name?: string | null; receipt_type: string
   total_amount: number; tax_amount: number; photo_url: string; notes: string
   status: string; created_at: string
   receipt_items: { id: string; item_name: string; amount: number; excel_column: string; item_category: string }[]
@@ -41,6 +41,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
   const [photoUrl, setPhotoUrl] = useState('')
   const [photoPreview, setPhotoPreview] = useState('')
   const [vendorName, setVendorName] = useState('')
+  const [actualVendorName, setActualVendorName] = useState('')
   const [receiptType, setReceiptType] = useState('receipt')
   const [totalAmount, setTotalAmount] = useState(0)
   const [taxAmount, setTaxAmount] = useState(0)
@@ -69,6 +70,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
         setStep('review')
       }
       if (typeof draft.vendorName === 'string') setVendorName(draft.vendorName)
+      if (typeof draft.actualVendorName === 'string') setActualVendorName(draft.actualVendorName)
       if (typeof draft.receiptType === 'string') setReceiptType(draft.receiptType)
       if (typeof draft.totalAmount === 'number') setTotalAmount(draft.totalAmount)
       if (typeof draft.taxAmount === 'number') setTaxAmount(draft.taxAmount)
@@ -81,7 +83,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
   useEffect(() => {
     const timer = setTimeout(() => {
       try {
-        const hasDraft = photoUrl || vendorName.trim() || totalAmount > 0 || taxAmount > 0 || notes.trim() || items.length > 0
+        const hasDraft = photoUrl || vendorName.trim() || actualVendorName.trim() || totalAmount > 0 || taxAmount > 0 || notes.trim() || items.length > 0
         if (!hasDraft || step === 'saving') {
           localStorage.removeItem(draftKey)
           return
@@ -91,6 +93,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
           date: today,
           photoUrl,
           vendorName,
+          actualVendorName,
           receiptType,
           totalAmount,
           taxAmount,
@@ -101,7 +104,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
       } catch {}
     }, 300)
     return () => clearTimeout(timer)
-  }, [draftKey, items, notes, photoUrl, receiptType, step, storeId, taxAmount, today, totalAmount, vendorName])
+  }, [actualVendorName, draftKey, items, notes, photoUrl, receiptType, step, storeId, taxAmount, today, totalAmount, vendorName])
 
   function selectMappedItem(i: number, name: string) {
     const m = mappings[name]
@@ -193,7 +196,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
       if (newMappings.length) await saveItemMappingsBatch(newMappings)
 
       const result = await saveReceipt({
-        storeId, businessDate: today, vendorName, receiptType,
+        storeId, businessDate: today, vendorName, actualVendorName, receiptType,
         totalAmount, taxAmount, photoUrl, notes,
         items: validItems.map(it => ({
           item_name: it.name, item_category: it.item_category,
@@ -207,6 +210,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
         id: result.id!,
         business_date: today,
         vendor_name: vendorName,
+        actual_vendor_name: actualVendorName.trim() || null,
         receipt_type: receiptType,
         total_amount: totalAmount,
         tax_amount: taxAmount,
@@ -274,6 +278,11 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
           <label className="text-xs text-slate-500 mb-1 block">廠商名稱</label>
           <input className="w-full h-9 px-3 text-sm rounded-lg border border-slate-200 outline-none focus:border-blue-500"
             value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="例：菜商、央廚配送" />
+        </div>
+        <div>
+          <label className="text-xs text-slate-500 mb-1 block">實際廠商（可空）</label>
+          <input className="w-full h-9 px-3 text-sm rounded-lg border border-slate-200 outline-none focus:border-blue-500"
+            value={actualVendorName} onChange={e => setActualVendorName(e.target.value)} placeholder="例：昇威、有厲、某某菜行" />
         </div>
         <div>
           <label className="text-xs text-slate-500 mb-1 block">單據類型</label>

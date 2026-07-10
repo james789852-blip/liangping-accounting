@@ -85,6 +85,7 @@ export interface DailyStats {
   // ── 收據原始資料 ──
   receipts: Array<{
     vendor_name: string
+    actual_vendor_name: string | null
     total_amount: number
     tax_amount: number
     notes: string | null
@@ -164,7 +165,7 @@ export async function getRangeStats(
       .gte('business_date', firstDay).lte('business_date', lastDay)
       .order('updated_at', { ascending: true }),
     admin.from('receipts')
-      .select('business_date, vendor_name, total_amount, tax_amount, notes, receipt_type, receipt_items(item_name, amount, item_category, excel_column)')
+      .select('business_date, vendor_name, actual_vendor_name, total_amount, tax_amount, notes, receipt_type, receipt_items(item_name, amount, item_category, excel_column)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('store_holidays')
@@ -227,6 +228,7 @@ export async function getRangeStats(
     const notedItemNames = new Set<string>()
     dd.receipts.push({
       vendor_name: r.vendor_name ?? '',
+      actual_vendor_name: r.actual_vendor_name ?? null,
       total_amount: r.total_amount ?? 0,
       tax_amount: r.tax_amount ?? 0,
       notes: r.notes ?? null,

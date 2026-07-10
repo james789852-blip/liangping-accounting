@@ -142,6 +142,7 @@ function buildDailyAccountingStats({
     const notedItemNames = new Set<string>()
     day.receipts.push({
       vendor_name: receipt.vendor_name ?? '',
+      actual_vendor_name: receipt.actual_vendor_name ?? null,
       total_amount: receipt.total_amount ?? 0,
       tax_amount: receipt.tax_amount ?? 0,
       notes: receipt.notes ?? null,
@@ -241,7 +242,7 @@ async function loadDailyAccountingDetail(admin: ReturnType<typeof createAdminCli
       .eq('store_id', storeId)
       .eq('business_date', date),
     admin.from('receipts')
-      .select('id, vendor_name, receipt_type, total_amount, tax_amount, notes, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
+      .select('id, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, notes, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
       .eq('store_id', storeId)
       .eq('business_date', date)
       .order('created_at'),
@@ -336,7 +337,7 @@ export async function fetchDailyClosingWithReceipts(storeId: string, date: strin
   let submitterName: string | null = null
   if (closing) {
     const { data: recs } = await admin.from('receipts')
-      .select('id, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
+      .select('id, vendor_name, actual_vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
       .eq('store_id', storeId).eq('business_date', date)
       .order('created_at')
     receipts = recs ?? []

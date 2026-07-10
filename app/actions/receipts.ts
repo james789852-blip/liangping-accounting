@@ -17,6 +17,7 @@ interface SaveReceiptPayload {
   storeId: string
   businessDate: string
   vendorName: string
+  actualVendorName?: string
   receiptType: string
   totalAmount: number
   taxAmount: number
@@ -33,6 +34,18 @@ function normalizeReceiptItemsForTotal(items: ReceiptItemPayload[], totalAmount:
   return validItems.map(item => ({ ...item, amount: untaxedTotal }))
 }
 
+async function rememberActualVendor(admin: ReturnType<typeof createAdminClient>, storeId: string, vendorGroup: string, name?: string) {
+  const trimmed = name?.trim()
+  if (!trimmed) return
+  await admin.from('store_actual_vendors').upsert({
+    store_id: storeId,
+    vendor_group: vendorGroup.trim() || '未分類',
+    name: trimmed,
+    active: true,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'store_id,vendor_group,name' })
+}
+
 export async function saveReceipt(payload: SaveReceiptPayload) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
@@ -46,6 +59,7 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
       store_id: payload.storeId,
       business_date: payload.businessDate,
       vendor_name: payload.vendorName,
+      actual_vendor_name: payload.actualVendorName?.trim() || null,
       receipt_type: payload.receiptType,
       total_amount: payload.totalAmount,
       tax_amount: payload.taxAmount,
@@ -59,6 +73,7 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
     .single()
 
   if (rErr || !receipt) return { error: rErr?.message ?? '儲存失敗' }
+  await rememberActualVendor(admin, payload.storeId, payload.vendorName, payload.actualVendorName)
 
   const normalizedItems = normalizeReceiptItemsForTotal(payload.items, payload.totalAmount, payload.taxAmount)
   if (normalizedItems.length > 0) {
@@ -124,6 +139,7 @@ export async function updateReceipt(
     .update({
       business_date: payload.businessDate,
       vendor_name: payload.vendorName,
+      actual_vendor_name: payload.actualVendorName?.trim() || null,
       receipt_type: payload.receiptType,
       total_amount: payload.totalAmount,
       tax_amount: payload.taxAmount,
@@ -133,6 +149,7 @@ export async function updateReceipt(
     .eq('id', receiptId)
 
   if (rErr) return { error: rErr.message }
+  await rememberActualVendor(admin, storeId, payload.vendorName, payload.actualVendorName)
 
   await admin.from('receipt_items').delete().eq('receipt_id', receiptId)
   const normalizedItems = normalizeReceiptItemsForTotal(payload.items, payload.totalAmount, payload.taxAmount)

@@ -9,7 +9,7 @@
  *   Row 5..: 每日資料
  */
 import ExcelJS from 'exceljs'
-import { getCKMonthlyStats } from '@/lib/ck-aggregator'
+import { getCKMonthlyStats, type CKMonthlyStats } from '@/lib/ck-aggregator'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
@@ -161,6 +161,147 @@ function headerFontColor(c: ColumnDef): string {
 
 function displayHeader(text: string): string {
   return text.replace(/^[^・]+・/, '')
+}
+
+interface CKVendorAnalysisRow {
+  month?: number
+  vendorGroup: string
+  actualVendor: string
+  food: number
+  pack: number
+  misc: number
+  invoice: number
+  receipt: number
+  estimate: number
+  taxRefund: number
+  total: number
+}
+
+function buildCKVendorAnalysisRows(monthlies: CKMonthlyStats[], includeMonth: boolean): CKVendorAnalysisRow[] {
+  const rows = new Map<string, CKVendorAnalysisRow>()
+  const rowFor = (month: number | undefined, vendorGroup: string, actualVendor: string) => {
+    const key = `${includeMonth ? month : 'year'}|${vendorGroup}|${actualVendor}`
+    const existing = rows.get(key)
+    if (existing) return existing
+    const row: CKVendorAnalysisRow = {
+      month: includeMonth ? month : undefined,
+      vendorGroup,
+      actualVendor,
+      food: 0,
+      pack: 0,
+      misc: 0,
+      invoice: 0,
+      receipt: 0,
+      estimate: 0,
+      taxRefund: 0,
+      total: 0,
+    }
+    rows.set(key, row)
+    return row
+  }
+
+  for (const monthly of monthlies) {
+    for (const day of monthly.daily) {
+      for (const expense of day.expenses) {
+        const vendorGroup = expense.vendor_group?.trim() || '未分類'
+        const actualVendor = expense.payer_name?.trim() || '未指定'
+        const row = rowFor(monthly.monthNum, vendorGroup, actualVendor)
+        const amount = Number(expense.amount) || 0
+        if (expense.category === '食材') row.food += amount
+        else if (expense.category === '耗材') row.pack += amount
+        else row.misc += amount
+        if (expense.doc_type === '發票') row.invoice += amount
+        else if (expense.doc_type === '收據') row.receipt += amount
+        else if (expense.doc_type === '估價單') row.estimate += amount
+        if ((expense.doc_type === '發票' && vendorGroup.includes('退稅')) || expense.item_name.includes('稅')) {
+          row.taxRefund += amount
+        }
+        row.total += amount
+      }
+    }
+  }
+
+  return Array.from(rows.values())
+    .filter(row => row.total !== 0 || row.taxRefund !== 0)
+    .sort((a, b) =>
+      ((a.month ?? 0) - (b.month ?? 0))
+      || (a.vendorGroup === '未分類' ? 1 : b.vendorGroup === '未分類' ? -1 : 0)
+      || a.vendorGroup.localeCompare(b.vendorGroup, 'zh-Hant')
+      || a.actualVendor.localeCompare(b.actualVendor, 'zh-Hant')
+    )
+}
+
+function addCKVendorAnalysisSheet(wb: ExcelJS.Workbook, title: string, rows: CKVendorAnalysisRow[], includeMonth: boolean) {
+  const ws = wb.addWorksheet(title, { views: [{ state: 'frozen', ySplit: 3, showGridLines: false }] })
+  const headers = [
+    ...(includeMonth ? ['月份'] : []),
+    '廠商類別',
+    '付款/廠商',
+    '食材',
+    '耗材',
+    '雜項',
+    '發票',
+    '收據',
+    '估價單',
+    '退稅',
+    '金額合計',
+  ]
+  const totalCols = headers.length
+  fillHeader(ws.getRow(1).getCell(1), title, CK_PAPER, true, 'FF000000', 16)
+  ws.mergeCells(1, 1, 1, totalCols)
+  ws.getRow(2).getCell(1).value = '央廚依支出單據的廠商類別與付款/廠商名稱彙總；未填寫者列為「未指定」。'
+  ws.mergeCells(2, 1, 2, totalCols)
+  ws.getRow(2).getCell(1).font = { name: CK_FONT, size: 11, color: { argb: 'FF71717A' } }
+  ws.getRow(2).getCell(1).alignment = { horizontal: 'left', vertical: 'middle' }
+  headers.forEach((header, idx) => fillHeader(ws.getRow(3).getCell(idx + 1), header, CK_HEADER_GRAY, true, 'FF000000', 13))
+
+  let rowNum = 4
+  for (const row of rows) {
+    const values = [
+      ...(includeMonth ? [`${row.month}月`] : []),
+      row.vendorGroup,
+      row.actualVendor,
+      row.food,
+      row.pack,
+      row.misc,
+      row.invoice,
+      row.receipt,
+      row.estimate,
+      row.taxRefund,
+      row.total,
+    ]
+    values.forEach((value, idx) => {
+      const cell = ws.getRow(rowNum).getCell(idx + 1)
+      cell.value = value as any
+      cell.border = thinBorder() as ExcelJS.Borders
+      setFill(cell, idx < (includeMonth ? 3 : 2) ? 'FFFAFAFA' : 'FFFFFFFF')
+      cell.font = { name: CK_FONT, size: 12, bold: idx === totalCols - 1 }
+      cell.alignment = { horizontal: typeof value === 'number' ? 'right' : 'left', vertical: 'middle' }
+      if (typeof value === 'number') cell.numFmt = '#,##0;-#,##0;"-"'
+    })
+    rowNum++
+  }
+
+  const totalRow = rowNum
+  fillHeader(ws.getRow(totalRow).getCell(1), '合計', CK_PAPER, true, 'FF000000', 12)
+  ws.mergeCells(totalRow, 1, totalRow, includeMonth ? 3 : 2)
+  for (let col = includeMonth ? 4 : 3; col <= totalCols; col++) {
+    const cell = ws.getRow(totalRow).getCell(col)
+    cell.border = thinBorder() as ExcelJS.Borders
+    setFill(cell, CK_PAPER)
+    const letter = colLetter(col)
+    cell.value = { formula: `SUM(${letter}4:${letter}${Math.max(4, totalRow - 1)})` } as any
+    cell.numFmt = '#,##0;-#,##0;"-"'
+    cell.font = { name: CK_FONT, size: 12, bold: true }
+    cell.alignment = { horizontal: 'right', vertical: 'middle' }
+  }
+
+  const widths = includeMonth
+    ? [10, 18, 22, 13, 13, 13, 13, 13, 13, 13, 14]
+    : [18, 22, 13, 13, 13, 13, 13, 13, 13, 14]
+  widths.forEach((width, idx) => { ws.getColumn(idx + 1).width = width })
+  ws.getRow(1).height = 32
+  ws.getRow(3).height = 28
 }
 
 function storeHeaderColor(index: number): string {
@@ -602,6 +743,8 @@ export async function buildCKNativeWorkbook(
   wb.created = new Date()
   ;(wb as any).calcProperties = { fullCalcOnLoad: true }
   await addCKSheet(wb, ckStoreId, year, monthNum)
+  const monthly = await getCKMonthlyStats(ckStoreId, year, monthNum)
+  addCKVendorAnalysisSheet(wb, `${monthNum}月廠商分析`, buildCKVendorAnalysisRows([monthly], false), false)
   return wb
 }
 
@@ -618,9 +761,12 @@ export async function buildAnnualCKWorkbook(
   addCKAnnualOverviewSheet(wb, year)
 
   // 12 個月 sheet
+  const monthlies: CKMonthlyStats[] = []
   for (let m = 1; m <= 12; m++) {
     await addCKSheet(wb, ckStoreId, year, m)
+    monthlies.push(await getCKMonthlyStats(ckStoreId, year, m))
   }
+  addCKVendorAnalysisSheet(wb, '年度廠商分析', buildCKVendorAnalysisRows(monthlies, true), true)
 
   return wb
 }

@@ -64,6 +64,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     { data: mappingRows },
     itemOrderText,
     mappingBasedItems,
+    { data: actualVendors },
   ] = await Promise.all([
     supabase.from('stores').select('*').eq('id', storeId).single(),
     supabase
@@ -73,7 +74,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .order('sort_order').order('item_name'),
     supabase
       .from('receipts')
-      .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount)')
+      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount)')
       .eq('store_id', storeId)
       .eq('business_date', closing.business_date)
       .order('created_at'),
@@ -83,6 +84,14 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .then(async ({ data }) => (data ? data.text() : null))
       .catch((): null => null),
     getStoreItemsFromMappings(storeId),
+    supabase
+      .from('store_actual_vendors')
+      .select('id, vendor_group, name')
+      .eq('store_id', storeId)
+      .eq('active', true)
+      .order('vendor_group')
+      .order('sort_order')
+      .order('name'),
   ])
 
   let itemOrder: string[] = []
@@ -119,6 +128,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
         todayReceipts={todayReceipts ?? []}
         receiptCategories={receiptCategories}
         mappingColumns={mappingColumns}
+        actualVendors={actualVendors ?? []}
         isBackfill={closing.business_date !== getBusinessDate()}
         realToday={getBusinessDate()}
       />

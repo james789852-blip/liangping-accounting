@@ -245,6 +245,171 @@ function docColor(doc: string): string {
   return DOC_PALETTE[doc] ?? 'FFF2F2F2'
 }
 
+function receiptTypeLabel(receiptType?: string | null): string {
+  if (receiptType === 'invoice') return '發票'
+  if (receiptType === 'delivery_note') return '估價單'
+  if (receiptType === 'receipt') return '收據'
+  return receiptType || ''
+}
+
+interface VendorAnalysisRow {
+  month?: number
+  vendorGroup: string
+  actualVendor: string
+  food: number
+  pack: number
+  misc: number
+  invoice: number
+  receipt: number
+  estimate: number
+  taxRefund: number
+  total: number
+}
+
+function buildVendorAnalysisRows(monthlies: MonthlyStats[], items: ResolvedStoreItem[], includeMonth: boolean): VendorAnalysisRow[] {
+  const itemMeta = new Map(items.map(item => [item.name, item] as const))
+  const groupSort = new Map<string, number>()
+  for (const item of items) {
+    if (!groupSort.has(item.vendor_group)) groupSort.set(item.vendor_group, item.vendor_group_sort_order ?? 9999)
+  }
+  const rows = new Map<string, VendorAnalysisRow>()
+  const rowFor = (month: number | undefined, vendorGroup: string, actualVendor: string) => {
+    const key = `${includeMonth ? month : 'year'}|${vendorGroup}|${actualVendor}`
+    const existing = rows.get(key)
+    if (existing) return existing
+    const row: VendorAnalysisRow = {
+      month: includeMonth ? month : undefined,
+      vendorGroup,
+      actualVendor,
+      food: 0,
+      pack: 0,
+      misc: 0,
+      invoice: 0,
+      receipt: 0,
+      estimate: 0,
+      taxRefund: 0,
+      total: 0,
+    }
+    rows.set(key, row)
+    return row
+  }
+
+  for (const monthly of monthlies) {
+    for (const day of monthly.daily) {
+      for (const receipt of day.receipts) {
+        const actualVendor = receipt.actual_vendor_name?.trim() || '未指定'
+        const receiptItems = receipt.items.filter(item => item.item_name?.trim())
+        const firstMeta = receiptItems[0] ? itemMeta.get(receiptItems[0].item_name) : null
+        const taxRow = rowFor(monthly.monthNum, firstMeta?.vendor_group || receipt.vendor_name || '未分類', actualVendor)
+        taxRow.taxRefund += receipt.tax_amount || 0
+
+        for (const item of receiptItems) {
+          const meta = itemMeta.get(item.item_name)
+          const vendorGroup = meta?.vendor_group || receipt.vendor_name || '未分類'
+          const row = rowFor(monthly.monthNum, vendorGroup, actualVendor)
+          const amount = Number(item.amount) || 0
+          if (meta?.category === '食材') row.food += amount
+          else if (meta?.category === '耗材') row.pack += amount
+          else row.misc += amount
+
+          const doc = meta?.doc_type || receiptTypeLabel(receipt.receipt_type)
+          if (doc === '發票') row.invoice += amount
+          else if (doc === '收據') row.receipt += amount
+          else if (doc === '估價單') row.estimate += amount
+          if ((meta as any)?.is_refund) row.taxRefund += amount
+          row.total += amount
+        }
+      }
+    }
+  }
+
+  return Array.from(rows.values())
+    .filter(row => row.total !== 0 || row.taxRefund !== 0)
+    .sort((a, b) =>
+      ((a.month ?? 0) - (b.month ?? 0))
+      || ((groupSort.get(a.vendorGroup) ?? 9999) - (groupSort.get(b.vendorGroup) ?? 9999))
+      || (a.vendorGroup === '未分類' ? 1 : b.vendorGroup === '未分類' ? -1 : 0)
+      || a.vendorGroup.localeCompare(b.vendorGroup, 'zh-Hant')
+      || a.actualVendor.localeCompare(b.actualVendor, 'zh-Hant')
+    )
+}
+
+function addVendorAnalysisSheet(wb: ExcelJS.Workbook, store: StoreInfo, title: string, rows: VendorAnalysisRow[], includeMonth: boolean) {
+  const ws = wb.addWorksheet(title, {
+    views: [{ state: 'frozen', xSplit: 0, ySplit: 3, showGridLines: false }],
+  })
+  const headers = [
+    ...(includeMonth ? ['月份'] : []),
+    '廠商類別',
+    '實際廠商',
+    '食材',
+    '耗材',
+    '雜項',
+    '發票',
+    '收據',
+    '估價單',
+    '退稅',
+    '金額合計',
+  ]
+  const totalCols = headers.length
+  fillHeaderCell(ws.getRow(1).getCell(1), `${store.name} ${title}`, 'FFFFF2CC', BLACK, true, 16)
+  ws.mergeCells(1, 1, 1, totalCols)
+  ws.getRow(1).height = 32
+  ws.getRow(2).getCell(1).value = '依店長端「實際廠商」彙總；未填寫者列為「未指定」。'
+  ws.mergeCells(2, 1, 2, totalCols)
+  ws.getRow(2).getCell(1).font = { name: FONT_FAMILY, size: 11, color: { argb: 'FF71717A' } }
+  ws.getRow(2).getCell(1).alignment = { horizontal: 'left', vertical: 'middle' }
+
+  headers.forEach((header, idx) => fillHeaderCell(ws.getRow(3).getCell(idx + 1), header, HEADER_GRAY, BLACK, true, 13))
+
+  let rowNum = 4
+  for (const row of rows) {
+    const values = [
+      ...(includeMonth ? [`${row.month}月`] : []),
+      row.vendorGroup,
+      row.actualVendor,
+      row.food,
+      row.pack,
+      row.misc,
+      row.invoice,
+      row.receipt,
+      row.estimate,
+      row.taxRefund,
+      row.total,
+    ]
+    values.forEach((value, idx) => {
+      const cell = ws.getRow(rowNum).getCell(idx + 1)
+      cell.value = value as any
+      setGridBorder(cell)
+      setSolidFill(cell, idx < (includeMonth ? 3 : 2) ? 'FFFAFAFA' : WHITE)
+      cell.font = { name: FONT_FAMILY, size: 12, bold: idx === totalCols - 1 }
+      cell.alignment = { horizontal: typeof value === 'number' ? 'right' : 'left', vertical: 'middle' }
+      if (typeof value === 'number') cell.numFmt = '#,##0;-#,##0;"-"'
+    })
+    rowNum++
+  }
+
+  const totalRow = rowNum
+  fillHeaderCell(ws.getRow(totalRow).getCell(1), '合計', 'FFFFF2CC', BLACK, true, 12)
+  if (totalCols > 1) ws.mergeCells(totalRow, 1, totalRow, includeMonth ? 3 : 2)
+  for (let col = (includeMonth ? 4 : 3); col <= totalCols; col++) {
+    const cell = ws.getRow(totalRow).getCell(col)
+    setGridBorder(cell)
+    setSolidFill(cell, 'FFFFF2CC')
+    const letter = colLetter(col)
+    cell.value = { formula: `SUM(${letter}4:${letter}${Math.max(4, totalRow - 1)})` } as any
+    cell.numFmt = '#,##0;-#,##0;"-"'
+    cell.font = { name: FONT_FAMILY, size: 12, bold: true }
+    cell.alignment = { horizontal: 'right', vertical: 'middle' }
+  }
+
+  const widths = includeMonth
+    ? [10, 18, 22, 13, 13, 13, 13, 13, 13, 13, 14]
+    : [18, 22, 13, 13, 13, 13, 13, 13, 13, 14]
+  widths.forEach((width, index) => { ws.getColumn(index + 1).width = width })
+  ws.getRow(3).height = 28
+}
+
 /** 一次拉店家 + 品項，共用於單月/年度匯出 */
 async function loadStoreContext(storeId: string) {
   const admin = createAdminClient()
@@ -675,6 +840,8 @@ export async function buildFoodCostNativeWorkbook(
   ;(wb as any).calcProperties = { fullCalcOnLoad: true }
   const { store, items } = await loadStoreContext(storeId)
   await addFoodCostSheet(wb, store, items, year, monthNum)
+  const monthly = await getMonthlyStats(storeId, year, monthNum)
+  addVendorAnalysisSheet(wb, store, `${monthNum}月廠商分析`, buildVendorAnalysisRows([monthly], items, false), false)
   return wb
 }
 
@@ -693,9 +860,12 @@ export async function buildAnnualFoodCostWorkbook(
   addAnnualOverviewSheet(wb, store, year)
 
   // 12 個月 sheet
+  const monthlies: MonthlyStats[] = []
   for (let m = 1; m <= 12; m++) {
     await addFoodCostSheet(wb, store, items, year, m)
+    monthlies.push(await getMonthlyStats(storeId, year, m))
   }
+  addVendorAnalysisSheet(wb, store, '年度廠商分析', buildVendorAnalysisRows(monthlies, items, true), true)
 
   return wb
 }

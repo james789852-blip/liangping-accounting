@@ -38,6 +38,7 @@ interface LargeCashExpense {
 interface TodayReceipt {
   id: string
   vendor_name: string
+  actual_vendor_name?: string | null
   total_amount: number
   tax_amount?: number
   receipt_type: string
@@ -90,6 +91,7 @@ interface ReceiptForm {
   uploadedPhotoUrl?: string
   category: string
   vendor_name: string
+  actual_vendor_name: string
   total_amount: number
   has_tax: boolean
   tax_amount: number
@@ -153,6 +155,7 @@ interface Props {
   todayReceipts?: TodayReceipt[]
   receiptCategories?: CategoryWithVendors[]
   mappingColumns?: { name: string; category: string; vendor_group?: string; excel_column?: string }[]
+  actualVendors?: { id: string; vendor_group: string; name: string }[]
   prevDayReserves?: PrevDayReserve | null
   isBackfill?: boolean  // 是否為補做過往帳目（非今日業務日）
   realToday?: string    // 真實今日業務日，用於日期切換器顯示「回到今日」
@@ -661,7 +664,7 @@ function CategoryPicker({ categories, value, onChange }: {
   )
 }
 
-export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], prevDayReserves, isBackfill = false, realToday }: Props) {
+export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], actualVendors = [], prevDayReserves, isBackfill = false, realToday }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
   const [largeCashExpenses, setLargeCashExpenses] = useState<LargeCashExpense[]>(() => initLargeCashExpenses(existingClosing))
@@ -693,6 +696,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const channelFileRef = useRef<HTMLInputElement>(null)
   const [editingReceiptId, setEditingReceiptId] = useState<string | null>(null)
   const [editVendor, setEditVendor] = useState('')
+  const [editActualVendor, setEditActualVendor] = useState('')
   const [editAmount, setEditAmount] = useState(0)
   const [editCategory, setEditCategory] = useState('')
   const [editHasTax, setEditHasTax] = useState(false)
@@ -716,6 +720,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [finishingToday, setFinishingToday] = useState(false)
   const [finishError, setFinishError] = useState('')
   const categories = receiptCategories
+  const actualVendorOptions = useCallback((vendorGroup: string) => {
+    const group = vendorGroup.trim()
+    return actualVendors
+      .filter(v => !group || v.vendor_group === group)
+      .map(v => v.name)
+      .filter((name, index, arr) => !!name && arr.indexOf(name) === index)
+  }, [actualVendors])
   const [ckQuantities, setCkQuantities] = useState<Record<string, number>>(() => {
     const result: Record<string, number> = {}
     ckPrices.forEach(p => { result[p.id] = 0 })
@@ -942,7 +953,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       const stored = localStorage.getItem(receiptFormsDraftKey)
       if (stored) {
         const parsed = JSON.parse(stored) as ReceiptForm[]
-        setReceiptForms(parsed.map(f => ({ ...f, file: undefined, previewUrl: undefined, uploading: false })))
+        setReceiptForms(parsed.map(f => ({ ...f, actual_vendor_name: f.actual_vendor_name ?? '', file: undefined, previewUrl: undefined, uploading: false })))
       }
     } catch {}
     setReceiptFormsHydrated(true)
@@ -1333,7 +1344,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const supabase = createClient()
     const { data: receipts } = await supabase
       .from('receipts')
-      .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount)')
+      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount)')
       .eq('store_id', store.id)
       .eq('business_date', today)
       .order('created_at')
@@ -1385,7 +1396,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
     const updatedReceipts = localReceipts.map(r =>
       r.id === editingReceiptId ? {
-        ...r, vendor_name: editVendor, total_amount: finalTotal,
+        ...r, vendor_name: editVendor, actual_vendor_name: editActualVendor.trim() || null, total_amount: finalTotal,
         tax_amount: editHasTax ? editTaxAmount : 0,
         receipt_type: r.receipt_type,
         photo_url: newPhotoUrl,
@@ -1400,11 +1411,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
     await supabase.from('receipts').update({
       vendor_name: editVendor,
+      actual_vendor_name: editActualVendor.trim() || null,
       total_amount: finalTotal,
       tax_amount: editHasTax ? editTaxAmount : 0,
       photo_url: newPhotoUrl,
       notes: editNotes.trim() || null,
     }).eq('id', editingReceiptId)
+    await rememberActualVendor(supabase, editVendor, editActualVendor)
     await supabase.from('receipt_items').delete().eq('receipt_id', editingReceiptId)
     if (validItems.length > 0) {
       await supabase.from('receipt_items').insert(
@@ -1439,6 +1452,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       previewUrl: URL.createObjectURL(file),
       category: '',
       vendor_name: '',
+      actual_vendor_name: '',
       total_amount: 0,
       has_tax: false,
       tax_amount: 0,
@@ -1464,6 +1478,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       id: crypto.randomUUID(),
       category: '',
       vendor_name: '',
+      actual_vendor_name: '',
       total_amount: 0,
       has_tax: false,
       tax_amount: 0,
@@ -1475,6 +1490,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   function updateReceiptForm(id: string, field: keyof ReceiptForm, value: any) {
     setReceiptForms(prev => prev.map(f => f.id === id ? { ...f, [field]: value } : f))
+  }
+
+  async function rememberActualVendor(supabase: ReturnType<typeof createClient>, vendorGroup: string, name?: string) {
+    const trimmed = name?.trim()
+    if (!trimmed) return
+    await supabase.from('store_actual_vendors').upsert({
+      store_id: store.id,
+      vendor_group: vendorGroup.trim() || '未分類',
+      name: trimmed,
+      active: true,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'store_id,vendor_group,name' })
   }
 
 
@@ -1520,6 +1547,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       store_id: store.id,
       business_date: today,
       vendor_name: form.vendor_name.trim(),
+      actual_vendor_name: form.actual_vendor_name.trim() || null,
       receipt_type: 'receipt',
       total_amount: finalTotal,
       tax_amount: form.has_tax ? form.tax_amount : 0,
@@ -1531,6 +1559,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: false } : f))
       return
     }
+    await rememberActualVendor(supabase, form.vendor_name, form.actual_vendor_name)
     let validItems = fillSingleReceiptItemAmount(form.items ?? [], finalTotal, form.has_tax ? form.tax_amount : 0)
     if (validItems.length === 0 && (isNoItemMode || mappingColumns.some(c => c.name === form.vendor_name.trim()))) {
       // 廠商本身就是品項 → 自動用 vendor_name 建 1 個 item
@@ -1560,6 +1589,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const newR: TodayReceipt = {
       id: saved.id,
       vendor_name: form.vendor_name.trim(),
+      actual_vendor_name: form.actual_vendor_name.trim() || null,
       total_amount: finalTotal,
       tax_amount: form.has_tax ? form.tax_amount : 0,
       receipt_type: 'receipt',
@@ -2484,6 +2514,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           })()}
                         </div>
 
+                        {/* 實際廠商 */}
+                        <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>實際廠商（可空）</label>
+                          <input
+                            list={`actual-vendor-${form.id}`}
+                            placeholder="例：昇威、有厲、某某菜行"
+                            className="receipt-field"
+                            style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
+                            value={form.actual_vendor_name}
+                            onChange={e => updateReceiptForm(form.id, 'actual_vendor_name', e.target.value)}
+                          />
+                          <datalist id={`actual-vendor-${form.id}`}>
+                            {actualVendorOptions(form.vendor_name).map(name => <option key={name} value={name} />)}
+                          </datalist>
+                        </div>
+
                         {/* 品項 — 若廠商下沒子品項（廠商本身就是品項，例：瓦斯/水費/電費）→ 隱藏 */}
                         {(() => {
                           const vendorHasSubItems = !!form.vendor_name && mappingColumns.some(c => c.vendor_group === form.vendor_name)
@@ -2839,6 +2885,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               })()}
                             </div>
 
+                            {/* 實際廠商 */}
+                            <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>實際廠商（可空）</label>
+                              <input
+                                list="edit-actual-vendor-options"
+                                placeholder="例：昇威、有厲、某某菜行"
+                                className="receipt-field"
+                                style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
+                                value={editActualVendor}
+                                onChange={e => setEditActualVendor(e.target.value)}
+                              />
+                              <datalist id="edit-actual-vendor-options">
+                                {actualVendorOptions(editVendor).map(name => <option key={name} value={name} />)}
+                              </datalist>
+                            </div>
+
                             {/* 稅外加 UI 已移除 — 稅金請直接選稅金品項輸入金額 */}
 
                             {/* 品項 — 若廠商下沒子品項（廠商本身就是品項）→ 隱藏 */}
@@ -3083,6 +3145,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             </p>
                             <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
                               {isCK ? '央廚配送' : '現金支出'}
+                              {r.actual_vendor_name ? ` · ${r.actual_vendor_name}` : ''}
                               {r.photo_url ? ' · 有照片' : ' · 無照片'}
                             </p>
                           </div>
@@ -3107,6 +3170,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 })
                                 setEditingReceiptId(r.id)
                                 setEditVendor(r.vendor_name || '')
+                                setEditActualVendor(r.actual_vendor_name || '')
                                 setEditAmount(r.tax_amount ? r.total_amount - r.tax_amount : r.total_amount)
                                 setEditCategory(derivedCategory)
                                 setEditHasTax(!!(r.tax_amount && r.tax_amount > 0))

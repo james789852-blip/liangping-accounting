@@ -180,9 +180,10 @@ function DailyTrendChart({ data }: { data: DayRev[] }) {
 
 // ── Main Component ──────────────────────────────────────────────────────────────
 
-export default function AnalyticsClient({ storeId, storeName, meetingAnchorDate, meetingFrequencyDays }: {
+export default function AnalyticsClient({ storeId, storeName, storeType, meetingAnchorDate, meetingFrequencyDays }: {
   storeId: string
   storeName: string
+  storeType?: string | null
   meetingAnchorDate: string | null
   meetingFrequencyDays: number
 }) {
@@ -213,11 +214,11 @@ export default function AnalyticsClient({ storeId, storeName, meetingAnchorDate,
     setExportLoading(true)
     try {
       let url: string
+      const base = storeType === '央廚' ? '/api/export/ck-native' : '/api/export/food-cost-native'
       if (exportType === 'year') {
-        url = `/api/export/food-cost-native?storeId=${storeId}&type=year&year=${exportYear}&t=${Date.now()}`
+        url = `${base}?storeId=${storeId}&type=year&year=${exportYear}&t=${Date.now()}`
       } else {
-        // 單月改用新版 native export（無模板依賴）
-        url = `/api/export/food-cost-native?storeId=${storeId}&year=${exportYear}&month=${exportMonth}&t=${Date.now()}`
+        url = `${base}?storeId=${storeId}&year=${exportYear}&month=${exportMonth}&t=${Date.now()}`
       }
       const res = await fetch(url, { cache: 'no-store' })
       if (!res.ok) { toast.error('匯出失敗：' + await res.text()); return }
@@ -246,6 +247,95 @@ export default function AnalyticsClient({ storeId, storeName, meetingAnchorDate,
     setLoading(true)
     const supabase = createClient()
 
+    if (storeType === '央廚') {
+      async function loadCKRange(rangeStart: string, rangeEnd: string) {
+        const { data: records } = await supabase.from('ck_daily_records')
+          .select('id, business_date')
+          .eq('ck_store_id', storeId)
+          .gte('business_date', rangeStart)
+          .lte('business_date', rangeEnd)
+          .in('status', ['submitted', 'verified'])
+        const ids = (records ?? []).map((record: any) => record.id)
+        if (ids.length === 0) return { records: [], orders: [], expenses: [] }
+        const [ordersRes, expensesRes] = await Promise.all([
+          supabase.from('ck_store_orders')
+            .select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount')
+            .in('ck_daily_record_id', ids),
+          supabase.from('ck_expense_items')
+            .select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type')
+            .in('ck_daily_record_id', ids),
+        ])
+        return { records: records ?? [], orders: ordersRes.data ?? [], expenses: expensesRes.data ?? [] }
+      }
+
+      const [cur, prevData] = await Promise.all([
+        loadCKRange(start, end),
+        loadCKRange(prev.start, prev.end),
+      ])
+      function sumCK(data: Awaited<ReturnType<typeof loadCKRange>>) {
+        const revByDate = new Map<string, number>()
+        for (const record of data.records as any[]) revByDate.set(record.business_date, 0)
+        for (const order of data.orders as any[]) {
+          const record = (data.records as any[]).find(r => r.id === order.ck_daily_record_id)
+          if (!record) continue
+          const amount = order.store_id ? Number(order.ck_confirmed_amount ?? 0) : Number(order.amount ?? 0)
+          revByDate.set(record.business_date, (revByDate.get(record.business_date) ?? 0) + amount)
+        }
+        const total = Array.from(revByDate.values()).reduce((sum, amount) => sum + amount, 0)
+        return { total, pos: total, uber: 0, panda: 0, twpay: 0, online: 0, handwrite: 0 }
+      }
+      setCurRev(sumCK(cur))
+      setPrevRev(sumCK(prevData))
+      const daily = (cur.records as any[])
+        .map(record => {
+          const total = (cur.orders as any[])
+            .filter(order => order.ck_daily_record_id === record.id)
+            .reduce((sum, order) => sum + (order.store_id ? Number(order.ck_confirmed_amount ?? 0) : Number(order.amount ?? 0)), 0)
+          return { date: record.business_date as string, total }
+        })
+        .sort((a, b) => a.date.localeCompare(b.date))
+      setDailyRevs(daily)
+
+      function groupCK(data: Awaited<ReturnType<typeof loadCKRange>>) {
+        const map: Record<string, { total: number; items: Record<string, { sum: number; cnt: number }> }> = {}
+        for (const expense of data.expenses as any[]) {
+          const group = expense.vendor_group?.trim() || '未分類'
+          const actual = expense.payer_name?.trim() || '未指定'
+          const key = `${group} · ${actual}`
+          if (!map[key]) map[key] = { total: 0, items: {} }
+          map[key].total += Number(expense.amount ?? 0)
+          const itemName = expense.item_name || '未命名品項'
+          if (!map[key].items[itemName]) map[key].items[itemName] = { sum: 0, cnt: 0 }
+          map[key].items[itemName].sum += Number(expense.amount ?? 0)
+          map[key].items[itemName].cnt += 1
+        }
+        return map
+      }
+      const cm = groupCK(cur)
+      const pm = groupCK(prevData)
+      const allNames = new Set([...Object.keys(cm), ...Object.keys(pm)])
+      setVendors(Array.from(allNames).map(name => {
+        const cv = cm[name] ?? { total: 0, items: {} }
+        const pv = pm[name] ?? { total: 0, items: {} }
+        const allItems = new Set([...Object.keys(cv.items), ...Object.keys(pv.items)])
+        return {
+          name,
+          cur: cv.total,
+          prev: pv.total,
+          items: Array.from(allItems).map(iname => ({
+            name: iname,
+            curAvg: cv.items[iname] ? cv.items[iname].sum / cv.items[iname].cnt : 0,
+            prevAvg: pv.items[iname] ? pv.items[iname].sum / pv.items[iname].cnt : 0,
+            curCount: cv.items[iname]?.cnt ?? 0,
+            prevCount: pv.items[iname]?.cnt ?? 0,
+          })),
+        }
+      }).sort((a, b) => b.cur - a.cur))
+      setAlerts([])
+      setLoading(false)
+      return
+    }
+
     const [curClose, prevClose, curRec, prevRec] = await Promise.all([
       supabase.from('daily_closings')
         .select('business_date, total_revenue, revenue_items(channel, gross_amount)')
@@ -256,10 +346,10 @@ export default function AnalyticsClient({ storeId, storeName, meetingAnchorDate,
         .eq('store_id', storeId).gte('business_date', prev.start).lte('business_date', prev.end)
         .in('status', ['submitted', 'verified']),
       supabase.from('receipts')
-        .select('vendor_name, total_amount, receipt_items(item_name, amount)')
+        .select('vendor_name, actual_vendor_name, total_amount, receipt_items(item_name, amount)')
         .eq('store_id', storeId).gte('business_date', start).lte('business_date', end),
       supabase.from('receipts')
-        .select('vendor_name, total_amount, receipt_items(item_name, amount)')
+        .select('vendor_name, actual_vendor_name, total_amount, receipt_items(item_name, amount)')
         .eq('store_id', storeId).gte('business_date', prev.start).lte('business_date', prev.end),
     ])
 
@@ -292,7 +382,9 @@ export default function AnalyticsClient({ storeId, storeName, meetingAnchorDate,
     function groupVendors(rows: any[]) {
       const map: Record<string, { total: number; items: Record<string, { sum: number; cnt: number }> }> = {}
       for (const r of rows) {
-        const v = r.vendor_name?.trim() || '（未填廠商）'
+        const group = r.vendor_name?.trim() || '未分類'
+        const actual = r.actual_vendor_name?.trim() || '未指定'
+        const v = `${group} · ${actual}`
         if (!map[v]) map[v] = { total: 0, items: {} }
         map[v].total += r.total_amount ?? 0
         for (const it of r.receipt_items ?? []) {
@@ -355,7 +447,7 @@ export default function AnalyticsClient({ storeId, storeName, meetingAnchorDate,
     }
     setAlerts(newAlerts)
     setLoading(false)
-  }, [storeId, start, end])
+  }, [storeId, storeType, start, end])
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -757,7 +849,7 @@ export default function AnalyticsClient({ storeId, storeName, meetingAnchorDate,
                   <FileSpreadsheet className="h-[18px] w-[18px]" />
                 </div>
                 <div>
-                  <p className="text-sm font-bold" style={{ color: '#18181b' }}>下載我的店面報表</p>
+                  <p className="text-sm font-bold" style={{ color: '#18181b' }}>下載我的營運報表</p>
                   <p className="text-xs" style={{ color: '#a1a1aa' }}>{storeName} · 自動依資料庫即時生成最新版</p>
                 </div>
               </div>
@@ -817,8 +909,8 @@ export default function AnalyticsClient({ storeId, storeName, meetingAnchorDate,
 
               <div className="text-xs px-3 py-2 rounded-xl" style={{ background: '#F4F4F5', color: '#52525b' }}>
                 {exportType === 'month'
-                  ? <>📄 將產出 <strong>2 個分頁</strong>：月度總覽 + {exportMonth} 月食耗成本</>
-                  : <>📄 將產出 <strong>13 個分頁</strong>：年度總覽 + 1~12 月食耗成本</>}
+                  ? <>將產出 <strong>2 個分頁</strong>：{exportMonth} 月食耗成本 + 廠商分析</>
+                  : <>將產出 <strong>14 個分頁</strong>：年度總覽 + 1~12 月食耗成本 + 年度廠商分析</>}
               </div>
 
               <button onClick={handleExcelExport} disabled={exportLoading}

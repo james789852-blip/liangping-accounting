@@ -53,6 +53,7 @@ export default async function ClosingPage({
     { data: prevClosing },
     itemOrder,
     mappingBasedItems,
+    { data: actualVendors },
     { data: latestBackfillDraft },
   ] = await Promise.all([
     getCachedStoreFull(storeId),
@@ -65,7 +66,7 @@ export default async function ClosingPage({
       .maybeSingle(),
     supabase
       .from('receipts')
-      .select('id, vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount)')
+      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount)')
       .eq('store_id', storeId)
       .eq('business_date', today)
       .order('created_at'),
@@ -83,6 +84,14 @@ export default async function ClosingPage({
     getCachedItemOrder(storeId),
     // 也撈 mapping-based items（跟 xlsx 匯出同源，確保下拉品項齊全）
     getStoreItemsFromMappings(storeId),
+    supabase
+      .from('store_actual_vendors')
+      .select('id, vendor_group, name')
+      .eq('store_id', storeId)
+      .eq('active', true)
+      .order('vendor_group')
+      .order('sort_order')
+      .order('name'),
     !requested
       ? supabase
           .from('daily_closings')
@@ -155,6 +164,7 @@ export default async function ClosingPage({
       todayReceipts={todayReceipts ?? []}
       receiptCategories={receiptCategories}
       mappingColumns={mappingColumns}
+      actualVendors={actualVendors ?? []}
       prevDayReserves={prevDayReserves}
       isBackfill={isBackfill}
       realToday={realToday}
