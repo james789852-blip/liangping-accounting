@@ -2782,7 +2782,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             <button
                                               type="button"
                                               onClick={() => updateItem(item.id, 'amount', item.amount < 0 ? Math.abs(item.amount) : -Math.abs(item.amount || 0))}
-                                              style={{ fontSize: 9, color: item.amount < 0 ? '#047857' : '#dc2626', textAlign: 'right', marginTop: 1, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                              style={{ width: '80px', minHeight: '36px', fontSize: 12, color: item.amount < 0 ? '#047857' : '#dc2626', marginTop: 4, padding: '8px 10px', border: `1px solid ${item.amount < 0 ? '#86efac' : '#fca5a5'}`, borderRadius: 999, background: item.amount < 0 ? '#f0fdf4' : '#fef2f2', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 800, lineHeight: 1 }}>
                                               {item.amount < 0 ? '轉正' : '轉負'}
                                             </button>
                                           )}
@@ -2845,7 +2845,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 <button
                                   type="button"
                                   onClick={() => updateReceiptForm(form.id, 'total_amount', form.total_amount < 0 ? Math.abs(form.total_amount) : -Math.abs(form.total_amount || 0))}
-                                  style={{ alignSelf: 'flex-end', fontSize: '11px', color: form.total_amount < 0 ? '#047857' : '#dc2626', border: 'none', background: 'transparent', padding: '2px 0', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
+                                  style={{ alignSelf: 'flex-end', minWidth: 80, minHeight: 36, fontSize: 12, color: form.total_amount < 0 ? '#047857' : '#dc2626', border: `1px solid ${form.total_amount < 0 ? '#86efac' : '#fca5a5'}`, borderRadius: 999, background: form.total_amount < 0 ? '#f0fdf4' : '#fef2f2', padding: '8px 14px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 800, lineHeight: 1 }}>
                                   {form.total_amount < 0 ? '轉正' : '轉負'}
                                 </button>
                               )}
@@ -3168,10 +3168,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                                 }} />
                                               {neg && <span style={{ fontSize: 9, color: '#dc2626', textAlign: 'right', marginTop: 1 }}>自動轉負</span>}
                                               {!neg && allowManualNegative && (
-                                                <button
-                                                  type="button"
-                                                  onClick={() => updateEditItemFn(idx, 'amount', item.amount < 0 ? Math.abs(item.amount) : -Math.abs(item.amount || 0))}
-                                                  style={{ fontSize: 9, color: item.amount < 0 ? '#047857' : '#dc2626', textAlign: 'right', marginTop: 1, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => updateEditItemFn(idx, 'amount', item.amount < 0 ? Math.abs(item.amount) : -Math.abs(item.amount || 0))}
+                                                  style={{ width: '80px', minHeight: '36px', fontSize: 12, color: item.amount < 0 ? '#047857' : '#dc2626', marginTop: 4, padding: '8px 10px', border: `1px solid ${item.amount < 0 ? '#86efac' : '#fca5a5'}`, borderRadius: 999, background: item.amount < 0 ? '#f0fdf4' : '#fef2f2', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 800, lineHeight: 1 }}>
                                                   {item.amount < 0 ? '轉正' : '轉負'}
                                                 </button>
                                               )}
@@ -3217,7 +3217,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                     <button
                                       type="button"
                                       onClick={() => setEditAmount(editAmount < 0 ? Math.abs(editAmount) : -Math.abs(editAmount || 0))}
-                                      style={{ alignSelf: 'flex-end', fontSize: '11px', color: editAmount < 0 ? '#047857' : '#dc2626', border: 'none', background: 'transparent', padding: '2px 0', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
+                                      style={{ alignSelf: 'flex-end', minWidth: 80, minHeight: 36, fontSize: 12, color: editAmount < 0 ? '#047857' : '#dc2626', border: `1px solid ${editAmount < 0 ? '#86efac' : '#fca5a5'}`, borderRadius: 999, background: editAmount < 0 ? '#f0fdf4' : '#fef2f2', padding: '8px 14px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 800, lineHeight: 1 }}>
                                       {editAmount < 0 ? '轉正' : '轉負'}
                                     </button>
                                   )}
