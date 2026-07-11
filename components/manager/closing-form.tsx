@@ -350,6 +350,24 @@ function displayItemName(name: string, vendorGroup?: string | null) {
   return /^[\s　\-－—–_]/.test(rest) ? name : rest
 }
 
+function canUseNegativeOtherReceiptItem(itemName: string | undefined, categoryName: string | undefined) {
+  return (categoryName ?? '').trim() === '其他' && (itemName ?? '').trim() === '其他'
+}
+
+function receiptFormAllowsNegativeTotal(form: Pick<ReceiptForm, 'category' | 'items'>) {
+  return (form.items ?? []).some(item => canUseNegativeOtherReceiptItem(item.item_name, form.category))
+}
+
+function isReceiptFormAmountValid(form: Pick<ReceiptForm, 'category' | 'items' | 'total_amount'>) {
+  const amount = Number(form.total_amount) || 0
+  if (amount > 0) return true
+  return amount < 0 && receiptFormAllowsNegativeTotal(form)
+}
+
+function editReceiptAllowsNegativeTotal(category: string, items: ReceiptFormItem[]) {
+  return items.some(item => canUseNegativeOtherReceiptItem(item.item_name, category))
+}
+
 function deriveReceiptCategory(
   vendorName: string | undefined,
   items: { item_name?: string }[] | undefined,
@@ -1375,7 +1393,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   async function handleSaveReceiptEdit() {
     if (!editingReceiptId) return
-    if (editAmount <= 0) { toast.error('請填寫金額'); return }
+    const editAmountValid = editAmount > 0 || (editAmount < 0 && editReceiptAllowsNegativeTotal(editCategory, editItems))
+    if (!editAmountValid) {
+      toast.error(editAmount < 0 ? '只有「其他」類別的「其他」品項可輸入負數' : '請填寫金額')
+      return
+    }
     const vendorHasSubItems = !!editVendor && mappingColumns.some(c => c.vendor_group === editVendor)
     const isNoItemMode = !!editVendor && !vendorHasSubItems
     if (!isNoItemMode && !editItems.some(i => i.item_name.trim())) { toast.error('請至少選擇一個品項'); return }
@@ -1540,8 +1562,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }
 
   async function saveReceiptForm(form: ReceiptForm) {
-    if (form.total_amount <= 0) {
-      toast.error('請填寫金額')
+    const amountValid = isReceiptFormAmountValid(form)
+    if (!amountValid) {
+      toast.error(form.total_amount < 0 ? '只有「其他」類別的「其他」品項可輸入負數' : '請填寫金額')
       return
     }
     // 判別「無品項模式」：廠商下沒有子品項（廠商本身即品項，例：瓦斯 / 水費 / 電費）
@@ -1912,7 +1935,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       }
       // expense_items：只有 expItems.length > 0 才 wipe-insert
       const expItems = expenses
-        .filter(e => e.description.trim() || e.amount > 0)
+        .filter(e => e.description.trim() || e.amount !== 0)
         .map(e => ({ closing_id: cid, description: e.description.trim() || '支出', amount: e.amount }))
       if (expItems.length > 0) {
         await supabase.from('expense_items').delete().eq('closing_id', cid)
@@ -2743,17 +2766,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                     {(() => {
                                       // 「折扣 / 退貨」類品項：使用者輸入正數，系統自動存負數
                                       const neg = ['折扣', '退貨', '退款', '退費', '抵扣'].some(k => (item.item_name ?? '').includes(k))
-                                      const displayed = item.amount === 0 ? '' : Math.abs(item.amount)
+                                      const allowManualNegative = canUseNegativeOtherReceiptItem(item.item_name, form.category)
+                                      const displayed = item.amount === 0 ? '' : (neg ? Math.abs(item.amount) : item.amount)
                                       return (
                                         <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-                                          <input type="number" placeholder="金額" min="0"
-                                            style={{ width: '80px', padding: '6px 8px', border: `1px solid ${neg ? '#fca5a5' : '#FDE68A'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: neg ? '#dc2626' : '#18181b', background: neg ? '#fef2f2' : '#f5f5ff', flexShrink: 0, boxSizing: 'border-box' as const }}
+                                          <input type="number" placeholder="金額" min={allowManualNegative ? undefined : 0} inputMode={allowManualNegative ? 'decimal' : 'numeric'}
+                                            style={{ width: '80px', padding: '6px 8px', border: `1px solid ${neg || item.amount < 0 ? '#fca5a5' : '#FDE68A'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: neg || item.amount < 0 ? '#dc2626' : '#18181b', background: neg || item.amount < 0 ? '#fef2f2' : '#f5f5ff', flexShrink: 0, boxSizing: 'border-box' as const }}
                                             value={displayed}
                                             onChange={e => {
                                               const v = parseInt(e.target.value) || 0
-                                              updateItem(item.id, 'amount', neg ? -Math.abs(v) : v)
+                                              updateItem(item.id, 'amount', neg ? -Math.abs(v) : allowManualNegative ? v : Math.max(0, v))
                                             }} />
                                           {neg && <span style={{ fontSize: 9, color: '#dc2626', textAlign: 'right', marginTop: 1 }}>自動轉負</span>}
+                                          {!neg && allowManualNegative && <span style={{ fontSize: 9, color: '#dc2626', textAlign: 'right', marginTop: 1 }}>可輸入負數</span>}
                                         </div>
                                       )
                                     })()}
@@ -2797,16 +2822,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         {(() => {
                           const itemsTotal = (form.items ?? []).filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
                           const hasItemsTotal = itemsTotal !== 0
+                          const amountValid = isReceiptFormAmountValid(form)
+                          const allowNegativeTotal = receiptFormAllowsNegativeTotal(form)
                           return (
                             <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 金額 *
                                 {hasItemsTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
                               </label>
-                              <input type="number" min="0" inputMode="numeric" placeholder="0" readOnly={hasItemsTotal}
-                                style={{ padding: '8px 10px', border: `1.5px solid ${hasItemsTotal ? '#FDE68A' : form.total_amount > 0 ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: hasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: '#18181b', cursor: hasItemsTotal ? 'default' : 'text' }}
+                              <input type="number" min={allowNegativeTotal ? undefined : 0} inputMode={allowNegativeTotal ? 'decimal' : 'numeric'} placeholder="0" readOnly={hasItemsTotal}
+                                style={{ padding: '8px 10px', border: `1.5px solid ${hasItemsTotal ? '#FDE68A' : amountValid ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: hasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: form.total_amount < 0 ? '#dc2626' : '#18181b', cursor: hasItemsTotal ? 'default' : 'text' }}
                                 value={form.total_amount || ''}
-                                onChange={e => { if (!hasItemsTotal) updateReceiptForm(form.id, 'total_amount', parseInt(e.target.value) || 0) }} />
+                                onChange={e => { if (!hasItemsTotal) updateReceiptForm(form.id, 'total_amount', allowNegativeTotal ? (parseInt(e.target.value) || 0) : Math.max(0, parseInt(e.target.value) || 0)) }} />
                             </div>
                           )
                         })()}
@@ -2818,13 +2845,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: '4px 8px', fontFamily: 'inherit' }}>
                             <Trash2 className="h-3 w-3" />刪除
                           </button>
-                          <button onClick={() => saveReceiptForm(form)} disabled={form.uploading}
+                          <button onClick={() => saveReceiptForm(form)} disabled={form.uploading || !isReceiptFormAmountValid(form)}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
                             style={{
-                              background: form.total_amount > 0 ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
-                              cursor: form.total_amount > 0 ? 'pointer' : 'not-allowed',
+                              background: isReceiptFormAmountValid(form) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
+                              cursor: isReceiptFormAmountValid(form) ? 'pointer' : 'not-allowed',
                               opacity: form.uploading ? 0.7 : 1, border: 'none', fontFamily: 'inherit',
-                              boxShadow: form.total_amount > 0 ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
+                              boxShadow: isReceiptFormAmountValid(form) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
                             }}>
                             {form.uploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />儲存中…</> : '儲存'}
                           </button>
@@ -3111,10 +3138,24 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             </>
                                           )
                                         })()}
-                                        <input type="number" placeholder="金額"
-                                          style={{ width: '80px', padding: '6px 8px', border: '1px solid #FDE68A', borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: '#18181b', background: '#f5f5ff', flexShrink: 0 }}
-                                          value={item.amount === 0 ? '' : item.amount}
-                                          onChange={e => updateEditItemFn(idx, 'amount', parseInt(e.target.value) || 0)} />
+                                        {(() => {
+                                          const neg = ['折扣', '退貨', '退款', '退費', '抵扣'].some(k => (item.item_name ?? '').includes(k))
+                                          const allowManualNegative = canUseNegativeOtherReceiptItem(item.item_name, editCategory)
+                                          const displayed = item.amount === 0 ? '' : (neg ? Math.abs(item.amount) : item.amount)
+                                          return (
+                                            <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+                                              <input type="number" placeholder="金額" min={allowManualNegative ? undefined : 0} inputMode={allowManualNegative ? 'decimal' : 'numeric'}
+                                                style={{ width: '80px', padding: '6px 8px', border: `1px solid ${neg || item.amount < 0 ? '#fca5a5' : '#FDE68A'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', textAlign: 'right', color: neg || item.amount < 0 ? '#dc2626' : '#18181b', background: neg || item.amount < 0 ? '#fef2f2' : '#f5f5ff', flexShrink: 0 }}
+                                                value={displayed}
+                                                onChange={e => {
+                                                  const v = parseInt(e.target.value) || 0
+                                                  updateEditItemFn(idx, 'amount', neg ? -Math.abs(v) : allowManualNegative ? v : Math.max(0, v))
+                                                }} />
+                                              {neg && <span style={{ fontSize: 9, color: '#dc2626', textAlign: 'right', marginTop: 1 }}>自動轉負</span>}
+                                              {!neg && allowManualNegative && <span style={{ fontSize: 9, color: '#dc2626', textAlign: 'right', marginTop: 1 }}>可輸入負數</span>}
+                                            </div>
+                                          )
+                                        })()}
                                         <button type="button" onClick={() => removeEditItemFn(idx)}
                                           style={{ padding: '4px 6px', background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', flexShrink: 0 }}>
                                           <X style={{ width: '14px', height: '14px' }} />
@@ -3138,16 +3179,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             {(() => {
                               const editItemsTotal = editItems.filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
                               const editHasItemsTotal = editItemsTotal !== 0
+                              const allowNegativeTotal = editReceiptAllowsNegativeTotal(editCategory, editItems)
+                              const editAmountValid = editAmount > 0 || (editAmount < 0 && allowNegativeTotal)
                               return (
                                 <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                   <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                                     金額 *
                                     {editHasItemsTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
                                   </label>
-                                  <input type="number" min="0" inputMode="numeric" placeholder="0" readOnly={editHasItemsTotal}
-                                    style={{ padding: '8px 10px', border: `1.5px solid ${editHasItemsTotal ? '#FDE68A' : editAmount > 0 ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: editHasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: '#18181b', cursor: editHasItemsTotal ? 'default' : 'text' }}
+                                  <input type="number" min={allowNegativeTotal ? undefined : 0} inputMode={allowNegativeTotal ? 'decimal' : 'numeric'} placeholder="0" readOnly={editHasItemsTotal}
+                                    style={{ padding: '8px 10px', border: `1.5px solid ${editHasItemsTotal ? '#FDE68A' : editAmountValid ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: editHasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: editAmount < 0 ? '#dc2626' : '#18181b', cursor: editHasItemsTotal ? 'default' : 'text' }}
                                     value={editAmount || ''}
-                                    onChange={e => { if (!editHasItemsTotal) setEditAmount(parseInt(e.target.value) || 0) }} />
+                                    onChange={e => { if (!editHasItemsTotal) setEditAmount(allowNegativeTotal ? (parseInt(e.target.value) || 0) : Math.max(0, parseInt(e.target.value) || 0)) }} />
                                 </div>
                               )
                             })()}
@@ -3159,13 +3202,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: '4px 8px', fontFamily: 'inherit' }}>
                                 <X className="h-3 w-3" />取消
                               </button>
-                              <button onClick={handleSaveReceiptEdit} disabled={editAmount <= 0 || editUploading}
+                              <button onClick={handleSaveReceiptEdit} disabled={!(editAmount > 0 || (editAmount < 0 && editReceiptAllowsNegativeTotal(editCategory, editItems))) || editUploading}
                                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
                                 style={{
-                                  background: editAmount > 0 ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
-                                  cursor: editAmount > 0 ? 'pointer' : 'not-allowed',
+                                  background: (editAmount > 0 || (editAmount < 0 && editReceiptAllowsNegativeTotal(editCategory, editItems))) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
+                                  cursor: (editAmount > 0 || (editAmount < 0 && editReceiptAllowsNegativeTotal(editCategory, editItems))) ? 'pointer' : 'not-allowed',
                                   opacity: editUploading ? 0.7 : 1, border: 'none', fontFamily: 'inherit',
-                                  boxShadow: editAmount > 0 ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
+                                  boxShadow: (editAmount > 0 || (editAmount < 0 && editReceiptAllowsNegativeTotal(editCategory, editItems))) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
                                 }}>
                                 {editUploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />儲存中…</> : '儲存'}
                               </button>
@@ -3245,7 +3288,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     )
                   })}
                 </div>
-                {totalExpenses > 0 && (
+                {totalExpenses !== 0 && (
                   <div className="mt-3">
                     <SummaryBlock label={`今日支出小計（${expenses.length} 筆）`} value={`$${fmt(totalExpenses)}`} />
                   </div>
@@ -3787,7 +3830,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 {[
                   { label: '總營業額', value: `$${fmt(s.totalRevenue)}`, bold: true },
                   { label: '− 平台收款（Uber / 熊貓等）', value: `−$${fmt(s.platformPaid)}`, muted: true },
-                  ...(totalExpenses > 0 ? [{ label: '− 現金支出', value: `−$${fmt(totalExpenses)}`, muted: true }] : []),
+                  ...(totalExpenses > 0
+                    ? [{ label: '− 現金支出', value: `−$${fmt(totalExpenses)}`, muted: true }]
+                    : totalExpenses < 0
+                      ? [{ label: '+ 支出抵扣', value: `+$${fmt(Math.abs(totalExpenses))}`, muted: true }]
+                      : []),
                 ].map(r => (
                   <div key={r.label} className="flex justify-between items-center py-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
                     <span className="text-sm" style={{ color: r.muted ? '#a1a1aa' : '#52525b' }}>{r.label}</span>
