@@ -57,7 +57,7 @@ function hasSplitPermission(
   legacyKey: keyof PermissionProfile,
 ) {
   return (
-    hasManagementRole(profile) ||
+    isBoss(profile) ||
     profile?.[splitKey] === true ||
     (!hasExplicitFlag(profile, splitKey) && profile?.[legacyKey] === true)
   )
@@ -88,15 +88,15 @@ export function canManageCKReceipts(profile?: PermissionProfile | null) {
 }
 
 export function canManageCKPrices(profile?: PermissionProfile | null) {
-  return hasManagementRole(profile) || profile?.can_manage_ck_prices === true
+  return isBoss(profile) || profile?.can_manage_ck_prices === true
 }
 
 export function canReviewClosings(profile?: PermissionProfile | null) {
-  return hasManagementRole(profile) || profile?.can_review_closings === true
+  return isBoss(profile) || profile?.can_review_closings === true
 }
 
 export function canExportReports(profile?: PermissionProfile | null) {
-  return hasManagementRole(profile) || profile?.can_export_reports === true
+  return isBoss(profile) || profile?.can_export_reports === true
 }
 
 export function hasAnyHQPermission(profile?: PermissionProfile | null) {
@@ -110,4 +110,16 @@ export function hasAnyHQPermission(profile?: PermissionProfile | null) {
     canReviewClosings(profile) ||
     canExportReports(profile)
   )
+}
+
+export function getDefaultHQHref(profile?: PermissionProfile | null) {
+  if (canReviewClosings(profile)) return '/hq/accounting'
+  if (canExportReports(profile)) return '/hq/dashboard'
+  if (canManageStores(profile)) return '/hq/stores'
+  if (canManageStoreItems(profile) || canManageCKItems(profile)) return '/hq/item-mappings'
+  if (canManageStoreReceipts(profile)) return '/hq/receipt-settings'
+  if (canManageCKReceipts(profile)) return '/hq/receipt-settings?type=ck'
+  if (canManageCKPrices(profile)) return '/hq/ck-prices'
+  if (canManageUsers(profile)) return '/hq/users'
+  return '/hq/dashboard'
 }

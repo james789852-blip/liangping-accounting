@@ -12,10 +12,8 @@ export async function updateCKPrice(id: string, newPrice: number, reason: string
   const { data: profile } = await supabase
     .from('user_profiles').select('*').eq('user_id', user.id).single()
 
-  // 開放給：總公司管理層（經理/總監/老闆）+ 央廚管理人員（廠長/副廠長）
-  const ALLOWED_ROLES = ['廠長', '副廠長']
-  if (!profile || (!canManageCKPrices(profile) && !ALLOWED_ROLES.includes(profile.role))) {
-    return { error: '權限不足，僅限總公司或央廚管理人員操作' }
+  if (!profile || !canManageCKPrices(profile)) {
+    return { error: '權限不足，請先開啟「可管理央廚單價」權限' }
   }
 
   // 取得目前單價

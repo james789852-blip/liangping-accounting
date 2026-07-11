@@ -17,18 +17,14 @@ export default async function StoresPage() {
   const { data: profile } = await supabase
     .from('user_profiles').select('*').eq('user_id', user.id).single()
 
-  const role = profile?.role ?? ''
-  const isCKManager = ['廠長', '副廠長'].includes(role)
   const canEditStoreSettings = canManageStoreSettings(profile)
   const canEditCKSettings = canManageCKSettings(profile)
-  const isHQManager = !!profile?.is_hq || canEditStoreSettings || canEditCKSettings
 
-  if (!isHQManager && !isCKManager) {
+  if (!canEditStoreSettings && !canEditCKSettings) {
     return <div className="p-6" style={{ color: '#be123c' }}>權限不足</div>
   }
 
   const canEdit = canEditStoreSettings || canEditCKSettings
-  const isAdmin = canEdit
 
   const admin = createAdminClient()
 
@@ -42,14 +38,6 @@ export default async function StoresPage() {
     query = query.neq('type', '央廚') as typeof query
   } else if (!canEditStoreSettings && canEditCKSettings) {
     query = query.eq('type', '央廚') as typeof query
-  } else if (isCKManager && !isAdmin) {
-    if (profile?.store_ids?.length) {
-      query = query.in('id', profile.store_ids).eq('type', '央廚') as typeof query
-    } else {
-      query = query.eq('id', '__none__') as typeof query
-    }
-  } else if (!isAdmin && profile?.store_ids?.length) {
-    query = query.in('id', profile.store_ids) as typeof query
   }
 
   const { data: storesRaw } = await query
@@ -102,7 +90,7 @@ export default async function StoresPage() {
                     key={store.id}
                     store={{ ...store, uber_accounts: store.uber_accounts ?? [], type: (store as any).type ?? '店面', assigned_store_ids: (store as any).assigned_store_ids ?? [], google_sheets_id: (store as any).google_sheets_id ?? '' }}
                     canEdit={(store as any).type === '央廚' ? canEditCKSettings : canEditStoreSettings}
-                    canEditCKRelations={canEditCKSettings || (isCKManager && (profile?.store_ids ?? []).includes(store.id))}
+                    canEditCKRelations={canEditCKSettings}
                     memberStoreOptions={type === '央廚' ? memberStoreOptions : []}
                     externalStores={type === '央廚' ? (allExternalStores ?? []).filter((e: any) => e.ck_store_id === store.id).map((e: any) => ({ id: e.id, name: e.name })) : []}
                   />
@@ -123,7 +111,7 @@ export default async function StoresPage() {
 
         {!canEdit && (
           <p className="text-xs text-center pt-2" style={{ color: '#a1a1aa' }}>
-            {isCKManager ? '央廚管理人員僅可調整央廚服務店家設定' : '此帳號僅可檢視，未開啟「可管理店家」權限'}
+            此帳號僅可檢視，未開啟「可管理店家」權限
           </p>
         )}
       </div>

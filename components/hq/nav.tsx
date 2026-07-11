@@ -128,7 +128,6 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const searchParams = useSearchParams()
   const router = useRouter()
   const isManagerPath = pathname.startsWith('/manager')
-  const isCKManager = ['廠長', '副廠長'].includes(role)
   const time = useClock()
   // 待審核紅點暫時隱藏（之後確定要開再改 true）
   const showPendingBadge = false
@@ -159,15 +158,16 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const initial = userName ? userName.slice(0, 1) : '?'
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false)
 
-  const canSeeUsers = role === '老闆' || !!permissions.canManageUsers
-  const canSeeStores = role === '老闆' || !!permissions.canManageStores || !!permissions.canManageStoreSettings || !!permissions.canManageCKSettings
-  const canSeeItems = role === '老闆' || !!permissions.canManageItems || !!permissions.canManageStoreItems || !!permissions.canManageCKItems
-  const canSeeStoreReceipts = role === '老闆' || !!permissions.canManageItems || !!permissions.canManageStoreReceipts
-  const canSeeCKReceipts = role === '老闆' || !!permissions.canManageItems || !!permissions.canManageCKReceipts
+  const canSeeUsers = !!permissions.canManageUsers
+  const canSeeStores = !!permissions.canManageStoreSettings || !!permissions.canManageCKSettings
+  const canSeeItems = !!permissions.canManageStoreItems || !!permissions.canManageCKItems
+  const canSeeStoreReceipts = !!permissions.canManageStoreReceipts
+  const canSeeCKReceipts = !!permissions.canManageCKReceipts
   const canSeeReceipts = canSeeStoreReceipts || canSeeCKReceipts
-  const canSeeCKPrices = role === '老闆' || !!permissions.canManageCKPrices
-  const canSeeReviews = role === '老闆' || !!permissions.canReviewClosings
-  const canSeeExports = role === '老闆' || !!permissions.canExportReports
+  const canSeeCKPrices = !!permissions.canManageCKPrices
+  const canSeeReviews = !!permissions.canReviewClosings
+  const canSeeExports = !!permissions.canExportReports
+  const canAccessHQ = canSeeUsers || canSeeStores || canSeeItems || canSeeReceipts || canSeeCKPrices || canSeeReviews || canSeeExports
   const hqHomeHref = canSeeReviews
     ? '/hq/accounting'
     : canSeeExports
@@ -181,17 +181,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
             : canSeeCKPrices
               ? '/hq/ck-prices'
               : '/hq/dashboard'
-  const filteredHqSections = isCKManager
-    ? [{
-        label: '央廚管理',
-        items: [
-          ...(canSeeStores ? [{ href: '/hq/stores', label: '店家管理', icon: Store }] : []),
-          ...(canSeeItems ? [{ href: '/hq/item-mappings', label: '品項對應管理', icon: Package }] : []),
-          ...(canSeeReceipts ? [{ href: '/hq/receipt-settings?type=ck', label: '收據廠商設定', icon: Settings }] : []),
-          ...(canSeeCKPrices ? [{ href: '/hq/ck-prices', label: '央廚單價', icon: Package }] : []),
-        ],
-      }]
-    : hqSections.map(sec => ({
+  const filteredHqSections = hqSections.map(sec => ({
         ...sec,
         items: sec.items.filter(it => {
           if (it.href === '/hq/accounting') return canSeeReviews
@@ -217,14 +207,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   ])
   const mobileTabs = isManagerPath
     ? mobileManagerTabs
-    : isCKManager
-      ? [
-          ...(canSeeStores ? mobileHQTabs.filter(tab => tab.href === '/hq/stores') : []),
-          ...(canSeeItems ? mobileHQTabs.filter(tab => tab.href === '/hq/item-mappings') : []),
-          ...(canSeeReceipts ? [{ href: '/hq/receipt-settings?type=ck', label: '收據', icon: Settings }] : []),
-          ...(canSeeCKPrices ? [{ href: '/hq/ck-prices', label: '單價', icon: Package }] : []),
-        ]
-      : filteredMobileHQTabs
+    : filteredMobileHQTabs
   const activeSections = isManagerPath ? managerSections : filteredHqSections
   const activeColor = isManagerPath ? '#b45309' : '#92400E'
   const activeBg = isManagerPath ? '#fef3c7' : '#FFFBEB'
@@ -274,7 +257,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         </div>
 
         {/* 切換按鈕 */}
-        {hasStores && (
+        {(isManagerPath ? canAccessHQ : hasStores) && (
           <div className="px-4 pb-3">
             <Link
               href={isManagerPath ? hqHomeHref : '/manager/dashboard'}
@@ -350,7 +333,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         <img src="/icon-192.png" alt="logo" className="h-8 w-8 rounded-[8px] object-cover shrink-0" />
         {/* 中間標題區，flex-1 + min-w-0 確保可截斷 */}
         <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
-          {isManagerPath && hasStores ? (
+          {isManagerPath && canAccessHQ ? (
             <>
               <Link href={hqHomeHref} className="text-xs font-medium shrink-0 transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>總公司</Link>
               <span className="shrink-0" style={{ color: '#e4e4e7' }}>/</span>
@@ -358,8 +341,10 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                 <StoreSwitcher stores={allStores} currentStoreId={currentStoreId}
                   className="text-sm font-bold text-slate-900 rounded-lg px-1.5 py-0.5 focus:outline-none min-w-0 max-w-[120px]"
                   style={{ border: '1px solid #e4e4e7', backgroundColor: 'white' }} />
-              ) : (
+              ) : hasStores ? (
                 <span className="font-bold text-sm text-slate-900 truncate">{allStores[0]?.name}</span>
+              ) : (
+                <span className="font-bold text-sm text-slate-900 truncate">店長端</span>
               )}
             </>
           ) : (

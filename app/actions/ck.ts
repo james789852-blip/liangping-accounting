@@ -5,9 +5,24 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { getAuthContext, canAccessStore } from '@/lib/permissions'
 import { logAudit } from '@/lib/audit'
+import {
+  canManageCKSettings as canManageCKSettingsPermission,
+  canReviewClosings,
+} from '@/lib/user-permissions'
 
-function canManageCKSettings(ctx: NonNullable<Awaited<ReturnType<typeof getAuthContext>>>, ckStoreId: string) {
-  return ctx.isHQ || (['廠長', '副廠長'].includes(ctx.role ?? '') && canAccessStore(ctx, ckStoreId))
+async function getUserPermissionProfile(userId: string) {
+  const supabase = await createClient()
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .single()
+  return profile
+}
+
+async function canManageCKStoreSettings(ctx: NonNullable<Awaited<ReturnType<typeof getAuthContext>>>) {
+  const profile = await getUserPermissionProfile(ctx.userId)
+  return canManageCKSettingsPermission(profile)
 }
 
 // Google Sheets 同步已停用；保留 stub 讓可能存在的舊 client 收到明確錯誤
@@ -26,13 +41,9 @@ export async function confirmCKOrder(input: {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
 
-  // 權限：央廚管理人員（廠長/副廠長）+ 總公司管理層
-  const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', ctx.userId).single()
-  const allowed = profile?.is_hq ||
-    ['老闆', '經理', '總監', '廠長', '副廠長'].includes(profile?.role ?? '')
-  if (!allowed) return { error: '權限不足，僅限央廚管理或總公司操作' }
+  const profile = await getUserPermissionProfile(ctx.userId)
+  const allowed = canReviewClosings(profile) || canManageCKSettingsPermission(profile)
+  if (!allowed) return { error: '權限不足，請先開啟央廚店家管理或帳目審核權限' }
 
   const admin = createAdminClient()
   if (input.confirmedAmount === null) {
@@ -252,7 +263,8 @@ export async function reviewCKDailyRecord(
 ) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
-  if (!ctx.isHQ) return { error: '權限不足（僅總公司可審核）' }
+  const profile = await getUserPermissionProfile(ctx.userId)
+  if (!canReviewClosings(profile)) return { error: '權限不足，請先開啟帳目審核權限' }
 
   const admin = createAdminClient()
   const { data: existing, error: findError } = await admin
@@ -296,7 +308,8 @@ export async function reviewCKDailyRecord(
 export async function deleteCKDailyRecord(ckStoreId: string, date: string) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
-  if (!ctx.isHQ) return { error: '權限不足（僅總公司可刪除）' }
+  const profile = await getUserPermissionProfile(ctx.userId)
+  if (!canReviewClosings(profile)) return { error: '權限不足，請先開啟帳目審核權限' }
 
   const admin = createAdminClient()
   const { data: existing, error: findError } = await admin
@@ -331,7 +344,7 @@ export async function deleteCKDailyRecord(ckStoreId: string, date: string) {
 export async function updateCKAssignedStores(ckStoreId: string, assignedStoreIds: string[]) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
-  if (!canManageCKSettings(ctx, ckStoreId)) return { error: '權限不足，僅限總公司或央廚管理人員調整' }
+  if (!(await canManageCKStoreSettings(ctx))) return { error: '權限不足，請先開啟「可管理央廚店家」權限' }
 
   const admin = createAdminClient()
   const { error } = await admin
@@ -356,7 +369,7 @@ export async function updateCKAssignedStores(ckStoreId: string, assignedStoreIds
 export async function addCKExternalStore(ckStoreId: string, name: string) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
-  if (!canManageCKSettings(ctx, ckStoreId)) return { error: '權限不足，僅限總公司或央廚管理人員調整' }
+  if (!(await canManageCKStoreSettings(ctx))) return { error: '權限不足，請先開啟「可管理央廚店家」權限' }
 
   const admin = createAdminClient()
   const { data, error } = await admin
@@ -378,7 +391,7 @@ export async function deleteCKExternalStore(id: string) {
   const admin = createAdminClient()
   const { data: ext } = await admin.from('ck_external_stores').select('ck_store_id').eq('id', id).single()
   if (!ext) return { error: '找不到此體系外店家' }
-  if (!canManageCKSettings(ctx, ext.ck_store_id as string)) return { error: '權限不足，僅限總公司或央廚管理人員調整' }
+  if (!(await canManageCKStoreSettings(ctx))) return { error: '權限不足，請先開啟「可管理央廚店家」權限' }
 
   const { error } = await admin.from('ck_external_stores').delete().eq('id', id)
   if (error) return { error: error.message }
@@ -395,7 +408,7 @@ export async function updateCKExternalStore(id: string, name: string) {
   const admin = createAdminClient()
   const { data: ext } = await admin.from('ck_external_stores').select('ck_store_id').eq('id', id).single()
   if (!ext) return { error: '找不到此體系外店家' }
-  if (!canManageCKSettings(ctx, ext.ck_store_id as string)) return { error: '權限不足，僅限總公司或央廚管理人員調整' }
+  if (!(await canManageCKStoreSettings(ctx))) return { error: '權限不足，請先開啟「可管理央廚店家」權限' }
 
   const { error } = await admin.from('ck_external_stores').update({ name }).eq('id', id)
   if (error) return { error: error.message }
@@ -413,7 +426,8 @@ export async function markCKHQPaid(
 ) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
-  if (!ctx.isHQ) return { error: '權限不足（僅總公司可標記）' }
+  const profile = await getUserPermissionProfile(ctx.userId)
+  if (!canReviewClosings(profile)) return { error: '權限不足，請先開啟帳目審核權限' }
   if (paid && photoUrls.length === 0) return { error: '請先上傳補款信封照片' }
 
   const admin = createAdminClient()

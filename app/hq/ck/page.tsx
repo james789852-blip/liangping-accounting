@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { getBusinessDate } from '@/lib/business-date'
 import CKOverview from '@/components/hq/ck-overview'
+import { canReviewClosings } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,8 +25,8 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
-  if (!profile?.is_hq && profile?.role !== '老闆') redirect('/manager/dashboard')
+    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  if (!canReviewClosings(profile)) redirect('/manager/dashboard')
 
   const admin = createAdminClient()
   const today = getBusinessDate()

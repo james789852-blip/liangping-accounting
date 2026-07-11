@@ -15,14 +15,11 @@ export default async function CKPricesPage() {
   const { data: profile } = await supabase
     .from('user_profiles').select('*').eq('user_id', user.id).single()
 
-  // 可瀏覽：總公司各角色 + 央廚管理人員
-  const VIEW_ROLES = ['顧問', '經理', '總監', '老闆', '廠長', '副廠長']
-  if (!profile || (!VIEW_ROLES.includes(profile.role ?? '') && !canManageCKPrices(profile))) {
+  if (!profile || !canManageCKPrices(profile)) {
     return <div className="p-6" style={{ color: '#be123c' }}>權限不足</div>
   }
 
-  // 可編輯：經理以上 + 央廚廠長/副廠長
-  const canEdit = canManageCKPrices(profile) || ['廠長', '副廠長'].includes(profile.role ?? '')
+  const canEdit = canManageCKPrices(profile)
 
   const admin = createAdminClient()
   const { data: pricesRaw } = await admin

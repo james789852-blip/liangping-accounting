@@ -8,9 +8,14 @@ import {
   canManageCKPrices,
   canManageCKReceipts,
   canManageCKSettings,
+  canManageItems,
   canManageStoreItems,
   canManageStoreReceipts,
   canManageStoreSettings,
+  canManageStores,
+  canManageUsers,
+  canReviewClosings,
+  canExportReports,
   hasAnyHQPermission,
 } from '@/lib/user-permissions'
 
@@ -21,9 +26,7 @@ export default async function HQLayout({ children }: { children: React.ReactNode
 
   const profile = await getCachedUserProfile(user.id)
 
-  const isCKManager = ['廠長', '副廠長'].includes(profile?.role ?? '')
-
-  if (!profile || (!hasAnyHQPermission(profile) && !isCKManager)) {
+  if (!profile || !hasAnyHQPermission(profile)) {
     redirect('/manager')
   }
 
@@ -38,7 +41,7 @@ export default async function HQLayout({ children }: { children: React.ReactNode
   } else if (profile.store_ids?.length) {
     const all = await getCachedAllStores()
     const storeIds: string[] = profile.store_ids
-    allStores = all.filter((s: any) => storeIds.includes(s.id) && (!isCKManager || s.type === '央廚'))
+    allStores = all.filter((s: any) => storeIds.includes(s.id))
   }
 
   if (allStores.length) {
@@ -58,18 +61,18 @@ export default async function HQLayout({ children }: { children: React.ReactNode
         allStores={allStores}
         currentStoreId={currentStoreId}
         permissions={{
-          canManageUsers: !!((profile as any)?.role === '老闆' || (profile as any)?.can_manage_users),
-          canManageStores: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_manage_stores),
+          canManageUsers: canManageUsers(profile),
+          canManageStores: canManageStores(profile),
           canManageStoreSettings: canManageStoreSettings(profile),
           canManageCKSettings: canManageCKSettings(profile),
-          canManageItems: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_manage_items),
+          canManageItems: canManageItems(profile),
           canManageStoreItems: canManageStoreItems(profile),
           canManageCKItems: canManageCKItems(profile),
           canManageStoreReceipts: canManageStoreReceipts(profile),
           canManageCKReceipts: canManageCKReceipts(profile),
           canManageCKPrices: canManageCKPrices(profile),
-          canReviewClosings: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_review_closings),
-          canExportReports: !!(['老闆', '經理', '總監'].includes((profile as any)?.role ?? '') || (profile as any)?.can_export_reports),
+          canReviewClosings: canReviewClosings(profile),
+          canExportReports: canExportReports(profile),
         }}
       />
       <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
