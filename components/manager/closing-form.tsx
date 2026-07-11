@@ -2778,7 +2778,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                               updateItem(item.id, 'amount', neg ? -Math.abs(v) : allowManualNegative ? v : Math.max(0, v))
                                             }} />
                                           {neg && <span style={{ fontSize: 9, color: '#dc2626', textAlign: 'right', marginTop: 1 }}>自動轉負</span>}
-                                          {!neg && allowManualNegative && <span style={{ fontSize: 9, color: '#dc2626', textAlign: 'right', marginTop: 1 }}>可輸入負數</span>}
+                                          {!neg && allowManualNegative && (
+                                            <button
+                                              type="button"
+                                              onClick={() => updateItem(item.id, 'amount', item.amount < 0 ? Math.abs(item.amount) : -Math.abs(item.amount || 0))}
+                                              style={{ fontSize: 9, color: item.amount < 0 ? '#047857' : '#dc2626', textAlign: 'right', marginTop: 1, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                              {item.amount < 0 ? '轉正' : '轉負'}
+                                            </button>
+                                          )}
                                         </div>
                                       )
                                     })()}
@@ -2834,6 +2841,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 style={{ padding: '8px 10px', border: `1.5px solid ${hasItemsTotal ? '#FDE68A' : amountValid ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: hasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: form.total_amount < 0 ? '#dc2626' : '#18181b', cursor: hasItemsTotal ? 'default' : 'text' }}
                                 value={form.total_amount || ''}
                                 onChange={e => { if (!hasItemsTotal) updateReceiptForm(form.id, 'total_amount', allowNegativeTotal ? (parseInt(e.target.value) || 0) : Math.max(0, parseInt(e.target.value) || 0)) }} />
+                              {allowNegativeTotal && !hasItemsTotal && (
+                                <button
+                                  type="button"
+                                  onClick={() => updateReceiptForm(form.id, 'total_amount', form.total_amount < 0 ? Math.abs(form.total_amount) : -Math.abs(form.total_amount || 0))}
+                                  style={{ alignSelf: 'flex-end', fontSize: '11px', color: form.total_amount < 0 ? '#047857' : '#dc2626', border: 'none', background: 'transparent', padding: '2px 0', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
+                                  {form.total_amount < 0 ? '轉正' : '轉負'}
+                                </button>
+                              )}
                             </div>
                           )
                         })()}
@@ -3152,7 +3167,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                                   updateEditItemFn(idx, 'amount', neg ? -Math.abs(v) : allowManualNegative ? v : Math.max(0, v))
                                                 }} />
                                               {neg && <span style={{ fontSize: 9, color: '#dc2626', textAlign: 'right', marginTop: 1 }}>自動轉負</span>}
-                                              {!neg && allowManualNegative && <span style={{ fontSize: 9, color: '#dc2626', textAlign: 'right', marginTop: 1 }}>可輸入負數</span>}
+                                              {!neg && allowManualNegative && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => updateEditItemFn(idx, 'amount', item.amount < 0 ? Math.abs(item.amount) : -Math.abs(item.amount || 0))}
+                                                  style={{ fontSize: 9, color: item.amount < 0 ? '#047857' : '#dc2626', textAlign: 'right', marginTop: 1, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                                  {item.amount < 0 ? '轉正' : '轉負'}
+                                                </button>
+                                              )}
                                             </div>
                                           )
                                         })()}
@@ -3191,6 +3213,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                     style={{ padding: '8px 10px', border: `1.5px solid ${editHasItemsTotal ? '#FDE68A' : editAmountValid ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: editHasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: editAmount < 0 ? '#dc2626' : '#18181b', cursor: editHasItemsTotal ? 'default' : 'text' }}
                                     value={editAmount || ''}
                                     onChange={e => { if (!editHasItemsTotal) setEditAmount(allowNegativeTotal ? (parseInt(e.target.value) || 0) : Math.max(0, parseInt(e.target.value) || 0)) }} />
+                                  {allowNegativeTotal && !editHasItemsTotal && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditAmount(editAmount < 0 ? Math.abs(editAmount) : -Math.abs(editAmount || 0))}
+                                      style={{ alignSelf: 'flex-end', fontSize: '11px', color: editAmount < 0 ? '#047857' : '#dc2626', border: 'none', background: 'transparent', padding: '2px 0', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
+                                      {editAmount < 0 ? '轉正' : '轉負'}
+                                    </button>
+                                  )}
                                 </div>
                               )
                             })()}
