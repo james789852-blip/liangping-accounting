@@ -16,10 +16,16 @@ async function checkHqAuth() {
 
 export interface HQAlerts {
   today: string
+  totalStores: number
+  totalCkStores: number
+  storeCompleted: number
+  ckCompleted: number
   storeNotClosed: Array<{ id: string; name: string }>
   storeInDraft: Array<{ id: string; name: string }>
+  storePendingReview: Array<{ id: string; name: string }>
   storeInDispute: Array<{ id: string; name: string }>
   ckNotSubmitted: Array<{ id: string; name: string }>
+  ckPendingReview: Array<{ id: string; name: string }>
   ckInDispute: Array<{ id: string; name: string }>
   ckHandoffPending: Array<{ id: string; name: string }>
 }
@@ -49,16 +55,22 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
   const { data: holidayRows } = await admin.from('store_holidays')
     .select('store_id').eq('holiday_date', today)
   const closedTodayStores = new Set((holidayRows ?? []).map((h: any) => h.store_id as string))
+  const activeStoreIds = new Set(storeList.map((s: any) => s.id as string))
+  const closedActiveStoreCount = [...closedTodayStores].filter(storeId => activeStoreIds.has(storeId)).length
 
   const storeNotClosed: HQAlerts['storeNotClosed'] = []
   const storeInDraft: HQAlerts['storeInDraft'] = []
+  const storePendingReview: HQAlerts['storePendingReview'] = []
   const storeInDispute: HQAlerts['storeInDispute'] = []
+  let storeCompleted = 0
   for (const s of storeList) {
     if (closedTodayStores.has(s.id as string)) continue // 公休不算
     const status = closingByStore.get(s.id as string)
     if (!status) storeNotClosed.push({ id: s.id, name: s.name })
     else if (status === 'draft') storeInDraft.push({ id: s.id, name: s.name })
+    else if (status === 'submitted') storePendingReview.push({ id: s.id, name: s.name })
     else if (status === 'disputed') storeInDispute.push({ id: s.id, name: s.name })
+    else if (status === 'verified') storeCompleted += 1
   }
 
   // 今日央廚 ck_daily_records
@@ -68,18 +80,36 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
     (todayCK ?? []).map((c: any) => [c.ck_store_id as string, c])
   )
   const ckNotSubmitted: HQAlerts['ckNotSubmitted'] = []
+  const ckPendingReview: HQAlerts['ckPendingReview'] = []
   const ckInDispute: HQAlerts['ckInDispute'] = []
   const ckHandoffPending: HQAlerts['ckHandoffPending'] = []
+  let ckCompleted = 0
   for (const s of ckList) {
     const record = ckByStore.get(s.id as string)
     const status = record?.status as string | undefined
-    if (!['submitted', 'verified'].includes(status ?? '')) ckNotSubmitted.push({ id: s.id, name: s.name })
+    if (!record || status === 'draft') ckNotSubmitted.push({ id: s.id, name: s.name })
+    if (status === 'submitted') ckPendingReview.push({ id: s.id, name: s.name })
     if (status === 'disputed') ckInDispute.push({ id: s.id, name: s.name })
+    if (status === 'verified') ckCompleted += 1
     if (record?.hq_paid && !record?.ck_reimbursement_confirmed) ckHandoffPending.push({ id: s.id, name: s.name })
   }
 
   return {
     success: true,
-    alerts: { today, storeNotClosed, storeInDraft, storeInDispute, ckNotSubmitted, ckInDispute, ckHandoffPending },
+    alerts: {
+      today,
+      totalStores: storeList.length - closedActiveStoreCount,
+      totalCkStores: ckList.length,
+      storeCompleted,
+      ckCompleted,
+      storeNotClosed,
+      storeInDraft,
+      storePendingReview,
+      storeInDispute,
+      ckNotSubmitted,
+      ckPendingReview,
+      ckInDispute,
+      ckHandoffPending,
+    },
   }
 }
