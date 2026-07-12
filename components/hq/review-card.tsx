@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronUp, Image, FileText, AlertTriangle, Check } from 'lucide-react'
 import ReviewActions from './review-actions'
 import PhotoLightbox from './photo-lightbox'
@@ -33,7 +33,7 @@ interface Closing {
 }
 interface Props {
   closing: Closing; receipts: Receipt[]; canReview: boolean; canDispute: boolean
-  selected?: boolean; onToggleSelect?: () => void; onProcessed?: () => void
+  selected?: boolean; onToggleSelect?: () => void; onProcessed?: () => void; defaultExpanded?: boolean
 }
 
 const TYPE_LABEL: Record<string, string> = { invoice: '發票', receipt: '收據', delivery_note: '估價單' }
@@ -85,9 +85,9 @@ function InfoRow({ label, value, muted, accent }: { label: string; value: string
   )
 }
 
-export default function ReviewCard({ closing, receipts, canReview, canDispute, selected, onToggleSelect, onProcessed }: Props) {
-  const [expanded, setExpanded] = useState(closing.variance !== 0 || closing.status === 'disputed')
-  const [photoId, setPhotoId] = useState<string | null>(null)
+export default function ReviewCard({ closing, receipts, canReview, canDispute, selected, onToggleSelect, onProcessed, defaultExpanded }: Props) {
+  const shouldAutoExpand = defaultExpanded ?? (closing.variance !== 0 || closing.status === 'disputed')
+  const [expanded, setExpanded] = useState(shouldAutoExpand)
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
   const showCheckbox = canReview && closing.status === 'submitted' && !!onToggleSelect
   const extraPhotos = normalizeExtraPhotos(closing.extra_photo_urls)
@@ -115,6 +115,10 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
     .reduce((s, r) => s + r.gross_amount, 0)
 
   const st = STATUS_STYLE[closing.status] ?? STATUS_STYLE.submitted
+
+  useEffect(() => {
+    setExpanded(defaultExpanded ?? (closing.variance !== 0 || closing.status === 'disputed'))
+  }, [closing.id, closing.status, closing.variance, defaultExpanded])
 
   return (
     <>

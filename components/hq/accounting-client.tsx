@@ -4,11 +4,10 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays } from 'lucide-react'
-import { fetchDailyAccountingDetail, fetchDailyAccountingDetailsBatch } from '@/app/actions/store-overview'
-import { fetchCKDailyStats, fetchCKDailyDetail } from '@/app/actions/ck-overview'
+import { fetchDailyAccountingDetail } from '@/app/actions/store-overview'
+import { fetchCKDailyDetail } from '@/app/actions/ck-overview'
 import { setManagerStore } from '@/app/actions/store-select'
 import type { DailyStats } from '@/lib/store-aggregator'
-import type { CKDailyStats } from '@/lib/ck-aggregator'
 import ReviewCard from './review-card'
 import CKOverview from './ck-overview'
 import HolidaysEditor from './holidays-editor'
@@ -114,8 +113,7 @@ export default function AccountingClient({
   const [selectedCkStoreId, setSelectedCkStoreId] = useState<string>(initialCkStoreId)
   const [storeDetailCache, setStoreDetailCache] = useState<StoreDetailCache>({})
   const [showBatchHolidays, setShowBatchHolidays] = useState(false)
-  const preloadKeyRef = useRef('')
-  const preloadRunRef = useRef(0)
+  const ckDetailCacheRef = useRef<Map<string, CKDetailState>>(new Map())
 
   useEffect(() => { setSelectedStoreId(initialStoreId) }, [initialStoreId])
   useEffect(() => { setSelectedCkStoreId(initialCkStoreId) }, [initialCkStoreId])
@@ -129,11 +127,6 @@ export default function AccountingClient({
     [ckRecords],
   )
   const holidaySet = useMemo(() => new Set(holidayStoreIds), [holidayStoreIds])
-  const preloadStoreIds = useMemo(
-    () => closings.filter(c => c.store_id && c.status !== 'none').map(c => c.store_id),
-    [closings],
-  )
-
   // 待審核總數（給 badge 用）
   const pendingCount = closings.filter(c => c.status === 'submitted' || c.status === 'disputed').length
   const ckPendingCount = ckRecords.filter(r => (
@@ -143,28 +136,7 @@ export default function AccountingClient({
 
   useEffect(() => {
     setStoreDetailCache({})
-    preloadKeyRef.current = ''
-    preloadRunRef.current += 1
   }, [date])
-
-  useEffect(() => {
-    const ids = [...new Set(preloadStoreIds)]
-    if (ids.length === 0) return
-
-    const key = `${date}:${ids.join(',')}`
-    if (preloadKeyRef.current === key) return
-    preloadKeyRef.current = key
-
-    const runId = ++preloadRunRef.current
-    fetchDailyAccountingDetailsBatch(ids, date)
-      .then(result => {
-        if (runId !== preloadRunRef.current) return
-        if ('error' in result) return
-        if (!('success' in result)) return
-        setStoreDetailCache(prev => ({ ...prev, ...(result.details as StoreDetailCache) }))
-      })
-      .catch(() => {})
-  }, [date, preloadStoreIds])
 
   const rememberStoreDetail = useCallback((storeId: string, detail: StoreDetailState) => {
     setStoreDetailCache(prev => ({ ...prev, [storeId]: detail }))
@@ -363,7 +335,12 @@ export default function AccountingClient({
           />
         )}
         {tab === 'ck' && selectedCkStoreId && (
-          <CKDetail ckStoreId={selectedCkStoreId} storeName={ckStores.find(s => s.id === selectedCkStoreId)?.name ?? ''} date={date} />
+          <CKDetail
+            ckStoreId={selectedCkStoreId}
+            storeName={ckStores.find(s => s.id === selectedCkStoreId)?.name ?? ''}
+            date={date}
+            cacheRef={ckDetailCacheRef}
+          />
         )}
         {tab === 'store' && !selectedStoreId && (
           <div className="text-center py-8 text-sm" style={{ color: '#a1a1aa' }}>選一家店查看數據與審核</div>
@@ -555,6 +532,7 @@ function StoreDetail({
             receipts={visibleDetail.receipts as any}
             canReview={true}
             canDispute={true}
+            defaultExpanded={false}
             onProcessed={() => {
               router.refresh()
               loadDetail(true)
@@ -690,45 +668,53 @@ function StoreStatsGrid({ data, closing }: { data: DailyStats; closing?: Closing
 
 /* ─────────── 央廚詳情 ─────────── */
 type CKDetailState = {
-  stats: CKDailyStats | null
   detail: any | null
 }
 
-function CKDetail({ ckStoreId, storeName, date }: { ckStoreId: string; storeName: string; date: string }) {
+function CKDetail({
+  ckStoreId,
+  storeName,
+  date,
+  cacheRef,
+}: {
+  ckStoreId: string
+  storeName: string
+  date: string
+  cacheRef: React.RefObject<Map<string, CKDetailState>>
+}) {
   const [loading, setLoading] = useState(true)
-  const [stats, setStats] = useState<CKDailyStats | null>(null)
   const [detail, setDetail] = useState<any | null>(null)
   const hasLoadedRef = useRef(false)
-  const cacheRef = useRef<Map<string, CKDetailState>>(new Map())
   const requestIdRef = useRef(0)
+  const stats = detail ? {
+    revenue: Number(detail.revenueTotal ?? 0),
+    totalExpense: Number(detail.expenseTotal ?? 0),
+    hqPaid: !!detail.hqPaid,
+    food: (detail.expenses ?? []).filter((e: any) => e.category === '食材').reduce((sum: number, e: any) => sum + Number(e.amount ?? 0), 0),
+    pack: (detail.expenses ?? []).filter((e: any) => e.category === '耗材').reduce((sum: number, e: any) => sum + Number(e.amount ?? 0), 0),
+    misc: (detail.expenses ?? []).filter((e: any) => e.category !== '食材' && e.category !== '耗材').reduce((sum: number, e: any) => sum + Number(e.amount ?? 0), 0),
+  } : null
 
   useEffect(() => {
     const key = `${ckStoreId}:${date}`
     const requestId = ++requestIdRef.current
     const cached = cacheRef.current.get(key)
     if (cached) {
-      setStats(cached.stats)
       setDetail(cached.detail)
       setLoading(false)
     } else if (hasLoadedRef.current) {
-      setStats(null)
       setDetail(null)
       setLoading(false)
     } else {
       setLoading(true)
     }
-    Promise.all([
-      fetchCKDailyStats(ckStoreId, date),
-      fetchCKDailyDetail(ckStoreId, date),
-    ])
-      .then(([sR, dR]) => {
+    fetchCKDailyDetail(ckStoreId, date)
+      .then(dR => {
         if (requestId !== requestIdRef.current) return
         const next = {
-          stats: 'stats' in sR ? (sR.stats ?? null) : null,
           detail: 'success' in dR ? dR.detail : null,
         }
         cacheRef.current.set(key, next)
-        setStats(next.stats)
         setDetail(next.detail)
         hasLoadedRef.current = true
       })
@@ -739,7 +725,7 @@ function CKDetail({ ckStoreId, storeName, date }: { ckStoreId: string; storeName
         if (requestId !== requestIdRef.current) return
         setLoading(false)
       })
-  }, [ckStoreId, date])
+  }, [cacheRef, ckStoreId, date])
 
   return (
     <div className="space-y-4">

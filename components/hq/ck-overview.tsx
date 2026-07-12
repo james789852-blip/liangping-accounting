@@ -239,7 +239,7 @@ function PayButton({
           <div className="grid grid-cols-4 gap-2">
             {photoUrls.map((url, i) => (
               <button key={`${url}-${i}`} type="button" onClick={() => onPreview(url)} className="block" style={{ aspectRatio: '1' }}>
-                <img src={url} alt={`補款照片 ${i + 1}`} className="h-full w-full rounded-lg object-cover" style={{ border: '1px solid #bbf7d0' }} />
+                <img src={url} alt={`補款照片 ${i + 1}`} loading="lazy" decoding="async" className="h-full w-full rounded-lg object-cover" style={{ border: '1px solid #bbf7d0' }} />
               </button>
             ))}
           </div>
@@ -271,7 +271,7 @@ function PayButton({
           {photoUrls.map((url, i) => (
             <div key={`${url}-${i}`} className="relative" style={{ aspectRatio: '1' }}>
               <button type="button" onClick={() => onPreview(url)} className="block h-full w-full">
-                <img src={url} alt={`補款照片 ${i + 1}`} className="h-full w-full rounded-lg object-cover" style={{ border: '1px solid #FDE68A' }} />
+                <img src={url} alt={`補款照片 ${i + 1}`} loading="lazy" decoding="async" className="h-full w-full rounded-lg object-cover" style={{ border: '1px solid #FDE68A' }} />
               </button>
               <button type="button" onClick={() => setPhotoUrls(prev => prev.filter((_, idx) => idx !== i))}
                 className="absolute -right-1 -top-1 h-5 w-5 rounded-full flex items-center justify-center"
@@ -445,7 +445,7 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                     {d.receiptPhotoUrls!.map((url, i) => (
                       <button key={url} type="button" onClick={() => setLightboxUrl(url)}
                         className="relative group" style={{ aspectRatio: '1' }}>
-                        <img src={url} alt={`收據 ${i + 1}`}
+                        <img src={url} alt={`收據 ${i + 1}`} loading="lazy" decoding="async"
                           className="w-full h-full object-cover rounded-xl"
                           style={{ border: '1px solid #e4e4e7' }} />
                       </button>
