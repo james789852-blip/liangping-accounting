@@ -74,7 +74,7 @@ function prevPeriod(start: string, end: string) {
 
 // ── Types ───────────────────────────────────────────────────────────────────────
 
-interface RevData { total: number; pos: number; uber: number; panda: number; twpay: number; online: number; handwrite: number }
+interface RevData { total: number; pos: number; uber: number; panda: number; twpay: number; online: number; onlineCash: number; handwrite: number }
 interface DayRev { date: string; total: number }
 interface VendorItem { name: string; curAvg: number; prevAvg: number; curCount: number; prevCount: number }
 interface Vendor { name: string; cur: number; prev: number; items: VendorItem[] }
@@ -82,7 +82,7 @@ interface ActualVendor { name: string; cur: number; prev: number; count: number 
 interface VendorGroupAnalysis { name: string; cur: number; prev: number; count: number; vendors: ActualVendor[] }
 interface BookkeepingDay { date: string; status: string; revenue: number; cost: number }
 
-const ZERO: RevData = { total: 0, pos: 0, uber: 0, panda: 0, twpay: 0, online: 0, handwrite: 0 }
+const ZERO: RevData = { total: 0, pos: 0, uber: 0, panda: 0, twpay: 0, online: 0, onlineCash: 0, handwrite: 0 }
 
 function statusText(status: string) {
   if (status === 'verified') return '已審核'
@@ -190,10 +190,11 @@ function DailyTrendChart({ data }: { data: DayRev[] }) {
 
 // ── Main Component ──────────────────────────────────────────────────────────────
 
-export default function AnalyticsClient({ storeId, storeName, storeType }: {
+export default function AnalyticsClient({ storeId, storeName, storeType, ichefUberLinked = false }: {
   storeId: string
   storeName: string
   storeType?: string | null
+  ichefUberLinked?: boolean
 }) {
   const today = getTodayTW()
 
@@ -425,10 +426,32 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
           else if (ch === 'panda') r.panda += item.gross_amount
           else if (ch === 'twpay') r.twpay += item.gross_amount
           else if (ch === 'online') r.online += item.gross_amount
+          else if (ch === 'online_cash') r.onlineCash += item.gross_amount
           else if (ch === 'handwrite') r.handwrite += item.gross_amount
         }
       }
       return r
+    }
+
+    function displayRevenue(row: any) {
+      const revenueItems = row.revenue_items ?? []
+      const channels = revenueItems.reduce((acc: RevData, item: any) => {
+        const amount = Number(item.gross_amount ?? 0)
+        const ch = item.channel as string
+        if (ch === 'pos') acc.pos += amount
+        else if (ch === 'uber') acc.uber += amount
+        else if (ch === 'panda') acc.panda += amount
+        else if (ch === 'twpay') acc.twpay += amount
+        else if (ch === 'online') acc.online += amount
+        else if (ch === 'online_cash') acc.onlineCash += amount
+        else if (ch === 'handwrite') acc.handwrite += amount
+        return acc
+      }, { ...ZERO })
+      const platform = channels.uber + channels.panda + channels.twpay + channels.online
+      if (ichefUberLinked) return Number(row.total_revenue ?? 0) || channels.pos + channels.handwrite
+      const enteredTotal = Number(row.total_revenue ?? 0)
+      const recomputedTotal = channels.pos + channels.handwrite + platform
+      return Math.max(enteredTotal, recomputedTotal)
     }
     const cr = calcRev(curClose.data ?? [])
     const pr = calcRev(prevClose.data ?? [])
@@ -436,7 +459,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
     setPrevRev(pr)
 
     const daily = (curClose.data ?? [])
-      .map((c: any) => ({ date: c.business_date as string, total: (c.total_revenue ?? 0) as number }))
+      .map((c: any) => ({ date: c.business_date as string, total: displayRevenue(c) }))
       .sort((a: DayRev, b: DayRev) => a.date.localeCompare(b.date))
     setDailyRevs(daily)
     const revenueByDate = new Map(daily.map(day => [day.date, day.total]))
@@ -531,7 +554,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
     setVendors(vList)
     setVendorGroups(receiptVendorGroups(curRec.data ?? [], prevRec.data ?? []))
     setLoading(false)
-  }, [storeId, storeType, start, end])
+  }, [storeId, storeType, start, end, ichefUberLinked])
 
   useEffect(() => { fetchData() }, [fetchData])
   useEffect(() => {
@@ -553,10 +576,16 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
     }
   }
 
-  const storeCur = curRev.pos + curRev.handwrite
-  const storePrev = prevRev.pos + prevRev.handwrite
   const delCur = curRev.uber + curRev.panda
   const delPrev = prevRev.uber + prevRev.panda
+  const digitalCur = curRev.twpay + curRev.online
+  const digitalPrev = prevRev.twpay + prevRev.online
+  const platformCur = delCur + digitalCur
+  const platformPrev = delPrev + digitalPrev
+  const totalRevenueCur = ichefUberLinked ? curRev.total : Math.max(curRev.total, curRev.pos + curRev.handwrite + platformCur)
+  const totalRevenuePrev = ichefUberLinked ? prevRev.total : Math.max(prevRev.total, prevRev.pos + prevRev.handwrite + platformPrev)
+  const storeCur = ichefUberLinked ? Math.max(totalRevenueCur - platformCur, 0) : curRev.pos + curRev.handwrite
+  const storePrev = ichefUberLinked ? Math.max(totalRevenuePrev - platformPrev, 0) : prevRev.pos + prevRev.handwrite
   const totalCost = vendors.reduce((s, v) => s + v.cur, 0)
   const selectedGroup = vendorGroups.find(group => group.name === selectedVendorGroup) ?? vendorGroups[0]
   const groupMaxVendor = Math.max(...(selectedGroup?.vendors.map(v => v.cur) ?? [0]), 1)
@@ -645,11 +674,11 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
                 <div className="h-9 w-9 rounded-[10px] flex items-center justify-center mb-3" style={{ background: 'rgba(255,255,255,0.2)' }}>
                   <TrendingUp className="h-[18px] w-[18px]" />
                 </div>
-                <p className="text-xs mb-1" style={{ color: 'rgba(255,255,255,0.85)' }}>總營業額</p>
-                <p className="text-2xl font-extrabold tabular-nums" style={{ letterSpacing: '-0.02em' }}>${fmt(curRev.total)}</p>
+                <p className="text-xs mb-1" style={{ color: 'rgba(255,255,255,0.85)' }}>總營業額（含外送/線上）</p>
+                <p className="text-2xl font-extrabold tabular-nums" style={{ letterSpacing: '-0.02em' }}>${fmt(totalRevenueCur)}</p>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
-                  <DeltaChip cur={curRev.total} prev={prevRev.total} white />
-                  <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.7)' }}>前 ${fmt(prevRev.total)}</span>
+                  <DeltaChip cur={totalRevenueCur} prev={totalRevenuePrev} white />
+                  <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.7)' }}>前 ${fmt(totalRevenuePrev)}</span>
                 </div>
               </div>
 
@@ -658,7 +687,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
                 <div className="h-9 w-9 rounded-[10px] flex items-center justify-center mb-3" style={{ background: '#d1fae5', color: '#047857' }}>
                   <Store className="h-[18px] w-[18px]" />
                 </div>
-                <p className="text-xs mb-1" style={{ color: '#a1a1aa' }}>現場營業額</p>
+                <p className="text-xs mb-1" style={{ color: '#a1a1aa' }}>現場/POS（不含平台）</p>
                 <p className="text-2xl font-extrabold tabular-nums" style={{ color: '#047857', letterSpacing: '-0.02em' }}>${fmt(storeCur)}</p>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   <DeltaChip cur={storeCur} prev={storePrev} />
@@ -685,10 +714,10 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
                   <Smartphone className="h-[18px] w-[18px]" />
                 </div>
                 <p className="text-xs mb-1" style={{ color: '#a1a1aa' }}>行動支付 / 線上</p>
-                <p className="text-2xl font-extrabold tabular-nums" style={{ color: '#92400E', letterSpacing: '-0.02em' }}>${fmt(curRev.twpay + curRev.online)}</p>
+                <p className="text-2xl font-extrabold tabular-nums" style={{ color: '#92400E', letterSpacing: '-0.02em' }}>${fmt(digitalCur)}</p>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
-                  <DeltaChip cur={curRev.twpay + curRev.online} prev={prevRev.twpay + prevRev.online} />
-                  <span className="text-[11px]" style={{ color: '#a1a1aa' }}>前 ${fmt(prevRev.twpay + prevRev.online)}</span>
+                  <DeltaChip cur={digitalCur} prev={digitalPrev} />
+                  <span className="text-[11px]" style={{ color: '#a1a1aa' }}>前 ${fmt(digitalPrev)}</span>
                 </div>
               </div>
             </div>
@@ -728,6 +757,13 @@ export default function AnalyticsClient({ storeId, storeName, storeType }: {
                   ))}
                 </div>
                 <div className="max-h-[280px] overflow-auto rounded-xl" style={{ border: '1px solid #f4f4f5' }}>
+                  <div className="sticky top-0 z-10 grid items-center gap-2 px-3 py-2 text-[11px] font-bold"
+                    style={{ gridTemplateColumns: '78px 74px 1fr 80px', background: '#fafafa', color: '#71717a', borderBottom: '1px solid #e4e4e7' }}>
+                    <span>日期</span>
+                    <span className="text-center">狀態</span>
+                    <span className="text-right">總營業額</span>
+                    <span className="text-right">支出單據</span>
+                  </div>
                   {bookkeepingDays.map(day => {
                     const s = statusStyle(day.status)
                     return (

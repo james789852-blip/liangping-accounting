@@ -23,7 +23,7 @@ export default async function ManagerAnalyticsPage() {
   const admin = createAdminClient()
   const { data: store } = await admin
     .from('stores')
-    .select('name, type')
+    .select('name, type, ichef_uber_linked')
     .eq('id', storeId)
     .single()
 
@@ -32,6 +32,7 @@ export default async function ManagerAnalyticsPage() {
       storeId={storeId}
       storeName={(store?.name as string | null) ?? '我的店'}
       storeType={(store?.type as string | null) ?? null}
+      ichefUberLinked={Boolean(store?.ichef_uber_linked)}
     />
   )
 }
