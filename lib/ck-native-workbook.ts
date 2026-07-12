@@ -431,7 +431,7 @@ export async function addCKSheet(
       ...expense,
       category: mapped?.category ?? cleanText(expense.category),
       vendor_group: mapped?.vendor_group ?? canonicalVendorGroup(expense.vendor_group),
-      doc_type: cleanText(expense.doc_type),
+      doc_type: mapped ? cleanText(mapped.doc_type) : cleanText(expense.doc_type),
       item_name: mapped?.name ?? cleanText(expense.item_name),
     }
   }
@@ -442,7 +442,7 @@ export async function addCKSheet(
       ...expense,
       category: mapped?.category ?? cleanText(expense.category),
       vendor_group: mapped?.vendor_group ?? canonicalVendorGroup(expense.vendor_group),
-      doc_type: cleanText(expense.doc_type),
+      doc_type: mapped ? cleanText(mapped.doc_type) : cleanText(expense.doc_type),
       item_name: mapped?.name ?? cleanText(expense.item_name),
     }
   }
