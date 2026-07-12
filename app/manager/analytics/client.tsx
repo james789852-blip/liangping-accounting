@@ -291,7 +291,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
           revByDate.set(record.business_date, (revByDate.get(record.business_date) ?? 0) + amount)
         }
         const total = Array.from(revByDate.values()).reduce((sum, amount) => sum + amount, 0)
-        return { total, pos: total, uber: 0, panda: 0, twpay: 0, online: 0, handwrite: 0 }
+        return { total, pos: total, uber: 0, panda: 0, twpay: 0, online: 0, onlineCash: 0, handwrite: 0 }
       }
       setCurRev(sumCK(cur))
       setPrevRev(sumCK(prevData))
