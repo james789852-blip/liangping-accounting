@@ -71,7 +71,7 @@ function datesBetween(from: string, to: string) {
 
 export async function addBatchStoreHolidays(storeIds: string[], from: string, to: string, note?: string) {
   const auth = await checkHqAuth()
-  if ('error' in auth) return auth
+  if ('error' in auth) return { error: auth.error }
   const ids = [...new Set(storeIds.filter(Boolean))]
   const dates = datesBetween(from, to)
   if (ids.length === 0) return { error: '請至少選擇一間店或央廚' as const }
