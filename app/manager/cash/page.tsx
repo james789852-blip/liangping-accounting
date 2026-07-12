@@ -39,13 +39,15 @@ export default async function CashPage({
   const admin = createAdminClient()
 
   const [{ data: store }, { data: closing }, { data: todayPetty }, { data: historyRows }] = await Promise.all([
-    supabase.from('stores').select('name, petty_cash').eq('id', storeId).single(),
-    supabase.from('daily_closings')
+    admin.from('stores').select('name, petty_cash').eq('id', storeId).single(),
+    admin.from('daily_closings')
       .select('id, status, actual_remit, total_revenue, variance')
       .eq('store_id', storeId).eq('business_date', today).maybeSingle(),
-    admin.from('petty_cash_counts').select('*')
+    admin.from('petty_cash_counts')
+      .select('count_date, updated_at, bills_1000, bills_500, bills_100, coins_50, coins_10, coins_5, coins_1, lump_1000, lump_500, lump_100, lump_50, lump_10, lump_5, lump_1')
       .eq('store_id', storeId).eq('count_date', today).maybeSingle(),
-    admin.from('petty_cash_counts').select('*')
+    admin.from('petty_cash_counts')
+      .select('count_date, updated_at, bills_1000, bills_500, bills_100, coins_50, coins_10, coins_5, coins_1, lump_1000, lump_500, lump_100, lump_50, lump_10, lump_5, lump_1')
       .eq('store_id', storeId)
       .gte('count_date', sevenDaysAgo)
       .lt('count_date', today)

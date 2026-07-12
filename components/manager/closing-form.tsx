@@ -27,6 +27,9 @@ interface ReserveItem {
   reason: string
   amount: number
   total_bill?: number  // total bill amount (optional), for showing remaining across days
+  auto_reserved?: boolean
+  source_start_date?: string
+  accumulated_before?: number
 }
 
 interface LargeCashExpense {
@@ -143,7 +146,13 @@ function isCKReceipt(receipt: TodayReceipt, ckPrices: CKPrice[]): boolean {
 
 interface PrevDayReserve {
   business_date: string
-  items: { reason: string; amount: number; total_bill?: number }[]
+  items: {
+    reason: string
+    amount: number
+    total_bill?: number
+    started_date?: string
+    remaining_amount?: number
+  }[]
 }
 
 interface Props {
@@ -1182,6 +1191,44 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const isLocked = (status === 'submitted' || status === 'verified') && !submitDone
   const isDisputed = status === 'disputed'
   const disputeNote = existingClosing?.dispute_note ?? ''
+  const pendingRentReserve = useMemo(() => {
+    const items = prevDayReserves?.items ?? []
+    return items.find(item =>
+      item.reason === '房租' &&
+      (item.total_bill ?? 0) > 0 &&
+      (item.remaining_amount ?? ((item.total_bill ?? 0) - item.amount)) > 0
+    ) ?? null
+  }, [prevDayReserves])
+
+  useEffect(() => {
+    if (!pendingRentReserve || isLocked || submitDone) return
+    if (existingClosing?.reserve_items && (existingClosing.reserve_items as any[]).length > 0) return
+    if (reserves.some(item => item.reason === '房租' && item.total_bill === pendingRentReserve.total_bill)) return
+    try {
+      const stored = JSON.parse(localStorage.getItem(reserveLsKey) ?? '[]')
+      if (Array.isArray(stored) && stored.length > 0) return
+    } catch {}
+
+    const remaining = Math.max(0, pendingRentReserve.remaining_amount ?? ((pendingRentReserve.total_bill ?? 0) - pendingRentReserve.amount))
+    const amount = Math.min(Math.max(0, Math.round(s.finalRemit)), remaining)
+    if (amount <= 0) return
+
+    setReserves(prev => {
+      if (prev.some(item => item.reason === '房租' && item.total_bill === pendingRentReserve.total_bill)) return prev
+      return [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          reason: '房租',
+          amount,
+          total_bill: pendingRentReserve.total_bill,
+          auto_reserved: true,
+          source_start_date: pendingRentReserve.started_date,
+          accumulated_before: pendingRentReserve.amount,
+        },
+      ]
+    })
+  }, [pendingRentReserve, isLocked, submitDone, existingClosing?.reserve_items, reserves, reserveLsKey, s.finalRemit])
 
   useEffect(() => {
     if (isLocked || submitDone) return
@@ -2350,24 +2397,27 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           </div>
         )}
 
-        {/* 昨日預留款提醒 */}
+        {/* 未完成預留款提醒 */}
         {prevDayReserves && prevDayReserves.items.length > 0 && (
           <div className="rounded-2xl px-4 py-3.5" style={{ background: '#fff7ed', border: '1.5px solid #fed7aa' }}>
             <div className="flex items-center gap-2 mb-2">
               <PiggyBank className="h-4 w-4 shrink-0" style={{ color: '#ea580c' }} />
               <p className="text-sm font-semibold" style={{ color: '#c2410c' }}>
-                昨日（{prevDayReserves.business_date}）有預留款項尚未結清
+                尚有預留款項未結清
               </p>
             </div>
             <div className="space-y-1.5">
               {prevDayReserves.items.map((r, i) => {
-                const remaining = r.total_bill ? r.total_bill - r.amount : null
+                const remaining = r.remaining_amount ?? (r.total_bill ? r.total_bill - r.amount : null)
                 return (
                   <div key={i} className="flex items-center justify-between text-sm">
-                    <span className="font-medium" style={{ color: '#c2410c' }}>{r.reason}</span>
+                    <span className="font-medium" style={{ color: '#c2410c' }}>
+                      {r.reason}
+                      {r.started_date && <span className="ml-1 text-xs font-normal" style={{ color: '#ea580c' }}>自 {r.started_date}</span>}
+                    </span>
                     <div className="text-right">
                       <span className="tabular-nums" style={{ color: '#ea580c' }}>
-                        昨日預留 ${fmt(r.amount)}
+                        已預留 ${fmt(r.amount)}
                       </span>
                       {remaining !== null && remaining > 0 && (
                         <span className="ml-2 text-xs font-semibold tabular-nums" style={{ color: '#be123c' }}>
@@ -4108,7 +4158,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         </div>
                       </div>
                       {!isLocked && (
-                        <button type="button" onClick={() => { setShowReserveForm(v => !v); setReserveForm({ reason: '電費', amount: 0 }) }}
+                        <button type="button" onClick={() => { setShowReserveForm(v => !v); setReserveForm({ reason: '電費', amount: 0, total_bill: 0 }) }}
                           className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg"
                           style={{ background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa' }}>
                           <Plus className="h-3.5 w-3.5" />新增預留
@@ -4121,12 +4171,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       <p className="text-xs text-center py-2" style={{ color: '#a1a1aa' }}>尚無預留款項</p>
                     )}
                     {reserves.map(r => {
-                      const remaining = r.total_bill && r.total_bill > r.amount ? r.total_bill - r.amount : null
+                      const accumulatedTotal = (r.accumulated_before ?? 0) + r.amount
+                      const remaining = r.total_bill && r.total_bill > accumulatedTotal ? r.total_bill - accumulatedTotal : null
                       return (
                         <div key={r.id} className="py-2 px-3 rounded-xl" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="text-xs font-semibold px-2 py-0.5 rounded-md shrink-0" style={{ background: '#fff7ed', color: '#ea580c' }}>{r.reason}</span>
+                              {r.auto_reserved && (
+                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0" style={{ background: '#d1fae5', color: '#047857' }}>自動帶入</span>
+                              )}
                               {r.total_bill ? (
                                 <span className="text-xs tabular-nums" style={{ color: '#a1a1aa' }}>帳單 ${fmt(r.total_bill)}</span>
                               ) : null}
@@ -4146,7 +4200,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           </div>
                           {remaining !== null && (
                             <p className="text-xs mt-1 tabular-nums" style={{ color: '#be123c' }}>
-                              尚差 ${fmt(remaining)}，明日繼續預留
+                              {r.accumulated_before ? `累計已預留 $${fmt(accumulatedTotal)}，` : ''}尚差 ${fmt(remaining)}，明日繼續預留
                             </p>
                           )}
                         </div>
@@ -4157,7 +4211,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-[10px] font-semibold mb-1" style={{ color: '#52525b' }}>原因</label>
-                            <select value={reserveForm.reason} onChange={e => setReserveForm(prev => ({ ...prev, reason: e.target.value }))}
+                            <select value={reserveForm.reason} onChange={e => {
+                              const reason = e.target.value
+                              setReserveForm(prev => {
+                                const totalBill = prev.total_bill ?? 0
+                                const shouldAutoAmount = reason === '房租' && (prev.amount ?? 0) <= 0 && totalBill > 0
+                                return {
+                                  ...prev,
+                                  reason,
+                                  amount: shouldAutoAmount ? Math.min(Math.max(0, Math.round(s.finalRemit)), totalBill) : prev.amount,
+                                }
+                              })
+                            }}
                               style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}>
                               {RESERVE_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                             </select>
@@ -4179,7 +4244,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           <input type="number" inputMode="numeric"
                             value={reserveForm.total_bill || ''}
                             placeholder="如：39891"
-                            onChange={e => setReserveForm(prev => ({ ...prev, total_bill: parseFloat(e.target.value) || 0 }))}
+                            onChange={e => {
+                              const totalBill = parseFloat(e.target.value) || 0
+                              setReserveForm(prev => {
+                                const shouldAutoAmount = prev.reason === '房租' && (prev.amount ?? 0) <= 0 && totalBill > 0
+                                return {
+                                  ...prev,
+                                  total_bill: totalBill,
+                                  amount: shouldAutoAmount ? Math.min(Math.max(0, Math.round(s.finalRemit)), totalBill) : prev.amount,
+                                }
+                              })
+                            }}
                             style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: 'white', outline: 'none', fontFamily: 'inherit', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#18181b' }} />
                         </div>
                         {(reserveForm.total_bill ?? 0) > 0 && reserveForm.amount > 0 && (reserveForm.total_bill ?? 0) > reserveForm.amount && (
@@ -4595,12 +4670,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </p>
               {s.totalReserved > 0 && (
                 <div className="mt-2 mb-1 px-3 py-2 rounded-xl text-xs" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
-                  {reserves.map(r => (
-                    <div key={r.id} className="flex justify-between tabular-nums" style={{ color: '#c2410c' }}>
-                      <span>預留 {r.reason}</span>
-                      <span>−${fmt(r.amount)}{r.total_bill && r.total_bill > r.amount ? `（尚差 $${fmt(r.total_bill - r.amount)}）` : ''}</span>
-                    </div>
-                  ))}
+                  {reserves.map(r => {
+                    const accumulatedTotal = (r.accumulated_before ?? 0) + r.amount
+                    const remaining = r.total_bill && r.total_bill > accumulatedTotal ? r.total_bill - accumulatedTotal : null
+                    return (
+                      <div key={r.id} className="flex justify-between tabular-nums" style={{ color: '#c2410c' }}>
+                        <span>預留 {r.reason}</span>
+                        <span>
+                          −${fmt(r.amount)}
+                          {remaining ? `（累計 $${fmt(accumulatedTotal)}，尚差 $${fmt(remaining)}）` : ''}
+                        </span>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
               <div className="flex justify-center gap-6 text-sm mt-3">

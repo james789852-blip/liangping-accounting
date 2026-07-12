@@ -41,6 +41,7 @@ export default async function ClosingPage({
     ? requested
     : realToday
   const isBackfill = today !== realToday
+  const reserveLookbackDate = new Date(new Date(today + 'T00:00:00+08:00').getTime() - 45 * 86400000).toISOString().slice(0, 10)
 
   // 一次平行撈完所有依賴 storeId/today 的資料（含 store_items_resolved）
   const [
@@ -50,7 +51,7 @@ export default async function ClosingPage({
     { data: todayReceipts },
     receiptCategories,
     mappingRows,
-    { data: prevClosing },
+    { data: prevReserveClosings },
     itemOrder,
     mappingBasedItems,
     { data: actualVendors },
@@ -76,11 +77,11 @@ export default async function ClosingPage({
       .from('daily_closings')
       .select('reserve_items, business_date')
       .eq('store_id', storeId)
+      .gte('business_date', reserveLookbackDate)
       .lt('business_date', today)
       .in('status', ['submitted', 'verified'])
       .order('business_date', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .limit(45),
     getCachedItemOrder(storeId),
     // 也撈 mapping-based items（跟 xlsx 匯出同源，確保下拉品項齊全）
     getStoreItemsFromMappings(storeId),
@@ -126,9 +127,46 @@ export default async function ClosingPage({
     if (pettyDone) redirect(`/manager/summary?date=${encodeURIComponent(today)}`)
   }
 
-  const prevReserveItems = (prevClosing?.reserve_items as any[]) ?? []
-  const prevDayReserves = prevReserveItems.length > 0
-    ? { business_date: prevClosing!.business_date as string, items: prevReserveItems }
+  const reserveGroups = new Map<string, {
+    reason: string
+    total_bill: number
+    amount: number
+    started_date: string
+    last_date: string
+  }>()
+  for (const closing of prevReserveClosings ?? []) {
+    const date = closing.business_date as string
+    const items = Array.isArray(closing.reserve_items) ? closing.reserve_items as any[] : []
+    for (const item of items) {
+      const reason = typeof item.reason === 'string' && item.reason.trim() ? item.reason.trim() : '其他'
+      const totalBill = Number(item.total_bill ?? 0)
+      if (totalBill <= 0) continue
+      const key = `${reason}||${totalBill}`
+      const existing = reserveGroups.get(key)
+      const amount = Math.max(0, Number(item.amount ?? 0))
+      if (existing) {
+        existing.amount += amount
+        if (date < existing.started_date) existing.started_date = date
+        if (date > existing.last_date) existing.last_date = date
+      } else {
+        reserveGroups.set(key, { reason, total_bill: totalBill, amount, started_date: date, last_date: date })
+      }
+    }
+  }
+  const pendingReserves = Array.from(reserveGroups.values())
+    .filter(item => item.total_bill > item.amount)
+    .sort((a, b) => b.last_date.localeCompare(a.last_date))
+  const prevDayReserves = pendingReserves.length > 0
+    ? {
+        business_date: pendingReserves[0].last_date,
+        items: pendingReserves.map(item => ({
+          reason: item.reason,
+          amount: item.amount,
+          total_bill: item.total_bill,
+          started_date: item.started_date,
+          remaining_amount: item.total_bill - item.amount,
+        })),
+      }
     : null
 
   const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
