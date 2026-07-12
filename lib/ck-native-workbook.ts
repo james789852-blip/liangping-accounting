@@ -35,8 +35,20 @@ function colLetter(colNum: number): string {
   return s
 }
 
+function cleanText(value?: string | null): string {
+  return String(value ?? '').replace(/\u3000/g, ' ').trim()
+}
+
+function compactKey(value?: string | null): string {
+  return cleanText(value).replace(/\s+/g, '')
+}
+
+function vendorGroupKey(value?: string | null): string {
+  return compactKey(value) || '未分類'
+}
+
 function expenseKey(category: string, vendorGroup?: string | null, docType?: string | null, itemName = '') {
-  return `${category}||${vendorGroup || ''}||${docType || ''}||${itemName}`
+  return `${compactKey(category)}||${vendorGroupKey(vendorGroup)}||${compactKey(docType)}||${compactKey(itemName)}`
 }
 
 const CK_FONT = 'Microsoft JhengHei'
@@ -382,35 +394,57 @@ export async function addCKSheet(
   //   即使當月沒錄，layout 也顯示所有已設定品項欄；已錄金額自動填入
   const memberStores = monthly.memberByStore
   const externalNames = monthly.externalByName
+  const vendorGroupMeta = new Map<string, { name: string; sortOrder: number }>()
+  for (const m of mappingItems) {
+    const key = vendorGroupKey(m.vendor_group)
+    const name = cleanText(m.vendor_group) || '未分類'
+    const sortOrder = m.vendor_group_sort_order ?? 9999
+    const existing = vendorGroupMeta.get(key)
+    if (!existing || sortOrder < existing.sortOrder) {
+      vendorGroupMeta.set(key, { name, sortOrder })
+    }
+  }
+  const canonicalVendorGroup = (vendorGroup?: string | null) =>
+    vendorGroupMeta.get(vendorGroupKey(vendorGroup))?.name ?? (cleanText(vendorGroup) || '未分類')
+  const vendorGroupSortOrder = (vendorGroup?: string | null, fallback = 999999) =>
+    vendorGroupMeta.get(vendorGroupKey(vendorGroup))?.sortOrder ?? fallback
 
   const findMappedExpenseItem = (vendorGroup?: string | null, docType?: string | null, itemName = '') => {
-    const vendor = vendorGroup || ''
-    const doc = docType || ''
-    const item = itemName || ''
+    const vendor = vendorGroupKey(vendorGroup)
+    const doc = compactKey(docType)
+    const item = compactKey(itemName)
     if (!item) return null
 
     return mappingItems.find(m =>
-      (m.vendor_group || '') === vendor &&
-      (m.doc_type || '') === doc &&
-      m.name === item
+      vendorGroupKey(m.vendor_group) === vendor &&
+      compactKey(m.doc_type) === doc &&
+      compactKey(m.name) === item
     ) ?? mappingItems.find(m =>
-      (m.vendor_group || '') === vendor &&
-      m.name === item
-    ) ?? mappingItems.find(m => m.name === item) ?? null
+      vendorGroupKey(m.vendor_group) === vendor &&
+      compactKey(m.name) === item
+    ) ?? mappingItems.find(m => compactKey(m.name) === item) ?? null
   }
 
   const normalizeSummaryExpense = (expense: typeof monthly.expenseByItem[number]) => {
     const mapped = findMappedExpenseItem(expense.vendor_group, expense.doc_type, expense.item_name)
-    return mapped && mapped.category !== expense.category
-      ? { ...expense, category: mapped.category }
-      : expense
+    return {
+      ...expense,
+      category: mapped?.category ?? cleanText(expense.category),
+      vendor_group: mapped?.vendor_group ?? canonicalVendorGroup(expense.vendor_group),
+      doc_type: cleanText(expense.doc_type),
+      item_name: mapped?.name ?? cleanText(expense.item_name),
+    }
   }
 
   const normalizeDailyExpense = (expense: typeof monthly.daily[number]['expenses'][number]) => {
     const mapped = findMappedExpenseItem(expense.vendor_group, expense.doc_type, expense.item_name)
-    return mapped && mapped.category !== expense.category
-      ? { ...expense, category: mapped.category }
-      : expense
+    return {
+      ...expense,
+      category: mapped?.category ?? cleanText(expense.category),
+      vendor_group: mapped?.vendor_group ?? canonicalVendorGroup(expense.vendor_group),
+      doc_type: cleanText(expense.doc_type),
+      item_name: mapped?.name ?? cleanText(expense.item_name),
+    }
   }
 
   const normalizedExpenseByItem = monthly.expenseByItem.map(normalizeSummaryExpense)
@@ -431,7 +465,18 @@ export async function addCKSheet(
   }
   // 用 mapping 為主，若 mapping 沒有但實際有錄 → 也補進來（避免資料消失）
   const seen = new Set(mappingItems.map(m => expenseKey(m.category, m.vendor_group, m.doc_type ?? '', m.name)))
-  const orphanFromReceipts = normalizedExpenseByItem.filter(e => !seen.has(expenseKey(e.category, e.vendor_group, e.doc_type, e.item_name)))
+  const orphanByKey = new Map<string, typeof normalizedExpenseByItem[number]>()
+  for (const e of normalizedExpenseByItem) {
+    const key = expenseKey(e.category, e.vendor_group, e.doc_type, e.item_name)
+    if (seen.has(key)) continue
+    const existing = orphanByKey.get(key)
+    if (existing) {
+      existing.total += e.total
+    } else {
+      orphanByKey.set(key, { ...e })
+    }
+  }
+  const orphanFromReceipts = Array.from(orphanByKey.values())
   const expenseItems: ExpenseLayoutItem[] = [
     ...mappingItems.map(m => {
       const rec = expenseByKey.get(expenseKey(m.category, m.vendor_group, m.doc_type ?? '', m.name))
@@ -445,11 +490,15 @@ export async function addCKSheet(
         sort_order: m.sort_order ?? 9999,
       }
     }),
-    ...orphanFromReceipts.map((e, index) => ({
-      ...e,
-      vendor_group_sort_order: 999999,
-      sort_order: 999999 + index,
-    })),
+    ...orphanFromReceipts.map((e, index) => {
+      const mapped = findMappedExpenseItem(e.vendor_group, e.doc_type, e.item_name)
+      return {
+        ...e,
+        vendor_group: canonicalVendorGroup(e.vendor_group),
+        vendor_group_sort_order: vendorGroupSortOrder(e.vendor_group),
+        sort_order: (mapped?.sort_order ?? 999000) + index / 1000,
+      }
+    }),
   ]
 
   const cols: ColumnDef[] = []
@@ -476,8 +525,10 @@ export async function addCKSheet(
   // 支出品項欄：先依品項管理的黃色廠商分類排序，讓同一廠商群組在 Excel 上連在一起。
   // 食材/耗材/雜項合計已改為逐欄加總，因此不需要把同 category 強制排成連續區塊。
   const catOrder: Record<string, number> = { '食材': 0, '耗材': 1, '雜項': 2 }
+  const groupRank = (vendorGroup?: string | null) => vendorGroupKey(vendorGroup) === '未分類' ? 1 : 0
   const sortedExpenseItems = [...expenseItems].sort((a, b) =>
-    (a.vendor_group_sort_order ?? 9999) - (b.vendor_group_sort_order ?? 9999)
+    groupRank(a.vendor_group) - groupRank(b.vendor_group)
+    || (a.vendor_group_sort_order ?? 9999) - (b.vendor_group_sort_order ?? 9999)
     || (a.vendor_group || '').localeCompare(b.vendor_group || '', 'zh-Hant')
     || (a.doc_type || '').localeCompare(b.doc_type || '')
     || (a.sort_order ?? 9999) - (b.sort_order ?? 9999)
@@ -521,24 +572,25 @@ export async function addCKSheet(
   }
   if (expenseCols.length > 0) {
     // Row 1: 廠商群組（vendor_group），連續相同就 merge
-    const vgRanges: Array<{ vg: string; start: number; end: number }> = []
+    const vgRanges: Array<{ key: string; vg: string; start: number; end: number }> = []
     for (const c of expenseCols) {
+      const key = vendorGroupKey(c.vendorGroup)
       const last = vgRanges[vgRanges.length - 1]
-      if (last && last.vg === (c.vendorGroup ?? '')) last.end = c.index
-      else vgRanges.push({ vg: c.vendorGroup ?? '', start: c.index, end: c.index })
+      if (last && last.key === key) last.end = c.index
+      else vgRanges.push({ key, vg: c.vendorGroup ?? '', start: c.index, end: c.index })
     }
     for (const r of vgRanges) {
       fillHeader(ws.getRow(1).getCell(r.start), r.vg || '未分類', ckVgColor(r.vg || ''), true, 'FF000000', 14)
       if (r.end > r.start) ws.mergeCells(1, r.start, 1, r.end)
     }
     // Row 2: 單據類型（doc_type），同 vg 內連續相同就 merge
-    const docRanges: Array<{ doc: string; vg: string; start: number; end: number }> = []
+    const docRanges: Array<{ doc: string; vgKey: string; start: number; end: number }> = []
     for (const c of expenseCols) {
-      const key = `${c.vendorGroup ?? ''}|${c.docType ?? ''}`
+      const key = `${vendorGroupKey(c.vendorGroup)}|${compactKey(c.docType)}`
       const last = docRanges[docRanges.length - 1]
-      const lastKey = last ? `${last.vg}|${last.doc}` : ''
+      const lastKey = last ? `${last.vgKey}|${compactKey(last.doc)}` : ''
       if (last && lastKey === key) last.end = c.index
-      else docRanges.push({ doc: c.docType ?? '', vg: c.vendorGroup ?? '', start: c.index, end: c.index })
+      else docRanges.push({ doc: c.docType ?? '', vgKey: vendorGroupKey(c.vendorGroup), start: c.index, end: c.index })
     }
     for (const r of docRanges) {
       if (!r.doc) continue
