@@ -55,6 +55,42 @@ export async function addStoreHolidaysRange(storeId: string, dates: string[], no
   return { success: true as const }
 }
 
+function datesBetween(from: string, to: string) {
+  const start = new Date(`${from}T12:00:00+08:00`)
+  const end = new Date(`${to}T12:00:00+08:00`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return []
+  if (start > end) return []
+  const dates: string[] = []
+  const cursor = new Date(start)
+  while (cursor <= end && dates.length < 366) {
+    dates.push(cursor.toISOString().slice(0, 10))
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return dates
+}
+
+export async function addBatchStoreHolidays(storeIds: string[], from: string, to: string, note?: string) {
+  const auth = await checkHqAuth()
+  if ('error' in auth) return auth
+  const ids = [...new Set(storeIds.filter(Boolean))]
+  const dates = datesBetween(from, to)
+  if (ids.length === 0) return { error: '請至少選擇一間店或央廚' as const }
+  if (dates.length === 0) return { error: '請選擇正確的公休日期' as const }
+
+  const admin = createAdminClient()
+  const rows = ids.flatMap(storeId =>
+    dates.map(date => ({ store_id: storeId, holiday_date: date, note: note?.trim() || null })),
+  )
+  const { error } = await admin
+    .from('store_holidays')
+    .upsert(rows, { onConflict: 'store_id,holiday_date', ignoreDuplicates: false })
+  if (error) return { error: error.message }
+  revalidatePath('/hq/accounting')
+  revalidatePath('/hq/dashboard')
+  revalidatePath('/hq/store-overview')
+  return { success: true as const, count: rows.length, storeCount: ids.length, dateCount: dates.length }
+}
+
 export async function deleteStoreHoliday(id: string) {
   const auth = await checkHqAuth()
   if ('error' in auth) return auth

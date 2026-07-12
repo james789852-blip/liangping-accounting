@@ -12,6 +12,7 @@ import type { CKDailyStats } from '@/lib/ck-aggregator'
 import ReviewCard from './review-card'
 import CKOverview from './ck-overview'
 import HolidaysEditor from './holidays-editor'
+import BatchHolidaysDialog from './batch-holidays-dialog'
 
 interface Store { id: string; name: string }
 interface ClosingRow {
@@ -112,6 +113,7 @@ export default function AccountingClient({
   const [selectedStoreId, setSelectedStoreId] = useState<string>(initialStoreId)
   const [selectedCkStoreId, setSelectedCkStoreId] = useState<string>(initialCkStoreId)
   const [storeDetailCache, setStoreDetailCache] = useState<StoreDetailCache>({})
+  const [showBatchHolidays, setShowBatchHolidays] = useState(false)
   const preloadKeyRef = useRef('')
   const preloadRunRef = useRef(0)
 
@@ -243,6 +245,12 @@ export default function AccountingClient({
                 className="text-xs font-semibold px-2.5 h-10 rounded-lg"
                 style={{ background: 'white', color: '#92400E', border: '1px solid #FDE68A' }}>今日</button>
             )}
+            <button onClick={() => setShowBatchHolidays(true)}
+              className="hidden sm:flex items-center gap-1.5 h-10 px-3 rounded-lg text-xs font-bold"
+              style={{ background: '#f3e8ff', color: '#6b21a8', border: '1px solid #d8b4fe' }}
+              title="一次設定多間店家或央廚公休">
+              <CalendarDays className="h-3.5 w-3.5" /> 批次公休
+            </button>
           </div>
         </div>
         {/* Tabs */}
@@ -273,8 +281,21 @@ export default function AccountingClient({
               </span>
             )}
           </button>
+          <button onClick={() => setShowBatchHolidays(true)}
+            className="sm:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold"
+            style={{ background: '#f3e8ff', color: '#6b21a8', border: '1px solid #d8b4fe' }}>
+            <CalendarDays className="h-3.5 w-3.5" />批次公休
+          </button>
         </div>
       </div>
+      {showBatchHolidays && (
+        <BatchHolidaysDialog
+          stores={stores}
+          ckStores={ckStores}
+          date={date}
+          onClose={() => setShowBatchHolidays(false)}
+        />
+      )}
 
       <div className="max-w-4xl mx-auto px-4 py-5 pb-28 space-y-4">
         {/* 狀態卡片 grid：所有店家或央廚 */}
@@ -301,11 +322,14 @@ export default function AccountingClient({
               )
             }) : ckStores.map(s => {
               const r = ckByStore[s.id]
-              const badges = ckStatusBadges(
-                r?.status ?? 'none',
-                r?.hq_paid ?? false,
-                r?.ck_reimbursement_confirmed ?? false,
-              )
+              const isHoliday = holidaySet.has(s.id)
+              const badges = isHoliday
+                ? [{ label: '公休', bg: '#f3e8ff', color: '#6b21a8' }]
+                : ckStatusBadges(
+                    r?.status ?? 'none',
+                    r?.hq_paid ?? false,
+                    r?.ck_reimbursement_confirmed ?? false,
+                  )
               const isActive = selectedCkStoreId === s.id
               return (
                 <button key={s.id} onClick={() => selectCkStoreCard(s.id)}

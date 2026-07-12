@@ -56,7 +56,9 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
     .select('store_id').eq('holiday_date', today)
   const closedTodayStores = new Set((holidayRows ?? []).map((h: any) => h.store_id as string))
   const activeStoreIds = new Set(storeList.map((s: any) => s.id as string))
+  const activeCkStoreIds = new Set(ckList.map((s: any) => s.id as string))
   const closedActiveStoreCount = [...closedTodayStores].filter(storeId => activeStoreIds.has(storeId)).length
+  const closedActiveCkCount = [...closedTodayStores].filter(storeId => activeCkStoreIds.has(storeId)).length
 
   const storeNotClosed: HQAlerts['storeNotClosed'] = []
   const storeInDraft: HQAlerts['storeInDraft'] = []
@@ -85,6 +87,7 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
   const ckHandoffPending: HQAlerts['ckHandoffPending'] = []
   let ckCompleted = 0
   for (const s of ckList) {
+    if (closedTodayStores.has(s.id as string)) continue // 央廚公休不算未送出
     const record = ckByStore.get(s.id as string)
     const status = record?.status as string | undefined
     if (!record || status === 'draft') ckNotSubmitted.push({ id: s.id, name: s.name })
@@ -99,7 +102,7 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
     alerts: {
       today,
       totalStores: storeList.length - closedActiveStoreCount,
-      totalCkStores: ckList.length,
+      totalCkStores: ckList.length - closedActiveCkCount,
       storeCompleted,
       ckCompleted,
       storeNotClosed,
