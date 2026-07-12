@@ -344,13 +344,13 @@ function statFormula(
     return refundCells.length > 0 ? refundCells.join('+') : '0'
   }
   if (key === 'food' && foodExpCols.length > 0) {
-    return `SUM(${colLetter(foodExpCols[0].index)}${rowRef}:${colLetter(foodExpCols[foodExpCols.length - 1].index)}${rowRef})`
+    return foodExpCols.map(c => `${colLetter(c.index)}${rowRef}`).join('+')
   }
   if (key === 'pack' && packExpCols.length > 0) {
-    return `SUM(${colLetter(packExpCols[0].index)}${rowRef}:${colLetter(packExpCols[packExpCols.length - 1].index)}${rowRef})`
+    return packExpCols.map(c => `${colLetter(c.index)}${rowRef}`).join('+')
   }
   if (key === 'misc' && miscExpCols.length > 0) {
-    return `SUM(${colLetter(miscExpCols[0].index)}${rowRef}:${colLetter(miscExpCols[miscExpCols.length - 1].index)}${rowRef})`
+    return miscExpCols.map(c => `${colLetter(c.index)}${rowRef}`).join('+')
   }
   if (key === 'totalExpense') {
     const foodCol = cols.find(x => x.statKey === 'food')
@@ -473,14 +473,15 @@ export async function addCKSheet(
   cols.push({ index: idx++, header: '耗材', kind: 'stat', statKey: 'pack' })
   cols.push({ index: idx++, header: '雜項', kind: 'stat', statKey: 'misc' })
 
-  // 支出品項欄：依品項管理的分類排序與品項排序輸出，不再用名稱或金額重排。
+  // 支出品項欄：先依品項管理的黃色廠商分類排序，讓同一廠商群組在 Excel 上連在一起。
+  // 食材/耗材/雜項合計已改為逐欄加總，因此不需要把同 category 強制排成連續區塊。
   const catOrder: Record<string, number> = { '食材': 0, '耗材': 1, '雜項': 2 }
   const sortedExpenseItems = [...expenseItems].sort((a, b) =>
-    (catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3)
-    || (a.vendor_group_sort_order ?? 9999) - (b.vendor_group_sort_order ?? 9999)
+    (a.vendor_group_sort_order ?? 9999) - (b.vendor_group_sort_order ?? 9999)
+    || (a.vendor_group || '').localeCompare(b.vendor_group || '', 'zh-Hant')
     || (a.doc_type || '').localeCompare(b.doc_type || '')
     || (a.sort_order ?? 9999) - (b.sort_order ?? 9999)
-    || (a.vendor_group || '').localeCompare(b.vendor_group || '', 'zh-Hant')
+    || (catOrder[a.category] ?? 3) - (catOrder[b.category] ?? 3)
     || (a.item_name || '').localeCompare(b.item_name || '', 'zh-Hant')
   )
   for (const e of sortedExpenseItems) {
