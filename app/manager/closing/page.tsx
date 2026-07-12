@@ -117,12 +117,6 @@ export default async function ClosingPage({
   // 央廚店家使用專屬流程
   if ((store as any)?.type === '央廚') redirect('/manager/ck')
 
-  // 進入 /manager/closing 沒帶日期時，優先接回未送出的補做草稿。
-  // 避免補做 7/7 後，下次從底部選單回來落到今日頁面，繼續輸入時誤存到 7/8。
-  if (!requested && !existingClosing && latestBackfillDraft?.business_date) {
-    redirect(`/manager/closing?date=${encodeURIComponent(latestBackfillDraft.business_date as string)}`)
-  }
-
   if (existingClosing?.status === 'disputed') {
     redirect(`/manager/edit/${existingClosing.id}`)
   }
@@ -168,6 +162,7 @@ export default async function ClosingPage({
       prevDayReserves={prevDayReserves}
       isBackfill={isBackfill}
       realToday={realToday}
+      latestBackfillDraftDate={!requested ? (latestBackfillDraft?.business_date as string | undefined) : undefined}
     />
   )
 }

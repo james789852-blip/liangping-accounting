@@ -159,6 +159,7 @@ interface Props {
   prevDayReserves?: PrevDayReserve | null
   isBackfill?: boolean  // 是否為補做過往帳目（非今日業務日）
   realToday?: string    // 真實今日業務日，用於日期切換器顯示「回到今日」
+  latestBackfillDraftDate?: string
 }
 
 const NEW_ACTUAL_VENDOR_VALUE = '__new_actual_vendor__'
@@ -688,7 +689,7 @@ function CategoryPicker({ categories, value, onChange }: {
   )
 }
 
-export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], actualVendors = [], prevDayReserves, isBackfill = false, realToday }: Props) {
+export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], actualVendors = [], prevDayReserves, isBackfill = false, realToday, latestBackfillDraftDate }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
   const [largeCashExpenses, setLargeCashExpenses] = useState<LargeCashExpense[]>(() => initLargeCashExpenses(existingClosing))
@@ -2242,14 +2243,26 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       <div className="bg-white sticky top-0 z-50" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         {/* 補做帳目提示橫幅 */}
         {isBackfill && (
-          <div className="px-5 py-2 text-xs font-medium flex items-center justify-between gap-2"
-            style={{ background: '#FEF3C7', color: '#92400E', borderBottom: '1px solid #FDE68A' }}>
-            <span>📅 你正在補做 <b>{today}</b> 的帳目（非今日）</span>
+          <div className="px-5 py-3 text-sm font-bold flex items-center justify-between gap-3"
+            style={{ background: '#FFF7ED', color: '#9A3412', borderBottom: '2px solid #FDBA74' }}>
+            <span className="leading-snug">
+              注意：目前正在做 <b className="text-base">{today}</b> 的帳目，不是今天 <b>{realToday ?? '今日'}</b>
+            </span>
             {realToday && (
-              <a href={`/manager/closing?date=${encodeURIComponent(realToday)}`} className="font-semibold underline shrink-0" style={{ color: '#78350F' }}>
-                回到 {realToday}
+              <a href={`/manager/closing?date=${encodeURIComponent(realToday)}`} className="font-bold shrink-0 px-3 py-1.5 rounded-full"
+                style={{ color: '#fff', background: '#EA580C' }}>
+                切回今日
               </a>
             )}
+          </div>
+        )}
+        {!isBackfill && latestBackfillDraftDate && (
+          <div className="px-5 py-2 text-xs font-medium flex items-center justify-between gap-2"
+            style={{ background: '#FFFBEB', color: '#92400E', borderBottom: '1px solid #FDE68A' }}>
+            <span>有未完成的補做草稿：{latestBackfillDraftDate}。今日結帳不會自動切過去。</span>
+            <a href={`/manager/closing?date=${encodeURIComponent(latestBackfillDraftDate)}`} className="font-semibold underline shrink-0" style={{ color: '#78350F' }}>
+              前往補做
+            </a>
           </div>
         )}
         <div className="px-5 py-3 flex items-center justify-between gap-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
@@ -2257,6 +2270,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>每日結帳</p>
             <div className="flex items-center gap-2">
               <p className="text-sm font-bold truncate" style={{ color: '#18181b' }}>{store.name} · {today}</p>
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                style={{ background: isBackfill ? '#FED7AA' : '#DCFCE7', color: isBackfill ? '#9A3412' : '#047857' }}>
+                {isBackfill ? '補做帳目' : '今日帳目'}
+              </span>
               <input type="date" value={today} max={realToday ?? today}
                 onChange={e => { const v = e.target.value; if (v) router.push(`/manager/closing?date=${v}`) }}
                 className="text-xs px-1.5 py-0.5 rounded outline-none border shrink-0"

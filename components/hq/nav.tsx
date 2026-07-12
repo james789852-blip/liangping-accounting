@@ -129,6 +129,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const router = useRouter()
   const isManagerPath = pathname.startsWith('/manager')
   const time = useClock()
+  const [todayParam, setTodayParam] = useState('')
   // 待審核紅點暫時隱藏（之後確定要開再改 true）
   const showPendingBadge = false
   const pending = { stores: 0, ck: 0, total: 0 }
@@ -145,6 +146,11 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
       return isCKLink ? isOnCK : !isOnCK
     }
     return true
+  }
+
+  function resolveHref(href: string) {
+    if (href === '/manager/closing' && todayParam) return `/manager/closing?date=${encodeURIComponent(todayParam)}`
+    return href
   }
 
   async function handleLogout() {
@@ -215,6 +221,10 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
 
   // 關閉抽屜當路由變化
   useEffect(() => { setMobileSheetOpen(false) }, [pathname])
+
+  useEffect(() => {
+    setTodayParam(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' }))
+  }, [])
 
   useEffect(() => {
     for (const href of ['/hq/accounting', '/hq/dashboard', '/hq/item-mappings', '/manager/dashboard', '/manager/closing', '/manager/analytics', '/manager/settings']) {
@@ -296,9 +306,10 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               </p>
               {section.items.map(({ href, label, icon: Icon }) => {
                 const active = isActive(href)
+                const resolvedHref = resolveHref(href)
                 const showBadge = showPendingBadge && href === '/hq/accounting' && pendingCount > 0
                 return (
-                  <Link key={href} href={href}
+                  <Link key={href} href={resolvedHref}
                     className={cn('flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-all duration-150 mb-0.5', !active && 'hover:bg-slate-50')}
                     style={active ? { backgroundColor: activeBg, color: activeColor, fontWeight: 600 } : { color: '#52525b' }}>
                     <Icon className="h-[18px] w-[18px] shrink-0" />
@@ -387,8 +398,9 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         <div className="flex px-1 pt-2 pb-2">
           {mobileTabs.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href)
+            const resolvedHref = resolveHref(href)
             return (
-              <Link key={href} href={href}
+              <Link key={href} href={resolvedHref}
                 className="flex flex-col items-center gap-1 flex-1 py-1">
                 <Icon className="h-[22px] w-[22px]" style={{ color: active ? mobileActiveColor : '#a1a1aa' }} />
                 <span className="text-[11px] font-medium" style={{ color: active ? mobileActiveColor : '#a1a1aa' }}>
@@ -430,8 +442,9 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                   </p>
                   {section.items.map(({ href, label, icon: Icon }) => {
                     const active = isActive(href)
+                    const resolvedHref = resolveHref(href)
                     return (
-                      <Link key={href} href={href}
+                      <Link key={href} href={resolvedHref}
                         className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium"
                         style={active ? { backgroundColor: activeBg, color: activeColor, fontWeight: 600 } : { color: '#52525b' }}>
                         <Icon className="h-5 w-5 shrink-0" />

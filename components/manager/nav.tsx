@@ -61,6 +61,11 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
   const pathname = usePathname()
   const router = useRouter()
   const { date, time } = useTaipeiNow()
+  const todayParam = date ? date.replace(/\//g, '-') : ''
+  const resolveHref = (href: string) => {
+    if (href === '/manager/closing' && todayParam) return `/manager/closing?date=${encodeURIComponent(todayParam)}`
+    return href
+  }
 
   useEffect(() => {
     for (const href of ['/manager/dashboard', '/manager/closing', '/manager/ck', '/manager/analytics', '/manager/settings', '/manager/history']) {
@@ -115,8 +120,9 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
           <p className="text-[10px] font-bold uppercase px-3 pb-2" style={{ color: '#a1a1aa', letterSpacing: '0.08em' }}>日常</p>
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href)
+            const resolvedHref = resolveHref(href)
             return (
-              <Link key={href} href={href}
+              <Link key={href} href={resolvedHref}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-all duration-150',
                   active ? 'font-semibold' : 'hover:bg-slate-50'
@@ -176,8 +182,9 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
         <div className="flex px-2 pt-2 pb-2">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href)
+            const resolvedHref = resolveHref(href)
             return (
-              <Link key={href} href={href} className="flex flex-col items-center gap-1 flex-1 py-1">
+              <Link key={href} href={resolvedHref} className="flex flex-col items-center gap-1 flex-1 py-1">
                 <Icon className="h-[22px] w-[22px]" style={{ color: active ? '#D97706' : '#a1a1aa' }} />
                 <span className="text-[11px] font-medium" style={{ color: active ? '#D97706' : '#a1a1aa' }}>
                   {label}

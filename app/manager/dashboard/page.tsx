@@ -363,7 +363,7 @@ export default async function ManagerDashboard() {
     : (todayClosing?.status ?? 'none') as keyof typeof STATUS_DESC
   const cfg = STATUS_DESC[statusKey] ?? STATUS_DESC.none
 
-  const actionHref = !todayClosing || todayClosing.status === 'draft' ? '/manager/closing'
+  const actionHref = !todayClosing || todayClosing.status === 'draft' ? `/manager/closing?date=${encodeURIComponent(today)}`
     : todayClosing.status === 'disputed' ? `/manager/edit/${todayClosing.id}`
     : statusKey === 'petty_pending' ? `/manager/closing?date=${encodeURIComponent(today)}`
     : `/manager/summary?date=${encodeURIComponent(today)}`
