@@ -22,6 +22,26 @@ async function getCallerProfile() {
   return data
 }
 
+function readableUserCreateError(message: string) {
+  const lower = message.toLowerCase()
+  if (lower.includes('already') || lower.includes('duplicate') || lower.includes('unique')) {
+    return '此帳號已存在，請確認身分證字號是否已建立過'
+  }
+  if (lower.includes('password')) {
+    return '密碼不符合規則，請至少輸入 6 碼'
+  }
+  if (lower.includes('email')) {
+    return '帳號格式無法建立，請確認身分證字號欄位是否正確'
+  }
+  if (lower.includes('check constraint') && lower.includes('role')) {
+    return '角色尚未被資料庫允許，請先更新角色權限設定'
+  }
+  if (lower.includes('violates row-level security')) {
+    return '資料庫權限不足，請確認管理權限設定'
+  }
+  return message
+}
+
 export async function createUser(formData: {
   name: string
   account: string      // 身分證字號
@@ -56,7 +76,7 @@ export async function createUser(formData: {
     password: formData.password,
     email_confirm: true,
   })
-  if (authError) return { error: authError.message }
+  if (authError) return { error: readableUserCreateError(authError.message) }
 
   const isOwner = formData.role === '老闆'
   const storeIds = isOwner ? [] : [...new Set(formData.store_ids)]
@@ -96,7 +116,7 @@ export async function createUser(formData: {
   })
   if (profileError) {
     await admin.auth.admin.deleteUser(authUser.user.id)
-    return { error: profileError.message }
+    return { error: readableUserCreateError(profileError.message) }
   }
 
   revalidatePath('/hq/users')
