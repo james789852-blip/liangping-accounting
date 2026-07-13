@@ -9,6 +9,7 @@ import { saveCKDailyRecord, confirmCKReimbursementHandoff } from '@/app/actions/
 import CKHelp from './ck-help'
 import { uploadToStorage } from '@/app/actions/upload'
 import { compressImage } from '@/lib/compress-image'
+import SafePhotoImage from '@/components/shared/safe-photo-image'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -390,7 +391,7 @@ function CKDoneCard({
               <div className="grid grid-cols-4 gap-2 mt-3">
                 {hqReimbursementPhotoUrls.map((url, i) => (
                   <button key={`${url}-${i}`} type="button" onClick={() => setLightboxUrl(url)} style={{ aspectRatio: '1' }}>
-                    <img src={url} alt={`補款照片 ${i + 1}`} className="h-full w-full rounded-lg object-cover"
+                    <SafePhotoImage src={url} alt={`補款照片 ${i + 1}`} thumb width={180} height={180} className="h-full w-full rounded-lg object-cover"
                       style={{ border: `1px solid ${confirmed ? '#bbf7d0' : '#FDE68A'}` }} />
                   </button>
                 ))}
@@ -455,7 +456,7 @@ function CKDoneCard({
             style={{ background: 'rgba(255,255,255,0.15)', color: 'white' }}>
             <X className="h-5 w-5" />
           </button>
-          <img src={lightboxUrl} alt="補款照片" className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl"
+          <SafePhotoImage src={lightboxUrl} alt="補款照片" loading="eager" className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl"
             onClick={e => e.stopPropagation()} />
         </div>
       )}
@@ -1025,7 +1026,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                 <button key={`${url}-quick-${i}`} type="button" onClick={() => setSelectedPhotoUrl(url)}
                   className="h-16 w-16 rounded-xl overflow-hidden shrink-0"
                   style={{ border: `2px solid ${selectedPhotoUrl === url ? '#F59E0B' : '#e4e4e7'}`, background: '#f4f4f5' }}>
-                  <img src={url} alt={`收據 ${i + 1}`} className="h-full w-full object-cover" />
+                  <SafePhotoImage src={url} alt={`收據 ${i + 1}`} thumb width={240} height={240} className="h-full w-full object-cover" />
                 </button>
               ))}
               {photoUrls.length > 8 && (
@@ -1157,7 +1158,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                   <button type="button" onClick={() => setLightboxUrl((e as any).receipt_photo_url)}
                     className="h-12 w-12 rounded-xl overflow-hidden shrink-0"
                     style={{ border: '1px solid #e4e4e7', background: '#f4f4f5' }}>
-                    <img src={(e as any).receipt_photo_url} alt="支出照片" className="h-full w-full object-cover" />
+                    <SafePhotoImage src={(e as any).receipt_photo_url} alt="支出照片" thumb width={240} height={240} className="h-full w-full object-cover" />
                   </button>
                 )}
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0"
@@ -1222,7 +1223,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                           <button type="button" onClick={() => setLightboxUrl(form.photoUrl)}
                             className="relative h-16 w-16 rounded-xl overflow-hidden shrink-0"
                             style={{ border: '1px solid #e4e4e7', background: '#f4f4f5' }}>
-                            <img src={form.photoUrl} alt={`支出照片 ${index + 1}`} className="h-full w-full object-cover" />
+                            <SafePhotoImage src={form.photoUrl} alt={`支出照片 ${index + 1}`} thumb width={240} height={240} className="h-full w-full object-cover" />
                             <span className="absolute bottom-1 right-1 h-5 w-5 rounded-full flex items-center justify-center"
                               style={{ background: 'rgba(0,0,0,0.55)', color: 'white' }}>
                               <ZoomIn className="h-3 w-3" />
@@ -1265,7 +1266,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                           <button type="button" onClick={() => setLightboxUrl(form.photoUrl)}
                             className="relative h-24 w-24 md:h-28 md:w-28 rounded-2xl overflow-hidden shrink-0"
                             style={{ border: '1px solid #e4e4e7', background: '#f4f4f5' }}>
-                            <img src={form.photoUrl} alt={`支出照片 ${index + 1}`} className="h-full w-full object-cover" />
+                            <SafePhotoImage src={form.photoUrl} alt={`支出照片 ${index + 1}`} thumb width={240} height={240} className="h-full w-full object-cover" />
                             <span className="absolute bottom-1 right-1 h-7 w-7 rounded-full flex items-center justify-center"
                               style={{ background: 'rgba(0,0,0,0.55)', color: 'white' }}>
                               <ZoomIn className="h-3.5 w-3.5" />
@@ -1445,7 +1446,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
             style={{ background: 'rgba(255,255,255,0.15)', color: 'white' }}>
             <X className="h-5 w-5" />
           </button>
-          <img src={lightboxUrl} alt="收據" className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl"
+          <SafePhotoImage src={lightboxUrl} alt="收據" loading="eager" className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl"
             onClick={e => e.stopPropagation()} />
         </div>
       )}

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { ChevronDown, ChevronUp, X, ZoomIn, Camera } from 'lucide-react'
+import SafePhotoImage from '@/components/shared/safe-photo-image'
 
 interface ReceiptItem {
   item_name: string
@@ -43,7 +44,7 @@ function ReceiptCard({ receipt, onZoom }: { receipt: ReceiptPhotoItem; onZoom: (
         <div className="flex items-center gap-2.5 min-w-0">
           {receipt.photo_url ? (
             <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0" style={{ border: '1px solid #e4e4e7' }}>
-              <img src={receipt.photo_url} alt="" className="w-full h-full object-cover" />
+              <SafePhotoImage src={receipt.photo_url} alt="" className="w-full h-full object-cover" thumb width={64} height={64} />
             </div>
           ) : (
             <div className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center" style={{ background: '#f4f4f5' }}>
@@ -90,11 +91,12 @@ function ReceiptCard({ receipt, onZoom }: { receipt: ReceiptPhotoItem; onZoom: (
           {/* 照片 */}
           {receipt.photo_url && (
             <div className="relative group cursor-pointer" onClick={() => onZoom(receipt.photo_url!)}>
-              <img
+              <SafePhotoImage
                 src={receipt.photo_url}
                 alt={receipt.vendor_name ?? '收據'}
                 className="w-full object-contain rounded-xl"
                 style={{ maxHeight: '300px', background: '#f1f5f9', border: '1px solid #e4e4e7' }}
+                thumb width={900} height={600}
               />
               <div className="absolute inset-0 flex items-center justify-center rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"
                 style={{ background: 'rgba(0,0,0,0.25)' }}>
@@ -145,10 +147,11 @@ export default function ReceiptPhotoViewer({ receipts }: { receipts: ReceiptPhot
           >
             <X className="h-5 w-5" />
           </button>
-          <img
+          <SafePhotoImage
             src={lightbox}
             alt="收據"
             className="max-w-full max-h-full object-contain rounded-xl"
+            loading="eager"
             onClick={e => e.stopPropagation()}
           />
         </div>

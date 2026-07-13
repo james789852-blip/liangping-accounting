@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, CheckCircle2, Loader2, Banknote, Camera, X, Upl
 import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
 import { toast } from 'sonner'
+import SafePhotoImage from './safe-photo-image'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -239,7 +240,7 @@ function PayButton({
           <div className="grid grid-cols-4 gap-2">
             {photoUrls.map((url, i) => (
               <button key={`${url}-${i}`} type="button" onClick={() => onPreview(url)} className="block" style={{ aspectRatio: '1' }}>
-                <img src={url} alt={`補款照片 ${i + 1}`} loading="lazy" decoding="async" className="h-full w-full rounded-lg object-cover" style={{ border: '1px solid #bbf7d0' }} />
+                <SafePhotoImage src={url} alt={`補款照片 ${i + 1}`} thumb width={180} height={180} className="h-full w-full rounded-lg object-cover" style={{ border: '1px solid #bbf7d0' }} />
               </button>
             ))}
           </div>
@@ -271,7 +272,7 @@ function PayButton({
           {photoUrls.map((url, i) => (
             <div key={`${url}-${i}`} className="relative" style={{ aspectRatio: '1' }}>
               <button type="button" onClick={() => onPreview(url)} className="block h-full w-full">
-                <img src={url} alt={`補款照片 ${i + 1}`} loading="lazy" decoding="async" className="h-full w-full rounded-lg object-cover" style={{ border: '1px solid #FDE68A' }} />
+                <SafePhotoImage src={url} alt={`補款照片 ${i + 1}`} thumb width={180} height={180} className="h-full w-full rounded-lg object-cover" style={{ border: '1px solid #FDE68A' }} />
               </button>
               <button type="button" onClick={() => setPhotoUrls(prev => prev.filter((_, idx) => idx !== i))}
                 className="absolute -right-1 -top-1 h-5 w-5 rounded-full flex items-center justify-center"
@@ -445,7 +446,7 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                     {d.receiptPhotoUrls!.map((url, i) => (
                       <button key={url} type="button" onClick={() => setLightboxUrl(url)}
                         className="relative group" style={{ aspectRatio: '1' }}>
-                        <img src={url} alt={`收據 ${i + 1}`} loading="lazy" decoding="async"
+                        <SafePhotoImage src={url} alt={`收據 ${i + 1}`} thumb width={240} height={240}
                           className="w-full h-full object-cover rounded-xl"
                           style={{ border: '1px solid #e4e4e7' }} />
                       </button>
@@ -494,7 +495,7 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
             style={{ background: 'rgba(255,255,255,0.15)', color: 'white' }}>
             <X className="h-5 w-5" />
           </button>
-          <img src={lightboxUrl} alt="收據" className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl"
+          <SafePhotoImage src={lightboxUrl} alt="收據" loading="eager" className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl"
             onClick={e => e.stopPropagation()} />
         </div>
       )}

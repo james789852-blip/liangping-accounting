@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { X, ZoomIn } from 'lucide-react'
+import SafePhotoImage from '@/components/shared/safe-photo-image'
 
 interface PhotoItem { label: string; url: string }
 
@@ -15,9 +16,10 @@ export default function PhotoGrid({ photos }: { photos: PhotoItem[] }) {
           <div key={i} className="relative group cursor-pointer rounded-xl overflow-hidden"
             style={{ border: '1px solid #e4e4e7' }}
             onClick={() => setLightbox(p.url)}>
-            <img src={p.url} alt={p.label}
+            <SafePhotoImage src={p.url} alt={p.label}
               className="w-full object-cover"
-              style={{ height: photos.length === 1 ? '200px' : '120px', display: 'block' }} />
+              style={{ height: photos.length === 1 ? '200px' : '120px', display: 'block' }}
+              thumb width={photos.length === 1 ? 900 : 360} height={photos.length === 1 ? 500 : 240} />
             <div className="absolute inset-0 flex items-end p-2"
               style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 60%)' }}>
               <span className="text-white text-xs font-medium">{p.label}</span>
@@ -38,8 +40,9 @@ export default function PhotoGrid({ photos }: { photos: PhotoItem[] }) {
             style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', padding: '8px', cursor: 'pointer', color: 'white' }}>
             <X className="h-5 w-5" />
           </button>
-          <img src={lightbox} alt=""
+          <SafePhotoImage src={lightbox} alt=""
             className="max-w-full max-h-full object-contain rounded-xl"
+            loading="eager"
             onClick={e => e.stopPropagation()} />
         </div>
       )}

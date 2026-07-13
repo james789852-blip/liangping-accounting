@@ -5,6 +5,7 @@ import { FileText, Plus, Trash2, ChevronDown, ChevronUp, Edit2, Check, X, Receip
 import { deleteReceipt, updateReceipt } from '@/app/actions/receipts'
 import ReceiptUpload from './receipt-upload'
 import Link from 'next/link'
+import SafePhotoImage from '@/components/shared/safe-photo-image'
 
 interface ReceiptItem {
   id: string; item_name: string; quantity?: number; unit?: string; unit_price?: number; amount: number; excel_column: string; item_category: string
@@ -200,9 +201,10 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
       {/* Photo */}
       {showPhoto && receipt.photo_url && (
         <div className="px-4 pb-3">
-          <img src={receipt.photo_url} alt="receipt"
+          <SafePhotoImage src={receipt.photo_url} alt="receipt"
             className="w-full max-h-64 object-contain rounded-xl"
-            style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }} />
+            style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }}
+            thumb width={900} height={600} />
         </div>
       )}
 

@@ -13,6 +13,7 @@ import { createSignedUploadUrl, uploadToStorage } from '@/app/actions/upload'
 import { compressImage } from '@/lib/compress-image'
 import { normalizeItemAmount } from '@/lib/negative-items'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
+import SharedSafePhotoImage from '@/components/shared/safe-photo-image'
 
 interface RemittanceAdjustment {
   id: string
@@ -70,54 +71,7 @@ function SafeImage({
   style?: CSSProperties
   fallbackText?: string
 }) {
-  const [currentSrc, setCurrentSrc] = useState(src ?? '')
-  const [retried, setRetried] = useState(false)
-  const [failed, setFailed] = useState(false)
-
-  useEffect(() => {
-    setCurrentSrc(src ?? '')
-    setRetried(false)
-    setFailed(false)
-  }, [src])
-
-  if (!currentSrc || failed) {
-    return (
-      <div className={className} style={{
-        ...style,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexDirection: 'column',
-        gap: '3px',
-        background: '#f8fafc',
-        color: '#94a3b8',
-        fontSize: '10px',
-        fontWeight: 700,
-        textAlign: 'center',
-        lineHeight: 1.25,
-      }}>
-        <FileText style={{ width: '18px', height: '18px' }} />
-        <span>{fallbackText}</span>
-      </div>
-    )
-  }
-
-  return (
-    <img
-      src={currentSrc}
-      alt={alt}
-      className={className}
-      style={style}
-      onError={() => {
-        if (!retried && /^https?:\/\//.test(currentSrc)) {
-          setRetried(true)
-          setCurrentSrc(`${currentSrc}${currentSrc.includes('?') ? '&' : '?'}img_retry=${Date.now()}`)
-          return
-        }
-        setFailed(true)
-      }}
-    />
-  )
+  return <SharedSafePhotoImage src={src} alt={alt} className={className} style={style} fallbackText={fallbackText} thumb width={900} height={600} />
 }
 
 async function uploadReceiptPhoto(path: string, rawFile: File): Promise<{ publicUrl: string } | { error: string }> {
@@ -616,7 +570,7 @@ const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, on
       </div>
       <button type="button" onClick={onLightbox}
         style={{ width: '100%', display: 'block', border: 'none', padding: 0, cursor: 'zoom-in', background: '#f8fafc', overflow: 'hidden' }}>
-        <img src={src} alt={alt}
+        <SharedSafePhotoImage src={src} alt={alt} loading="eager"
           style={{
             width: '100%',
             maxHeight: '430px',
@@ -625,7 +579,7 @@ const StickyPhotoCard = memo(function StickyPhotoCard({ src, alt, onLightbox, on
             display: 'block',
             // 強制讀 EXIF 方向，避免手機直拍照片在瀏覽器上顯示歪掉
             imageOrientation: 'from-image' as any,
-          }} />
+            }} />
       </button>
     </div>
   )
@@ -668,7 +622,7 @@ function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo,
               padding: 0,
             }}>
             {hasPhoto ? (
-              <img src={photo!.previewUrl} alt="preview" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', borderRadius: '11px' }} />
+              <SharedSafePhotoImage src={photo!.previewUrl} alt="preview" thumb width={160} height={112} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', borderRadius: '11px' }} />
             ) : (
               <>
                 <span>{isUploading ? <Loader2 style={{ width: '18px', height: '18px' }} className="animate-spin" /> : <Camera style={{ width: '18px', height: '18px' }} />}</span>
@@ -2315,7 +2269,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             onClick={() => setPhotoLightbox(null)}>
             <X className="h-6 w-6 text-white" />
           </button>
-          <img src={photoLightbox} alt="receipt"
+          <SharedSafePhotoImage src={photoLightbox} alt="receipt" loading="eager"
             style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '12px' }}
             onClick={e => e.stopPropagation()} />
         </div>
@@ -2626,7 +2580,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               </div>
                               <button type="button" onClick={() => setPhotoLightbox(photoSrc)}
                                 style={{ width: '100%', display: 'block', border: 'none', padding: 0, cursor: 'zoom-in', background: '#f8fafc' }}>
-                                <img src={photoSrc} alt="收據"
+                                <SharedSafePhotoImage src={photoSrc} alt="收據" thumb width={1200} height={900}
                                   style={{
                                     width: '100%',
                                     maxHeight: photoH,
@@ -2658,7 +2612,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               border: 'none', padding: 0,
                             }}>
                           {photoSrc ? (
-                            <img src={photoSrc} alt="receipt" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <SharedSafePhotoImage src={photoSrc} alt="receipt" thumb width={180} height={220} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           ) : (
                             <FileText className="h-8 w-8" style={{ color: '#a1a1aa' }} />
                           )}
@@ -3060,7 +3014,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             {editPhotoPreview ? (
                               <button type="button" onClick={() => setPhotoLightbox(editPhotoPreview)}
                                 style={{ width: '100%', height: '100%', border: 'none', padding: 0, cursor: 'zoom-in', background: 'none' }}>
-                                <img src={editPhotoPreview} alt="收據" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <SharedSafePhotoImage src={editPhotoPreview} alt="收據" thumb width={180} height={220} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                               </button>
                             ) : (
                               <FileText className="h-8 w-8" style={{ color: '#a1a1aa' }} />
@@ -4058,7 +4012,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       <button type="button" onClick={() => setPhotoLightbox((envelopePhotoPreview || envelopePhotoUrl)!)}
                         className="relative shrink-0 rounded-xl overflow-hidden"
                         style={{ width: '56px', height: '56px', padding: 0, border: 'none', cursor: 'pointer' }}>
-                        <img src={envelopePhotoPreview || envelopePhotoUrl} alt="信封袋"
+                        <SharedSafePhotoImage src={envelopePhotoPreview || envelopePhotoUrl} alt="信封袋" thumb width={160} height={160}
                           style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         <div className="absolute inset-0 flex items-center justify-center"
                           style={{ background: 'rgba(0,0,0,0.25)' }}>
@@ -4425,7 +4379,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     <div key={i} className="relative rounded-lg overflow-hidden" style={{ height: '60px' }}>
                       <button type="button" onClick={() => setPhotoLightbox(url)}
                         style={{ display: 'block', width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer' }}>
-                        <img src={url} alt={`作廢發票 ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <SharedSafePhotoImage src={url} alt={`作廢發票 ${i + 1}`} thumb width={160} height={160} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         <div className="absolute inset-0 flex items-center justify-center"
                           style={{ background: 'rgba(0,0,0,0.18)' }}>
                           <ZoomIn className="h-3.5 w-3.5" style={{ color: '#fff' }} />
@@ -4457,7 +4411,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   <button type="button" onClick={() => setPhotoLightbox((notePhotoPreview || notePhotoUrl)!)}
                     className="relative shrink-0 rounded-xl overflow-hidden"
                     style={{ width: '56px', height: '56px', padding: 0, border: 'none', cursor: 'pointer' }}>
-                    <img src={notePhotoPreview || notePhotoUrl} alt="備註照片"
+                    <SharedSafePhotoImage src={notePhotoPreview || notePhotoUrl} alt="備註照片" thumb width={160} height={160}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     <div className="absolute inset-0 flex items-center justify-center"
                       style={{ background: 'rgba(0,0,0,0.25)' }}>
@@ -4560,9 +4514,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                   {/* 照片區域 */}
                   <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: '8px' }}>
-                    <img
+                    <SharedSafePhotoImage
                       src={reviewItem.photoUrl}
                       alt="receipt"
+                      loading="eager"
                       style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px', display: 'block' }}
                     />
                   </div>
@@ -4934,7 +4889,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         <div key={idx} className="flex items-center gap-3 rounded-xl px-3 py-2" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
                           <button type="button" onClick={() => setPhotoLightbox(p.url)}
                             style={{ width: 56, height: 56, borderRadius: 10, overflow: 'hidden', border: '1px solid #e4e4e7', padding: 0, background: 'none', cursor: 'zoom-in', flexShrink: 0 }}>
-                            <img src={p.url} alt={p.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <SharedSafePhotoImage src={p.url} alt={p.label} thumb width={160} height={160} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           </button>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <input value={p.label}

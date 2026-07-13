@@ -23,8 +23,14 @@ export default function PhotoLightbox({
       if (e.key === 'ArrowRight') onNext()
     }
     window.addEventListener('keydown', onKey)
+    const neighbors = [photos[index - 1]?.url, photos[index + 1]?.url].filter(Boolean) as string[]
+    neighbors.forEach(url => {
+      const image = new Image()
+      image.decoding = 'async'
+      image.src = url
+    })
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, onPrev, onNext])
+  }, [index, onClose, onPrev, onNext, photos])
 
   const photo = photos[index]
   if (!photo) return null

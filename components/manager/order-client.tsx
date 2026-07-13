@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { ShoppingCart, ChevronDown, ChevronUp } from 'lucide-react'
+import SafePhotoImage from '@/components/shared/safe-photo-image'
 
 interface ReceiptItem { id: string; item_name: string; amount: number; excel_column: string; item_category: string }
 interface Receipt {
@@ -84,9 +85,10 @@ function VendorCard({ vendor, items }: { vendor: string; items: Receipt[] }) {
                     </div>
                   </div>
                   {photoId === r.id && r.photo_url && (
-                    <img src={r.photo_url} alt="receipt"
+                    <SafePhotoImage src={r.photo_url} alt="receipt"
                       className="w-full max-h-56 object-contain rounded-xl mt-2"
-                      style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }} />
+                      style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }}
+                      thumb width={900} height={560} />
                   )}
                 </div>
               ))}

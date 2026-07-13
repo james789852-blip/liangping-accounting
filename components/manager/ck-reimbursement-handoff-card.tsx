@@ -5,6 +5,7 @@ import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { CheckCircle2, X } from 'lucide-react'
 import { confirmCKReimbursementHandoff } from '@/app/actions/ck'
+import SafePhotoImage from '@/components/shared/safe-photo-image'
 
 type PendingReimbursement = {
   id: string
@@ -101,8 +102,7 @@ export default function CKReimbursementHandoffCard({ ckStoreId, items }: Props) 
                       className="block h-20 w-20 flex-shrink-0 cursor-zoom-in overflow-hidden rounded-xl bg-orange-50"
                       aria-label={`放大補款信封照片 ${index + 1}`}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={url} alt="補款信封照片" className="h-full w-full object-cover" />
+                      <SafePhotoImage src={url} alt="補款信封照片" className="h-full w-full object-cover" thumb width={160} height={160} />
                     </button>
                   ))}
                 </div>
@@ -127,11 +127,11 @@ export default function CKReimbursementHandoffCard({ ckStoreId, items }: Props) 
           >
             <X className="h-5 w-5" />
           </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <SafePhotoImage
             src={previewUrl}
             alt="補款信封照片放大預覽"
             className="max-h-[85vh] max-w-[92vw] rounded-xl object-contain shadow-2xl"
+            loading="eager"
             onClick={event => event.stopPropagation()}
           />
         </div>
