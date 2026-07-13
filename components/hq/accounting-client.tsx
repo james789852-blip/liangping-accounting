@@ -51,6 +51,7 @@ interface Props {
   closings: ClosingRow[]
   ckRecords: CKRow[]
   holidayStoreIds: string[]
+  initialDetailByStore: Record<string, { closing: any; receipts: any[] }>
 }
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -105,13 +106,21 @@ function ckStatusBadges(status: string, hqPaid: boolean, handoffConfirmed: boole
 export default function AccountingClient({
   stores, ckStores, date,
   initialStoreId, initialCkStoreId, initialTab,
-  closings, ckRecords, holidayStoreIds,
+  closings, ckRecords, holidayStoreIds, initialDetailByStore,
 }: Props) {
   const router = useRouter()
   const [tab, setTab] = useState<'store' | 'ck'>(initialTab)
   const [selectedStoreId, setSelectedStoreId] = useState<string>(initialStoreId)
   const [selectedCkStoreId, setSelectedCkStoreId] = useState<string>(initialCkStoreId)
-  const [storeDetailCache, setStoreDetailCache] = useState<StoreDetailCache>({})
+  const buildInitialStoreCache = useCallback((): StoreDetailCache => (
+    Object.fromEntries(
+      Object.entries(initialDetailByStore).map(([storeId, value]) => [storeId, {
+        stats: null,
+        detail: value,
+      }]),
+    )
+  ), [initialDetailByStore])
+  const [storeDetailCache, setStoreDetailCache] = useState<StoreDetailCache>(buildInitialStoreCache)
   const [showBatchHolidays, setShowBatchHolidays] = useState(false)
   const [showBatchExcel, setShowBatchExcel] = useState(false)
   const ckDetailCacheRef = useRef<Map<string, CKDetailState>>(new Map())
@@ -136,8 +145,8 @@ export default function AccountingClient({
   )).length
 
   useEffect(() => {
-    setStoreDetailCache({})
-  }, [date])
+    setStoreDetailCache(buildInitialStoreCache())
+  }, [buildInitialStoreCache, date])
 
   const rememberStoreDetail = useCallback((storeId: string, detail: StoreDetailState) => {
     setStoreDetailCache(prev => ({ ...prev, [storeId]: detail }))

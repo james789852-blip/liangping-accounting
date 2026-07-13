@@ -40,22 +40,44 @@ export default async function AccountingPage({
   const initialStoreId = await resolveHQStoreId(stores, params.storeId)
   const initialCkStoreId = await resolveHQStoreId(ckStores, params.ckStoreId)
 
-  // 撈當日所有店家 closings 狀態 + 央廚 records 狀態
-  const [{ data: closings }, { data: ckRecords }, { data: holidays }] = await Promise.all([
+  // 一次準備狀態卡與當日審核資料。切換店家時直接使用這份資料，避免每次點擊才重新查詢。
+  const [{ data: closings }, { data: ckRecords }, { data: holidays }, { data: receipts }] = await Promise.all([
     admin.from('daily_closings')
       .select(`
         id, store_id, business_date, status, note, dispute_note, submitted_by, updated_at,
         total_revenue, total_cost, total_expenses, expected_remit,
-        actual_remit, should_include_delivery, variance
+        actual_remit, should_include_delivery, variance, remittance_adjustments,
+        ck_delivery_photo_url, channel_photo_urls,
+        envelope_photo_url, void_invoice_photo_urls, note_photo_url, extra_photo_urls,
+        stores(id, name),
+        revenue_items(channel, account_name, gross_amount),
+        order_items(item_name, quantity, unit_price, total_amount),
+        handwrite_orders(order_number, amount, voided, void_reason),
+        expense_items(description, amount)
       `)
       .eq('business_date', date),
     admin.from('ck_daily_records')
       .select('ck_store_id, status, hq_paid, ck_reimbursement_confirmed, updated_at')
       .eq('business_date', date),
     admin.from('store_holidays').select('store_id').eq('holiday_date', date),
+    admin.from('receipts')
+      .select('id, store_id, business_date, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
+      .eq('business_date', date)
+      .order('created_at'),
   ])
 
   const holidayIds = new Set((holidays ?? []).map((h: any) => h.store_id as string))
+  const receiptsByStore: Record<string, any[]> = {}
+  for (const receipt of (receipts ?? []) as any[]) {
+    if (!receiptsByStore[receipt.store_id]) receiptsByStore[receipt.store_id] = []
+    receiptsByStore[receipt.store_id].push(receipt)
+  }
+  const initialDetailByStore = Object.fromEntries(
+    (closings ?? []).map((closing: any) => [closing.store_id, {
+      closing,
+      receipts: receiptsByStore[closing.store_id] ?? [],
+    }]),
+  )
 
   return (
     <AccountingClient
@@ -68,6 +90,7 @@ export default async function AccountingPage({
       closings={(closings ?? []) as any[]}
       ckRecords={(ckRecords ?? []) as any[]}
       holidayStoreIds={[...holidayIds]}
+      initialDetailByStore={initialDetailByStore}
     />
   )
 }

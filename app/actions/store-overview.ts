@@ -315,32 +315,33 @@ export async function fetchDailyClosingWithReceipts(storeId: string, date: strin
   if (!storeId || !date) return { error: '缺少參數' as const }
 
   const admin = createAdminClient()
-  const { data: closings } = await admin
-    .from('daily_closings')
-    .select(`
-      id, business_date, status, note, dispute_note, submitted_by,
-      total_revenue, total_cost, total_expenses, expected_remit, variance,
-      actual_remit, should_include_delivery, remittance_adjustments,
-      ck_delivery_photo_url, channel_photo_urls,
-      envelope_photo_url, void_invoice_photo_urls, note_photo_url, extra_photo_urls,
-      stores(id, name),
-      revenue_items(channel, account_name, gross_amount),
-      order_items(item_name, quantity, unit_price, total_amount),
-      handwrite_orders(order_number, amount, voided, void_reason),
-      expense_items(description, amount)
-    `)
-    .eq('store_id', storeId)
-    .eq('business_date', date)
+  const [closingsRes, receiptsRes] = await Promise.all([
+    admin.from('daily_closings')
+      .select(`
+        id, business_date, status, note, dispute_note, submitted_by,
+        total_revenue, total_cost, total_expenses, expected_remit, variance,
+        actual_remit, should_include_delivery, remittance_adjustments,
+        ck_delivery_photo_url, channel_photo_urls,
+        envelope_photo_url, void_invoice_photo_urls, note_photo_url, extra_photo_urls,
+        stores(id, name),
+        revenue_items(channel, account_name, gross_amount),
+        order_items(item_name, quantity, unit_price, total_amount),
+        handwrite_orders(order_number, amount, voided, void_reason),
+        expense_items(description, amount)
+      `)
+      .eq('store_id', storeId)
+      .eq('business_date', date),
+    admin.from('receipts')
+      .select('id, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, amount), created_at')
+      .eq('store_id', storeId)
+      .eq('business_date', date)
+      .order('created_at'),
+  ])
 
-  const closing = closings?.[0] ?? null
-  let receipts: any[] = []
+  const closing = closingsRes.data?.[0] ?? null
+  let receipts: any[] = receiptsRes.data ?? []
   let submitterName: string | null = null
   if (closing) {
-    const { data: recs } = await admin.from('receipts')
-      .select('id, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, amount), created_at')
-      .eq('store_id', storeId).eq('business_date', date)
-      .order('created_at')
-    receipts = recs ?? []
     if (includeSubmitter && closing.submitted_by) {
       const { data: prof } = await admin.from('user_profiles').select('name').eq('user_id', closing.submitted_by).maybeSingle()
       submitterName = prof?.name ?? null
