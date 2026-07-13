@@ -69,14 +69,15 @@ export default async function ManagerDashboard() {
       supabase.from('daily_closings')
         .select('id, business_date, status, total_revenue, should_include_delivery, variance')
         .eq('store_id', storeId).order('business_date', { ascending: false }).limit(8),
-      // 央廚對帳異常：過去 7 天該店 ck_confirmed_amount 跟自報 amount 不一致
+      // 央廚對帳異常：過去 7 天以店面 daily_closings.total_cost 對比央廚確認金額。
+      // ck_store_orders.amount 是歷史同步欄位，不能當作店面結帳畫面顯示的自報金額。
       admin.from('ck_store_orders')
         .select('amount, ck_confirmed_amount, ck_daily_record_id, ck_daily_records!inner(business_date)')
         .eq('store_id', storeId)
         .not('ck_confirmed_amount', 'is', null)
         .gte('ck_daily_records.business_date', sevenDaysAgoStr),
       admin.from('daily_closings')
-        .select('business_date')
+        .select('business_date, total_cost')
         .eq('store_id', storeId)
         .gte('business_date', sevenDaysAgoStr)
         .lte('business_date', today)
@@ -346,14 +347,27 @@ export default async function ManagerDashboard() {
     todayClosing = closingRes.data
     recentClosings = (recentRes.data ?? []).filter((c: any) => c.business_date !== today).slice(0, 7)
 
-    const validClosingDates = new Set((validClosingRes.data ?? []).map((c: any) => c.business_date as string))
+    const storeCostByDate = new Map(
+      (validClosingRes.data ?? []).map((c: any) => [
+        c.business_date as string,
+        Number(c.total_cost ?? 0),
+      ])
+    )
     ckMismatches = (ckMismatchRes.data ?? [])
-      .filter((o: any) => validClosingDates.has((o.ck_daily_records as any)?.business_date as string))
-      .filter((o: any) => o.ck_confirmed_amount != null && Number(o.ck_confirmed_amount) !== Number(o.amount))
-      .map((o: any) => ({
-        business_date: (o.ck_daily_records as any)?.business_date as string,
-        amount: Number(o.amount),
-        ck_confirmed_amount: Number(o.ck_confirmed_amount),
+      .map((o: any) => {
+        const businessDate = (o.ck_daily_records as any)?.business_date as string
+        return {
+          business_date: businessDate,
+          amount: storeCostByDate.get(businessDate) ?? 0,
+          ck_confirmed_amount: Number(o.ck_confirmed_amount),
+        }
+      })
+      .filter((o) => storeCostByDate.has(o.business_date))
+      .filter((o) => o.ck_confirmed_amount !== o.amount)
+      .map((o) => ({
+        business_date: o.business_date,
+        amount: o.amount,
+        ck_confirmed_amount: o.ck_confirmed_amount,
       }))
       .sort((a, b) => b.business_date.localeCompare(a.business_date))
   }
@@ -386,6 +400,18 @@ export default async function ManagerDashboard() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 lg:px-6 pt-5 pb-28 lg:pb-8" style={{ maxWidth: '800px' }}>
+
+        <Link href="/manager/holidays" className="flex items-center justify-between gap-3 rounded-2xl px-4 py-3 mb-4 transition-opacity hover:opacity-85"
+          style={{ background: '#faf5ff', border: '1px solid #e9d5ff', color: '#6b21a8' }}>
+          <span className="flex items-center gap-2 min-w-0">
+            <CalendarDays className="h-4 w-4 shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-sm font-bold">設定公休</span>
+              <span className="block text-xs mt-0.5 truncate" style={{ color: '#7e22ce' }}>店休或央廚休息可一次設定日期區間</span>
+            </span>
+          </span>
+          <ArrowRight className="h-4 w-4 shrink-0" />
+        </Link>
 
         {/* 央廚對帳異常橫幅 — 過去 7 天店家自報 vs 央廚對帳金額不一致 */}
         {ckMismatches.length > 0 && (

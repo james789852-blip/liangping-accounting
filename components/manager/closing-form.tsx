@@ -1216,6 +1216,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     () => calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, largeCashExpenses),
     [data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, largeCashExpenses],
   )
+  // 信封袋實際裝的是完成匯款調整、扣除預留款後要交回 HQ 的金額。
+  // 例如整筆現金預留營業稅時 remitToHQ = 0，當天不會有信封，也不應要求照片。
+  const requiresEnvelopePhoto = s.remitToHQ > 0
   const isLocked = (status === 'submitted' || status === 'verified') && !submitDone
   const isDisputed = status === 'disputed'
   const disputeNote = existingClosing?.dispute_note ?? ''
@@ -1769,7 +1772,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
     const envelopeFinal = envelopePhotoUrl || envelopePhotoPreview
     if (envelopeFinal) {
-      items.push({ key: 'envelope', type: 'envelope', label: '信封袋', photoUrl: envelopeFinal, inputAmount: s.actualRemit, confirmed: false })
+      items.push({ key: 'envelope', type: 'envelope', label: '信封袋', photoUrl: envelopeFinal, inputAmount: s.remitToHQ, confirmed: false })
     }
     voidInvoicePhotos.forEach((url, i) => {
       items.push({ key: `void_invoice_${i}`, type: 'void_invoice', label: `作廢發票 ${i + 1}`, photoUrl: url, inputAmount: 0, confirmed: false })
@@ -2245,7 +2248,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       }
     }
     if (stepId === 'summary' && !isLocked) {
-      if (s.actualRemit > 0 && !envelopePhotoUrl && !envelopePhotoPreview) {
+      if (requiresEnvelopePhoto && !envelopePhotoUrl && !envelopePhotoPreview) {
         toast.error('信封袋有金額，請先上傳信封袋照片')
         return
       }
@@ -4101,8 +4104,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 </div>
                 <div className="flex justify-between items-center px-4 py-3 rounded-2xl mt-2"
                   style={{ background: 'linear-gradient(135deg,#1e1b4b,#312e81)', border: '2px solid #92400E' }}>
-                  <span className="text-sm font-bold" style={{ color: '#FDE68A' }}>實際包進信封（現金 − 零用金）</span>
-                  <span className="text-2xl font-extrabold tabular-nums" style={{ color: '#fff', letterSpacing: '-0.02em' }}>${fmt(s.actualRemit)}</span>
+                  <span className="text-sm font-bold" style={{ color: '#FDE68A' }}>今日實際匯入（調整／預留後）</span>
+                  <span className="text-2xl font-extrabold tabular-nums" style={{ color: '#fff', letterSpacing: '-0.02em' }}>${fmt(s.remitToHQ)}</span>
                 </div>
                 {/* Envelope bag photo */}
                 <div className="mt-3">
@@ -4137,13 +4140,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       onClick={() => envelopePhotoInputRef.current?.click()}
                       className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium"
                       style={{
-                        background: s.actualRemit > 0 ? '#FEF2F2' : '#fafafa',
-                        color: s.actualRemit > 0 ? '#dc2626' : '#a1a1aa',
-                        border: `1.5px dashed ${s.actualRemit > 0 ? '#fca5a5' : '#d4d4d8'}`,
+                        background: requiresEnvelopePhoto ? '#FEF2F2' : '#fafafa',
+                        color: requiresEnvelopePhoto ? '#dc2626' : '#a1a1aa',
+                        border: `1.5px dashed ${requiresEnvelopePhoto ? '#fca5a5' : '#d4d4d8'}`,
                         cursor: isLocked ? 'default' : 'pointer',
                       }}>
                       <Camera className="h-4 w-4" />
-                      {s.actualRemit > 0 ? '請上傳信封袋照片（必填）' : '上傳信封袋照片（選填）'}
+                      {requiresEnvelopePhoto ? '請上傳信封袋照片（必填）' : '今日無實匯入，不需上傳信封袋照片'}
                     </button>
                   )}
                 </div>
