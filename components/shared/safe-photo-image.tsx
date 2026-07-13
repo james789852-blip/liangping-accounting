@@ -97,7 +97,6 @@ export default function SafePhotoImage({
   onClick?: MouseEventHandler<HTMLElement>
 }) {
   const nodeRef = useRef<HTMLImageElement | HTMLDivElement | null>(null)
-  const [visible, setVisible] = useState(loading === 'eager')
   const primarySrc = useMemo(() => {
     if (!src) return ''
     return thumb ? supabaseThumbUrl(src, width, height) : src
@@ -107,33 +106,12 @@ export default function SafePhotoImage({
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
-    setCurrentSrc(loading === 'eager' || visible ? primarySrc : '')
+    // Let the browser handle lazy loading. A custom IntersectionObserver can
+    // miss images inside nested scroll containers and leave them blank.
+    setCurrentSrc(primarySrc)
     setStep(0)
     setFailed(false)
-  }, [loading, primarySrc, visible])
-
-  useEffect(() => {
-    if (loading === 'eager') {
-      setVisible(true)
-      return
-    }
-    const node = nodeRef.current
-    if (!node || visible || typeof IntersectionObserver === 'undefined') {
-      if (!visible) setVisible(true)
-      return
-    }
-    const observer = new IntersectionObserver(
-      entries => {
-        if (entries.some(entry => entry.isIntersecting)) {
-          setVisible(true)
-          observer.disconnect()
-        }
-      },
-      { rootMargin: '360px 0px' },
-    )
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [loading, visible])
+  }, [primarySrc])
 
   const placeholder = (empty = false) => (
     <Placeholder
@@ -147,7 +125,6 @@ export default function SafePhotoImage({
   )
 
   if (!src) return placeholder()
-  if (!currentSrc && !failed) return placeholder(true)
   if (failed) return placeholder()
 
   return (
