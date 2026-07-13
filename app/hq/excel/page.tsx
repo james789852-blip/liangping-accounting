@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { FileSpreadsheet } from 'lucide-react'
 import HQExcelClient from './client'
 import { sortStores } from '@/lib/store-order'
+import { canExportReports } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,9 +14,14 @@ export default async function HQExcelPage() {
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('role, store_ids, is_hq').eq('user_id', user.id).single()
+    .from('user_profiles')
+    .select('role, store_ids, is_hq, can_export_reports')
+    .eq('user_id', user.id)
+    .single()
 
-  if (!profile?.store_ids?.length) {
+  const canExportAll = canExportReports(profile) || profile?.is_hq === true || profile?.role === '老闆'
+  const assignedStoreIds = (profile?.store_ids ?? []) as string[]
+  if (!canExportAll && assignedStoreIds.length === 0) {
     return (
       <div className="min-h-full flex items-center justify-center" style={{ background: '#fafafa' }}>
         <p className="text-sm" style={{ color: '#a1a1aa' }}>尚未指派店家</p>
@@ -24,12 +30,13 @@ export default async function HQExcelPage() {
   }
 
   const admin = createAdminClient()
-  const { data: storesRaw } = await admin
-    .from('stores')
-    .select('id, name')
-    .eq('active', true)
-    .in('id', profile.store_ids)
-  const stores = sortStores(storesRaw ?? [])
+  let query = admin.from('stores').select('id, name, type').eq('active', true)
+  if (!canExportAll) query = query.in('id', assignedStoreIds)
+  const { data: storesRaw } = await query
+  const stores = sortStores((storesRaw ?? []).filter((s: any) => (s.type ?? '店面') !== '央廚'))
+  const ckStores = (storesRaw ?? [])
+    .filter((s: any) => (s.type ?? '店面') === '央廚')
+    .sort((a: any, b: any) => a.name.localeCompare(b.name, 'zh-Hant'))
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -40,10 +47,10 @@ export default async function HQExcelPage() {
             Excel 匯出
           </div>
           <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>食耗成本匯出</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>選擇店家與月份，下載當月食耗成本報表</p>
+          <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>選擇店家、央廚與期間，單筆或批次下載 Excel</p>
         </div>
       </div>
-      <HQExcelClient stores={stores} />
+      <HQExcelClient stores={stores} ckStores={ckStores} />
     </div>
   )
 }
