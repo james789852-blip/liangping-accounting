@@ -25,7 +25,7 @@ type UserProfile = Record<string, any> & {
   user_id: string
   name: string
   role: string
-  store_ids?: string[] | null
+  store_ids?: string[]
   primary_store_id?: string | null
   is_hq?: boolean | null
   active?: boolean | null
