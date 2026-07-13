@@ -309,7 +309,7 @@ export async function fetchDailyAccountingDetailsBatch(storeIds: string[], date:
 }
 
 /** 撈當日 closing + receipts（給店家總覽 daily panel 內嵌審核卡用） */
-export async function fetchDailyClosingWithReceipts(storeId: string, date: string) {
+export async function fetchDailyClosingWithReceipts(storeId: string, date: string, includeSubmitter = true) {
   const auth = await checkHqAuth()
   if ('error' in auth) return auth
   if (!storeId || !date) return { error: '缺少參數' as const }
@@ -337,11 +337,11 @@ export async function fetchDailyClosingWithReceipts(storeId: string, date: strin
   let submitterName: string | null = null
   if (closing) {
     const { data: recs } = await admin.from('receipts')
-      .select('id, vendor_name, actual_vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
+      .select('id, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, amount), created_at')
       .eq('store_id', storeId).eq('business_date', date)
       .order('created_at')
     receipts = recs ?? []
-    if (closing.submitted_by) {
+    if (includeSubmitter && closing.submitted_by) {
       const { data: prof } = await admin.from('user_profiles').select('name').eq('user_id', closing.submitted_by).maybeSingle()
       submitterName = prof?.name ?? null
     }

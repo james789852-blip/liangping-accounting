@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays, FileArchive, Check, Square, X } from 'lucide-react'
-import { fetchDailyAccountingDetail } from '@/app/actions/store-overview'
+import { fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
 import { fetchCKDailyDetail } from '@/app/actions/ck-overview'
 import { setManagerStore } from '@/app/actions/store-select'
 import type { DailyStats } from '@/lib/store-aggregator'
@@ -724,6 +724,7 @@ function StoreDetail({
   const [y, m] = date.split('-').map(Number)
   const visibleStats = cachedDetail?.stats ?? stats
   const visibleDetail = cachedDetail?.detail ?? detail
+  const summaryClosing = quickClosing ?? visibleDetail?.closing ?? null
 
   const loadDetail = useCallback((force = false) => {
     const requestId = ++requestIdRef.current
@@ -738,7 +739,7 @@ function StoreDetail({
     } else {
       setLoading(true)
     }
-    fetchDailyAccountingDetail(storeId, date)
+    fetchDailyClosingWithReceipts(storeId, date, false)
       .then(result => {
         if (requestId !== requestIdRef.current) return
         if ('error' in result) {
@@ -747,7 +748,7 @@ function StoreDetail({
         }
         if (!('success' in result)) return
         const next = {
-          stats: result.stats ?? null,
+          stats: null,
           detail: { closing: result.closing, receipts: result.receipts ?? [] },
         }
         setStats(next.stats)
@@ -792,8 +793,8 @@ function StoreDetail({
         )}
         {visibleStats ? (
           <StoreStatsGrid data={visibleStats} closing={visibleDetail?.closing ?? quickClosing} />
-        ) : quickClosing ? (
-          <QuickClosingSummary closing={quickClosing} />
+        ) : summaryClosing ? (
+          <QuickClosingSummary closing={summaryClosing} />
         ) : loading ? (
           <SummarySkeleton />
         ) : (
@@ -818,7 +819,7 @@ function StoreDetail({
           />
         </div>
       )}
-      {!visibleDetail?.closing && visibleStats && !quickClosing && (
+      {!visibleDetail?.closing && !loading && !summaryClosing && (
         <div className="bg-white rounded-2xl p-4 text-center text-sm" style={{ color: '#a1a1aa', border: '1px solid #f4f4f5' }}>
           當日尚無帳目提交
         </div>
