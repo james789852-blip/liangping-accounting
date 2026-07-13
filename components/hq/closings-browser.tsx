@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Camera, Package, FileText, Search, CheckCircle, RotateCcw, Trash2, Loader2, BarChart2 as BarChart, Banknote, Wallet, ArrowLeftRight, Download, Sheet } from 'lucide-react'
 import { toast } from 'sonner'
 import { verifyClosing, disputeClosing, deleteClosing, reSyncMonthToSheets } from '@/app/actions/closings'
+import SafePhotoImage from './safe-photo-image'
 
 interface Store { id: string; name: string; type?: string }
 interface RemittanceAdjustment {
@@ -148,8 +149,10 @@ function Lightbox({ photos, index, onClose, onPrev, onNext }: {
       )}
 
       {/* 照片 */}
-      <img src={photo.url} alt={photo.label}
+      <SafePhotoImage src={photo.url} alt={photo.label}
         className="max-w-[88vw] max-h-[88vh] object-contain rounded-xl"
+        loading="eager"
+        fallbackText="照片載入中斷"
         onClick={e => e.stopPropagation()} />
 
       {/* 標籤 */}
@@ -168,7 +171,7 @@ function PhotoThumb({ url, label, onClick }: { url: string; label?: string; onCl
     <button onClick={onClick} title={label}
       className="relative rounded-xl overflow-hidden shrink-0 group"
       style={{ width: 72, height: 72, border: '1px solid #e4e4e7', background: '#f8fafc' }}>
-      <img src={url} alt={label} className="w-full h-full object-cover" />
+      <SafePhotoImage src={url} alt={label ?? '照片'} thumb width={144} height={144} className="w-full h-full object-cover" />
       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
       {label && (
         <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 text-[10px] text-white font-medium truncate"
@@ -284,7 +287,7 @@ function ClosingCard({
 }: {
   closing: Closing; receipts: ReceiptRow[]; canReview: boolean; submitterName?: string
 }) {
-  const [expanded, setExpanded] = useState(closing.status === 'submitted' || closing.status === 'disputed')
+  const [expanded, setExpanded] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [exporting, setExporting] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -526,7 +529,14 @@ function ClosingCard({
                             if (photoIdx >= 0) setLightboxIndex(photoIdx)
                           }}
                           style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, border: '1px solid #e4e4e7', background: '#f8fafc', padding: 0, cursor: 'zoom-in' }}>
-                          <img src={r.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          <SafePhotoImage
+                            src={r.photo_url}
+                            alt={r.vendor_name || '收據照片'}
+                            thumb
+                            width={96}
+                            height={96}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          />
                         </button>
                       ) : (
                         <div style={{ width: 44, height: 44, borderRadius: 8, flexShrink: 0, border: '1px solid #e4e4e7', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

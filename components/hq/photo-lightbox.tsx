@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
+import SafePhotoImage from './safe-photo-image'
 
 /** 全螢幕照片瀏覽器（支援左右箭頭 / 觸控滑動 / ESC 關閉） */
 export default function PhotoLightbox({
@@ -67,8 +68,10 @@ export default function PhotoLightbox({
           <ChevronRight className="h-7 w-7 text-white" />
         </button>
       )}
-      <img src={photo.url} alt={photo.label ?? ''}
+      <SafePhotoImage src={photo.url} alt={photo.label ?? ''}
         className="max-w-[88vw] max-h-[88vh] object-contain rounded-xl"
+        loading="eager"
+        fallbackText="照片載入中斷"
         onClick={e => e.stopPropagation()} />
       {photo.label && (
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs text-white font-medium"

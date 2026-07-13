@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronUp, Image, FileText, AlertTriangle, Check } from 'lucide-react'
 import ReviewActions from './review-actions'
 import PhotoLightbox from './photo-lightbox'
+import SafePhotoImage from './safe-photo-image'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -369,8 +370,14 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                         <button key={i} onClick={() => setLightboxIdx(globalIdx >= 0 ? globalIdx : 0)}
                           className="block rounded-lg overflow-hidden text-left"
                           style={{ border: '1px solid #f4f4f5', background: 'white', cursor: 'pointer', padding: 0 }}>
-                          <img src={p.url} alt={p.label} loading="lazy"
-                            className="w-full aspect-square object-cover" />
+                          <SafePhotoImage
+                            src={p.url}
+                            alt={p.label}
+                            thumb
+                            width={220}
+                            height={220}
+                            className="w-full aspect-square object-cover"
+                          />
                           <p className="text-[10px] text-center py-1" style={{ color: '#71717a' }}>{p.label}</p>
                         </button>
                       )
