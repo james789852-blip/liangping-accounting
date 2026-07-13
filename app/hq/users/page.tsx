@@ -4,7 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import UserCreateDialog from '@/components/hq/user-create-dialog'
 import UserEditDialog from '@/components/hq/user-edit-dialog'
-import { Users, Building2 } from 'lucide-react'
+import { Users, Building2, ChefHat, Store as StoreIcon } from 'lucide-react'
 import { sortStores } from '@/lib/store-order'
 import { canManageUsers } from '@/lib/user-permissions'
 
@@ -19,6 +19,111 @@ const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
   '副店長': { bg: '#ecfdf5', color: '#059669' },
   '小幫手': { bg: '#eef2ff', color: '#4f46e5' },
   '助理':   { bg: '#f4f4f5', color: '#71717a' },
+}
+
+type UserProfile = Record<string, any> & {
+  user_id: string
+  name: string
+  role: string
+  store_ids?: string[] | null
+  primary_store_id?: string | null
+  is_hq?: boolean | null
+  active?: boolean | null
+}
+
+function UserRow({ user, stores, storeMap, account }: {
+  user: UserProfile
+  stores: { id: string; name: string; type?: string }[]
+  storeMap: Record<string, string>
+  account: string
+}) {
+  const isOwner = user.role === '老闆'
+  const displayTitle = user.title || user.role
+  const roleSt = ROLE_STYLE[user.role] ?? { bg: '#f4f4f5', color: '#71717a' }
+  const assignedNames = [...new Set((user.store_ids ?? []) as string[])].map(id => storeMap[id]).filter(Boolean)
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3.5">
+      <div className="h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+        style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
+        {(user.name || '?').slice(0, 1)}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-semibold text-sm" style={{ color: '#18181b' }}>{user.name}</span>
+          {user.employee_id && (
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+              style={{ background: '#f4f4f5', color: '#71717a' }}>
+              {user.employee_id}
+            </span>
+          )}
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+            style={{ background: roleSt.bg, color: roleSt.color }}>
+            {displayTitle}
+          </span>
+          {(isOwner || user.is_hq) && (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold"
+              style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FEF3C7' }}>
+              <Building2 className="h-3 w-3" /> 總公司
+            </span>
+          )}
+          {!user.active && (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+              style={{ background: '#ffe4e6', color: '#be123c' }}>已停用</span>
+          )}
+        </div>
+        <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>
+          {account && <span className="font-mono mr-2">{account}</span>}
+          {isOwner || (stores.length > 0 && (user.store_ids ?? []).length >= stores.length)
+            ? '全部店面'
+            : assignedNames.join('、') || '未指派店家'}
+        </p>
+        {user.primary_store_id && storeMap[user.primary_store_id] && !isOwner && (
+          <p className="text-[11px] mt-0.5" style={{ color: '#0369a1' }}>
+            主店：<span className="font-semibold">{storeMap[user.primary_store_id]}</span>
+          </p>
+        )}
+      </div>
+
+      <UserEditDialog user={{ ...user, account }} stores={stores} />
+    </div>
+  )
+}
+
+function UserGroup({ name, type, users, stores, storeMap, accountMap }: {
+  name: string
+  type: 'store' | 'ck' | 'hq' | 'unassigned'
+  users: UserProfile[]
+  stores: { id: string; name: string; type?: string }[]
+  storeMap: Record<string, string>
+  accountMap: Record<string, string>
+}) {
+  const isCk = type === 'ck'
+  const isHq = type === 'hq'
+  const Icon = isHq ? Building2 : isCk ? ChefHat : StoreIcon
+  const accent = isHq ? '#92400E' : isCk ? '#7c3aed' : '#047857'
+  const tint = isHq ? '#FFFBEB' : isCk ? '#f3e8ff' : '#d1fae5'
+
+  return (
+    <section className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+      <div className="flex items-center justify-between px-4 py-3" style={{ background: tint, borderBottom: '1px solid #f4f4f5' }}>
+        <div className="flex items-center gap-2">
+          <Icon className="h-4 w-4" style={{ color: accent }} />
+          <h2 className="text-sm font-bold" style={{ color: '#18181b' }}>{name}</h2>
+        </div>
+        <span className="text-xs font-bold" style={{ color: accent }}>{users.length} 人</span>
+      </div>
+      <div className="divide-y" style={{ borderColor: '#f4f4f5' }}>
+        {users.map(user => (
+          <UserRow key={`${name}-${user.user_id}`} user={user} stores={stores} storeMap={storeMap} account={accountMap[user.user_id] ?? ''} />
+        ))}
+        {users.length === 0 && (
+          <p className="px-4 py-5 text-center text-xs" style={{ color: '#a1a1aa' }}>目前沒有指派人員</p>
+        )}
+      </div>
+    </section>
+  )
 }
 
 export default async function UsersPage() {
@@ -58,6 +163,30 @@ export default async function UsersPage() {
     ])
   )
 
+  const allUsers = (users ?? []) as UserProfile[]
+  const storeUsers = new Map<string, UserProfile[]>()
+  const hqUsers: UserProfile[] = []
+  const unassignedUsers: UserProfile[] = []
+
+  for (const account of allUsers) {
+    if (account.role === '老闆' || account.is_hq) {
+      hqUsers.push(account)
+      continue
+    }
+    const assignedIds = [...new Set((account.store_ids ?? []) as string[])].filter(id => storeMap[id])
+    if (assignedIds.length === 0) {
+      unassignedUsers.push(account)
+      continue
+    }
+    for (const storeId of assignedIds) {
+      const group = storeUsers.get(storeId) ?? []
+      group.push(account)
+      storeUsers.set(storeId, group)
+    }
+  }
+  const storeSections = stores.filter(store => store.type !== '央廚')
+  const ckSections = stores.filter(store => store.type === '央廚')
+
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
 
@@ -77,70 +206,46 @@ export default async function UsersPage() {
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-5 pb-28">
-        <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-          {(users ?? []).map((u, idx) => {
-            const isOwner = u.role === '老闆'
-            const displayTitle = u.title || u.role
-            const roleSt = ROLE_STYLE[u.role] ?? { bg: '#f4f4f5', color: '#71717a' }
-            return (
-              <div key={u.user_id}
-                className="flex items-center gap-3 px-4 py-3.5"
-                style={{ borderBottom: idx !== (users?.length ?? 0) - 1 ? '1px solid #f4f4f5' : 'none' }}>
+      <div className="max-w-3xl mx-auto px-4 py-5 pb-28 space-y-5">
+        {hqUsers.length > 0 && (
+          <UserGroup name="總公司管理人員" type="hq" users={hqUsers} stores={stores} storeMap={storeMap} accountMap={accountMap} />
+        )}
 
-                <div className="h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
-                  style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
-                  {(u.name || '?').slice(0, 1)}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-sm" style={{ color: '#18181b' }}>{u.name}</span>
-                    {u.employee_id && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
-                        style={{ background: '#f4f4f5', color: '#71717a' }}>
-                        {u.employee_id}
-                      </span>
-                    )}
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                      style={{ background: roleSt.bg, color: roleSt.color }}>
-                      {displayTitle}
-                    </span>
-                    {(isOwner || u.is_hq) && (
-                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold"
-                        style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FEF3C7' }}>
-                        <Building2 className="h-3 w-3" /> 總公司
-                      </span>
-                    )}
-                    {!u.active && (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                        style={{ background: '#ffe4e6', color: '#be123c' }}>已停用</span>
-                    )}
-                  </div>
-                  <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>
-                    {accountMap[u.user_id] && (
-                      <span className="font-mono mr-2">{accountMap[u.user_id]}</span>
-                    )}
-                    {isOwner || (stores && stores.length > 0 && (u.store_ids ?? []).length >= stores.length)
-                      ? '全部店面'
-                      : [...new Set((u.store_ids ?? []) as string[])].map(id => storeMap[id]).filter(Boolean).join('、') || '未指派店家'
-                    }
-                  </p>
-                  {u.primary_store_id && storeMap[u.primary_store_id] && !isOwner && (
-                    <p className="text-[11px] mt-0.5" style={{ color: '#0369a1' }}>
-                      主店：<span className="font-semibold">{storeMap[u.primary_store_id]}</span>
-                    </p>
-                  )}
-                </div>
-
-                <UserEditDialog user={{ ...u, account: accountMap[u.user_id] ?? '' }} stores={stores} />
-              </div>
-            )
-          })}
-          {(!users || users.length === 0) && (
-            <div className="py-12 text-center text-sm" style={{ color: '#a1a1aa' }}>尚無帳號</div>
-          )}
+        <div className="space-y-3">
+          <div className="flex items-end justify-between px-1">
+            <div>
+              <h2 className="text-base font-bold" style={{ color: '#18181b' }}>店面管理人員</h2>
+              <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>依所屬店面分組；跨店帳號會出現在各所屬店面中</p>
+            </div>
+            <span className="text-xs font-semibold" style={{ color: '#047857' }}>{storeSections.length} 家店</span>
+          </div>
+          {storeSections.map(store => (
+            <UserGroup key={store.id} name={store.name} type="store" users={storeUsers.get(store.id) ?? []} stores={stores} storeMap={storeMap} accountMap={accountMap} />
+          ))}
         </div>
+
+        {ckSections.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-end justify-between px-1">
+              <div>
+                <h2 className="text-base font-bold" style={{ color: '#18181b' }}>央廚管理人員</h2>
+                <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>央廚帳號與所屬人員集中顯示</p>
+              </div>
+              <span className="text-xs font-semibold" style={{ color: '#7c3aed' }}>{ckSections.length} 座央廚</span>
+            </div>
+            {ckSections.map(store => (
+              <UserGroup key={store.id} name={store.name} type="ck" users={storeUsers.get(store.id) ?? []} stores={stores} storeMap={storeMap} accountMap={accountMap} />
+            ))}
+          </div>
+        )}
+
+        {unassignedUsers.length > 0 && (
+          <UserGroup name="未指派店面" type="unassigned" users={unassignedUsers} stores={stores} storeMap={storeMap} accountMap={accountMap} />
+        )}
+
+        {(users ?? []).length === 0 && (
+          <div className="bg-white rounded-2xl py-12 text-center text-sm" style={{ color: '#a1a1aa', border: '1px solid #f4f4f5' }}>尚無帳號</div>
+        )}
       </div>
     </div>
   )
