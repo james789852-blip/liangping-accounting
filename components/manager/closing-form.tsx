@@ -168,6 +168,8 @@ interface Props {
   prevDayReserves?: PrevDayReserve | null
   isBackfill?: boolean  // 是否為補做過往帳目（非今日業務日）
   realToday?: string    // 真實今日業務日，用於日期切換器顯示「回到今日」
+  calendarToday?: string
+  isEarlyMorningBusinessDate?: boolean
   latestBackfillDraftDate?: string
 }
 
@@ -698,7 +700,7 @@ function CategoryPicker({ categories, value, onChange }: {
   )
 }
 
-export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], actualVendors = [], prevDayReserves, isBackfill = false, realToday, latestBackfillDraftDate }: Props) {
+export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], actualVendors = [], prevDayReserves, isBackfill = false, realToday, calendarToday, isEarlyMorningBusinessDate = false, latestBackfillDraftDate }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
   const [largeCashExpenses, setLargeCashExpenses] = useState<LargeCashExpense[]>(() => initLargeCashExpenses(existingClosing))
@@ -2312,6 +2314,33 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             </a>
           </div>
         )}
+        <div className="px-5 py-2.5 flex items-center justify-between gap-3"
+          style={{
+            background: isEarlyMorningBusinessDate ? '#FFFBEB' : '#F8FAFC',
+            color: isEarlyMorningBusinessDate ? '#92400E' : '#334155',
+            borderBottom: '1px solid #f4f4f5',
+          }}>
+          <div className="flex items-start gap-2 min-w-0">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: isEarlyMorningBusinessDate ? '#F59E0B' : '#64748B' }} />
+            <div className="min-w-0">
+              <p className="text-sm font-black leading-snug">
+                目前正在做：<span className="tabular-nums">{today}</span> 帳目
+              </p>
+              {isEarlyMorningBusinessDate && (
+                <p className="text-xs mt-0.5 leading-snug" style={{ color: '#b45309' }}>
+                  現在已是 {calendarToday ?? '隔日'} 凌晨，05:00 前系統仍視為前一日帳目。
+                </p>
+              )}
+            </div>
+          </div>
+          <span className="text-[11px] font-bold px-2 py-1 rounded-full shrink-0"
+            style={{
+              background: isEarlyMorningBusinessDate ? '#FED7AA' : '#E2E8F0',
+              color: isEarlyMorningBusinessDate ? '#9A3412' : '#475569',
+            }}>
+            {isEarlyMorningBusinessDate ? '凌晨跨日' : '日期確認'}
+          </span>
+        </div>
         <div className="px-5 py-3 flex items-center justify-between gap-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
           <div className="min-w-0">
             <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>每日結帳</p>

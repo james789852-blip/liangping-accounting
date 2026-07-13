@@ -35,6 +35,9 @@ export default async function ClosingPage({
   }
 
   const realToday = getBusinessDate()
+  const taipeiNow = new Date(Date.now() + 8 * 3600000)
+  const calendarToday = taipeiNow.toISOString().slice(0, 10)
+  const isEarlyMorningBusinessDate = calendarToday !== realToday
   // ?date 參數允許店長補做過往帳目；只接受 YYYY-MM-DD 且不晚於今日
   const requested = params.date
   const today = (requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested <= realToday)
@@ -200,6 +203,8 @@ export default async function ClosingPage({
       prevDayReserves={prevDayReserves}
       isBackfill={isBackfill}
       realToday={realToday}
+      calendarToday={calendarToday}
+      isEarlyMorningBusinessDate={isEarlyMorningBusinessDate}
       latestBackfillDraftDate={!requested ? (latestBackfillDraft?.business_date as string | undefined) : undefined}
     />
   )
