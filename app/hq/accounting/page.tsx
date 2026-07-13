@@ -6,12 +6,9 @@ import { sortStores } from '@/lib/store-order'
 import AccountingClient from '@/components/hq/accounting-client'
 import { resolveHQStoreId } from '@/lib/hq-store-selection'
 import { canReviewClosings } from '@/lib/user-permissions'
+import { getBusinessDate } from '@/lib/business-date'
 
 export const dynamic = 'force-dynamic'
-
-function getTaipeiDate() {
-  return new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
-}
 
 export default async function AccountingPage({
   searchParams,
@@ -35,7 +32,9 @@ export default async function AccountingPage({
   const ckStores = (ckStoresRaw ?? []).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'))
 
   const params = await searchParams
-  const today = getTaipeiDate()
+  // 帳目中心與店家結帳共用營業日：台灣時間 05:00 才切換到隔天。
+  // 總公司凌晨做帳時，預設仍停留在前一天的營業日；指定日期仍可手動查看歷史帳目。
+  const today = getBusinessDate()
   const date = params.date ?? today
   const initialStoreId = await resolveHQStoreId(stores, params.storeId)
   const initialCkStoreId = await resolveHQStoreId(ckStores, params.ckStoreId)

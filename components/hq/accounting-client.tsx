@@ -8,6 +8,7 @@ import { fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
 import { fetchCKDailyDetail } from '@/app/actions/ck-overview'
 import { setManagerStore } from '@/app/actions/store-select'
 import type { DailyStats } from '@/lib/store-aggregator'
+import { getBusinessDate } from '@/lib/business-date'
 import ReviewCard from './review-card'
 import CKOverview from './ck-overview'
 import HolidaysEditor from './holidays-editor'
@@ -192,7 +193,8 @@ export default function AccountingClient({
     replaceSelectionUrl({ tab: 'ck', ckStoreId: nextStoreId })
   }
 
-  const isToday = date === new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+  const businessDate = getBusinessDate()
+  const isToday = date === businessDate
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -223,7 +225,7 @@ export default function AccountingClient({
               <ChevronRight className="h-4 w-4" style={{ color: '#52525b' }} />
             </button>
             {!isToday && (
-              <button onClick={() => goDate(new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10))}
+              <button onClick={() => goDate(businessDate)}
                 className="text-xs font-semibold px-2.5 h-10 rounded-lg"
                 style={{ background: 'white', color: '#92400E', border: '1px solid #FDE68A' }}>今日</button>
             )}
