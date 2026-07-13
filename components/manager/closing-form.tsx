@@ -226,6 +226,8 @@ interface HandwriteOrder {
   void_reason: string
 }
 
+const MAX_HANDWRITE_BATCH = 1000
+
 function initFormData(store: Store, ckPrices: CKPrice[], existing: any, todayReceipts?: TodayReceipt[]): FormData {
   const uber_amounts: Record<string, number> = {}
   ;(store.uber_accounts ?? []).forEach(acc => { uber_amounts[acc] = 0 })
@@ -923,6 +925,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const notePhotoInputRef = useRef<HTMLInputElement>(null)
 
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
+  const [editingHandwriteOrderId, setEditingHandwriteOrderId] = useState<string | null>(null)
+  const [editingHandwriteOrderNumber, setEditingHandwriteOrderNumber] = useState('')
   const handwriteOrdersLsKey = `handwrite_orders_${store.id}_${today}`
   useEffect(() => {
     if ((existingClosing?.handwrite_orders ?? []).length > 0) return
@@ -1192,6 +1196,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [status, setStatus] = useState(existingClosing?.status ?? 'draft')
   const [rangeStart, setRangeStart] = useState(0)
   const [rangeEnd, setRangeEnd] = useState(0)
+  const [replaceRangeStart, setReplaceRangeStart] = useState(0)
+  const [replaceRangeEnd, setReplaceRangeEnd] = useState(0)
+  const [replaceRangeNewStart, setReplaceRangeNewStart] = useState(0)
+  const [replaceRangeNewEnd, setReplaceRangeNewEnd] = useState(0)
   const router = useRouter()
   const newOrderNumRef = useRef<HTMLInputElement>(null)
   const newOrderAmtRef = useRef<HTMLInputElement>(null)
@@ -1857,7 +1865,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   function generateRange() {
     if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) { toast.error('請輸入有效的起始和結束單號'); return }
-    if (rangeEnd - rangeStart > 200) { toast.error('單次最多建立 200 筆'); return }
+    if (rangeEnd - rangeStart + 1 > MAX_HANDWRITE_BATCH) { toast.error(`單次最多建立 ${MAX_HANDWRITE_BATCH} 筆`); return }
     const existingNums = new Set(handwriteOrders.map(o => o.order_number))
     const newOrders: HandwriteOrder[] = []
     for (let n = rangeStart; n <= rangeEnd; n++) {
@@ -1870,9 +1878,87 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     toast.success(`已建立 ${newOrders.length} 筆單號`)
   }
 
+  function replaceHandwriteOrderRange() {
+    if (!replaceRangeStart || !replaceRangeEnd || !replaceRangeNewStart || !replaceRangeNewEnd) {
+      toast.error('請完整輸入原單號與新單號範圍')
+      return
+    }
+    if (replaceRangeStart > replaceRangeEnd || replaceRangeNewStart > replaceRangeNewEnd) {
+      toast.error('請輸入有效的單號範圍')
+      return
+    }
+    const oldCount = replaceRangeEnd - replaceRangeStart + 1
+    const newCount = replaceRangeNewEnd - replaceRangeNewStart + 1
+    if (oldCount !== newCount) {
+      toast.error('原範圍與新範圍的筆數必須相同')
+      return
+    }
+    if (oldCount > MAX_HANDWRITE_BATCH) {
+      toast.error(`單次最多更換 ${MAX_HANDWRITE_BATCH} 筆`)
+      return
+    }
+
+    const oldNumbers = Array.from({ length: oldCount }, (_, index) => String(replaceRangeStart + index))
+    const newNumbers = Array.from({ length: newCount }, (_, index) => String(replaceRangeNewStart + index))
+    const oldSet = new Set(oldNumbers)
+    const orderByNumber = new Map(handwriteOrders.map(order => [order.order_number, order] as const))
+    const selected = oldNumbers.map(number => orderByNumber.get(number))
+    if (selected.some(order => !order)) {
+      toast.error('找不到完整的原單號範圍，請確認已建立的單號')
+      return
+    }
+    if (newNumbers.some(number => orderByNumber.has(number) && !oldSet.has(number))) {
+      toast.error('新的單號範圍會與既有單號重複，請換一個範圍')
+      return
+    }
+
+    const replacementMap = new Map(oldNumbers.map((number, index) => [number, newNumbers[index]] as const))
+    setHandwriteOrders(prev => prev.map(order => replacementMap.has(order.order_number)
+      ? { ...order, order_number: replacementMap.get(order.order_number)! }
+      : order))
+    scheduleBackgroundSave()
+    setReplaceRangeStart(0)
+    setReplaceRangeEnd(0)
+    setReplaceRangeNewStart(0)
+    setReplaceRangeNewEnd(0)
+    toast.success(`已將 ${replaceRangeStart}–${replaceRangeEnd} 更換為 ${replaceRangeNewStart}–${replaceRangeNewEnd}`)
+  }
+
   function updateHandwriteOrderAmount(id: string, amount: number) {
     setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, amount } : o))
     scheduleBackgroundSave()
+  }
+  function startEditHandwriteOrder(order: HandwriteOrder) {
+    setEditingHandwriteOrderId(order.id)
+    setEditingHandwriteOrderNumber(order.order_number)
+  }
+  function cancelEditHandwriteOrder() {
+    setEditingHandwriteOrderId(null)
+    setEditingHandwriteOrderNumber('')
+  }
+  function saveHandwriteOrderNumber() {
+    if (!editingHandwriteOrderId) return
+    const nextNumber = editingHandwriteOrderNumber.trim()
+    const current = handwriteOrders.find(order => order.id === editingHandwriteOrderId)
+    if (!current) return cancelEditHandwriteOrder()
+    if (!nextNumber) {
+      toast.error('單號不可空白')
+      setEditingHandwriteOrderNumber(current.order_number)
+      return
+    }
+    if (handwriteOrders.some(order => order.id !== editingHandwriteOrderId && order.order_number === nextNumber)) {
+      toast.error('該單號已存在，請輸入其他單號')
+      setEditingHandwriteOrderNumber(current.order_number)
+      return
+    }
+    if (nextNumber !== current.order_number) {
+      setHandwriteOrders(prev => prev.map(order => order.id === editingHandwriteOrderId
+        ? { ...order, order_number: nextNumber }
+        : order))
+      scheduleBackgroundSave()
+      toast.success('單號已更新')
+    }
+    cancelEditHandwriteOrder()
   }
   function toggleVoidOrder(id: string) {
     setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, voided: !o.voided } : o))
@@ -3611,7 +3697,39 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       <Plus className="h-3.5 w-3.5" /> 建立
                     </button>
                   </div>
-                  <p className="text-[10px]" style={{ color: '#a1a1aa' }}>已存在的單號不重複建立 · 最多 200 筆</p>
+                  <p className="text-[10px]" style={{ color: '#a1a1aa' }}>已存在的單號不重複建立 · 單次最多 {MAX_HANDWRITE_BATCH} 筆</p>
+                  {handwriteOrders.length > 0 && (
+                    <div className="mt-3 pt-3" style={{ borderTop: '1px solid #e4e4e7' }}>
+                      <p className="text-xs font-semibold mb-2" style={{ color: '#52525b' }}>批次更換已建立的單號</p>
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <input type="number" min="1" inputMode="numeric" placeholder="原起始"
+                          aria-label="原單號起始"
+                          style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
+                          value={replaceRangeStart || ''} onChange={e => setReplaceRangeStart(parseInt(e.target.value) || 0)} />
+                        <span style={{ color: '#a1a1aa' }}>—</span>
+                        <input type="number" min="1" inputMode="numeric" placeholder="原結束"
+                          aria-label="原單號結束"
+                          style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
+                          value={replaceRangeEnd || ''} onChange={e => setReplaceRangeEnd(parseInt(e.target.value) || 0)} />
+                        <span className="font-semibold" style={{ color: '#a1a1aa' }}>→</span>
+                        <input type="number" min="1" inputMode="numeric" placeholder="新起始"
+                          aria-label="新單號起始"
+                          style={{ padding: '8px 10px', border: '1.5px solid #F59E0B', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
+                          value={replaceRangeNewStart || ''} onChange={e => setReplaceRangeNewStart(parseInt(e.target.value) || 0)} />
+                        <span style={{ color: '#a1a1aa' }}>—</span>
+                        <input type="number" min="1" inputMode="numeric" placeholder="新結束"
+                          aria-label="新單號結束"
+                          style={{ padding: '8px 10px', border: '1.5px solid #F59E0B', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
+                          value={replaceRangeNewEnd || ''} onChange={e => setReplaceRangeNewEnd(parseInt(e.target.value) || 0)} />
+                        <button type="button" onClick={replaceHandwriteOrderRange}
+                          className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold shrink-0"
+                          style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
+                          <Pencil className="h-3.5 w-3.5" /> 更換
+                        </button>
+                      </div>
+                      <p className="text-[10px] mt-1.5" style={{ color: '#a1a1aa' }}>例如：1000–1005 → 2000–2005；金額與作廢狀態會保留</p>
+                    </div>
+                  )}
                 </div>
               )}
               {handwriteOrders.length > 0 && (
@@ -3628,10 +3746,39 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   {handwriteOrders.map((o, idx) => (
                     <div key={o.id} style={{ background: o.voided ? '#fff8f8' : 'white', borderBottom: idx !== handwriteOrders.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
                       <div className="flex items-center gap-2 px-3 py-1">
-                        <span className="flex-1 text-sm min-w-0 truncate"
-                          style={{ fontFamily: 'monospace', color: o.voided ? '#a1a1aa' : '#52525b', textDecoration: o.voided ? 'line-through' : 'none' }}>
-                          {o.order_number}
-                        </span>
+                        {editingHandwriteOrderId === o.id ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            value={editingHandwriteOrderNumber}
+                            onChange={e => setEditingHandwriteOrderNumber(e.target.value)}
+                            onBlur={saveHandwriteOrderNumber}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                e.currentTarget.blur()
+                              }
+                              if (e.key === 'Escape') {
+                                e.preventDefault()
+                                cancelEditHandwriteOrder()
+                              }
+                            }}
+                            className="flex-1 min-w-0"
+                            style={{ padding: '6px 8px', border: '1.5px solid #F59E0B', borderRadius: '8px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'monospace' }}
+                            aria-label="修改單號"
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={isLocked}
+                            onClick={() => startEditHandwriteOrder(o)}
+                            className="flex-1 min-w-0 flex items-center gap-1.5 text-left truncate"
+                            title={isLocked ? '帳目已送出，需退回修改後才能編輯' : '修改單號'}
+                            style={{ padding: '4px 0', border: 'none', background: 'transparent', cursor: isLocked ? 'default' : 'text', fontFamily: 'inherit', color: o.voided ? '#a1a1aa' : '#52525b', textDecoration: o.voided ? 'line-through' : 'none' }}>
+                            <span className="truncate" style={{ fontFamily: 'monospace' }}>{o.order_number}</span>
+                            {!isLocked && <Pencil className="h-3 w-3 shrink-0" style={{ color: '#a1a1aa' }} />}
+                          </button>
+                        )}
                         {isLocked ? (
                           o.voided
                             ? <span className="w-20 text-right text-xs font-semibold" style={{ color: '#be123c' }}>作廢</span>
