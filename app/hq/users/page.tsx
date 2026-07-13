@@ -86,7 +86,13 @@ function UserRow({ user, stores, storeMap, account }: {
         )}
       </div>
 
-      <UserEditDialog user={{ ...user, account }} stores={stores} />
+      <UserEditDialog user={{
+        ...user,
+        account,
+        store_ids: user.store_ids ?? undefined,
+        is_hq: user.is_hq ?? undefined,
+        active: user.active ?? undefined,
+      }} stores={stores} />
     </div>
   )
 }
