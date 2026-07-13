@@ -925,8 +925,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const notePhotoInputRef = useRef<HTMLInputElement>(null)
 
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
-  const [editingHandwriteOrderId, setEditingHandwriteOrderId] = useState<string | null>(null)
-  const [editingHandwriteOrderNumber, setEditingHandwriteOrderNumber] = useState('')
+  const handwriteOrdersRef = useRef(handwriteOrders)
+  handwriteOrdersRef.current = handwriteOrders
   const handwriteOrdersLsKey = `handwrite_orders_${store.id}_${today}`
   useEffect(() => {
     if ((existingClosing?.handwrite_orders ?? []).length > 0) return
@@ -1928,38 +1928,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, amount } : o))
     scheduleBackgroundSave()
   }
-  function startEditHandwriteOrder(order: HandwriteOrder) {
-    setEditingHandwriteOrderId(order.id)
-    setEditingHandwriteOrderNumber(order.order_number)
-  }
-  function cancelEditHandwriteOrder() {
-    setEditingHandwriteOrderId(null)
-    setEditingHandwriteOrderNumber('')
-  }
-  function saveHandwriteOrderNumber() {
-    if (!editingHandwriteOrderId) return
-    const nextNumber = editingHandwriteOrderNumber.trim()
-    const current = handwriteOrders.find(order => order.id === editingHandwriteOrderId)
-    if (!current) return cancelEditHandwriteOrder()
-    if (!nextNumber) {
-      toast.error('單號不可空白')
-      setEditingHandwriteOrderNumber(current.order_number)
-      return
-    }
-    if (handwriteOrders.some(order => order.id !== editingHandwriteOrderId && order.order_number === nextNumber)) {
-      toast.error('該單號已存在，請輸入其他單號')
-      setEditingHandwriteOrderNumber(current.order_number)
-      return
-    }
-    if (nextNumber !== current.order_number) {
-      setHandwriteOrders(prev => prev.map(order => order.id === editingHandwriteOrderId
-        ? { ...order, order_number: nextNumber }
-        : order))
-      scheduleBackgroundSave()
-      toast.success('單號已更新')
-    }
-    cancelEditHandwriteOrder()
-  }
   function toggleVoidOrder(id: string) {
     setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, voided: !o.voided } : o))
     scheduleBackgroundSave()
@@ -1971,6 +1939,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   function removeHandwriteOrder(id: string) {
     setHandwriteOrders(prev => prev.filter(o => o.id !== id))
     scheduleBackgroundSave()
+  }
+  function clearHandwriteOrders() {
+    if (handwriteOrders.length === 0) return
+    if (!window.confirm(`確定刪除今天全部 ${handwriteOrders.length} 筆手寫單號嗎？此操作會保留其他結帳資料。`)) return
+    setHandwriteOrders([])
+    scheduleBackgroundSave()
+    toast.success('今天的手寫單號已全部刪除')
   }
 
   async function handleSave(silent = false) {
@@ -2095,8 +2070,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         await supabase.from('expense_items').delete().eq('closing_id', cid)
         await supabase.from('expense_items').insert(expItems)
       }
-      // handwrite_orders：只有 hwItems.length > 0 才 wipe-insert
-      const hwItems = handwriteOrders
+      // handwrite_orders：每次都先同步刪除，確保「全部刪除」後不會留下舊單號
+      const currentHandwriteOrders = handwriteOrdersRef.current
+      const hwItems = currentHandwriteOrders
         .filter(o => o.order_number.trim())
         .map(o => ({
           closing_id: cid, store_id: store.id,
@@ -2104,8 +2080,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           amount: o.voided ? 0 : o.amount,
           voided: o.voided, void_reason: o.void_reason || null,
         }))
+      await supabase.from('handwrite_orders').delete().eq('closing_id', cid)
       if (hwItems.length > 0) {
-        await supabase.from('handwrite_orders').delete().eq('closing_id', cid)
         await supabase.from('handwrite_orders').insert(hwItems)
       }
       // 同步央廚叫貨金額到央廚每日記錄
@@ -2114,7 +2090,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         syncStoreCKOrder(store.id, today, ckTotal).catch(() => {})
       }
       try {
-        if (hwItems.length > 0) localStorage.setItem(handwriteOrdersLsKey, JSON.stringify(handwriteOrders))
+        if (hwItems.length > 0) localStorage.setItem(handwriteOrdersLsKey, JSON.stringify(currentHandwriteOrders))
         else localStorage.removeItem(handwriteOrdersLsKey)
       } catch {}
       try { localStorage.removeItem(saveBkKey) } catch {}
@@ -3738,6 +3714,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>
                       單號 <span className="ml-1 normal-case" style={{ color: '#71717a' }}>（{handwriteOrders.length} 筆）</span>
                     </span>
+                    {!isLocked && <button type="button" onClick={clearHandwriteOrders}
+                      className="mr-2 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold"
+                      style={{ color: '#be123c', background: '#fff1f2', border: '1px solid #fecdd3' }}>
+                      <Trash2 className="h-3 w-3" /> 全部刪除
+                    </button>}
                     <span className="w-20 text-right text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>金額</span>
                     {!isLocked && <span className="w-8" />}
                     {!isLocked && <span className="w-5" />}
@@ -3746,39 +3727,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   {handwriteOrders.map((o, idx) => (
                     <div key={o.id} style={{ background: o.voided ? '#fff8f8' : 'white', borderBottom: idx !== handwriteOrders.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
                       <div className="flex items-center gap-2 px-3 py-1">
-                        {editingHandwriteOrderId === o.id ? (
-                          <input
-                            autoFocus
-                            type="text"
-                            value={editingHandwriteOrderNumber}
-                            onChange={e => setEditingHandwriteOrderNumber(e.target.value)}
-                            onBlur={saveHandwriteOrderNumber}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault()
-                                e.currentTarget.blur()
-                              }
-                              if (e.key === 'Escape') {
-                                e.preventDefault()
-                                cancelEditHandwriteOrder()
-                              }
-                            }}
-                            className="flex-1 min-w-0"
-                            style={{ padding: '6px 8px', border: '1.5px solid #F59E0B', borderRadius: '8px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'monospace' }}
-                            aria-label="修改單號"
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={isLocked}
-                            onClick={() => startEditHandwriteOrder(o)}
-                            className="flex-1 min-w-0 flex items-center gap-1.5 text-left truncate"
-                            title={isLocked ? '帳目已送出，需退回修改後才能編輯' : '修改單號'}
-                            style={{ padding: '4px 0', border: 'none', background: 'transparent', cursor: isLocked ? 'default' : 'text', fontFamily: 'inherit', color: o.voided ? '#a1a1aa' : '#52525b', textDecoration: o.voided ? 'line-through' : 'none' }}>
-                            <span className="truncate" style={{ fontFamily: 'monospace' }}>{o.order_number}</span>
-                            {!isLocked && <Pencil className="h-3 w-3 shrink-0" style={{ color: '#a1a1aa' }} />}
-                          </button>
-                        )}
+                        <span className="flex-1 text-sm min-w-0 truncate"
+                          style={{ fontFamily: 'monospace', color: o.voided ? '#a1a1aa' : '#52525b', textDecoration: o.voided ? 'line-through' : 'none' }}>
+                          {o.order_number}
+                        </span>
                         {isLocked ? (
                           o.voided
                             ? <span className="w-20 text-right text-xs font-semibold" style={{ color: '#be123c' }}>作廢</span>
