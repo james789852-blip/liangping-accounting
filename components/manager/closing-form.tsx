@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, memo, startTransition } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, memo, startTransition, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
@@ -57,23 +57,87 @@ interface ChannelPhoto {
   recognized?: number
 }
 
+function SafeImage({
+  src,
+  alt,
+  className,
+  style,
+  fallbackText = '照片載入失敗',
+}: {
+  src?: string | null
+  alt: string
+  className?: string
+  style?: CSSProperties
+  fallbackText?: string
+}) {
+  const [currentSrc, setCurrentSrc] = useState(src ?? '')
+  const [retried, setRetried] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    setCurrentSrc(src ?? '')
+    setRetried(false)
+    setFailed(false)
+  }, [src])
+
+  if (!currentSrc || failed) {
+    return (
+      <div className={className} style={{
+        ...style,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'column',
+        gap: '3px',
+        background: '#f8fafc',
+        color: '#94a3b8',
+        fontSize: '10px',
+        fontWeight: 700,
+        textAlign: 'center',
+        lineHeight: 1.25,
+      }}>
+        <FileText style={{ width: '18px', height: '18px' }} />
+        <span>{fallbackText}</span>
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={currentSrc}
+      alt={alt}
+      className={className}
+      style={style}
+      onError={() => {
+        if (!retried && /^https?:\/\//.test(currentSrc)) {
+          setRetried(true)
+          setCurrentSrc(`${currentSrc}${currentSrc.includes('?') ? '&' : '?'}img_retry=${Date.now()}`)
+          return
+        }
+        setFailed(true)
+      }}
+    />
+  )
+}
+
 async function uploadReceiptPhoto(path: string, rawFile: File): Promise<{ publicUrl: string } | { error: string }> {
   const file = await compressImage(rawFile)
-  const signed = await createSignedUploadUrl('receipts', path)
+  const uploadPath = file.type === 'image/jpeg' ? path.replace(/\.[^.]+$/, '.jpg') : path
+  const signed = await createSignedUploadUrl('receipts', uploadPath)
   if (!('error' in signed)) {
     const supabase = createClient()
     const { error } = await supabase.storage
       .from('receipts')
-      .uploadToSignedUrl(path, signed.token, file, { contentType: file.type })
+      .uploadToSignedUrl(uploadPath, signed.token, file, { contentType: file.type })
     if (!error) {
-      const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(path)
+      const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(uploadPath)
       return { publicUrl }
     }
   }
 
   const fd = new FormData()
   fd.append('file', file)
-  return uploadToStorage(fd, 'receipts', path)
+  return uploadToStorage(fd, 'receipts', uploadPath)
 }
 
 
@@ -3351,7 +3415,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             <button onClick={() => setPhotoLightbox(r.photo_url!)}
                               className="h-12 w-12 rounded-lg overflow-hidden shrink-0 transition-opacity hover:opacity-80"
                               style={{ border: '1px solid #f4f4f5', padding: 0 }}>
-                              <img src={r.photo_url} alt="receipt" className="w-full h-full object-cover" />
+                              <SafeImage src={r.photo_url} alt="receipt" className="w-full h-full object-cover" fallbackText="照片" />
                             </button>
                           ) : (
                             <div className="h-12 w-12 rounded-lg flex items-center justify-center shrink-0"
@@ -4643,7 +4707,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         }}>
                         {/* 縮圖 */}
                         <div style={{ width: '52px', height: '52px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: '#f4f4f5', border: '1px solid #e4e4e7' }}>
-                          <img src={item.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          <SafeImage src={item.photoUrl} alt="" fallbackText="照片" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                         </div>
                         {/* 文字 */}
                         <div style={{ flex: 1, minWidth: 0 }}>
