@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { canExportReports } from '@/lib/user-permissions'
+import { canExportReports, canReviewClosings } from '@/lib/user-permissions'
 import { buildFoodCostNativeWorkbook, buildAnnualFoodCostWorkbook } from '@/lib/food-cost-native-workbook'
 import { buildCKNativeWorkbook, buildAnnualCKWorkbook } from '@/lib/ck-native-workbook'
 import { makeZip } from '@/lib/simple-zip'
@@ -45,11 +45,11 @@ export async function POST(req: NextRequest) {
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('role, is_hq, store_ids, can_export_reports')
+    .select('role, is_hq, store_ids, can_export_reports, can_review_closings')
     .eq('user_id', user.id)
     .single()
 
-  const isHqExport = canExportReports(profile) || profile?.is_hq === true || profile?.role === '老闆'
+  const isHqExport = canExportReports(profile) || canReviewClosings(profile) || profile?.is_hq === true || profile?.role === '老闆'
   const allowedStoreIds = new Set((profile?.store_ids ?? []) as string[])
 
   let body: { type?: 'month' | 'year'; year?: number; month?: number; targets?: ExportTarget[] }

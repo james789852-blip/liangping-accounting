@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays, FileArchive, Check, Square, X } from 'lucide-react'
 import { fetchDailyAccountingDetail } from '@/app/actions/store-overview'
 import { fetchCKDailyDetail } from '@/app/actions/ck-overview'
 import { setManagerStore } from '@/app/actions/store-select'
@@ -113,6 +113,7 @@ export default function AccountingClient({
   const [selectedCkStoreId, setSelectedCkStoreId] = useState<string>(initialCkStoreId)
   const [storeDetailCache, setStoreDetailCache] = useState<StoreDetailCache>({})
   const [showBatchHolidays, setShowBatchHolidays] = useState(false)
+  const [showBatchExcel, setShowBatchExcel] = useState(false)
   const ckDetailCacheRef = useRef<Map<string, CKDetailState>>(new Map())
 
   useEffect(() => { setSelectedStoreId(initialStoreId) }, [initialStoreId])
@@ -217,6 +218,12 @@ export default function AccountingClient({
                 className="text-xs font-semibold px-2.5 h-10 rounded-lg"
                 style={{ background: 'white', color: '#92400E', border: '1px solid #FDE68A' }}>今日</button>
             )}
+            <button onClick={() => setShowBatchExcel(true)}
+              className="hidden sm:flex items-center gap-1.5 h-10 px-3 rounded-lg text-xs font-bold"
+              style={{ background: '#ecfeff', color: '#0e7490', border: '1px solid #a5f3fc' }}
+              title="一次下載全部或部分店家、央廚 Excel">
+              <FileArchive className="h-3.5 w-3.5" /> 批次 Excel
+            </button>
             <button onClick={() => setShowBatchHolidays(true)}
               className="hidden sm:flex items-center gap-1.5 h-10 px-3 rounded-lg text-xs font-bold"
               style={{ background: '#f3e8ff', color: '#6b21a8', border: '1px solid #d8b4fe' }}
@@ -258,6 +265,11 @@ export default function AccountingClient({
             style={{ background: '#f3e8ff', color: '#6b21a8', border: '1px solid #d8b4fe' }}>
             <CalendarDays className="h-3.5 w-3.5" />批次公休
           </button>
+          <button onClick={() => setShowBatchExcel(true)}
+            className="sm:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold"
+            style={{ background: '#ecfeff', color: '#0e7490', border: '1px solid #a5f3fc' }}>
+            <FileArchive className="h-3.5 w-3.5" />批次 Excel
+          </button>
         </div>
       </div>
       {showBatchHolidays && (
@@ -266,6 +278,14 @@ export default function AccountingClient({
           ckStores={ckStores}
           date={date}
           onClose={() => setShowBatchHolidays(false)}
+        />
+      )}
+      {showBatchExcel && (
+        <BatchExcelDialog
+          stores={stores}
+          ckStores={ckStores}
+          date={date}
+          onClose={() => setShowBatchExcel(false)}
         />
       )}
 
@@ -349,6 +369,264 @@ export default function AccountingClient({
           <div className="text-center py-8 text-sm" style={{ color: '#a1a1aa' }}>選一間央廚查看數據與審核</div>
         )}
       </div>
+    </div>
+  )
+}
+
+function batchTargetKey(kind: 'store' | 'ck', id: string) {
+  return `${kind}:${id}`
+}
+
+function parseBatchTargetKey(key: string) {
+  const [kind, storeId] = key.split(':')
+  return { kind: kind as 'store' | 'ck', storeId }
+}
+
+function BatchExcelDialog({
+  stores,
+  ckStores,
+  date,
+  onClose,
+}: {
+  stores: Store[]
+  ckStores: Store[]
+  date: string
+  onClose: () => void
+}) {
+  const [dateYear, dateMonth] = date.split('-').map(Number)
+  const nowYear = new Date().getFullYear()
+  const [mode, setMode] = useState<'month' | 'year'>('month')
+  const [year, setYear] = useState(dateYear)
+  const [month, setMonth] = useState(dateMonth)
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
+    () => new Set([
+      ...stores.map(s => batchTargetKey('store', s.id)),
+      ...ckStores.map(s => batchTargetKey('ck', s.id)),
+    ]),
+  )
+  const [downloading, setDownloading] = useState(false)
+
+  const storeKeys = stores.map(s => batchTargetKey('store', s.id))
+  const ckKeys = ckStores.map(s => batchTargetKey('ck', s.id))
+  const allKeys = useMemo(() => [...storeKeys, ...ckKeys], [storeKeys, ckKeys])
+  const selectedStoreCount = stores.filter(s => selectedKeys.has(batchTargetKey('store', s.id))).length
+  const selectedCkCount = ckStores.filter(s => selectedKeys.has(batchTargetKey('ck', s.id))).length
+  const selectedTargets = useMemo(() => [...selectedKeys].map(parseBatchTargetKey), [selectedKeys])
+
+  function toggleKey(key: string) {
+    setSelectedKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function setGroup(keys: string[], checked: boolean) {
+    setSelectedKeys(prev => {
+      const next = new Set(prev)
+      for (const key of keys) {
+        if (checked) next.add(key)
+        else next.delete(key)
+      }
+      return next
+    })
+  }
+
+  async function downloadBatch() {
+    if (selectedTargets.length === 0) {
+      toast.error('請至少選擇一間店家或央廚')
+      return
+    }
+    setDownloading(true)
+    try {
+      const res = await fetch('/api/export/batch-native', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({
+          type: mode,
+          year,
+          month,
+          targets: selectedTargets,
+        }),
+      })
+      if (!res.ok) {
+        toast.error(await res.text())
+        return
+      }
+      const blob = await res.blob()
+      const disp = res.headers.get('content-disposition') ?? ''
+      const match = /filename\*=UTF-8''([^;]+)/.exec(disp)
+      const label = mode === 'year' ? `${year}年度` : `${year}年${month}月`
+      const filename = match ? decodeURIComponent(match[1]) : `批次Excel_${label}.zip`
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast.success('批次 Excel 已開始下載')
+    } catch (e) {
+      toast.error('批次匯出失敗：' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const selectStyle: React.CSSProperties = {
+    height: 40,
+    padding: '0 12px',
+    border: '1px solid #e4e4e7',
+    borderRadius: 12,
+    background: 'white',
+    fontFamily: 'inherit',
+    fontSize: 14,
+    color: '#18181b',
+    outline: 'none',
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" style={{ background: 'rgba(15,23,42,0.35)' }}>
+      <div className="bg-white w-full sm:max-w-3xl sm:rounded-2xl rounded-t-2xl max-h-[88vh] overflow-hidden flex flex-col" style={{ boxShadow: '0 24px 60px rgba(15,23,42,0.22)' }}>
+        <div className="px-5 py-4 flex items-start justify-between gap-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
+          <div>
+            <p className="text-xs font-semibold" style={{ color: '#0e7490' }}>批次匯出</p>
+            <h2 className="text-lg font-bold" style={{ color: '#18181b' }}>批次下載店面與央廚 Excel</h2>
+            <p className="text-xs mt-1" style={{ color: '#71717a' }}>會下載 ZIP 壓縮檔，每間店或央廚各自保留原本 Excel 格式。</p>
+          </div>
+          <button type="button" onClick={onClose} className="h-9 w-9 rounded-full flex items-center justify-center" style={{ background: '#f4f4f5', color: '#71717a' }}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-5 space-y-4">
+          <div className="rounded-2xl p-4 space-y-3" style={{ background: '#f8fafc', border: '1px solid #f4f4f5' }}>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => setMode('month')} className="h-10 px-4 rounded-xl text-sm font-bold"
+                style={mode === 'month' ? { background: '#0891b2', color: 'white' } : { background: 'white', color: '#52525b', border: '1px solid #e4e4e7' }}>
+                當月 Excel
+              </button>
+              <button type="button" onClick={() => setMode('year')} className="h-10 px-4 rounded-xl text-sm font-bold"
+                style={mode === 'year' ? { background: '#0891b2', color: 'white' } : { background: 'white', color: '#52525b', border: '1px solid #e4e4e7' }}>
+                年度 Excel
+              </button>
+              <select value={year} onChange={e => setYear(parseInt(e.target.value))} style={selectStyle}>
+                {Array.from({ length: 6 }, (_, i) => nowYear - i).map(y => <option key={y} value={y}>{y} 年</option>)}
+              </select>
+              {mode === 'month' && (
+                <select value={month} onChange={e => setMonth(parseInt(e.target.value))} style={selectStyle}>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m} 月</option>)}
+                </select>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold" style={{ color: '#18181b' }}>
+                已選 {selectedTargets.length} 份
+                <span className="ml-2 text-xs font-medium" style={{ color: '#71717a' }}>
+                  店面 {selectedStoreCount} · 央廚 {selectedCkCount}
+                </span>
+              </p>
+              <button type="button" onClick={() => setGroup(allKeys, selectedKeys.size !== allKeys.length)}
+                className="h-9 px-3 rounded-lg text-xs font-bold"
+                style={{ background: 'white', color: '#0e7490', border: '1px solid #a5f3fc' }}>
+                {selectedKeys.size === allKeys.length ? '清除全部' : '全選全部'}
+              </button>
+            </div>
+          </div>
+
+          <BatchExcelGroup
+            title="店面"
+            count={`${selectedStoreCount}/${stores.length}`}
+            stores={stores}
+            kind="store"
+            selectedKeys={selectedKeys}
+            keys={storeKeys}
+            onToggle={toggleKey}
+            onSetGroup={setGroup}
+          />
+          <BatchExcelGroup
+            title="央廚"
+            count={`${selectedCkCount}/${ckStores.length}`}
+            stores={ckStores}
+            kind="ck"
+            selectedKeys={selectedKeys}
+            keys={ckKeys}
+            onToggle={toggleKey}
+            onSetGroup={setGroup}
+          />
+        </div>
+
+        <div className="p-4 flex gap-2" style={{ borderTop: '1px solid #f4f4f5' }}>
+          <button type="button" onClick={onClose} className="h-12 px-5 rounded-xl text-sm font-bold" style={{ background: '#f4f4f5', color: '#52525b' }}>
+            取消
+          </button>
+          <button type="button" onClick={downloadBatch} disabled={downloading || selectedTargets.length === 0}
+            className="flex-1 h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+            style={{
+              background: downloading || selectedTargets.length === 0 ? '#d4d4d8' : 'linear-gradient(135deg,#0891b2,#06b6d4)',
+              color: 'white',
+              cursor: downloading || selectedTargets.length === 0 ? 'not-allowed' : 'pointer',
+            }}>
+            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileArchive className="h-4 w-4" />}
+            批次下載 ZIP
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BatchExcelGroup({
+  title,
+  count,
+  stores,
+  kind,
+  selectedKeys,
+  keys,
+  onToggle,
+  onSetGroup,
+}: {
+  title: string
+  count: string
+  stores: Store[]
+  kind: 'store' | 'ck'
+  selectedKeys: Set<string>
+  keys: string[]
+  onToggle: (key: string) => void
+  onSetGroup: (keys: string[], checked: boolean) => void
+}) {
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
+      <div className="px-4 py-3 flex items-center justify-between" style={{ background: 'white', borderBottom: '1px solid #f4f4f5' }}>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-bold" style={{ color: '#18181b' }}>{title}</p>
+          <span className="text-xs" style={{ color: '#a1a1aa' }}>{count}</span>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => onSetGroup(keys, true)} className="text-xs font-bold" style={{ color: '#0e7490' }}>全選</button>
+          <button type="button" onClick={() => onSetGroup(keys, false)} className="text-xs font-bold" style={{ color: '#a1a1aa' }}>清除</button>
+        </div>
+      </div>
+      {stores.length === 0 ? (
+        <p className="text-sm text-center py-6" style={{ color: '#a1a1aa', background: 'white' }}>沒有可匯出的資料</p>
+      ) : stores.map(store => {
+        const key = batchTargetKey(kind, store.id)
+        const selected = selectedKeys.has(key)
+        return (
+          <button key={key} type="button" onClick={() => onToggle(key)}
+            className="w-full flex items-center gap-3 px-4 py-3 text-left"
+            style={{ background: selected ? '#ecfeff' : 'white', borderTop: '1px solid #f4f4f5' }}>
+            <span className="h-5 w-5 rounded-md flex items-center justify-center shrink-0"
+              style={{ border: selected ? '1.5px solid #0891b2' : '1.5px solid #d4d4d8', background: selected ? '#0891b2' : 'white', color: selected ? 'white' : '#a1a1aa' }}>
+              {selected ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : <Square className="h-3 w-3" />}
+            </span>
+            <span className="text-sm font-semibold truncate" style={{ color: '#18181b' }}>{store.name}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }
