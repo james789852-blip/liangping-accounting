@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/authed-user'
 import { redirect } from 'next/navigation'
 import ClosingsBrowser from '@/components/hq/closings-browser'
 import { getMonthLastDay } from '@/lib/business-date'
@@ -17,9 +18,9 @@ export default async function ClosingsPage({
 }: {
   searchParams: Promise<{ month?: string; date?: string; storeId?: string }>
 }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthedUser()
   if (!user) redirect('/login')
+  const supabase = await createClient()
 
   const { data: profile } = await supabase
     .from('user_profiles').select('*').eq('user_id', user.id).single()

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { CheckSquare, AlertTriangle, ClipboardCheck } from 'lucide-react'
@@ -12,7 +13,7 @@ function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
 export default async function ReviewsPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthedUser()
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase

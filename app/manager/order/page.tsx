@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
@@ -8,9 +9,9 @@ import OrderClient from '@/components/manager/order-client'
 export const dynamic = 'force-dynamic'
 
 export default async function OrderPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthedUser()
   if (!user) redirect('/login')
+  const supabase = await createClient()
 
   const { data: profile } = await supabase
     .from('user_profiles').select('name, role, store_ids, is_hq').eq('user_id', user.id).single()

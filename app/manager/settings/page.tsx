@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getCachedStoreFull, getCachedUserProfile } from '@/lib/cached-queries'
@@ -18,8 +18,7 @@ function statKey(vendorGroup: string | null | undefined, actualVendorName: strin
 }
 
 export default async function ManagerSettingsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthedUser()
   if (!user) redirect('/login')
 
   const profile = await getCachedUserProfile(user.id)

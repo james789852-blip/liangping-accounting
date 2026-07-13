@@ -1,11 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/authed-user'
 import { redirect } from 'next/navigation'
 import { Settings } from 'lucide-react'
 
 export default async function SettingsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthedUser()
   if (!user) redirect('/login')
+  const supabase = await createClient()
 
   const { data: profile } = await supabase
     .from('user_profiles').select('role').eq('user_id', user.id).single()

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { getBusinessDate } from '@/lib/business-date'
@@ -40,7 +41,7 @@ const DOT_STYLE: Record<string, { dot: string; ring: string; label: string }> = 
 
 export default async function HQDashboard() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthedUser()
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
