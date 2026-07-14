@@ -852,7 +852,7 @@ function QuickClosingSummary({ closing }: { closing: ClosingRow }) {
   const expected = Number(closing.should_include_delivery ?? closing.expected_remit ?? 0)
   const reserves = Array.isArray(closing.reserve_items) ? closing.reserve_items : []
   const totalReserved = reserves.reduce((sum, item) => sum + (Number(item?.amount) || 0), 0)
-  const preReservedExpenseTotal = getPreReservedExpenseTotal(closing.cash_counts?.[0]?.large_expenses)
+  const preReservedExpenseTotal = getPreReservedExpenseTotal(closing.cash_counts)
   const adjustmentTotal = Array.isArray(closing.remittance_adjustments)
     ? closing.remittance_adjustments.reduce((sum, item) => sum + (Number(item?.amount) || 0), 0)
     : 0

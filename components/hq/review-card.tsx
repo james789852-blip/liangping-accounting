@@ -120,7 +120,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const reserves = closing.reserve_items ?? []
   const adjustmentTotal = remittanceAdjustments.reduce((s: number, a: any) => s + (Number(a?.amount) || 0), 0)
   const totalReserved = reserves.reduce((s, r) => s + Math.max(0, Number(r?.amount) || 0), 0)
-  const preReservedExpenseTotal = getPreReservedExpenseTotal(closing.cash_counts?.[0]?.large_expenses)
+  const preReservedExpenseTotal = getPreReservedExpenseTotal(closing.cash_counts)
   const hasRemittanceChange = adjustmentTotal !== 0 || totalReserved > 0 || preReservedExpenseTotal > 0
   const remitToHQ = closing.actual_remit + adjustmentTotal - totalReserved + preReservedExpenseTotal
 

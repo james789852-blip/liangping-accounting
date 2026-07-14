@@ -361,7 +361,7 @@ function ClosingCard({
     .reduce((s, r) => s + r.gross_amount, 0)
   const adjustmentTotal = (closing.remittance_adjustments ?? []).reduce((s, item) => s + (Number(item.amount) || 0), 0)
   const totalReserved = (closing.reserve_items ?? []).reduce((s, item) => s + Math.max(0, Number(item.amount) || 0), 0)
-  const preReservedExpenseTotal = getPreReservedExpenseTotal(closing.cash_counts?.[0]?.large_expenses)
+  const preReservedExpenseTotal = getPreReservedExpenseTotal(closing.cash_counts)
   const hasRemittanceChange = adjustmentTotal !== 0 || totalReserved > 0 || preReservedExpenseTotal > 0
   const remitToHQ = Number(closing.actual_remit ?? 0) + adjustmentTotal - totalReserved + preReservedExpenseTotal
 

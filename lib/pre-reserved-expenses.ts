@@ -3,6 +3,10 @@
  * 這個數字只用於最後包回 HQ 的顯示，不應改寫現金清點、實匯入或誤差。
  */
 export function getPreReservedExpenseTotal(value: unknown): number {
+  // Supabase 對一對一關聯可能回傳物件，手動查詢則可能是陣列；兩種格式都支援。
+  if (value && typeof value === 'object' && !Array.isArray(value) && 'large_expenses' in value) {
+    return getPreReservedExpenseTotal((value as { large_expenses?: unknown }).large_expenses)
+  }
   if (!Array.isArray(value)) return 0
   let total = 0
   let marked = 0
