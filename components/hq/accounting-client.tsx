@@ -29,7 +29,7 @@ interface ClosingRow {
   expected_remit?: number
   actual_remit?: number
   should_include_delivery?: number
-  remittance_adjustments?: { amount?: number }[] | null
+  remittance_adjustments?: { label?: string; amount?: number }[] | null
   reserve_items?: { reason?: string; amount?: number }[] | null
 }
 interface CKRow {
