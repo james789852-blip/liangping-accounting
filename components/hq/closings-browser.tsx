@@ -6,6 +6,7 @@ import { X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Camera, Package, 
 import { toast } from 'sonner'
 import { verifyClosing, disputeClosing, deleteClosing, reSyncMonthToSheets } from '@/app/actions/closings'
 import SafePhotoImage from './safe-photo-image'
+import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 
 interface Store { id: string; name: string; type?: string }
 interface RemittanceAdjustment {
@@ -19,6 +20,7 @@ interface Closing {
   actual_remit?: number; should_include_delivery?: number
   remittance_adjustments?: RemittanceAdjustment[]
   reserve_items?: { reason?: string; amount?: number }[]
+  cash_counts?: { large_expenses?: unknown }[]
   ck_delivery_photo_url?: string; channel_photo_urls?: Record<string, string>
   envelope_photo_url?: string; void_invoice_photo_urls?: string[]; note_photo_url?: string
   extra_photo_urls?: Array<string | { url?: string | null; label?: string | null }> | null
@@ -359,8 +361,9 @@ function ClosingCard({
     .reduce((s, r) => s + r.gross_amount, 0)
   const adjustmentTotal = (closing.remittance_adjustments ?? []).reduce((s, item) => s + (Number(item.amount) || 0), 0)
   const totalReserved = (closing.reserve_items ?? []).reduce((s, item) => s + Math.max(0, Number(item.amount) || 0), 0)
-  const hasRemittanceChange = adjustmentTotal !== 0 || totalReserved > 0
-  const remitToHQ = Number(closing.actual_remit ?? 0) + adjustmentTotal - totalReserved
+  const preReservedExpenseTotal = getPreReservedExpenseTotal(closing.cash_counts?.[0]?.large_expenses)
+  const hasRemittanceChange = adjustmentTotal !== 0 || totalReserved > 0 || preReservedExpenseTotal > 0
+  const remitToHQ = Number(closing.actual_remit ?? 0) + adjustmentTotal - totalReserved + preReservedExpenseTotal
 
   const ckItems = (closing.order_items ?? []).filter(o => o.item_name !== '央廚配送')
 
@@ -443,6 +446,7 @@ function ClosingCard({
                 { label: '實際包進信封（現金清點）', val: closing.actual_remit ?? closing.expected_remit, color: '#18181b', bold: true },
                 ...(closing.remittance_adjustments ?? []).filter(adj => Number(adj.amount) !== 0).map(adj => ({ label: `　${adj.label || '匯款調整'}`, val: Number(adj.amount), color: Number(adj.amount) >= 0 ? '#047857' : '#2563eb' })),
                 ...(closing.reserve_items ?? []).map(item => ({ label: `　預留${item.reason || '款項'}`, val: -(Number(item.amount) || 0), color: '#c2410c' })),
+                ...(preReservedExpenseTotal > 0 ? [{ label: '　前幾日已預留支出加回', val: preReservedExpenseTotal, color: '#15803d' }] : []),
                 ...(hasRemittanceChange ? [{ label: '實際匯入公司（調整／預留後）', val: remitToHQ, color: '#047857', bold: true }] : []),
               ].map(({ label, val, color, bold }, idx, arr) => (
                 <div key={idx} className="flex items-center justify-between px-3 py-2 text-xs"

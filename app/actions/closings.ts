@@ -15,7 +15,7 @@ interface CashCountsPayload {
   coins_50: number; coins_10: number; coins_5: number; coins_1: number
   lump_1000: number; lump_500: number; lump_100: number
   lump_50: number; lump_10: number; lump_5: number; lump_1: number
-  large_expenses?: { id: string; description: string; amount: number }[]
+  large_expenses?: { id: string; description: string; amount: number; preReserved?: boolean }[]
 }
 
 type ClosingForDelete = {

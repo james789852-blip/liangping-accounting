@@ -12,6 +12,7 @@ import DeleteDraftButton from '@/components/manager/delete-draft-button'
 import HandwriteOrdersList from '@/components/manager/handwrite-orders-list'
 import ReceiptPhotoViewer from '@/components/manager/receipt-photo-viewer'
 import PhotoGrid from '@/components/manager/photo-grid'
+import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -19,6 +20,7 @@ interface LargeCashExpense {
   id: string
   description: string
   amount: number
+  preReserved?: boolean
 }
 
 interface PettyCountsPayload {
@@ -46,6 +48,7 @@ function parseLargeCashExpenses(value: unknown): LargeCashExpense[] {
         id: typeof row.id === 'string' ? row.id : `${row.description ?? 'expense'}-${row.amount ?? 0}`,
         description: typeof row.description === 'string' && row.description.trim() ? row.description.trim() : '大額支出',
         amount: Math.abs(Number(row.amount) || 0),
+        preReserved: row.preReserved === true,
       }
     })
     .filter(item => item.amount > 0)
@@ -124,6 +127,7 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
   const handwriteOrders = closing.handwrite_orders ?? []
   const cashRow = cash as { large_expenses?: unknown; cash_total?: number | string } | undefined
   const largeCashExpenses = parseLargeCashExpenses(cashRow?.large_expenses)
+  const preReservedExpenseTotal = getPreReservedExpenseTotal(largeCashExpenses)
   const largeCashExpenseTotal = largeCashExpenses.reduce((sum, item) => sum + item.amount, 0)
   const countedCashTotal = Number(cashRow?.cash_total ?? 0)
   const adjustedCashTotal = countedCashTotal - largeCashExpenseTotal
@@ -279,11 +283,11 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
       {/* 預留款 */}
       {(() => {
         const reserves = (closing.reserve_items as any[]) ?? []
-        if (reserves.length === 0) return null
+        if (reserves.length === 0 && preReservedExpenseTotal <= 0) return null
         const adjustments = (closing.remittance_adjustments as any[]) ?? []
         const adjustmentTotal = adjustments.reduce((sum: number, a: any) => sum + (a.amount ?? 0), 0)
         const totalReserved = reserves.reduce((sum: number, r: any) => sum + (r.amount ?? 0), 0)
-        const remitToHQ = (closing.actual_remit ?? 0) + adjustmentTotal - totalReserved
+        const remitToHQ = (closing.actual_remit ?? 0) + adjustmentTotal - totalReserved + preReservedExpenseTotal
         return (
           <Card style={{ border: '1px solid #fed7aa' }}>
             <CardHeader className="pb-2">
@@ -298,6 +302,12 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
                   <span className="tabular-nums font-medium" style={{ color: '#ea580c' }}>−{fmt(r.amount)}</span>
                 </div>
               ))}
+              {preReservedExpenseTotal > 0 && (
+                <div className="flex justify-between items-center text-sm" style={{ color: '#15803d' }}>
+                  <span>前幾日已預留支出加回</span>
+                  <span className="tabular-nums font-medium">＋{fmt(preReservedExpenseTotal)}</span>
+                </div>
+              )}
               <Separator />
               <div className="flex justify-between text-sm font-semibold">
                 <span>今日實際匯入</span>

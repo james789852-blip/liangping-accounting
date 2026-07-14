@@ -46,6 +46,7 @@ export default async function AccountingPage({
         id, store_id, business_date, status, note, dispute_note, submitted_by, updated_at,
         total_revenue, total_cost, total_expenses, expected_remit,
         actual_remit, should_include_delivery, variance, remittance_adjustments, reserve_items,
+        cash_counts(large_expenses),
         ck_delivery_photo_url, channel_photo_urls,
         envelope_photo_url, void_invoice_photo_urls, note_photo_url, extra_photo_urls,
         stores(id, name),

@@ -12,6 +12,7 @@ import { syncStoreCKOrder } from '@/app/actions/ck'
 import { createSignedUploadUrl, uploadToStorage } from '@/app/actions/upload'
 import { compressImage } from '@/lib/compress-image'
 import { normalizeItemAmount } from '@/lib/negative-items'
+import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
 import SharedSafePhotoImage from '@/components/shared/safe-photo-image'
 
@@ -372,13 +373,10 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
     (data.coins_5    * 5    + data.lump_5)    +
     (data.coins_1    * 1    + data.lump_1)
   const largeExpenseTotal = largeCashExpenses.reduce((sum, item) => sum + Math.abs(item.amount || 0), 0)
-  const preReservedExpenseTotal = Math.min(
-    largeExpenseTotal,
-    largeCashExpenses
-      .filter(item => item.preReserved === true)
-      .reduce((sum, item) => sum + Math.abs(item.amount || 0), 0),
-  )
-  const cashExpenseTotal = Math.max(0, largeExpenseTotal - preReservedExpenseTotal)
+  const preReservedExpenseTotal = getPreReservedExpenseTotal(largeCashExpenses)
+  // 現金清點、實匯入、誤差與 Excel 維持原始邏輯：大額支出一律先從今日現金扣除。
+  // 「前幾日已預留」只在最後包回 HQ 的金額加回，不改動上述原始帳務數字。
+  const cashExpenseTotal = largeExpenseTotal
   // 顧客已完成轉帳但不在現金鈔箱；現金清點的總額仍要呈現這筆收入，
   // 下一步再透過負的匯款調整扣回，得到實際要包回公司的金額。
   const customerTransferTotal = adjustments
@@ -393,7 +391,7 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
   const finalRemit = actualRemit + adjustmentTotal
   const netVariance = finalRemit - shouldEnvelope
   const totalReserved = reserves.reduce((sum, r) => sum + r.amount, 0)
-  const remitToHQ = finalRemit - totalReserved
+  const remitToHQ = finalRemit - totalReserved + preReservedExpenseTotal
   return { totalRevenue, platformTotal, platformPaid, storeRevenue, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashSubtotal, largeExpenseTotal, preReservedExpenseTotal, cashExpenseTotal, cashTotal, actualRemit, variance, adjustmentTotal, finalRemit, netVariance, totalReserved, remitToHQ }
 }
 
@@ -4098,7 +4096,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold" style={{ color: '#9a3412' }}>大額支出</p>
-                    <p className="text-[11px]" style={{ color: '#c2410c' }}>例如房租、營業稅。一般會從今天現金扣除；若前幾日已預留，請勾選由預留款支付。</p>
+                    <p className="text-[11px]" style={{ color: '#c2410c' }}>例如房租、營業稅。現金清點與實匯入維持原始計算；若前幾日已預留，最後包款會加回。</p>
                   </div>
                   {!isLocked && (
                     <button type="button" onClick={addLargeCashExpense}
@@ -4147,7 +4145,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             onChange={e => updateLargeCashExpense(item.id, 'preReserved', e.target.checked)}
                             style={{ accentColor: '#16a34a' }}
                           />
-                          <span>前幾日已預留，今天不扣現金</span>
+                          <span>前幾日已預留，最後包款加回</span>
                           {item.preReserved && <span style={{ color: '#16a34a' }}>（已自動判定）</span>}
                         </label>
                       </div>
@@ -4158,12 +4156,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   <div className="flex justify-between text-sm font-semibold tabular-nums pt-2" style={{ borderTop: '1px solid #fed7aa', color: '#dc2626' }}>
                     <span>大額支出小計</span>
                     <span>-${fmt(s.largeExpenseTotal)}</span>
-                  </div>
-                )}
-                {s.preReservedExpenseTotal > 0 && (
-                  <div className="flex justify-between text-xs font-semibold tabular-nums" style={{ color: '#15803d' }}>
-                    <span>前幾日已預留（今日加回）</span>
-                    <span>+${fmt(s.preReservedExpenseTotal)}</span>
                   </div>
                 )}
               </div>
@@ -4186,7 +4178,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </div>
               <div className="mt-3 space-y-2">
                 {s.largeExpenseTotal > 0 && <SummaryBlock label="現金清點小計" value={`$${fmt(s.cashSubtotal)}`} />}
-                {s.preReservedExpenseTotal > 0 && <SummaryBlock label="今日現金實際扣除大額支出" value={`$${fmt(s.cashExpenseTotal)}`} />}
+                {s.largeExpenseTotal > 0 && <SummaryBlock label="今日現金實際扣除大額支出" value={`$${fmt(s.cashExpenseTotal)}`} />}
                 <SummaryBlock label="現金總額" value={`$${fmt(s.cashTotal)}`} />
                 <SummaryBlock label={`扣零用金（$${fmt(store.petty_cash)}）= 實匯入`} value={`$${fmt(s.actualRemit)}`} />
               </div>
@@ -5031,12 +5023,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </div>
               <div className="rounded-2xl p-5 text-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
                 <p className="text-xs mb-1" style={{ opacity: 0.8 }}>
-                  {s.totalReserved > 0 ? '今日實際匯入公司' : '請包入信封袋的金額'}
+                  {hasRemittanceChange ? '今日實際匯入公司' : '請包入信封袋的金額'}
                 </p>
-                <p className="text-4xl font-extrabold tabular-nums tracking-tight">${fmt(s.totalReserved > 0 ? s.remitToHQ : s.actualRemit)}</p>
-                {s.totalReserved > 0 && (
+                <p className="text-4xl font-extrabold tabular-nums tracking-tight">${fmt(hasRemittanceChange ? s.remitToHQ : s.actualRemit)}</p>
+                {hasRemittanceChange && (
                   <p className="text-xs mt-2" style={{ opacity: 0.7 }}>
-                    （已預留 ${fmt(s.totalReserved)} 備付費用）
+                    （{[
+                      s.preReservedExpenseTotal > 0 ? `前幾日已預留支出加回 $${fmt(s.preReservedExpenseTotal)}` : '',
+                      s.totalReserved > 0 ? `已預留 $${fmt(s.totalReserved)} 備付費用` : '',
+                    ].filter(Boolean).join('；')}）
                   </p>
                 )}
               </div>

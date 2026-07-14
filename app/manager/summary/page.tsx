@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import HandwriteOrdersList from '@/components/manager/handwrite-orders-list'
+import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +20,7 @@ interface LargeCashExpense {
   id: string
   description: string
   amount: number
+  preReserved?: boolean
 }
 
 function parseLargeCashExpenses(value: unknown): LargeCashExpense[] {
@@ -30,6 +32,7 @@ function parseLargeCashExpenses(value: unknown): LargeCashExpense[] {
         id: typeof row.id === 'string' ? row.id : `${row.description ?? 'expense'}-${row.amount ?? 0}`,
         description: typeof row.description === 'string' && row.description.trim() ? row.description.trim() : '大額支出',
         amount: Math.abs(Number(row.amount) || 0),
+        preReserved: row.preReserved === true,
       }
     })
     .filter(item => item.amount > 0)
@@ -140,6 +143,7 @@ export default async function SummaryPage({
   const cashRow = cash as { large_expenses?: unknown; cash_total?: number | string } | undefined
   const largeCashExpenses = parseLargeCashExpenses(cashRow?.large_expenses)
   const largeCashExpenseTotal = largeCashExpenses.reduce((sum, item) => sum + item.amount, 0)
+  const preReservedExpenseTotal = getPreReservedExpenseTotal(largeCashExpenses)
   const countedCashTotal = Number(cashRow?.cash_total ?? 0)
   const adjustedCashTotal = countedCashTotal - largeCashExpenseTotal
 
@@ -150,16 +154,17 @@ export default async function SummaryPage({
     ? (closing as any).remittance_adjustments.reduce((sum: number, item: any) => sum + (Number(item?.amount) || 0), 0)
     : 0
   const finalRemit = Number(closing.actual_remit ?? 0) + adjustmentTotal
-  const remitToHQ = finalRemit - totalReserved
+  const remitToHQ = finalRemit - totalReserved + preReservedExpenseTotal
   const hasReserved = totalReserved > 0
   const hasRemittanceAdjustment = adjustmentTotal !== 0
-  const hasRemittanceChange = hasReserved || hasRemittanceAdjustment
+  const hasRemittanceChange = hasReserved || hasRemittanceAdjustment || preReservedExpenseTotal > 0
   const originalExpectedEnvelope = Number(closing.should_include_delivery ?? 0)
   const displayExpectedEnvelope = hasRemittanceChange ? remitToHQ : originalExpectedEnvelope
   const expectedEnvelopeDescription = hasRemittanceChange
     ? [
         hasRemittanceAdjustment ? `原始應包 ${fmt(originalExpectedEnvelope)} ${adjustmentTotal >= 0 ? '+' : '−'} 匯款調整 ${fmt(Math.abs(adjustmentTotal))}` : '',
         hasReserved ? `扣預留款 ${fmt(totalReserved)}` : '',
+        preReservedExpenseTotal > 0 ? `前幾日已預留支出加回 ${fmt(preReservedExpenseTotal)}` : '',
       ].filter(Boolean).join('；')
     : ''
   const displayActualEnvelope = hasRemittanceChange ? remitToHQ : Number(closing.actual_remit ?? 0)
@@ -167,6 +172,7 @@ export default async function SummaryPage({
     ? [
         hasRemittanceAdjustment ? `原始實匯入 ${fmt(Number(closing.actual_remit ?? 0))} ${adjustmentTotal >= 0 ? '+' : '−'} 匯款調整 ${fmt(Math.abs(adjustmentTotal))}` : '',
         hasReserved ? `扣預留款 ${fmt(totalReserved)}` : '',
+        preReservedExpenseTotal > 0 ? `前幾日已預留支出加回 ${fmt(preReservedExpenseTotal)}` : '',
       ].filter(Boolean).join('；')
     : `現金 ${fmt(adjustedCashTotal)} − 零用金 ${fmt(store?.petty_cash ?? 0)}`
 

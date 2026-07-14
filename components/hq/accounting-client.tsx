@@ -13,6 +13,7 @@ import ReviewCard from './review-card'
 import CKOverview from './ck-overview'
 import HolidaysEditor from './holidays-editor'
 import BatchHolidaysDialog from './batch-holidays-dialog'
+import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 
 interface Store { id: string; name: string }
 interface ClosingRow {
@@ -31,6 +32,7 @@ interface ClosingRow {
   should_include_delivery?: number
   remittance_adjustments?: { label?: string; amount?: number }[] | null
   reserve_items?: { reason?: string; amount?: number }[] | null
+  cash_counts?: { large_expenses?: unknown }[] | null
 }
 interface CKRow {
   ck_store_id: string
@@ -850,11 +852,12 @@ function QuickClosingSummary({ closing }: { closing: ClosingRow }) {
   const expected = Number(closing.should_include_delivery ?? closing.expected_remit ?? 0)
   const reserves = Array.isArray(closing.reserve_items) ? closing.reserve_items : []
   const totalReserved = reserves.reduce((sum, item) => sum + (Number(item?.amount) || 0), 0)
+  const preReservedExpenseTotal = getPreReservedExpenseTotal(closing.cash_counts?.[0]?.large_expenses)
   const adjustmentTotal = Array.isArray(closing.remittance_adjustments)
     ? closing.remittance_adjustments.reduce((sum, item) => sum + (Number(item?.amount) || 0), 0)
     : 0
-  const remitToHQ = actual + adjustmentTotal - totalReserved
-  const hasRemittanceChange = totalReserved > 0 || adjustmentTotal !== 0
+  const remitToHQ = actual + adjustmentTotal - totalReserved + preReservedExpenseTotal
+  const hasRemittanceChange = totalReserved > 0 || adjustmentTotal !== 0 || preReservedExpenseTotal > 0
 
   return (
     <div className="space-y-3">
@@ -884,6 +887,12 @@ function QuickClosingSummary({ closing }: { closing: ClosingRow }) {
               <span className="tabular-nums font-semibold">−${fmt(Number(item.amount) || 0)}</span>
             </div>
           ))}
+          {preReservedExpenseTotal > 0 && (
+            <div className="flex items-center justify-between text-xs" style={{ color: '#15803d' }}>
+              <span>前幾日已預留支出加回</span>
+              <span className="tabular-nums font-semibold">＋${fmt(preReservedExpenseTotal)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between text-xs font-bold pt-1 mt-1" style={{ borderTop: '1px solid #fed7aa', color: '#9a3412' }}>
             <span>扣除預留後實際匯入公司</span>
             <span className="tabular-nums">${fmt(remitToHQ)}</span>

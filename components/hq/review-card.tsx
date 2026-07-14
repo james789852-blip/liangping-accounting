@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, Image, FileText, AlertTriangle, Check } from 'l
 import ReviewActions from './review-actions'
 import PhotoLightbox from './photo-lightbox'
 import SafePhotoImage from './safe-photo-image'
+import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -24,6 +25,7 @@ interface Closing {
   total_cost: number; total_expenses: number; stores: { name: string }
   revenue_items: RevenueItem[]; expense_items: ExpenseItem[]; order_items: OrderItem[]
   remittance_adjustments?: any[]; reserve_items?: ReserveItem[]
+  cash_counts?: { large_expenses?: unknown }[]
   // 其他照片（總覽用）
   ck_delivery_photo_url?: string | null
   channel_photo_urls?: Record<string, string> | null
@@ -118,8 +120,9 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const reserves = closing.reserve_items ?? []
   const adjustmentTotal = remittanceAdjustments.reduce((s: number, a: any) => s + (Number(a?.amount) || 0), 0)
   const totalReserved = reserves.reduce((s, r) => s + Math.max(0, Number(r?.amount) || 0), 0)
-  const hasRemittanceChange = adjustmentTotal !== 0 || totalReserved > 0
-  const remitToHQ = closing.actual_remit + adjustmentTotal - totalReserved
+  const preReservedExpenseTotal = getPreReservedExpenseTotal(closing.cash_counts?.[0]?.large_expenses)
+  const hasRemittanceChange = adjustmentTotal !== 0 || totalReserved > 0 || preReservedExpenseTotal > 0
+  const remitToHQ = closing.actual_remit + adjustmentTotal - totalReserved + preReservedExpenseTotal
 
   const st = STATUS_STYLE[closing.status] ?? STATUS_STYLE.submitted
 
@@ -262,6 +265,12 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                         <span className="tabular-nums">−{fmt(Number(r.amount) || 0)}</span>
                       </div>
                     ))}
+                    {preReservedExpenseTotal > 0 && (
+                      <div className="flex justify-between text-xs pt-1" style={{ color: '#15803d' }}>
+                        <span>前幾日已預留支出加回</span>
+                        <span className="tabular-nums">＋{fmt(preReservedExpenseTotal)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-xs font-bold pt-1" style={{ borderTop: '1px solid #fed7aa', color: remitToHQ < 0 ? '#dc2626' : '#18181b' }}>
                       <span>今日實際匯入公司</span>
                       <span className="tabular-nums">${fmt(remitToHQ)}</span>
