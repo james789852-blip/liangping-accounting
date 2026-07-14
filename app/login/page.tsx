@@ -54,7 +54,8 @@ export default function LoginPage() {
 
     const isHQ = profile?.role === '老闆' || profile?.is_hq === true
     const hasAssignedStore = Array.isArray(profile?.store_ids) && profile.store_ids.length > 0
-    await resetStoreSelectionForLogin()
+    // 清理店面角色的舊切店狀態不應阻塞登入導向；背景完成即可。
+    void resetStoreSelectionForLogin().catch(() => {})
     toast.success('登入成功')
     router.push(isHQ ? getDefaultHQHref(profile) : (hasAssignedStore ? '/manager/dashboard' : '/manager/dashboard'))
     router.refresh()
