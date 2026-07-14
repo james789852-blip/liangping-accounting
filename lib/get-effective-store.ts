@@ -26,6 +26,9 @@ export async function getEffectiveStoreId(profile: {
     return profile.store_ids?.[0] ?? null
   }
 
+  // 總公司角色若有設定主店，也以主店為主；只有沒有主店時才沿用總公司切店狀態。
+  if (profile.primary_store_id) return profile.primary_store_id
+
   // 其他管理角色：優先沿用明確切換的店家，再使用個人主店作為預設。
 
   // 老闆 / is_hq：可查看所有 active 店家

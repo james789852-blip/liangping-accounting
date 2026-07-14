@@ -26,10 +26,12 @@ export default async function ManagerLayout({ children }: { children: React.Reac
   if (!user) redirect('/login')
 
   const profile = await getCachedUserProfile(user.id)
-  // 店長／副店長等即使被授予部分總公司權限，進入「店長端」仍應以自己的主店為主。
-  // 否則會走 HQ 的切店 cookie 流程，容易被先前停留的店家（例如心悅）蓋掉。
+  // 店面角色固定以自己的主店為主；總公司角色只要有設定主店，也先進店面端。
+  // 只有沒有主店的總公司角色才使用總公司端與切店 cookie。
   const isStoreManager = isStoreRole(profile?.role)
-  const isHQ = !!profile && hasAnyHQPermission(profile) && !isStoreManager
+  const hasPrimaryStore = !!(profile as any)?.primary_store_id
+  const isStoreView = isStoreManager || hasPrimaryStore
+  const isHQ = !!profile && hasAnyHQPermission(profile) && !isStoreView
 
   let storeId: string | null = null
   let storeName = ''
@@ -62,14 +64,13 @@ export default async function ManagerLayout({ children }: { children: React.Reac
       storeType = (currentStore as any)?.type ?? '店面'
     }
   } else {
-    // 一般店家角色：優先用主店 (primary_store_id)，其次 store_ids 第一個
+    // 店長端：店面角色與「有主店的總公司角色」都優先使用主店。
     const cookieStore = await cookies()
     const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
     const primary = (profile as any)?.primary_store_id as string | undefined
     const storeIds = profile?.store_ids ?? []
-    // 店長端以個人主店為固定預設；只有未設定主店時才沿用曾切換的店家。
-    // 避免多店權限使用者因總公司端留下的 cookie 被帶到其他店。
-    if (primary && storeIds.includes(primary)) storeId = primary
+    // 店面角色需確認主店屬於其可用店面；總公司角色的主店可直接使用。
+    if (primary && (!isStoreManager || storeIds.includes(primary))) storeId = primary
     else if (cookieStoreId && storeIds.includes(cookieStoreId)) storeId = cookieStoreId
     else storeId = storeIds[0] ?? null
 
