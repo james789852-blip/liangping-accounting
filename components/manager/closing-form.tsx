@@ -1250,6 +1250,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     () => calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, largeCashExpenses),
     [data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, largeCashExpenses],
   )
+  const hasRemittanceChange = s.totalReserved > 0 || s.adjustmentTotal !== 0
   // 信封袋實際裝的是完成匯款調整、扣除預留款後要交回 HQ 的金額。
   // 例如整筆現金預留營業稅時 remitToHQ = 0，當天不會有信封，也不應要求照片。
   const requiresEnvelopePhoto = s.remitToHQ > 0
@@ -4883,13 +4884,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             <div className="rounded-3xl p-6 text-center mb-4"
               style={{ background: 'linear-gradient(135deg,#FFFBEB,#f5f3ff)', border: '1.5px solid #FDE68A' }}>
               <p className="text-xs mb-1 font-semibold" style={{ color: '#F59E0B' }}>
-                {s.totalReserved > 0 ? '今日實際匯入公司' : '應包進信封的錢'}
+                {hasRemittanceChange ? '實際應包回公司的錢' : '應包進信封的錢'}
               </p>
               <p className="text-5xl font-extrabold tabular-nums tracking-tight mb-2" style={{ color: '#92400E' }}>
-                ${fmt(s.totalReserved > 0 ? s.remitToHQ : s.actualRemit)}
+                ${fmt(hasRemittanceChange ? s.remitToHQ : s.actualRemit)}
               </p>
-              {s.totalReserved > 0 && (
+              {hasRemittanceChange && (
                 <div className="mt-2 mb-1 px-3 py-2 rounded-xl text-xs" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                  {s.adjustmentTotal !== 0 && (
+                    <div className="flex justify-between tabular-nums" style={{ color: '#2563eb' }}>
+                      <span>匯款調整</span>
+                      <span>{s.adjustmentTotal >= 0 ? '+' : '−'}${fmt(Math.abs(s.adjustmentTotal))}</span>
+                    </div>
+                  )}
                   {reserves.map(r => {
                     const accumulatedTotal = (r.accumulated_before ?? 0) + r.amount
                     const remaining = r.total_bill && r.total_bill > accumulatedTotal ? r.total_bill - accumulatedTotal : null
@@ -4903,6 +4910,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       </div>
                     )
                   })}
+                  <div className="flex justify-between tabular-nums font-semibold mt-1 pt-1" style={{ borderTop: '1px solid #fed7aa', color: '#9a3412' }}>
+                    <span>原始實匯入 ${fmt(s.actualRemit)} → 實際包回</span>
+                    <span>${fmt(s.remitToHQ)}</span>
+                  </div>
                 </div>
               )}
               <div className="flex justify-center gap-6 text-sm mt-3">
