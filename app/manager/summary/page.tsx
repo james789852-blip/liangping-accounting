@@ -143,6 +143,18 @@ export default async function SummaryPage({
   const countedCashTotal = Number(cashRow?.cash_total ?? 0)
   const adjustedCashTotal = countedCashTotal - largeCashExpenseTotal
 
+  // 結果頁要與送出頁一致：預留款是從實際匯入中扣除，不應繼續顯示預留前的信封金額。
+  const reserveItems = Array.isArray((closing as any).reserve_items) ? (closing as any).reserve_items as any[] : []
+  const totalReserved = reserveItems.reduce((sum, item) => sum + Math.max(0, Number(item?.amount) || 0), 0)
+  const adjustmentTotal = Array.isArray((closing as any).remittance_adjustments)
+    ? (closing as any).remittance_adjustments.reduce((sum: number, item: any) => sum + (Number(item?.amount) || 0), 0)
+    : 0
+  const finalRemit = Number(closing.actual_remit ?? 0) + adjustmentTotal
+  const remitToHQ = finalRemit - totalReserved
+  const hasReserved = totalReserved > 0
+  const displayExpectedEnvelope = hasReserved ? remitToHQ : Number(closing.should_include_delivery ?? 0)
+  const displayActualEnvelope = hasReserved ? remitToHQ : Number(closing.actual_remit ?? 0)
+
   const st = STATUS_CFG[closing.status] ?? STATUS_CFG.draft
   const platformTotal = rev
     .filter((r: any) => ['uber', 'panda', 'twpay', 'online'].includes(r.channel))
@@ -231,7 +243,7 @@ export default async function SummaryPage({
               </div>
               <div>
                 <p className="text-xs mb-1 opacity-70">應包進信封</p>
-                <p className="text-xl font-bold tabular-nums">${fmt(closing.should_include_delivery)}</p>
+                <p className="text-xl font-bold tabular-nums">${fmt(displayExpectedEnvelope)}</p>
               </div>
             </div>
           </div>
@@ -261,18 +273,20 @@ export default async function SummaryPage({
             style={{ background: 'linear-gradient(135deg,#FFFBEB,#f5f3ff)' }}>
             <p className="text-sm font-bold" style={{ color: '#92400E' }}>＝ 應包進信封</p>
             <span className="text-2xl font-extrabold tabular-nums" style={{ color: '#92400E' }}>
-              ${fmt(closing.should_include_delivery)}
+              ${fmt(displayExpectedEnvelope)}
             </span>
           </div>
           <div className="flex items-center justify-between py-3.5 mt-1">
             <div>
               <p className="text-sm font-medium" style={{ color: '#18181b' }}>實際包進信封</p>
               <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
-                現金 ${fmt(adjustedCashTotal)} − 零用金 ${fmt(store?.petty_cash ?? 0)}
+                {hasReserved
+                  ? `預留前 ${fmt(finalRemit)} − 預留款 ${fmt(totalReserved)}`
+                  : `現金 ${fmt(adjustedCashTotal)} − 零用金 ${fmt(store?.petty_cash ?? 0)}`}
               </p>
             </div>
             <span className="text-lg font-bold tabular-nums" style={{ color: '#18181b' }}>
-              ${fmt(closing.actual_remit)}
+              ${fmt(displayActualEnvelope)}
             </span>
           </div>
         </div>
@@ -313,7 +327,7 @@ export default async function SummaryPage({
             <div className="pt-2 mt-1" style={{ borderTop: '1px solid #f4f4f5' }}>
               <strong style={{ color: '#52525b' }}>實匯入金額：</strong>
               <span className="font-extrabold text-2xl tabular-nums ml-1" style={{ color: '#92400E', letterSpacing: '-0.02em' }}>
-                ${fmt(closing.actual_remit)}
+                ${fmt(displayActualEnvelope)}
               </span>
             </div>
           </div>
@@ -445,9 +459,23 @@ export default async function SummaryPage({
                 </div>
               )}
               <div className="flex justify-between items-center py-1">
-                <span className="text-xs" style={{ color: '#a1a1aa' }}>扣零用金（${fmt(store?.petty_cash ?? 0)}）</span>
-                <span className="text-sm font-semibold tabular-nums" style={{ color: '#92400E' }}>${fmt(closing.actual_remit)}</span>
+                <span className="text-xs" style={{ color: '#a1a1aa' }}>
+                  {hasReserved ? '扣零用金（預留前）' : `扣零用金（$${fmt(store?.petty_cash ?? 0)}）`}
+                </span>
+                <span className="text-sm font-semibold tabular-nums" style={{ color: '#92400E' }}>${fmt(hasReserved ? finalRemit : Number(closing.actual_remit ?? 0))}</span>
               </div>
+              {hasReserved && (
+                <>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-xs" style={{ color: '#a1a1aa' }}>扣預留款</span>
+                    <span className="text-sm font-semibold tabular-nums" style={{ color: '#c2410c' }}>−${fmt(totalReserved)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-sm font-bold" style={{ color: '#18181b' }}>實際匯入公司</span>
+                    <span className="text-sm font-bold tabular-nums" style={{ color: '#047857' }}>${fmt(remitToHQ)}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
