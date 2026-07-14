@@ -56,6 +56,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
   }
 
   const admin2 = createAdminClient()
+  const reserveLookbackDate = new Date(new Date(`${closing.business_date}T00:00:00+08:00`).getTime() - 45 * 86400000).toISOString().slice(0, 10)
   // 全部平行撈，省 3 個 round trip
   const [
     { data: store },
@@ -66,6 +67,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     itemOrderText,
     mappingBasedItems,
     { data: actualVendors },
+    { data: prevReserveClosings },
   ] = await Promise.all([
     supabase.from('stores').select('*').eq('id', storeId).single(),
     supabase
@@ -93,7 +95,36 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .order('vendor_group')
       .order('sort_order')
       .order('name'),
+    admin2
+      .from('daily_closings')
+      .select('reserve_items, business_date')
+      .eq('store_id', storeId)
+      .gte('business_date', reserveLookbackDate)
+      .lt('business_date', closing.business_date)
+      .in('status', ['submitted', 'verified'])
+      .order('business_date', { ascending: false })
+      .limit(45),
   ])
+
+  // 補做／退回修改頁面也要沿用一般結帳頁的歷史預留款比對，
+  // 否則大額支出會再次被當成今日現金扣除。
+  const reserveExpenseHints = new Map<string, { reason: string; amount: number; total_bill?: number }>()
+  for (const previous of prevReserveClosings ?? []) {
+    const items = Array.isArray(previous.reserve_items) ? previous.reserve_items as any[] : []
+    for (const item of items) {
+      const reason = typeof item.reason === 'string' && item.reason.trim() ? item.reason.trim() : '其他'
+      const amount = Math.max(0, Number(item.amount ?? 0))
+      if (amount <= 0) continue
+      const totalBill = Number(item.total_bill ?? 0)
+      const hint = reserveExpenseHints.get(reason)
+      if (hint) {
+        hint.amount += amount
+        if (totalBill > 0) hint.total_bill = Math.max(hint.total_bill ?? 0, totalBill)
+      } else {
+        reserveExpenseHints.set(reason, { reason, amount, ...(totalBill > 0 ? { total_bill: totalBill } : {}) })
+      }
+    }
+  }
 
   let itemOrder: string[] = []
   try { if (itemOrderText) itemOrder = JSON.parse(itemOrderText) } catch {}
@@ -130,6 +161,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
         receiptCategories={receiptCategories}
         mappingColumns={mappingColumns}
         actualVendors={actualVendors ?? []}
+        preReservedExpenseHints={Array.from(reserveExpenseHints.values())}
         isBackfill={closing.business_date !== getBusinessDate()}
         realToday={getBusinessDate()}
       />
