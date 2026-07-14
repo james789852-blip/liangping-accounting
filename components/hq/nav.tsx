@@ -287,13 +287,18 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         {/* 切換店家（有多店時顯示，緊接在切換按鈕下，方便先選店再切端） */}
         {hasStores && allStores.length > 1 && (
           <div className="px-4 pb-3">
-            <p className="text-[11px] font-semibold uppercase mb-1.5" style={{ color: '#a1a1aa', letterSpacing: '0.05em' }}>切換店家</p>
-            <StoreSwitcher
-              stores={allStores}
-              currentStoreId={currentStoreId}
-              className="w-full text-sm rounded-[10px] px-3 py-2 border font-medium focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              style={{ borderColor: '#e4e4e7', color: '#18181b', backgroundColor: '#fafafa' }}
-            />
+            <div className="rounded-xl p-3" style={{ background: '#fff7ed', border: '1.5px solid #fdba74' }}>
+              <div className="flex items-center gap-1.5 mb-2" style={{ color: '#c2410c' }}>
+                <ArrowRightLeft className="h-4 w-4" />
+                <p className="text-xs font-bold">切換目前操作店家</p>
+              </div>
+              <StoreSwitcher
+                stores={allStores}
+                currentStoreId={currentStoreId}
+                className="w-full rounded-[10px] border-2 bg-white px-3 py-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-orange-200"
+                style={{ borderColor: '#fb923c', color: '#9a3412' }}
+              />
+            </div>
           </div>
         )}
 
@@ -352,8 +357,8 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               <span className="shrink-0" style={{ color: '#e4e4e7' }}>/</span>
               {allStores.length > 1 ? (
                 <StoreSwitcher stores={allStores} currentStoreId={currentStoreId}
-                  className="text-sm font-bold text-slate-900 rounded-lg px-1.5 py-0.5 focus:outline-none min-w-0 max-w-[120px]"
-                  style={{ border: '1px solid #e4e4e7', backgroundColor: 'white' }} />
+                  className="text-xs font-bold text-orange-800 rounded-lg px-2 py-1 focus:outline-none min-w-0 max-w-[135px] border-2 bg-orange-50"
+                  style={{ borderColor: '#fb923c' }} />
               ) : hasStores ? (
                 <span className="font-bold text-sm text-slate-900 truncate">{allStores[0]?.name}</span>
               ) : (

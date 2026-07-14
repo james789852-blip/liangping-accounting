@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink, BarChart3, Settings, Building2 } from 'lucide-react'
+import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink, BarChart3, Settings, Building2, ArrowRightLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
 import { clearStoreSelectionOnLogout } from '@/app/actions/store-select'
@@ -107,13 +107,6 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>結帳系統</p>
             <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>{displayIdentity}</p>
-            {stores.length > 1 && currentStoreId && (
-              <StoreSwitcher
-                stores={stores}
-                currentStoreId={currentStoreId}
-                className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none"
-              />
-            )}
           </div>
         </div>
 
@@ -137,6 +130,24 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
             輔助管理系統
           </a>
         </div>
+
+        {stores.length > 1 && currentStoreId && (
+          <div className="px-4 pb-4">
+            <div className="rounded-xl p-3" style={{ background: '#fff7ed', border: '1.5px solid #fdba74' }}>
+              <div className="flex items-center gap-1.5 mb-2" style={{ color: '#c2410c' }}>
+                <ArrowRightLeft className="h-4 w-4" />
+                <p className="text-xs font-bold">切換目前操作店家</p>
+              </div>
+              <StoreSwitcher
+                stores={stores}
+                currentStoreId={currentStoreId}
+                className="w-full rounded-[10px] border-2 bg-white px-3 py-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-orange-200"
+                style={{ borderColor: '#fb923c', color: '#9a3412' }}
+              />
+              <p className="text-[10px] mt-1.5" style={{ color: '#c2410c' }}>只切換工作店家，不會改變你的歸屬身分</p>
+            </div>
+          </div>
+        )}
 
         {/* 導覽 */}
         <nav className="flex-1 px-4 pb-4 space-y-0.5">
@@ -187,7 +198,8 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
               <StoreSwitcher
                 stores={stores}
                 currentStoreId={currentStoreId}
-                className="mt-1 max-w-[130px] rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-700 outline-none"
+                className="mt-1 max-w-[145px] rounded-md border-2 bg-orange-50 px-2 py-1 text-[11px] font-bold text-orange-800 outline-none"
+                style={{ borderColor: '#fb923c' }}
               />
             )}
           </div>
