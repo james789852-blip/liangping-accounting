@@ -68,7 +68,8 @@ interface Props {
 export default function ManagerNav({ userName, storeName, role, storeType, stores = [], currentStoreId = '', canAccessHQ = false, hqHref = '/hq/dashboard' }: Props) {
   const isCK = storeType === '央廚'
   const NAV_ITEMS = isCK ? CK_NAV_ITEMS : STORE_NAV_ITEMS
-  const displayIdentity = storeName && role ? `${storeName}${role}` : (role || storeName || '結帳系統')
+  const displayRole = storeName.endsWith('店') && role.startsWith('店') ? role.slice(1) : role
+  const displayIdentity = storeName && role ? `${storeName}${displayRole}` : (role || storeName || '結帳系統')
   const pathname = usePathname()
   const router = useRouter()
   const { date, time } = useTaipeiNow()

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, X, Pencil, Trash2, Eye, EyeOff } from 'lucide-react'
 import { updateUser, updateUserPassword, deleteUser } from '@/app/actions/users'
-import { TITLE_OPTIONS, inferSystemRole, isHQTitle } from '@/lib/account-access'
+import { getTitleOptions, inferSystemRole, type AccountUnitType } from '@/lib/account-access'
 
 interface Store { id: string; name: string; type?: string }
 interface UserData {
@@ -45,6 +45,12 @@ const PERMISSION_TOGGLES = [
   { key: 'can_export_reports', label: '可匯出報表', desc: '匯出管理用 Excel / 報表' },
 ] as const
 
+const PERMISSION_GROUPS = [
+  { label: '帳號與帳務', keys: ['can_manage_users', 'can_review_closings', 'can_export_reports'] },
+  { label: '店面管理', keys: ['can_manage_store_settings', 'can_manage_store_items', 'can_manage_store_receipts'] },
+  { label: '央廚管理', keys: ['can_manage_ck_settings', 'can_manage_ck_items', 'can_manage_ck_receipts', 'can_manage_ck_prices'] },
+] as const
+
 const INPUT_STYLE: React.CSSProperties = {
   width: '100%', padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px',
   fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b',
@@ -58,16 +64,20 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showPw, setShowPw] = useState(false)
   const [newPassword, setNewPassword] = useState('')
+  const initialUnitId = user.role === '老闆' || user.is_hq ? 'hq' : (user.primary_store_id ?? '')
+  const initialStore = stores.find(store => store.id === initialUnitId)
+  const initialUnitType: AccountUnitType = initialUnitId === 'hq' ? 'hq' : initialStore?.type === '央廚' ? 'ck' : 'store'
+  const initialTitle = user.title ?? user.role ?? getTitleOptions(initialUnitType)[0]
+  const [unitId, setUnitId] = useState(initialUnitId)
+  const [customTitle, setCustomTitle] = useState(!getTitleOptions(initialUnitType).includes(initialTitle))
 
   const [form, setForm] = useState({
     name: user.name ?? '',
     account: user.account ?? '',
-    role: user.role ?? '店長',
-    title: user.title ?? user.role ?? '店長',
+    title: initialTitle,
     employee_id: user.employee_id ?? '',
-    is_hq: user.is_hq ?? false,
     active: user.active ?? true,
-    can_manage_users: (user as any).can_manage_users ?? false,
+    can_manage_users: user.can_manage_users ?? false,
     can_manage_store_settings: user.can_manage_store_settings ?? user.can_manage_stores ?? false,
     can_manage_ck_settings: user.can_manage_ck_settings ?? user.can_manage_stores ?? false,
     can_manage_store_items: user.can_manage_store_items ?? user.can_manage_items ?? false,
@@ -81,8 +91,11 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
   const [selectedStores, setSelectedStores] = useState<string[]>(
     [...new Set(user.store_ids ?? [])]
   )
-  const isOwner = inferSystemRole(form.title, form.role) === '老闆'
-  const autoHQ = isHQTitle(form.title)
+  const primaryStore = stores.find(store => store.id === unitId)
+  const unitType: AccountUnitType = unitId === 'hq' ? 'hq' : primaryStore?.type === '央廚' ? 'ck' : 'store'
+  const titleOptions = getTitleOptions(unitType)
+  const isHQ = unitType === 'hq'
+  const isOwner = isHQ && inferSystemRole(form.title, titleOptions[0]) === '老闆'
   const allSelected = stores.length > 0 && stores.every(s => selectedStores.includes(s.id))
 
   function toggleStore(id: string) {
@@ -110,28 +123,30 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) { toast.error('請填寫姓名'); return }
+    if (!unitId) { toast.error('請選擇歸屬單位'); return }
+    if (!form.title.trim()) { toast.error('請選擇或新增職稱'); return }
     setLoading(true)
 
     const accountChanged = form.account.trim().toUpperCase() !== (user.account ?? '')
     const result = await updateUser(user.user_id, {
       name: form.name,
       ...(accountChanged && { account: form.account }),
-      role: inferSystemRole(form.title, form.role),
+      role: inferSystemRole(form.title, titleOptions[0]),
       title: form.title || undefined,
       employee_id: form.employee_id || undefined,
-      store_ids: isOwner ? [] : selectedStores,
-      primary_store_id: isOwner ? null : (selectedStores[0] ?? null),
-      is_hq: isOwner ? true : (form.is_hq || autoHQ),
-      can_manage_users: isOwner ? true : form.can_manage_users,
-      can_manage_store_settings: isOwner ? true : form.can_manage_store_settings,
-      can_manage_ck_settings: isOwner ? true : form.can_manage_ck_settings,
-      can_manage_store_items: isOwner ? true : form.can_manage_store_items,
-      can_manage_ck_items: isOwner ? true : form.can_manage_ck_items,
-      can_manage_store_receipts: isOwner ? true : form.can_manage_store_receipts,
-      can_manage_ck_receipts: isOwner ? true : form.can_manage_ck_receipts,
-      can_manage_ck_prices: isOwner ? true : form.can_manage_ck_prices,
-      can_review_closings: isOwner ? true : form.can_review_closings,
-      can_export_reports: isOwner ? true : form.can_export_reports,
+      store_ids: isOwner ? [] : [...new Set([...(primaryStore ? [primaryStore.id] : []), ...selectedStores])],
+      primary_store_id: primaryStore?.id ?? null,
+      is_hq: isHQ,
+      can_manage_users: isOwner ? true : (isHQ && form.can_manage_users),
+      can_manage_store_settings: isOwner ? true : (isHQ && form.can_manage_store_settings),
+      can_manage_ck_settings: isOwner ? true : (isHQ && form.can_manage_ck_settings),
+      can_manage_store_items: isOwner ? true : (isHQ && form.can_manage_store_items),
+      can_manage_ck_items: isOwner ? true : (isHQ && form.can_manage_ck_items),
+      can_manage_store_receipts: isOwner ? true : (isHQ && form.can_manage_store_receipts),
+      can_manage_ck_receipts: isOwner ? true : (isHQ && form.can_manage_ck_receipts),
+      can_manage_ck_prices: isOwner ? true : (isHQ && form.can_manage_ck_prices),
+      can_review_closings: isOwner ? true : (isHQ && form.can_review_closings),
+      can_export_reports: isOwner ? true : (isHQ && form.can_export_reports),
       active: form.active,
     })
     if (result.error) toast.error('更新失敗：' + result.error)
@@ -208,78 +223,75 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                 />
               </div>
 
-              {/* 職稱：可選擇建議職稱，也可直接輸入自訂職稱；系統權限由職稱自動推導 */}
               <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>職稱</label>
-                <input list="account-title-options" style={INPUT_STYLE} placeholder="選擇或輸入職稱，例如：店長、財務經理"
-                  value={form.title}
-                  onChange={e => setForm(p => ({ ...p, title: e.target.value }))} />
-                <datalist id="account-title-options">
-                  {TITLE_OPTIONS.map(title => <option key={title} value={title} />)}
-                </datalist>
-                <p className="text-[10px] mt-1" style={{ color: '#a1a1aa' }}>選擇建議職稱即可，也可以直接新增自訂職稱。</p>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>歸屬單位 *</label>
+                <select style={{ ...INPUT_STYLE, cursor: 'pointer' }} value={unitId}
+                  onChange={e => {
+                    const nextId = e.target.value
+                    const nextStore = stores.find(store => store.id === nextId)
+                    const nextType: AccountUnitType = nextId === 'hq' ? 'hq' : nextStore?.type === '央廚' ? 'ck' : 'store'
+                    setUnitId(nextId)
+                    setCustomTitle(false)
+                    setForm(prev => ({ ...prev, title: getTitleOptions(nextType)[0] ?? '' }))
+                  }}>
+                  {!unitId && <option value="">請選擇歸屬單位</option>}
+                  <option value="hq">總公司</option>
+                  <optgroup label="店面">
+                    {stores.filter(store => (store.type ?? '店面') !== '央廚').map(store => <option key={store.id} value={store.id}>{store.name}</option>)}
+                  </optgroup>
+                  <optgroup label="央廚">
+                    {stores.filter(store => store.type === '央廚').map(store => <option key={store.id} value={store.id}>{store.name}</option>)}
+                  </optgroup>
+                </select>
+                <p className="text-[10px] mt-1" style={{ color: '#a1a1aa' }}>此單位決定帳號分類與登入主畫面。</p>
               </div>
 
-              {/* 總公司 + 啟用 toggle */}
-              {!isOwner && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex items-center justify-between rounded-xl px-3 py-2.5"
-                    style={{ border: '1px solid #f4f4f5', background: '#fafafa' }}>
-                    <span className="text-sm font-semibold" style={{ color: '#18181b' }}>總公司權限</span>
-                    <button type="button" disabled={autoHQ} onClick={() => setForm(p => ({ ...p, is_hq: !p.is_hq }))}
-                      style={{
-                        position: 'relative', width: '36px', height: '20px', borderRadius: '10px',
-                        background: (form.is_hq || autoHQ) ? '#F59E0B' : '#d4d4d8', border: 'none', cursor: autoHQ ? 'default' : 'pointer',
-                        transition: 'background 0.2s', flexShrink: 0,
-                      }}>
-                      <span style={{
-                        position: 'absolute', top: '2px', left: '2px', width: '16px', height: '16px',
-                        background: 'white', borderRadius: '50%',
-                        transform: (form.is_hq || autoHQ) ? 'translateX(16px)' : 'translateX(0)', transition: 'transform 0.2s',
-                      }} />
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between rounded-xl px-3 py-2.5"
-                    style={{ border: '1px solid #f4f4f5', background: '#fafafa' }}>
-                    <span className="text-sm font-semibold" style={{ color: '#18181b' }}>帳號啟用</span>
-                    <button type="button" onClick={() => setForm(p => ({ ...p, active: !p.active }))}
-                      style={{
-                        position: 'relative', width: '36px', height: '20px', borderRadius: '10px',
-                        background: form.active ? '#22c55e' : '#d4d4d8', border: 'none', cursor: 'pointer',
-                        transition: 'background 0.2s', flexShrink: 0,
-                      }}>
-                      <span style={{
-                        position: 'absolute', top: '2px', left: '2px', width: '16px', height: '16px',
-                        background: 'white', borderRadius: '50%',
-                        transform: form.active ? 'translateX(16px)' : 'translateX(0)', transition: 'transform 0.2s',
-                      }} />
-                    </button>
-                  </div>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold" style={{ color: '#52525b' }}>職稱 *</label>
+                  <button type="button" onClick={() => { setCustomTitle(value => !value); setForm(prev => ({ ...prev, title: '' })) }}
+                    className="text-xs font-semibold" style={{ color: '#d97706' }}>
+                    {customTitle ? '返回職稱選單' : '＋ 新增職稱'}
+                  </button>
                 </div>
-              )}
+                {customTitle ? (
+                  <input style={INPUT_STYLE} placeholder="輸入自訂職稱" value={form.title}
+                    onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))} />
+                ) : (
+                  <select style={{ ...INPUT_STYLE, cursor: 'pointer' }} value={form.title}
+                    onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}>
+                    {titleOptions.map(title => <option key={title} value={title}>{title}</option>)}
+                  </select>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl px-3 py-2.5"
+                style={{ border: '1px solid #f4f4f5', background: '#fafafa' }}>
+                <span className="text-sm font-semibold" style={{ color: '#18181b' }}>帳號啟用</span>
+                <button type="button" onClick={() => setForm(p => ({ ...p, active: !p.active }))}
+                  className="h-5 w-9 rounded-full p-0.5" style={{ background: form.active ? '#22c55e' : '#d4d4d8' }}>
+                  <span className="block h-4 w-4 rounded-full bg-white transition-transform" style={{ transform: form.active ? 'translateX(16px)' : 'translateX(0)' }} />
+                </button>
+              </div>
 
               {/* 功能權限 */}
-              {!isOwner && (
+              {isHQ && !isOwner && (
                 <div className="rounded-xl p-3 space-y-2" style={{ border: '1px solid #f4f4f5', background: '#fafafa' }}>
-                  <p className="text-xs font-bold" style={{ color: '#52525b' }}>功能權限</p>
-                  {PERMISSION_TOGGLES.map(item => (
-                    <div key={item.key} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2" style={{ border: '1px solid #f4f4f5' }}>
-                      <div>
-                        <p className="text-sm font-semibold" style={{ color: '#18181b' }}>{item.label}</p>
-                        <p className="text-[10px]" style={{ color: '#a1a1aa' }}>{item.desc}</p>
+                  <p className="text-xs font-bold" style={{ color: '#52525b' }}>總公司功能權限</p>
+                  {PERMISSION_GROUPS.map(group => (
+                    <div key={group.label}>
+                      <p className="text-[10px] font-bold mb-1.5 mt-3 first:mt-1" style={{ color: '#a1a1aa' }}>{group.label}</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {PERMISSION_TOGGLES.filter(item => (group.keys as readonly string[]).includes(item.key)).map(item => (
+                          <div key={item.key} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2" style={{ border: '1px solid #f4f4f5' }}>
+                            <div><p className="text-sm font-semibold" style={{ color: '#18181b' }}>{item.label}</p><p className="text-[10px]" style={{ color: '#a1a1aa' }}>{item.desc}</p></div>
+                            <button type="button" onClick={() => setForm(p => ({ ...p, [item.key]: !p[item.key] }))}
+                              className="h-5 w-9 rounded-full p-0.5 shrink-0" style={{ background: form[item.key] ? '#F59E0B' : '#d4d4d8' }}>
+                              <span className="block h-4 w-4 rounded-full bg-white transition-transform" style={{ transform: form[item.key] ? 'translateX(16px)' : 'translateX(0)' }} />
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                      <button type="button" onClick={() => setForm(p => ({ ...p, [item.key]: !p[item.key] }))}
-                        style={{
-                          position: 'relative', width: '36px', height: '20px', borderRadius: '10px',
-                          background: form[item.key] ? '#F59E0B' : '#d4d4d8', border: 'none', cursor: 'pointer',
-                          transition: 'background 0.2s', flexShrink: 0,
-                        }}>
-                        <span style={{
-                          position: 'absolute', top: '2px', left: '2px', width: '16px', height: '16px',
-                          background: 'white', borderRadius: '50%',
-                          transform: form[item.key] ? 'translateX(16px)' : 'translateX(0)', transition: 'transform 0.2s',
-                        }} />
-                      </button>
                     </div>
                   ))}
                 </div>
@@ -289,7 +301,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
               {!isOwner && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-semibold" style={{ color: '#52525b' }}>店家權限（可切換）</label>
+                    <label className="text-xs font-semibold" style={{ color: '#52525b' }}>其他店家權限（可切換）</label>
                     <button type="button" onClick={toggleAllStores}
                       className="text-xs font-semibold px-2.5 py-1 rounded-lg"
                       style={{
@@ -308,12 +320,13 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                         <p className="text-[10px] font-semibold mb-1.5 uppercase tracking-wide" style={{ color: '#a1a1aa' }}>{type}</p>
                         <div className="flex flex-wrap gap-2">
                           {group.map(s => (
-                            <button key={s.id} type="button" onClick={() => toggleStore(s.id)}
+                            <button key={s.id} type="button" disabled={s.id === primaryStore?.id} onClick={() => toggleStore(s.id)}
                               className="px-3 py-1.5 rounded-full text-xs font-semibold"
                               style={{
-                                background: selectedStores.includes(s.id) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : 'white',
-                                color: selectedStores.includes(s.id) ? 'white' : '#52525b',
-                                border: selectedStores.includes(s.id) ? 'none' : '1px solid #e4e4e7',
+                                background: (s.id === primaryStore?.id || selectedStores.includes(s.id)) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : 'white',
+                                color: (s.id === primaryStore?.id || selectedStores.includes(s.id)) ? 'white' : '#52525b',
+                                border: (s.id === primaryStore?.id || selectedStores.includes(s.id)) ? 'none' : '1px solid #e4e4e7',
+                                opacity: s.id === primaryStore?.id ? 0.65 : 1,
                               }}>
                               {s.name}
                             </button>
@@ -329,7 +342,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                   )}
 
                   <p className="text-[10px] mt-2" style={{ color: '#1e40af' }}>
-                    勾選的店家就是此帳號可使用、可切換的店家；登入時自動進入第一個勾選的店家。
+                    歸屬單位是主店面；這裡只設定可額外切換的其他店家，不會改變人員分類。
                   </p>
                 </div>
               )}

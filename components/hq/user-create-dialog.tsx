@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Plus, X } from 'lucide-react'
 import { createUser } from '@/app/actions/users'
-import { TITLE_OPTIONS, inferSystemRole, isHQTitle } from '@/lib/account-access'
+import { getTitleOptions, inferSystemRole, type AccountUnitType } from '@/lib/account-access'
 
 interface Store { id: string; name: string; type?: string }
 
@@ -21,6 +21,12 @@ const PERMISSION_TOGGLES = [
   { key: 'can_export_reports', label: '可匯出報表', desc: '匯出管理用 Excel / 報表' },
 ] as const
 
+const PERMISSION_GROUPS = [
+  { label: '帳號與帳務', keys: ['can_manage_users', 'can_review_closings', 'can_export_reports'] },
+  { label: '店面管理', keys: ['can_manage_store_settings', 'can_manage_store_items', 'can_manage_store_receipts'] },
+  { label: '央廚管理', keys: ['can_manage_ck_settings', 'can_manage_ck_items', 'can_manage_ck_receipts', 'can_manage_ck_prices'] },
+] as const
+
 const INPUT_STYLE: React.CSSProperties = {
   width: '100%', padding: '10px 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px',
   fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b',
@@ -30,9 +36,10 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({
-    name: '', account: '', password: '', role: '店長', title: '店長', employee_id: '',
+    name: '', account: '', password: '', title: '經理', employee_id: '',
   })
-  const [isHQ, setIsHQ] = useState(false)
+  const [unitId, setUnitId] = useState('hq')
+  const [customTitle, setCustomTitle] = useState(false)
   const [permissions, setPermissions] = useState<Record<(typeof PERMISSION_TOGGLES)[number]['key'], boolean>>({
     can_manage_users: false,
     can_manage_store_settings: false,
@@ -46,8 +53,11 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
     can_export_reports: false,
   })
   const [selectedStores, setSelectedStores] = useState<string[]>([])
-  const isOwner = inferSystemRole(form.title, form.role) === '老闆'
-  const autoHQ = isHQTitle(form.title)
+  const primaryStore = stores.find(store => store.id === unitId)
+  const unitType: AccountUnitType = unitId === 'hq' ? 'hq' : primaryStore?.type === '央廚' ? 'ck' : 'store'
+  const titleOptions = getTitleOptions(unitType)
+  const isHQ = unitType === 'hq'
+  const isOwner = isHQ && inferSystemRole(form.title, titleOptions[0]) === '老闆'
 
   function toggleStore(id: string) {
     setSelectedStores(prev => {
@@ -58,8 +68,9 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
 
   function handleClose() {
     setOpen(false)
-    setForm({ name: '', account: '', password: '', role: '店長', title: '', employee_id: '' })
-    setIsHQ(false)
+    setForm({ name: '', account: '', password: '', title: '經理', employee_id: '' })
+    setUnitId('hq')
+    setCustomTitle(false)
     setPermissions({
       can_manage_users: false,
       can_manage_store_settings: false,
@@ -78,20 +89,19 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name || !form.account || !form.password) { toast.error('請填寫所有必填欄位'); return }
-    const hqAccess = isOwner || isHQ || autoHQ
-    if (!hqAccess && selectedStores.length === 0) { toast.error('請至少開啟一家店的店家權限'); return }
+    if (!form.title.trim()) { toast.error('請選擇或新增職稱'); return }
     setLoading(true)
     const result = await createUser({
       name: form.name,
       account: form.account,
       password: form.password,
-      role: inferSystemRole(form.title, form.role),
+      role: inferSystemRole(form.title, titleOptions[0]),
       title: form.title || undefined,
       employee_id: form.employee_id || undefined,
-      is_hq: isOwner ? true : (isHQ || autoHQ),
-      ...permissions,
-      store_ids: isOwner ? [] : selectedStores,
-      primary_store_id: isOwner ? null : (selectedStores[0] ?? null),
+      is_hq: isHQ,
+      ...(isHQ ? permissions : Object.fromEntries(Object.keys(permissions).map(key => [key, false]))),
+      store_ids: isOwner ? [] : [...new Set([...(primaryStore ? [primaryStore.id] : []), ...selectedStores])],
+      primary_store_id: primaryStore?.id ?? null,
     })
     if (result.error) { toast.error('建立失敗：' + result.error) }
     else { toast.success('帳號建立成功！'); handleClose() }
@@ -152,13 +162,44 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>職稱</label>
-                <input list="account-title-options-create" style={INPUT_STYLE} placeholder="選擇或輸入職稱，例如：店長、財務經理"
-                  value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} />
-                <datalist id="account-title-options-create">
-                  {TITLE_OPTIONS.map(title => <option key={title} value={title} />)}
-                </datalist>
-                <p className="text-[10px] mt-1" style={{ color: '#a1a1aa' }}>選擇建議職稱即可，也可以直接新增自訂職稱。</p>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>歸屬單位 *</label>
+                <select style={{ ...INPUT_STYLE, cursor: 'pointer' }} value={unitId}
+                  onChange={e => {
+                    const nextId = e.target.value
+                    const nextStore = stores.find(store => store.id === nextId)
+                    const nextType: AccountUnitType = nextId === 'hq' ? 'hq' : nextStore?.type === '央廚' ? 'ck' : 'store'
+                    setUnitId(nextId)
+                    setCustomTitle(false)
+                    setForm(prev => ({ ...prev, title: getTitleOptions(nextType)[0] ?? '' }))
+                  }}>
+                  <option value="hq">總公司</option>
+                  <optgroup label="店面">
+                    {stores.filter(store => (store.type ?? '店面') !== '央廚').map(store => <option key={store.id} value={store.id}>{store.name}</option>)}
+                  </optgroup>
+                  <optgroup label="央廚">
+                    {stores.filter(store => store.type === '央廚').map(store => <option key={store.id} value={store.id}>{store.name}</option>)}
+                  </optgroup>
+                </select>
+                <p className="text-[10px] mt-1" style={{ color: '#a1a1aa' }}>此單位決定帳號分類與登入主畫面。</p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold" style={{ color: '#52525b' }}>職稱 *</label>
+                  <button type="button" onClick={() => { setCustomTitle(value => !value); setForm(prev => ({ ...prev, title: '' })) }}
+                    className="text-xs font-semibold" style={{ color: '#d97706' }}>
+                    {customTitle ? '返回職稱選單' : '＋ 新增職稱'}
+                  </button>
+                </div>
+                {customTitle ? (
+                  <input style={INPUT_STYLE} placeholder="輸入自訂職稱" value={form.title}
+                    onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))} />
+                ) : (
+                  <select style={{ ...INPUT_STYLE, cursor: 'pointer' }} value={form.title}
+                    onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}>
+                    {titleOptions.map(title => <option key={title} value={title}>{title}</option>)}
+                  </select>
+                )}
               </div>
 
               {isOwner && (
@@ -167,51 +208,23 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
                 </div>
               )}
 
-              {!isOwner && (
-                <div className="flex items-center justify-between rounded-xl px-3 py-3"
-                  style={{ border: '1px solid #f4f4f5', background: '#fafafa' }}>
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: '#18181b' }}>總公司權限</p>
-                    <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>開啟後可從店長端返回總公司後台</p>
-                  </div>
-                  <button type="button" disabled={autoHQ} onClick={() => setIsHQ(v => !v)}
-                    style={{
-                      position: 'relative', width: '36px', height: '20px', borderRadius: '10px', flexShrink: 0,
-                      background: (isHQ || autoHQ) ? '#F59E0B' : '#d4d4d8', border: 'none', cursor: autoHQ ? 'default' : 'pointer',
-                      transition: 'background 0.2s',
-                    }}>
-                    <span style={{
-                      position: 'absolute', top: '2px', left: '2px', width: '16px', height: '16px',
-                      background: 'white', borderRadius: '50%', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                      transform: (isHQ || autoHQ) ? 'translateX(16px)' : 'translateX(0)', transition: 'transform 0.2s',
-                    }} />
-                  </button>
-                </div>
-              )}
-
-              {!isOwner && (
+              {isHQ && !isOwner && (
                 <div className="rounded-xl p-3 space-y-2" style={{ border: '1px solid #f4f4f5', background: '#fafafa' }}>
-                  <p className="text-xs font-bold" style={{ color: '#52525b' }}>功能權限</p>
-                  {PERMISSION_TOGGLES.map(item => (
-                    <div key={item.key} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2" style={{ border: '1px solid #f4f4f5' }}>
-                      <div>
-                        <p className="text-sm font-semibold" style={{ color: '#18181b' }}>{item.label}</p>
-                        <p className="text-[10px]" style={{ color: '#a1a1aa' }}>{item.desc}</p>
+                  <p className="text-xs font-bold" style={{ color: '#52525b' }}>總公司功能權限</p>
+                  {PERMISSION_GROUPS.map(group => (
+                    <div key={group.label}>
+                      <p className="text-[10px] font-bold mb-1.5 mt-3 first:mt-1" style={{ color: '#a1a1aa' }}>{group.label}</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {PERMISSION_TOGGLES.filter(item => (group.keys as readonly string[]).includes(item.key)).map(item => (
+                          <div key={item.key} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2" style={{ border: '1px solid #f4f4f5' }}>
+                            <div><p className="text-sm font-semibold" style={{ color: '#18181b' }}>{item.label}</p><p className="text-[10px]" style={{ color: '#a1a1aa' }}>{item.desc}</p></div>
+                            <button type="button" onClick={() => setPermissions(prev => ({ ...prev, [item.key]: !prev[item.key] }))}
+                              className="h-5 w-9 rounded-full p-0.5 shrink-0" style={{ background: permissions[item.key] ? '#F59E0B' : '#d4d4d8' }}>
+                              <span className="block h-4 w-4 rounded-full bg-white transition-transform" style={{ transform: permissions[item.key] ? 'translateX(16px)' : 'translateX(0)' }} />
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setPermissions(prev => ({ ...prev, [item.key]: !prev[item.key] }))}
-                        style={{
-                          position: 'relative', width: '36px', height: '20px', borderRadius: '10px', flexShrink: 0,
-                          background: permissions[item.key] ? '#F59E0B' : '#d4d4d8', border: 'none', cursor: 'pointer',
-                          transition: 'background 0.2s',
-                        }}>
-                        <span style={{
-                          position: 'absolute', top: '2px', left: '2px', width: '16px', height: '16px',
-                          background: 'white', borderRadius: '50%', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                          transform: permissions[item.key] ? 'translateX(16px)' : 'translateX(0)', transition: 'transform 0.2s',
-                        }} />
-                      </button>
                     </div>
                   ))}
                 </div>
@@ -219,7 +232,7 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
 
               {!isOwner && (
                 <div>
-                  <label className="block text-xs font-semibold mb-2" style={{ color: '#52525b' }}>店家權限（可切換）</label>
+                  <label className="block text-xs font-semibold mb-2" style={{ color: '#52525b' }}>其他店家權限（可切換）</label>
                   {(['店面', '央廚'] as const).map(type => {
                     const group = stores.filter(s => (s.type ?? '店面') === type)
                     if (group.length === 0) return null
@@ -228,12 +241,13 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
                         <p className="text-[10px] font-semibold mb-1.5 uppercase tracking-wide" style={{ color: '#a1a1aa' }}>{type}</p>
                         <div className="flex flex-wrap gap-2">
                           {group.map(s => (
-                            <button key={s.id} type="button" onClick={() => toggleStore(s.id)}
+                            <button key={s.id} type="button" disabled={s.id === primaryStore?.id} onClick={() => toggleStore(s.id)}
                               className="px-3 py-1.5 rounded-full text-xs font-semibold"
                               style={{
-                                background: selectedStores.includes(s.id) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : 'white',
-                                color: selectedStores.includes(s.id) ? 'white' : '#52525b',
-                                border: selectedStores.includes(s.id) ? 'none' : '1px solid #e4e4e7',
+                                background: (s.id === primaryStore?.id || selectedStores.includes(s.id)) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : 'white',
+                                color: (s.id === primaryStore?.id || selectedStores.includes(s.id)) ? 'white' : '#52525b',
+                                border: (s.id === primaryStore?.id || selectedStores.includes(s.id)) ? 'none' : '1px solid #e4e4e7',
+                                opacity: s.id === primaryStore?.id ? 0.65 : 1,
                               }}>
                               {s.name}
                             </button>
@@ -258,7 +272,7 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
                   )}
 
                   <p className="text-[10px] mt-2" style={{ color: '#1e40af' }}>
-                    勾選的店家就是此帳號可使用、可切換的店家；登入時自動進入第一個勾選的店家。
+                    歸屬單位是主店面；這裡只設定可額外切換的其他店家，不會改變人員分類。
                   </p>
                 </div>
               )}

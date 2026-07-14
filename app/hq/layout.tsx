@@ -16,7 +16,6 @@ import {
   canManageUsers,
   canReviewClosings,
   canExportReports,
-  hasAnyHQPermission,
 } from '@/lib/user-permissions'
 
 export default async function HQLayout({ children }: { children: React.ReactNode }) {
@@ -25,7 +24,7 @@ export default async function HQLayout({ children }: { children: React.ReactNode
 
   const profile = await getCachedUserProfile(user.id)
 
-  if (!profile || !hasAnyHQPermission(profile)) {
+  if (!profile || (profile.role !== '老闆' && profile.is_hq !== true)) {
     redirect('/manager')
   }
 

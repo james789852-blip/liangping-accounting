@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
-import { getDefaultHQHref, hasAnyHQPermission } from '@/lib/user-permissions'
+import { getDefaultHQHref } from '@/lib/user-permissions'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -51,10 +51,10 @@ export default function LoginPage() {
       .eq('user_id', user.id)
       .single()
 
-    const isHQ = hasAnyHQPermission(profile)
+    const isHQ = profile?.role === '老闆' || profile?.is_hq === true
     const hasAssignedStore = Array.isArray(profile?.store_ids) && profile.store_ids.length > 0
     toast.success('登入成功')
-    router.push(hasAssignedStore ? '/manager/dashboard' : (isHQ ? getDefaultHQHref(profile) : '/manager/dashboard'))
+    router.push(isHQ ? getDefaultHQHref(profile) : (hasAssignedStore ? '/manager/dashboard' : '/manager/dashboard'))
     router.refresh()
   }
 

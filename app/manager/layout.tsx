@@ -19,7 +19,6 @@ import {
   canReviewClosings,
   canExportReports,
   getDefaultHQHref,
-  hasAnyHQPermission,
   isStoreRole,
 } from '@/lib/user-permissions'
 
@@ -31,8 +30,9 @@ export default async function ManagerLayout({ children }: { children: React.Reac
   // 只要帳號具有店家權限，就優先使用店長端；具總公司權限者仍可從導覽列返回後台。
   const isStoreManager = isStoreRole(profile?.role)
   const hasAssignedStore = Array.isArray(profile?.store_ids) && profile.store_ids.length > 0
-  const isStoreView = isStoreManager || hasAssignedStore
-  const isHQ = !!profile && hasAnyHQPermission(profile) && !isStoreView
+  const belongsToHQ = profile?.role === '老闆' || profile?.is_hq === true
+  const isStoreView = !belongsToHQ && (isStoreManager || hasAssignedStore)
+  const isHQ = !!profile && belongsToHQ && !isStoreView
 
   let storeId: string | null = null
   let storeName = ''
@@ -117,7 +117,7 @@ export default async function ManagerLayout({ children }: { children: React.Reac
         storeType={storeType}
         stores={allStores}
         currentStoreId={storeId ?? ''}
-        canAccessHQ={hasAnyHQPermission(profile)}
+        canAccessHQ={belongsToHQ}
         hqHref={getDefaultHQHref(profile)}
       />
       <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">

@@ -3,7 +3,15 @@
 export const HQ_TITLE_OPTIONS = ['總監', '經理', '助理'] as const
 export const STORE_TITLE_OPTIONS = ['店長', '副店長', '小幫手'] as const
 export const CK_TITLE_OPTIONS = ['廠長', '副廠長', '小幫手'] as const
-export const TITLE_OPTIONS = ['老闆', ...HQ_TITLE_OPTIONS, ...STORE_TITLE_OPTIONS, '廠長', '副廠長'] as const
+export const TITLE_OPTIONS = ['老闆', ...HQ_TITLE_OPTIONS, ...STORE_TITLE_OPTIONS, ...CK_TITLE_OPTIONS] as const
+
+export type AccountUnitType = 'hq' | 'store' | 'ck'
+
+export function getTitleOptions(unitType: AccountUnitType): readonly string[] {
+  if (unitType === 'store') return STORE_TITLE_OPTIONS
+  if (unitType === 'ck') return CK_TITLE_OPTIONS
+  return ['經理', '助理', '總監', '老闆']
+}
 
 export function isHQTitle(title?: string | null) {
   const value = (title ?? '').trim()

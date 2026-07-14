@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAuthedUser } from '@/lib/authed-user'
-import { getDefaultHQHref, hasAnyHQPermission } from '@/lib/user-permissions'
+import { getDefaultHQHref } from '@/lib/user-permissions'
 
 export default async function Home() {
   const user = await getAuthedUser()
@@ -16,11 +16,11 @@ export default async function Home() {
     .eq('user_id', user.id)
     .single()
 
-  const isHQ = hasAnyHQPermission(profile)
+  const isHQ = profile?.role === '老闆' || profile?.is_hq === true
   const hasAssignedStore = Array.isArray(profile?.store_ids) && profile.store_ids.length > 0
 
   // 只要有店家權限就優先進店長端；仍可從導覽列返回總公司。
-  if (hasAssignedStore) {
+  if (!isHQ && hasAssignedStore) {
     redirect('/manager/dashboard')
   }
 

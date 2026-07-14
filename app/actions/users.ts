@@ -4,7 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { canManageUsers } from '@/lib/user-permissions'
-import { inferSystemRole, isHQTitle } from '@/lib/account-access'
+import { inferSystemRole } from '@/lib/account-access'
 
 function getAdminClient() {
   return createAdminClient(
@@ -81,9 +81,11 @@ export async function createUser(formData: {
 
   const systemRole = inferSystemRole(formData.title, formData.role)
   const isOwner = systemRole === '老闆'
-  const storeIds = isOwner ? [] : [...new Set(formData.store_ids)]
-  // 不再讓管理員另外設定主店：第一個店家權限就是登入預設店家。
-  const primary = storeIds[0] ?? null
+  const requestedPrimary = formData.is_hq ? null : (formData.primary_store_id ?? null)
+  const storeIds = isOwner
+    ? []
+    : [...new Set([...(requestedPrimary ? [requestedPrimary] : []), ...formData.store_ids])]
+  const primary = isOwner ? null : requestedPrimary
 
   const { error: profileError } = await admin.from('user_profiles').insert({
     user_id: authUser.user.id,
@@ -93,7 +95,7 @@ export async function createUser(formData: {
     employee_id: formData.employee_id ?? null,
     store_ids: storeIds,
     primary_store_id: primary,
-    is_hq: isOwner ? true : ((formData.is_hq ?? false) || isHQTitle(formData.title)),
+    is_hq: isOwner || formData.is_hq === true,
     can_manage_users: isOwner ? true : (formData.can_manage_users ?? false),
     can_manage_stores: isOwner ? true : ((formData.can_manage_store_settings ?? false) || (formData.can_manage_ck_settings ?? false) || (formData.can_manage_stores ?? false)),
     can_manage_store_settings: isOwner ? true : (formData.can_manage_store_settings ?? formData.can_manage_stores ?? false),
@@ -167,13 +169,15 @@ export async function updateUser(userId: string, formData: {
   if (formData.title !== undefined) patch.title = formData.title
   if (formData.employee_id !== undefined) patch.employee_id = formData.employee_id
   if (formData.store_ids !== undefined) {
-    const storeIds = [...new Set(formData.store_ids)]
+    const primary = formData.is_hq ? null : (formData.primary_store_id ?? null)
+    const storeIds = [...new Set([...(primary ? [primary] : []), ...formData.store_ids])]
     patch.store_ids = storeIds
-    patch.primary_store_id = storeIds[0] ?? null
+    patch.primary_store_id = primary
   }
-  if (formData.is_hq !== undefined || formData.title !== undefined) {
+  if (formData.is_hq !== undefined) {
     const nextRole = inferSystemRole(formData.title, formData.role)
-    patch.is_hq = nextRole === '老闆' || isHQTitle(formData.title) || formData.is_hq === true
+    patch.is_hq = nextRole === '老闆' || formData.is_hq === true
+    if (formData.is_hq) patch.primary_store_id = null
   }
   if (formData.can_manage_users !== undefined) patch.can_manage_users = formData.can_manage_users
   if (formData.can_manage_stores !== undefined) patch.can_manage_stores = formData.can_manage_stores

@@ -170,18 +170,18 @@ export default async function UsersPage() {
   const unassignedUsers: UserProfile[] = []
 
   for (const account of allUsers) {
-    const isHQAccount = account.role === '老闆' || account.is_hq
-    if (isHQAccount) hqUsers.push(account)
-    const assignedIds = [...new Set((account.store_ids ?? []) as string[])].filter(id => storeMap[id])
-    if (assignedIds.length === 0) {
-      if (!isHQAccount) unassignedUsers.push(account)
+    if (account.role === '老闆' || account.is_hq) {
+      hqUsers.push(account)
       continue
     }
-    for (const storeId of assignedIds) {
-      const group = storeUsers.get(storeId) ?? []
-      group.push(account)
-      storeUsers.set(storeId, group)
+    const primaryStoreId = account.primary_store_id
+    if (!primaryStoreId || !storeMap[primaryStoreId]) {
+      unassignedUsers.push(account)
+      continue
     }
+    const group = storeUsers.get(primaryStoreId) ?? []
+    group.push(account)
+    storeUsers.set(primaryStoreId, group)
   }
   const storeSections = stores.filter(store => store.type !== '央廚')
   const ckSections = stores.filter(store => store.type === '央廚')
@@ -214,7 +214,7 @@ export default async function UsersPage() {
           <div className="flex items-end justify-between px-1">
             <div>
               <h2 className="text-base font-bold" style={{ color: '#18181b' }}>店面管理人員</h2>
-              <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>依所屬店面分組；跨店帳號會出現在各所屬店面中</p>
+              <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>依主要歸屬店面分組；其他店家權限不影響分類</p>
             </div>
             <span className="text-xs font-semibold" style={{ color: '#047857' }}>{storeSections.length} 家店</span>
           </div>
