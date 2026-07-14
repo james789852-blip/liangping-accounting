@@ -2855,7 +2855,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   updateReceiptForm(form.id, 'actual_vendor_name', e.target.value)
                                 }}
                               >
-                                <option value="">{form.vendor_name.trim() ? '— 選擇廠商名稱 —' : '先選擇廠商名稱'}</option>
+                                <option value="">{form.vendor_name.trim() ? '— 選擇廠商名稱 —' : '選擇廠商名稱'}</option>
                                 {current && !options.includes(current) && <option value={current}>目前：{current}</option>}
                                 {options.map(name => <option key={name} value={name}>{name}</option>)}
                                 <option value={NEW_ACTUAL_VENDOR_VALUE}>＋新增廠商名稱</option>
@@ -2910,7 +2910,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', gap: '8px' }}>
                                 <div>
                                   <label style={{ fontSize: '14px', color: '#1e3a8a', fontWeight: 800 }}>品項下拉選擇 *</label>
-                                  <p style={{ fontSize: '11px', color: '#2563eb', fontWeight: 600, marginTop: '2px' }}>請選擇對應品項，退稅廠商會帶出「退稅」分類。</p>
+                                  <p style={{ fontSize: '11px', color: '#2563eb', fontWeight: 600, marginTop: '2px' }}>請選擇對應品項。</p>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                   {vendorGroups.length > 0 && (
@@ -3264,7 +3264,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                       setEditActualVendor(e.target.value)
                                     }}
                                   >
-                                    <option value="">{editVendor.trim() ? '— 選擇廠商名稱 —' : '先選擇廠商名稱'}</option>
+                                    <option value="">{editVendor.trim() ? '— 選擇廠商名稱 —' : '選擇廠商名稱'}</option>
                                     {current && !options.includes(current) && <option value={current}>目前：{current}</option>}
                                     {options.map(name => <option key={name} value={name}>{name}</option>)}
                                     <option value={NEW_ACTUAL_VENDOR_VALUE}>＋新增廠商名稱</option>
