@@ -42,7 +42,7 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
     assignedIds.length > 0
       ? admin.from('stores').select('id, name').in('id', assignedIds)
       : Promise.resolve({ data: [] }),
-    admin.from('ck_external_stores').select('id, ck_store_id, name').eq('ck_store_id', ckStoreId),
+    admin.from('ck_external_stores').select('*').eq('ck_store_id', ckStoreId),
     rec ? admin.from('ck_store_orders').select('store_id, external_store_name, amount, ck_confirmed_amount').eq('ck_daily_record_id', rec.id) : Promise.resolve({ data: [] }),
     rec ? admin.from('ck_expense_items').select('category, item_name, amount, payer_name, vendor_group, doc_type, receipt_photo_url').eq('ck_daily_record_id', rec.id).order('sort_order') : Promise.resolve({ data: [] }),
   ])
@@ -87,7 +87,13 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
       balance: revenueTotal - expenseTotal,
       memberStores,
       externalOrders,
-      externalStores: ((extStores ?? []) as any[]).map(s => ({ id: s.id, name: s.name })),
+      externalStores: ((extStores ?? []) as any[]).map(s => ({
+        id: s.id,
+        name: s.name,
+        deductFromReimbursement: s.deduct_from_reimbursement ?? (
+          String((ckStore as any).name ?? '').trim().startsWith('泉州') && String(s.name ?? '').trim() === '食咣雞'
+        ),
+      })),
       expenses,
       receiptPhotoUrls: ((rec as any).receipt_photo_urls as string[] | null) ?? [],
     } : null,

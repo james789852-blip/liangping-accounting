@@ -417,6 +417,37 @@ export async function updateCKExternalStore(id: string, name: string) {
   return { success: true }
 }
 
+// 設定體系外店家收入是否從央廚補款／點交金額扣除
+export async function updateCKExternalStoreDeduction(id: string, deductFromReimbursement: boolean) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+
+  const admin = createAdminClient()
+  const { data: ext } = await admin.from('ck_external_stores').select('ck_store_id').eq('id', id).single()
+  if (!ext) return { error: '找不到此體系外店家' }
+  if (!(await canManageCKStoreSettings(ctx))) return { error: '權限不足，請先開啟「可管理央廚店家」權限' }
+
+  const { error } = await admin
+    .from('ck_external_stores')
+    .update({ deduct_from_reimbursement: deductFromReimbursement })
+    .eq('id', id)
+  if (error) return { error: error.message }
+
+  await logAudit({
+    eventType: 'store_update',
+    storeId: ext.ck_store_id,
+    userId: ctx.userId,
+    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} ${deductFromReimbursement ? '啟用' : '停用'}體系外店家扣除央廚補款`,
+    metadata: { external_store_id: id, deduct_from_reimbursement: deductFromReimbursement },
+  })
+
+  revalidatePath('/manager/ck')
+  revalidatePath('/hq/stores')
+  revalidatePath('/hq/ck')
+  revalidatePath('/hq/accounting')
+  return { success: true }
+}
+
 // 總公司送出/取消央廚補款
 export async function markCKHQPaid(
   ckStoreId: string,

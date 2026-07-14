@@ -55,7 +55,7 @@ export default async function StoresPage() {
   // 各央廚目前的體系外店家
   const ckStoreIds = stores.filter(s => (s as any).type === '央廚').map(s => s.id)
   const { data: allExternalStores } = ckStoreIds.length > 0
-    ? await admin.from('ck_external_stores').select('id, ck_store_id, name').in('ck_store_id', ckStoreIds).order('created_at')
+    ? await admin.from('ck_external_stores').select('*').in('ck_store_id', ckStoreIds).order('created_at')
     : { data: [] }
 
   return (
@@ -93,7 +93,13 @@ export default async function StoresPage() {
                     canEdit={(store as any).type === '央廚' ? canEditCKSettings : canEditStoreSettings}
                     canEditCKRelations={canEditCKSettings}
                     memberStoreOptions={type === '央廚' ? memberStoreOptions : []}
-                    externalStores={type === '央廚' ? (allExternalStores ?? []).filter((e: any) => e.ck_store_id === store.id).map((e: any) => ({ id: e.id, name: e.name })) : []}
+                    externalStores={type === '央廚' ? (allExternalStores ?? []).filter((e: any) => e.ck_store_id === store.id).map((e: any) => ({
+                      id: e.id,
+                      name: e.name,
+                      deductFromReimbursement: e.deduct_from_reimbursement ?? (
+                        String((store as any).name ?? '').trim().startsWith('泉州') && String(e.name ?? '').trim() === '食咣雞'
+                      ),
+                    })) : []}
                   />
                 ))}
               </div>

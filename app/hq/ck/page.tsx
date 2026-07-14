@@ -74,7 +74,8 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     uniqueAssignedIds.length > 0
       ? admin.from('stores').select('id, name').in('id', uniqueAssignedIds)
       : Promise.resolve({ data: [] }),
-    admin.from('ck_external_stores').select('id, ck_store_id, name').in('ck_store_id', ckStoreIds),
+    // 使用 * 讓舊環境在 migration 尚未套用時仍可查看既有帳目；新欄位存在時會一併帶回設定。
+    admin.from('ck_external_stores').select('*').in('ck_store_id', ckStoreIds),
   ])
 
   const recordIds = (ckRecords ?? []).map(r => r.id)
@@ -143,7 +144,13 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       balance: revenueTotal - expenseTotal,
       memberStores: allMemberStores,
       externalOrders,
-      externalStores: extStores.map((s: any) => ({ id: s.id, name: s.name })),
+      externalStores: extStores.map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        deductFromReimbursement: s.deduct_from_reimbursement ?? (
+          ckStore.name.trim().startsWith('泉州') && String(s.name ?? '').trim() === '食咣雞'
+        ),
+      })),
       expenses,
       receiptPhotoUrls: ((record as any)?.receipt_photo_urls as string[] | null) ?? [],
     }

@@ -10,15 +10,20 @@ import SafePhotoImage from './safe-photo-image'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
-// 目前只有泉州的「食咣雞」屬於要由體系外收入支應的店家，其他央廚外部訂單不扣補款。
-function deductibleExternalRevenue(d: Pick<CKStoreData, 'ckStore' | 'externalOrders'>) {
-  if (d.ckStore.name.trim() !== '泉州') return 0
+// 依店家管理設定，計算要從央廚補款／點交金額扣除的體系外收入。
+function deductibleExternalRevenue(d: Pick<CKStoreData, 'externalStores' | 'externalOrders'>) {
+  const deductibleNames = new Set(
+    d.externalStores
+      .filter(store => store.deductFromReimbursement)
+      .map(store => store.name.trim())
+      .filter(Boolean),
+  )
   return d.externalOrders
-    .filter(order => order.name.trim() === '食咣雞')
+    .filter(order => deductibleNames.has(order.name.trim()))
     .reduce((sum, order) => sum + Number(order.amount || 0), 0)
 }
 
-function hqReimbursementAmount(d: Pick<CKStoreData, 'ckStore' | 'expenseTotal' | 'externalOrders'>) {
+function hqReimbursementAmount(d: Pick<CKStoreData, 'expenseTotal' | 'externalStores' | 'externalOrders'>) {
   return Math.max(0, d.expenseTotal - deductibleExternalRevenue(d))
 }
 
@@ -58,7 +63,7 @@ interface CKStoreData {
   balance: number
   memberStores: MemberStore[]
   externalOrders: ExternalOrder[]
-  externalStores: { id: string; name: string }[]
+  externalStores: { id: string; name: string; deductFromReimbursement?: boolean }[]
   expenses: Expense[]
   receiptPhotoUrls?: string[]
 }

@@ -28,6 +28,7 @@ export interface CKDailyStats {
   // Revenue
   memberOrders: Array<{ store_id: string; store_name: string; amount: number }>
   externalOrders: Array<{ name: string; amount: number }>
+  deductibleExternalRevenue: number
   memberRevenue: number
   externalRevenue: number
   revenue: number
@@ -82,7 +83,7 @@ function emptyDay(date: string): CKDailyStats {
     payerName: null,
     hqPaid: false,
     ckReimbursementConfirmed: false,
-    memberOrders: [], externalOrders: [],
+    memberOrders: [], externalOrders: [], deductibleExternalRevenue: 0,
     memberRevenue: 0, externalRevenue: 0, revenue: 0,
     expenses: [],
     food: 0, pack: 0, misc: 0, totalExpense: 0,
@@ -107,6 +108,19 @@ export async function getCKRangeStats(
   ])
   const ckStore = (storeRow ?? { id: ckStoreId, name: '' }) as CKStoreInfo
   const assignedIds = (ckStore.assigned_store_ids ?? []) as string[]
+
+  const { data: externalStoreRows } = await admin
+    .from('ck_external_stores')
+    .select('*')
+    .eq('ck_store_id', ckStoreId)
+  const deductibleExternalNames = new Set(
+    (externalStoreRows ?? [])
+      .filter((row: any) => row.deduct_from_reimbursement ?? (
+        String(ckStore.name ?? '').trim().startsWith('泉州') && String(row.name ?? '').trim() === '食咣雞'
+      ))
+      .map((row: any) => String(row.name ?? '').trim())
+      .filter(Boolean),
+  )
 
   // 成員店家名字
   const memberStoreMap: Record<string, string> = {}
@@ -153,8 +167,10 @@ export async function getCKRangeStats(
           dd.memberRevenue += effectiveAmount
         } else {
           const amount = Number(o.amount ?? 0)
-          dd.externalOrders.push({ name: o.external_store_name, amount })
+          const name = String(o.external_store_name ?? '').trim()
+          dd.externalOrders.push({ name, amount })
           dd.externalRevenue += amount
+          if (deductibleExternalNames.has(name)) dd.deductibleExternalRevenue += amount
         }
       }
       dd.revenue = dd.memberRevenue + dd.externalRevenue
