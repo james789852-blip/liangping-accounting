@@ -854,6 +854,7 @@ function QuickClosingSummary({ closing }: { closing: ClosingRow }) {
     ? closing.remittance_adjustments.reduce((sum, item) => sum + (Number(item?.amount) || 0), 0)
     : 0
   const remitToHQ = actual + adjustmentTotal - totalReserved
+  const hasRemittanceChange = totalReserved > 0 || adjustmentTotal !== 0
 
   return (
     <div className="space-y-3">
@@ -868,9 +869,15 @@ function QuickClosingSummary({ closing }: { closing: ClosingRow }) {
           <Stat label="誤差" value={variance} color={Math.abs(variance) > 200 ? '#be123c' : '#0369a1'} />
         </div>
       </div>
-      {totalReserved > 0 && (
+      {hasRemittanceChange && (
         <div className="rounded-xl px-3 py-2.5" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
-          <p className="text-xs font-semibold mb-1" style={{ color: '#c2410c' }}>🐷 預留款項（不影響原始實匯入／Excel）</p>
+          <p className="text-xs font-semibold mb-1" style={{ color: '#c2410c' }}>📌 匯款／預留調整（不影響原始實匯入／Excel）</p>
+          {Array.isArray(closing.remittance_adjustments) && closing.remittance_adjustments.filter(item => Number(item?.amount) !== 0).map((item, index) => (
+            <div key={`adjustment-${index}`} className="flex items-center justify-between text-xs" style={{ color: '#2563eb' }}>
+              <span>💳 {item.label || '匯款調整'}</span>
+              <span className="tabular-nums font-semibold">{item.amount && item.amount > 0 ? '+' : '−'}${fmt(Math.abs(Number(item.amount) || 0))}</span>
+            </div>
+          ))}
           {reserves.map((item, index) => (
             <div key={index} className="flex items-center justify-between text-xs" style={{ color: '#c2410c' }}>
               <span>預留{item.reason || '款項'}</span>

@@ -943,6 +943,30 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   })
   const [showAdjForm, setShowAdjForm] = useState(false)
   const [adjForm, setAdjForm] = useState<Omit<RemittanceAdjustment, 'id'>>({ type: 'advance', label: '', amount: 0, person: '' })
+  const customerTransferAmount = useMemo(
+    () => adjustments
+      .filter(item => item.type === 'customer_transfer')
+      .reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0),
+    [adjustments],
+  )
+  function updateCustomerTransferAmount(amount: number) {
+    const normalized = Math.abs(Number(amount) || 0)
+    setAdjustments(prev => {
+      const existing = prev.find(item => item.type === 'customer_transfer')
+      const withoutCustomerTransfers = prev.filter(item => item.type !== 'customer_transfer')
+      if (normalized <= 0) return withoutCustomerTransfers
+      return [
+        ...withoutCustomerTransfers,
+        {
+          id: existing?.id ?? crypto.randomUUID(),
+          type: 'customer_transfer' as const,
+          label: '顧客匯款收入',
+          amount: -normalized,
+          person: existing?.person ?? '',
+        },
+      ]
+    })
+  }
   const adjLsKey = `remit_adj_${store.id}_${today}`
   useEffect(() => {
     if (existingClosing?.remittance_adjustments && (existingClosing.remittance_adjustments as any[]).length > 0) return
@@ -1233,19 +1257,37 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   useEffect(() => {
     if (!pendingRentReserve || isLocked || submitDone) return
-    if (existingClosing?.reserve_items && (existingClosing.reserve_items as any[]).length > 0) return
-    if (reserves.some(item => item.reason === '房租' && item.total_bill === pendingRentReserve.total_bill)) return
+    const savedReserves = Array.isArray(existingClosing?.reserve_items) ? existingClosing.reserve_items as ReserveItem[] : []
+    const savedManualMatching = savedReserves.find(item =>
+      item.reason === '房租' && item.total_bill === pendingRentReserve.total_bill && !item.auto_reserved,
+    )
+    if (savedManualMatching) return
     try {
       const stored = JSON.parse(localStorage.getItem(reserveLsKey) ?? '[]')
-      if (Array.isArray(stored) && stored.length > 0) return
+      // 初次掛載等待 localStorage 還原；還原完成後允許自動預留金額跟著實匯入更新。
+      if (reserves.length === 0 && Array.isArray(stored) && stored.length > 0) return
     } catch {}
 
     const remaining = Math.max(0, pendingRentReserve.remaining_amount ?? ((pendingRentReserve.total_bill ?? 0) - pendingRentReserve.amount))
     const amount = Math.min(Math.max(0, Math.round(s.finalRemit)), remaining)
-    if (amount <= 0) return
-
     setReserves(prev => {
+      const existingAuto = prev.find(item =>
+        item.reason === '房租' && item.total_bill === pendingRentReserve.total_bill && item.auto_reserved,
+      )
+      if (existingAuto) {
+        if (amount <= 0) return prev.filter(item => item.id !== existingAuto.id)
+        return prev.map(item => item.id === existingAuto.id
+          ? {
+              ...item,
+              amount,
+              source_start_date: pendingRentReserve.started_date,
+              accumulated_before: pendingRentReserve.amount,
+            }
+          : item)
+      }
+      // 使用者若已手動建立同一筆預留，保留手動金額。
       if (prev.some(item => item.reason === '房租' && item.total_bill === pendingRentReserve.total_bill)) return prev
+      if (amount <= 0) return prev
       return [
         ...prev,
         {
@@ -2291,7 +2333,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const hasRequiredPettyInput =
     Object.values(pettyCounts).some(v => Math.abs(Number(v) || 0) > 0) ||
     Object.values(pettyLumps).some(v => Math.abs(Number(v) || 0) > 0) ||
-    largeCashExpenses.some(item => Math.abs(Number(item.amount) || 0) > 0)
+    largeCashExpenses.some(item => Math.abs(Number(item.amount) || 0) > 0) ||
+    customerTransferAmount > 0
 
   // ── Main wizard return ────────────────────────────────────────────────────
   if (!stepMounted || finishingToday) {
@@ -4051,6 +4094,23 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   </div>
                 )}
               </div>
+              <div className="mt-3 rounded-2xl p-3 space-y-2" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: '#1d4ed8' }}>顧客匯款收入</p>
+                  <p className="text-[11px]" style={{ color: '#2563eb' }}>
+                    顧客已轉帳、不是現金；輸入後會自動列入匯款調整並從實際包回金額扣除。
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold shrink-0" style={{ color: '#2563eb' }}>−</span>
+                  <SInput value={customerTransferAmount} onChange={updateCustomerTransferAmount} disabled={isLocked} placeholder="輸入轉帳金額" />
+                </div>
+                {customerTransferAmount > 0 && (
+                  <p className="text-[11px]" style={{ color: '#1d4ed8' }}>
+                    匯款調整已自動扣除 ${fmt(customerTransferAmount)}，調整後實匯入 ${fmt(s.finalRemit)}。
+                  </p>
+                )}
+              </div>
               <div className="mt-3 space-y-2">
                 {s.largeExpenseTotal > 0 && <SummaryBlock label="現金清點小計" value={`$${fmt(s.cashSubtotal)}`} />}
                 <SummaryBlock label="現金總額" value={`$${fmt(s.cashTotal)}`} />
@@ -5041,7 +5101,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {stepId === 'petty' && (
               <button onClick={async () => {
                 if (!hasRequiredPettyInput) {
-                  toast.error('請先完成零用金清點，至少輸入一筆張數、整筆金額或大額支出')
+                  toast.error('請先完成零用金清點，至少輸入一筆張數、整筆金額、大額支出或顧客匯款')
                   return
                 }
                 setSavingPetty(true)

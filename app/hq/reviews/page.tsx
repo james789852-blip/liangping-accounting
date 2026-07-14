@@ -32,6 +32,7 @@ export default async function ReviewsPage() {
     .select(`
       id, business_date, status, total_revenue, variance, note, dispute_note,
       submitted_at, should_include_delivery, actual_remit, total_cost, total_expenses,
+      remittance_adjustments, reserve_items,
       stores(id, name),
       revenue_items(channel, account_name, gross_amount),
       expense_items(description, amount),

@@ -114,6 +114,12 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const platformTotal = closing.revenue_items
     .filter(r => ['uber', 'panda', 'twpay', 'online'].includes(r.channel))
     .reduce((s, r) => s + r.gross_amount, 0)
+  const remittanceAdjustments = closing.remittance_adjustments ?? []
+  const reserves = closing.reserve_items ?? []
+  const adjustmentTotal = remittanceAdjustments.reduce((s: number, a: any) => s + (Number(a?.amount) || 0), 0)
+  const totalReserved = reserves.reduce((s, r) => s + Math.max(0, Number(r?.amount) || 0), 0)
+  const hasRemittanceChange = adjustmentTotal !== 0 || totalReserved > 0
+  const remitToHQ = closing.actual_remit + adjustmentTotal - totalReserved
 
   const st = STATUS_STYLE[closing.status] ?? STATUS_STYLE.submitted
 
@@ -242,27 +248,26 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                   <span>誤差</span>
                   <span className="tabular-nums">{closing.variance >= 0 ? '+' : ''}{fmt(closing.variance)}</span>
                 </div>
-                {(() => {
-                  const reserves = closing.reserve_items ?? []
-                  if (reserves.length === 0) return null
-                  const adjTotal = (closing.remittance_adjustments ?? []).reduce((s: number, a: any) => s + (a.amount ?? 0), 0)
-                  const totalReserved = reserves.reduce((s, r) => s + r.amount, 0)
-                  const remitToHQ = closing.actual_remit + adjTotal - totalReserved
-                  return (
-                    <>
-                      {reserves.map((r, i) => (
-                        <div key={i} className="flex justify-between text-xs pt-1" style={{ color: '#ea580c' }}>
-                          <span>🐷 預留 {r.reason}</span>
-                          <span className="tabular-nums">−{fmt(r.amount)}</span>
-                        </div>
-                      ))}
-                      <div className="flex justify-between text-xs font-bold pt-1" style={{ borderTop: '1px solid #fed7aa', color: remitToHQ < 0 ? '#dc2626' : '#18181b' }}>
-                        <span>今日實際匯入</span>
-                        <span className="tabular-nums">${fmt(remitToHQ)}</span>
+                {hasRemittanceChange && (
+                  <>
+                    {remittanceAdjustments.filter((a: any) => Number(a?.amount) !== 0).map((a: any, i: number) => (
+                      <div key={`adjustment-${i}`} className="flex justify-between text-xs pt-1" style={{ color: a.amount >= 0 ? '#047857' : '#2563eb' }}>
+                        <span>💳 {a.label || '匯款調整'}</span>
+                        <span className="tabular-nums">{a.amount >= 0 ? '+' : '−'}{fmt(Math.abs(Number(a.amount) || 0))}</span>
                       </div>
-                    </>
-                  )
-                })()}
+                    ))}
+                    {reserves.map((r, i) => (
+                      <div key={`reserve-${i}`} className="flex justify-between text-xs pt-1" style={{ color: '#ea580c' }}>
+                        <span>🐷 預留 {r.reason}</span>
+                        <span className="tabular-nums">−{fmt(Number(r.amount) || 0)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-xs font-bold pt-1" style={{ borderTop: '1px solid #fed7aa', color: remitToHQ < 0 ? '#dc2626' : '#18181b' }}>
+                      <span>今日實際匯入公司</span>
+                      <span className="tabular-nums">${fmt(remitToHQ)}</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 

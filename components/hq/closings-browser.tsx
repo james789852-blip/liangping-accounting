@@ -18,6 +18,7 @@ interface Closing {
   expected_remit: number; variance: number
   actual_remit?: number; should_include_delivery?: number
   remittance_adjustments?: RemittanceAdjustment[]
+  reserve_items?: { reason?: string; amount?: number }[]
   ck_delivery_photo_url?: string; channel_photo_urls?: Record<string, string>
   envelope_photo_url?: string; void_invoice_photo_urls?: string[]; note_photo_url?: string
   extra_photo_urls?: Array<string | { url?: string | null; label?: string | null }> | null
@@ -356,6 +357,10 @@ function ClosingCard({
   const platformTotal = closing.revenue_items
     .filter(r => ['uber', 'panda', 'twpay', 'online', 'online_cash'].some(k => r.channel === k || r.channel.startsWith('uber_')))
     .reduce((s, r) => s + r.gross_amount, 0)
+  const adjustmentTotal = (closing.remittance_adjustments ?? []).reduce((s, item) => s + (Number(item.amount) || 0), 0)
+  const totalReserved = (closing.reserve_items ?? []).reduce((s, item) => s + Math.max(0, Number(item.amount) || 0), 0)
+  const hasRemittanceChange = adjustmentTotal !== 0 || totalReserved > 0
+  const remitToHQ = Number(closing.actual_remit ?? 0) + adjustmentTotal - totalReserved
 
   const ckItems = (closing.order_items ?? []).filter(o => o.item_name !== '央廚配送')
 
@@ -435,7 +440,10 @@ function ClosingCard({
                 { label: '應包進信封', val: closing.should_include_delivery ?? closing.expected_remit, color: '#F59E0B', bold: true },
                 ...(closing.total_cost > 0 ? [{ label: '　− 央廚費', val: -closing.total_cost, color: '#f97316' }] : []),
                 { label: '應匯總公司', val: closing.expected_remit, color: '#047857', bold: true },
-                { label: '實際包進信封', val: closing.actual_remit ?? closing.expected_remit, color: '#18181b', bold: true },
+                { label: '實際包進信封（現金清點）', val: closing.actual_remit ?? closing.expected_remit, color: '#18181b', bold: true },
+                ...(closing.remittance_adjustments ?? []).filter(adj => Number(adj.amount) !== 0).map(adj => ({ label: `　${adj.label || '匯款調整'}`, val: Number(adj.amount), color: Number(adj.amount) >= 0 ? '#047857' : '#2563eb' })),
+                ...(closing.reserve_items ?? []).map(item => ({ label: `　預留${item.reason || '款項'}`, val: -(Number(item.amount) || 0), color: '#c2410c' })),
+                ...(hasRemittanceChange ? [{ label: '實際匯入公司（調整／預留後）', val: remitToHQ, color: '#047857', bold: true }] : []),
               ].map(({ label, val, color, bold }, idx, arr) => (
                 <div key={idx} className="flex items-center justify-between px-3 py-2 text-xs"
                   style={{ borderBottom: idx !== arr.length - 1 ? '1px solid #f4f4f5' : 'none', background: (bold && (label === '應包進信封' || label === '應匯總公司')) ? '#f8fafc' : 'white' }}>

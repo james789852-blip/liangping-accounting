@@ -18,6 +18,7 @@ import {
   canReviewClosings,
   canExportReports,
   hasAnyHQPermission,
+  isStoreRole,
 } from '@/lib/user-permissions'
 
 export default async function ManagerLayout({ children }: { children: React.ReactNode }) {
@@ -25,7 +26,10 @@ export default async function ManagerLayout({ children }: { children: React.Reac
   if (!user) redirect('/login')
 
   const profile = await getCachedUserProfile(user.id)
-  const isHQ = profile && hasAnyHQPermission(profile)
+  // 店長／副店長等即使被授予部分總公司權限，進入「店長端」仍應以自己的主店為主。
+  // 否則會走 HQ 的切店 cookie 流程，容易被先前停留的店家（例如心悅）蓋掉。
+  const isStoreManager = isStoreRole(profile?.role)
+  const isHQ = !!profile && hasAnyHQPermission(profile) && !isStoreManager
 
   let storeId: string | null = null
   let storeName = ''
