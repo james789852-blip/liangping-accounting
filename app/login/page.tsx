@@ -57,8 +57,9 @@ export default function LoginPage() {
     // 清理店面角色的舊切店狀態不應阻塞登入導向；背景完成即可。
     void resetStoreSelectionForLogin().catch(() => {})
     toast.success('登入成功')
-    router.push(isHQ ? getDefaultHQHref(profile) : (hasAssignedStore ? '/manager/dashboard' : '/manager/dashboard'))
-    router.refresh()
+    const nextPath = isHQ ? getDefaultHQHref(profile) : (hasAssignedStore ? '/manager/dashboard' : '/manager/dashboard')
+    // 使用完整導向，確保瀏覽器立即帶上 Supabase 最新 session cookie。
+    window.location.assign(nextPath)
   }
 
   function focusInput(e: React.FocusEvent<HTMLInputElement>) {
