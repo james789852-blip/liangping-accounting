@@ -21,7 +21,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('name, role, store_ids, is_hq, primary_store_id').eq('user_id', user.id).single()
+    .from('user_profiles').select('user_id, name, role, store_ids, is_hq, primary_store_id').eq('user_id', user.id).single()
 
   const storeId = await getEffectiveStoreId(profile)
   if (!storeId) return <div className="p-6 text-red-500">您尚未被指派到任何店家</div>

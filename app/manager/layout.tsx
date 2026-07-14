@@ -41,7 +41,8 @@ export default async function ManagerLayout({ children }: { children: React.Reac
 
   if (isHQ) {
     const cookieStore = await cookies()
-    const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
+    const cookieStoreId = cookieStore.get(`last_viewing_store_${user.id}`)?.value
+      ?? cookieStore.get('hq_viewing_store')?.value
 
     if (profile.role === '老闆') {
       allStores = await getCachedAllStores()

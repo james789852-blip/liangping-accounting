@@ -32,7 +32,8 @@ export default async function HQLayout({ children }: { children: React.ReactNode
   let currentStoreId = ''
 
   const cookieStore = await cookies()
-  const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
+  const cookieStoreId = cookieStore.get(`last_viewing_store_${user.id}`)?.value
+    ?? cookieStore.get('hq_viewing_store')?.value
 
   // 總公司權限只代表能進入後台；可切換哪些店家仍以「店家權限」清單為準。
   // 老闆例外，依既有規則可查看全部店家。

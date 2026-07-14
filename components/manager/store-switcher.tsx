@@ -15,8 +15,8 @@ export default function StoreSwitcher({ stores, currentStoreId, className, style
 
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const nextStoreId = e.target.value
-    setSelectedStoreId(nextStoreId)
     startTransition(async () => {
+      setSelectedStoreId(nextStoreId)
       if (pathname.startsWith('/hq')) {
         const nextStore = stores.find(s => s.id === nextStoreId)
         const params = new URLSearchParams(searchParams.toString())
@@ -27,11 +27,16 @@ export default function StoreSwitcher({ stores, currentStoreId, className, style
           if (pathname === '/hq/accounting') params.set('tab', 'store')
           params.set('storeId', nextStoreId)
         }
+        const result = await setManagerStore(nextStoreId, 'hq')
+        if ('error' in result) {
+          router.refresh()
+          return
+        }
         router.replace(`${pathname}?${params.toString()}`)
-        setManagerStore(nextStoreId, 'hq').catch(() => {})
       } else {
         const result = await setManagerStore(nextStoreId, 'manager')
-        if ('success' in result) router.refresh()
+        router.refresh()
+        if ('error' in result) return
       }
     })
   }
