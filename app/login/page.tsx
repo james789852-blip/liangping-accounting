@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
 import { getDefaultHQHref } from '@/lib/user-permissions'
+import { resetStoreSelectionForLogin } from '@/app/actions/store-select'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -53,6 +54,7 @@ export default function LoginPage() {
 
     const isHQ = profile?.role === '老闆' || profile?.is_hq === true
     const hasAssignedStore = Array.isArray(profile?.store_ids) && profile.store_ids.length > 0
+    await resetStoreSelectionForLogin()
     toast.success('登入成功')
     router.push(isHQ ? getDefaultHQHref(profile) : (hasAssignedStore ? '/manager/dashboard' : '/manager/dashboard'))
     router.refresh()

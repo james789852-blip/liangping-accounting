@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink, BarChart3, Settings, Building2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
+import { clearStoreSelectionOnLogout } from '@/app/actions/store-select'
 
 const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
 
@@ -61,15 +62,17 @@ interface Props {
   storeType?: string
   stores?: { id: string; name: string; type?: string }[]
   currentStoreId?: string
+  identityStoreName?: string
   canAccessHQ?: boolean
   hqHref?: string
 }
 
-export default function ManagerNav({ userName, storeName, role, storeType, stores = [], currentStoreId = '', canAccessHQ = false, hqHref = '/hq/dashboard' }: Props) {
+export default function ManagerNav({ userName, storeName, identityStoreName, role, storeType, stores = [], currentStoreId = '', canAccessHQ = false, hqHref = '/hq/dashboard' }: Props) {
   const isCK = storeType === '央廚'
   const NAV_ITEMS = isCK ? CK_NAV_ITEMS : STORE_NAV_ITEMS
-  const displayRole = storeName.endsWith('店') && role.startsWith('店') ? role.slice(1) : role
-  const displayIdentity = storeName && role ? `${storeName}${displayRole}` : (role || storeName || '結帳系統')
+  const homeStoreName = identityStoreName || storeName
+  const displayRole = homeStoreName.endsWith('店') && role.startsWith('店') ? role.slice(1) : role
+  const displayIdentity = homeStoreName && role ? `${homeStoreName}${displayRole}` : (role || homeStoreName || '結帳系統')
   const pathname = usePathname()
   const router = useRouter()
   const { date, time } = useTaipeiNow()
@@ -86,6 +89,7 @@ export default function ManagerNav({ userName, storeName, role, storeType, store
   }, [router])
 
   async function handleLogout() {
+    await clearStoreSelectionOnLogout()
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')

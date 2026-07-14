@@ -36,6 +36,7 @@ export default async function ManagerLayout({ children }: { children: React.Reac
 
   let storeId: string | null = null
   let storeName = ''
+  let identityStoreName = ''
   let storeType = '店面'
   let allStores: { id: string; name: string; type?: string }[] = []
 
@@ -79,6 +80,11 @@ export default async function ManagerLayout({ children }: { children: React.Reac
       storeName = (store as any)?.name ?? ''
       storeType = (store as any)?.type ?? '店面'
     }
+    const primaryStoreId = profile?.primary_store_id
+    if (primaryStoreId) {
+      const primaryStore = await getCachedStoreById(primaryStoreId)
+      identityStoreName = primaryStore?.name ?? ''
+    }
   }
 
   if (isHQ) {
@@ -116,6 +122,7 @@ export default async function ManagerLayout({ children }: { children: React.Reac
       <ManagerNav
         userName={profile?.name ?? user.email ?? ''}
         storeName={storeName}
+        identityStoreName={identityStoreName}
         role={profile?.title ?? profile?.role ?? ''}
         storeType={storeType}
         stores={allStores}

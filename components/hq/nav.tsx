@@ -16,6 +16,7 @@ const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
 import { getPendingReviewCount } from '@/app/actions/pending-review'
+import { clearStoreSelectionOnLogout } from '@/app/actions/store-select'
 
 /** 待審核數 — 每 30 秒 poll，切頁時也 refresh */
 function usePendingReviewCount() {
@@ -154,6 +155,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   }
 
   async function handleLogout() {
+    await clearStoreSelectionOnLogout()
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')

@@ -23,6 +23,7 @@ export async function getEffectiveStoreId(profile: {
   const { data: { user } } = await supabase.auth.getUser()
   const savedStoreId = user?.user_metadata?.last_viewing_store_id as string | undefined
   const isBoss = profile.role === '老闆'
+  const belongsToHQ = isBoss || profile.is_hq === true
   const assignedIds = [...new Set(profile.store_ids ?? [])]
   const allStores = isBoss ? await getCachedAllStores() : []
   const allowedIds = isBoss ? allStores.map(store => store.id) : assignedIds
@@ -32,7 +33,7 @@ export async function getEffectiveStoreId(profile: {
   // 每一個 cookie 與主店值都必須再次通過目前帳號的店家權限清單。
   // 總公司身分本身不授予全部店家；只有老闆可以查看所有 active 店家。
   if (isAllowed(accountStoreId)) return accountStoreId
-  if (isAllowed(savedStoreId)) return savedStoreId
+  if (belongsToHQ && isAllowed(savedStoreId)) return savedStoreId
   if (isAllowed(managerOverrideId)) return managerOverrideId
   if (isAllowed(profile.primary_store_id)) return profile.primary_store_id
   if (isAllowed(cookieStoreId)) return cookieStoreId
