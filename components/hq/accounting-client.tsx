@@ -874,7 +874,7 @@ function QuickClosingSummary({ closing }: { closing: ClosingRow }) {
       </div>
       {hasRemittanceChange && (
         <div className="rounded-xl px-3 py-2.5" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
-          <p className="text-xs font-semibold mb-1" style={{ color: '#c2410c' }}>📌 匯款／預留調整（不影響原始實匯入／Excel）</p>
+          <p className="text-xs font-semibold mb-1" style={{ color: '#c2410c' }}>📌 實際包款提示（原始實匯入／Excel 不變）</p>
           {Array.isArray(closing.remittance_adjustments) && closing.remittance_adjustments.filter(item => Number(item?.amount) !== 0).map((item, index) => (
             <div key={`adjustment-${index}`} className="flex items-center justify-between text-xs" style={{ color: '#2563eb' }}>
               <span>💳 {item.label || '匯款調整'}</span>
@@ -894,7 +894,7 @@ function QuickClosingSummary({ closing }: { closing: ClosingRow }) {
             </div>
           )}
           <div className="flex items-center justify-between text-xs font-bold pt-1 mt-1" style={{ borderTop: '1px solid #fed7aa', color: '#9a3412' }}>
-            <span>扣除預留後實際匯入公司</span>
+            <span>實際應包回公司（調整／預留後）</span>
             <span className="tabular-nums">${fmt(remitToHQ)}</span>
           </div>
         </div>

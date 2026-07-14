@@ -40,8 +40,6 @@ interface LargeCashExpense {
   amount: number
   /** 已由前幾日預留款支付，今天不應再從現金扣除。 */
   preReserved?: boolean
-  /** 使用者明確取消自動判定時才會設為 true。 */
-  preReservedOverride?: boolean
 }
 
 interface TodayReceipt {
@@ -343,7 +341,6 @@ function initLargeCashExpenses(existing: any): LargeCashExpense[] {
         amount: Math.abs(Number(row.amount) || 0),
         // 舊資料的 false 可能只是尚未套用自動判定，不能當成使用者明確取消。
         preReserved: row.preReserved === true ? true : undefined,
-        preReservedOverride: row.preReservedOverride === true,
       }
     })
     .filter(item => item.amount > 0 || item.description.trim())
@@ -1296,7 +1293,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setLargeCashExpenses(prev => {
       let changed = false
       const next = prev.map(item => {
-        if (item.preReservedOverride === true || item.preReserved === true || item.amount <= 0 || !item.description.trim()) return item
+        if (item.preReserved === true || item.amount <= 0 || !item.description.trim()) return item
         const reason = normalizeReserveReason(item.description)
         const hint = preReservedExpenseHints.find(candidate => normalizeReserveReason(candidate.reason) === reason)
         if (!hint) return item
@@ -4098,7 +4095,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold" style={{ color: '#9a3412' }}>大額支出</p>
-                    <p className="text-[11px]" style={{ color: '#c2410c' }}>例如房租、營業稅。現金清點與實匯入維持原始計算；若前幾日已預留，最後包款會加回。</p>
+                    <p className="text-[11px]" style={{ color: '#c2410c' }}>例如房租、營業稅。現金清點與實匯入維持原始計算；系統會自動判定前幾日預留並在最後包款加回。</p>
                   </div>
                   {!isLocked && (
                     <button type="button" onClick={addLargeCashExpense}
@@ -4139,19 +4136,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             </button>
                           )}
                         </div>
-                        <label className="flex items-center gap-2 pl-1 text-[11px]" style={{ color: item.preReserved ? '#15803d' : '#9a3412', cursor: isLocked ? 'default' : 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={item.preReserved === true}
-                            disabled={isLocked}
-                            onChange={e => setLargeCashExpenses(prev => prev.map(expense => expense.id === item.id
-                              ? { ...expense, preReserved: e.target.checked, preReservedOverride: true }
-                              : expense))}
-                            style={{ accentColor: '#16a34a' }}
-                          />
-                          <span>前幾日已預留，最後包款加回</span>
-                          {item.preReserved && <span style={{ color: '#16a34a' }}>（{item.preReservedOverride ? '已勾選' : '已自動判定'}）</span>}
-                        </label>
                       </div>
                     ))}
                   </div>
@@ -5027,7 +5011,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </div>
               <div className="rounded-2xl p-5 text-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
                 <p className="text-xs mb-1" style={{ opacity: 0.8 }}>
-                  {hasRemittanceChange ? '今日實際匯入公司' : '請包入信封袋的金額'}
+                  {hasRemittanceChange ? '今日實際應包回公司' : '請包入信封袋的金額'}
                 </p>
                 <p className="text-4xl font-extrabold tabular-nums tracking-tight">${fmt(hasRemittanceChange ? s.remitToHQ : s.actualRemit)}</p>
                 {hasRemittanceChange && (

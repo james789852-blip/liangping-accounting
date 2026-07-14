@@ -272,7 +272,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                       </div>
                     )}
                     <div className="flex justify-between text-xs font-bold pt-1" style={{ borderTop: '1px solid #fed7aa', color: remitToHQ < 0 ? '#dc2626' : '#18181b' }}>
-                      <span>今日實際匯入公司</span>
+                      <span>今日實際應包回公司</span>
                       <span className="tabular-nums">${fmt(remitToHQ)}</span>
                     </div>
                   </>

@@ -447,7 +447,7 @@ function ClosingCard({
                 ...(closing.remittance_adjustments ?? []).filter(adj => Number(adj.amount) !== 0).map(adj => ({ label: `　${adj.label || '匯款調整'}`, val: Number(adj.amount), color: Number(adj.amount) >= 0 ? '#047857' : '#2563eb' })),
                 ...(closing.reserve_items ?? []).map(item => ({ label: `　預留${item.reason || '款項'}`, val: -(Number(item.amount) || 0), color: '#c2410c' })),
                 ...(preReservedExpenseTotal > 0 ? [{ label: '　前幾日已預留支出加回', val: preReservedExpenseTotal, color: '#15803d' }] : []),
-                ...(hasRemittanceChange ? [{ label: '實際匯入公司（調整／預留後）', val: remitToHQ, color: '#047857', bold: true }] : []),
+                ...(hasRemittanceChange ? [{ label: '實際應包回公司（調整／預留後）', val: remitToHQ, color: '#047857', bold: true }] : []),
               ].map(({ label, val, color, bold }, idx, arr) => (
                 <div key={idx} className="flex items-center justify-between px-3 py-2 text-xs"
                   style={{ borderBottom: idx !== arr.length - 1 ? '1px solid #f4f4f5' : 'none', background: (bold && (label === '應包進信封' || label === '應匯總公司')) ? '#f8fafc' : 'white' }}>
