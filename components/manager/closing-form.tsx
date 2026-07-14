@@ -40,6 +40,8 @@ interface LargeCashExpense {
   amount: number
   /** 已由前幾日預留款支付，今天不應再從現金扣除。 */
   preReserved?: boolean
+  /** 使用者明確取消自動判定時才會設為 true。 */
+  preReservedOverride?: boolean
 }
 
 interface TodayReceipt {
@@ -339,9 +341,9 @@ function initLargeCashExpenses(existing: any): LargeCashExpense[] {
         id: typeof row.id === 'string' ? row.id : crypto.randomUUID(),
         description: typeof row.description === 'string' ? row.description : '',
         amount: Math.abs(Number(row.amount) || 0),
-        // 舊資料沒有此欄位時保留 undefined，讓歷史預留款比對可以自動判定；
-        // 使用者曾明確取消的 false 則必須保留。
-        preReserved: typeof row.preReserved === 'boolean' ? row.preReserved : undefined,
+        // 舊資料的 false 可能只是尚未套用自動判定，不能當成使用者明確取消。
+        preReserved: row.preReserved === true ? true : undefined,
+        preReservedOverride: row.preReservedOverride === true,
       }
     })
     .filter(item => item.amount > 0 || item.description.trim())
@@ -1294,7 +1296,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setLargeCashExpenses(prev => {
       let changed = false
       const next = prev.map(item => {
-        if (item.preReserved !== undefined || item.amount <= 0 || !item.description.trim()) return item
+        if (item.preReservedOverride === true || item.preReserved === true || item.amount <= 0 || !item.description.trim()) return item
         const reason = normalizeReserveReason(item.description)
         const hint = preReservedExpenseHints.find(candidate => normalizeReserveReason(candidate.reason) === reason)
         if (!hint) return item
@@ -4142,11 +4144,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             type="checkbox"
                             checked={item.preReserved === true}
                             disabled={isLocked}
-                            onChange={e => updateLargeCashExpense(item.id, 'preReserved', e.target.checked)}
+                            onChange={e => setLargeCashExpenses(prev => prev.map(expense => expense.id === item.id
+                              ? { ...expense, preReserved: e.target.checked, preReservedOverride: true }
+                              : expense))}
                             style={{ accentColor: '#16a34a' }}
                           />
                           <span>前幾日已預留，最後包款加回</span>
-                          {item.preReserved && <span style={{ color: '#16a34a' }}>（已自動判定）</span>}
+                          {item.preReserved && <span style={{ color: '#16a34a' }}>（{item.preReservedOverride ? '已勾選' : '已自動判定'}）</span>}
                         </label>
                       </div>
                     ))}
