@@ -63,8 +63,10 @@ export default async function ManagerLayout({ children }: { children: React.Reac
     const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
     const primary = (profile as any)?.primary_store_id as string | undefined
     const storeIds = profile?.store_ids ?? []
-    if (cookieStoreId && storeIds.includes(cookieStoreId)) storeId = cookieStoreId
-    else if (primary && storeIds.includes(primary)) storeId = primary
+    // 店長端以個人主店為固定預設；只有未設定主店時才沿用曾切換的店家。
+    // 避免多店權限使用者因總公司端留下的 cookie 被帶到其他店。
+    if (primary && storeIds.includes(primary)) storeId = primary
+    else if (cookieStoreId && storeIds.includes(cookieStoreId)) storeId = cookieStoreId
     else storeId = storeIds[0] ?? null
 
     if (storeId) {

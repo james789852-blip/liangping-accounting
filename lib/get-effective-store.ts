@@ -16,7 +16,17 @@ export async function getEffectiveStoreId(profile: {
   const cookieStore = await cookies()
   const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
 
-  // 優先順序：cookie（明確切換過） > primary_store_id（個人主店） > 後備
+  // 店家角色進入店長端時固定以個人主店為優先，避免被其他頁面留下的切店 cookie 蓋掉。
+  const isStoreRole = ['店長', '副店長', '小幫手', '廠長', '副廠長'].includes(profile.role)
+  if (isStoreRole) {
+    if (profile.primary_store_id && (profile.store_ids ?? []).includes(profile.primary_store_id)) {
+      return profile.primary_store_id
+    }
+    if (cookieStoreId && (profile.store_ids ?? []).includes(cookieStoreId)) return cookieStoreId
+    return profile.store_ids?.[0] ?? null
+  }
+
+  // 其他管理角色：優先沿用明確切換的店家，再使用個人主店作為預設。
 
   // 老闆 / is_hq：可查看所有 active 店家
   if (BOSS_ROLES.includes(profile.role) || profile.is_hq) {
@@ -36,9 +46,5 @@ export async function getEffectiveStoreId(profile: {
     return allIds[0] ?? null
   }
 
-  // 店家角色（店長/副店長/廠長/副廠長）：主店優先
-  if (profile.primary_store_id && (profile.store_ids ?? []).includes(profile.primary_store_id)) {
-    return profile.primary_store_id
-  }
   return profile.store_ids?.[0] ?? null
 }

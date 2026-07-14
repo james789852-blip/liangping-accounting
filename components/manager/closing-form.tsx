@@ -2778,7 +2778,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         })() ? (
                           <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
                             <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
-                              💡「{form.vendor_name}」本身就是品項，不用再選，直接於上方輸入金額即可
+                              💡「{form.vendor_name}」本身就是品項，不用再選，直接於下方輸入金額即可
                             </p>
                           </div>
                         ) : (() => {
