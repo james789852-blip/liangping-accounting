@@ -938,7 +938,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [])
   const [adjustments, setAdjustments] = useState<RemittanceAdjustment[]>(() => {
     const saved = existingClosing?.remittance_adjustments
-    if (Array.isArray(saved) && saved.length > 0) return saved
+    if (Array.isArray(saved) && saved.length > 0) {
+      // 顧客匯款在現金清點是「正的收入」；進入匯款調整後才以負數扣除非現金。
+      return saved.map(item => item.type === 'customer_transfer'
+        ? { ...item, amount: -Math.abs(Number(item.amount) || 0) }
+        : item)
+    }
     return []
   })
   const [showAdjForm, setShowAdjForm] = useState(false)
@@ -4098,11 +4103,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <div>
                   <p className="text-sm font-semibold" style={{ color: '#1d4ed8' }}>顧客匯款收入</p>
                   <p className="text-[11px]" style={{ color: '#2563eb' }}>
-                    顧客已轉帳、不是現金；輸入後會自動列入匯款調整並從實際包回金額扣除。
+                    顧客已轉帳、不是現金；這裡輸入正的收入金額，下一步會自動列入負的匯款調整。
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold shrink-0" style={{ color: '#2563eb' }}>−</span>
+                  <span className="text-sm font-semibold shrink-0" style={{ color: '#2563eb' }}>＋</span>
                   <SInput value={customerTransferAmount} onChange={updateCustomerTransferAmount} disabled={isLocked} placeholder="輸入轉帳金額" />
                 </div>
                 {customerTransferAmount > 0 && (
