@@ -71,12 +71,21 @@ interface Props {
 function ReviewActions({ ckStoreId, date, status }: { ckStoreId: string; date: string; status: string }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  // 審核成功後先在目前畫面立即隱藏核准按鈕，避免父層的央廚明細快取
+  // 尚未更新時，畫面仍顯示可以再次核准。完整重新載入後會再以資料庫狀態為準。
+  const [localDecision, setLocalDecision] = useState<'verified' | 'disputed' | 'deleted' | null>(null)
 
   function approve() {
     startTransition(async () => {
       const r = await reviewCKDailyRecord(ckStoreId, date, 'verified')
       if (r.error) toast.error('審核失敗：' + r.error)
-      else { toast.success('央廚帳目已審核通過'); router.refresh() }
+      else {
+        setLocalDecision('verified')
+        toast.success('央廚帳目已審核通過')
+        router.refresh()
+        // `/hq/accounting` 會保留央廚明細快取，重新載入確保審核後按鈕不會因舊狀態復原。
+        window.setTimeout(() => window.location.reload(), 250)
+      }
     })
   }
 
@@ -95,12 +104,20 @@ function ReviewActions({ ckStoreId, date, status }: { ckStoreId: string; date: s
     startTransition(async () => {
       const r = await deleteCKDailyRecord(ckStoreId, date)
       if (r.error) toast.error('刪除失敗：' + r.error)
-      else { toast.success('央廚帳目已刪除'); router.refresh() }
+      else {
+        setLocalDecision('deleted')
+        toast.success('央廚帳目已刪除')
+        router.refresh()
+        window.setTimeout(() => window.location.reload(), 250)
+      }
     })
   }
 
-  const canApprove = ['submitted', 'disputed', 'draft'].includes(status)
-  const canRevise = ['submitted', 'verified', 'disputed', 'draft'].includes(status)
+  const effectiveStatus = localDecision ?? status
+  const canApprove = ['submitted', 'disputed', 'draft'].includes(effectiveStatus)
+  const canRevise = ['submitted', 'verified', 'disputed', 'draft'].includes(effectiveStatus)
+
+  if (localDecision === 'deleted') return null
 
   return (
     <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
