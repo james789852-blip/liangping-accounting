@@ -230,7 +230,12 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
 
 function CKDailyPanel({ data, storeName, ckStoreId }: { data: CKDailyStats; storeName: string; ckStoreId: string }) {
   const badges = ckDailyBadges(data)
-  const reimbursementAmount = Math.max(0, data.totalExpense - data.externalRevenue)
+  const deductibleExternalRevenue = storeName.trim() === '泉州'
+    ? data.externalOrders
+      .filter(order => order.name.trim() === '食咣雞')
+      .reduce((sum, order) => sum + Number(order.amount || 0), 0)
+    : 0
+  const reimbursementAmount = Math.max(0, data.totalExpense - deductibleExternalRevenue)
   const [detail, setDetail] = useState<any | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   useEffect(() => {

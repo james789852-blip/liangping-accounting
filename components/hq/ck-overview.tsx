@@ -10,11 +10,16 @@ import SafePhotoImage from './safe-photo-image'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
-// 體系外店家的訂單已由外部收入支應，不應再由總公司全額補給央廚。
-// 因此總公司實際應包給央廚 = 當日支出 − 體系外收入，最低為 0。
-function hqReimbursementAmount(d: Pick<CKStoreData, 'expenseTotal' | 'externalOrders'>) {
-  const externalTotal = d.externalOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0)
-  return Math.max(0, d.expenseTotal - externalTotal)
+// 目前只有泉州的「食咣雞」屬於要由體系外收入支應的店家，其他央廚外部訂單不扣補款。
+function deductibleExternalRevenue(d: Pick<CKStoreData, 'ckStore' | 'externalOrders'>) {
+  if (d.ckStore.name.trim() !== '泉州') return 0
+  return d.externalOrders
+    .filter(order => order.name.trim() === '食咣雞')
+    .reduce((sum, order) => sum + Number(order.amount || 0), 0)
+}
+
+function hqReimbursementAmount(d: Pick<CKStoreData, 'ckStore' | 'expenseTotal' | 'externalOrders'>) {
+  return Math.max(0, d.expenseTotal - deductibleExternalRevenue(d))
 }
 
 const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
@@ -100,13 +105,15 @@ function ReviewActions({ ckStoreId, date, status }: { ckStoreId: string; date: s
   return (
     <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
       <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>帳目審核</p>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <button type="button" onClick={approve} disabled={isPending || !canApprove}
-          className="flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-          style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
-          {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-          審核通過
-        </button>
+      <div className={`grid grid-cols-1 ${canApprove ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-2`}>
+        {canApprove && (
+          <button type="button" onClick={approve} disabled={isPending}
+            className="flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            審核通過
+          </button>
+        )}
         <button type="button" onClick={reject} disabled={isPending || !canRevise}
           className="flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold disabled:opacity-50"
           style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
@@ -320,7 +327,7 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const badges = ckRecordBadges(d.status, d.hqPaid, d.ckReimbursementConfirmed ?? false)
   const hasData = d.status !== 'none'
-  const externalRevenue = d.externalOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0)
+  const externalRevenue = deductibleExternalRevenue(d)
   const reimbursementAmount = Math.max(0, d.expenseTotal - externalRevenue)
 
   return (
