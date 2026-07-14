@@ -270,9 +270,9 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
               </select>
             </div>
             <div className="col-span-2 rounded-lg px-3 py-2" style={{ background: '#eff6ff', border: '1.5px solid #93c5fd' }}>
-              <label className="block text-xs font-extrabold mb-1" style={{ color: '#1d4ed8' }}>實際廠商（選填，用於統計）</label>
-              <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#2563eb' }}>請填發票上實際開立的廠商；不需要統計可留白。</p>
-              <input style={inputStyle({ border: '2px solid #60a5fa', background: 'white', fontWeight: 600 })} value={editActualVendor} onChange={e => setEditActualVendor(e.target.value)} placeholder="請輸入實際廠商（可留白）" />
+              <label className="block text-xs font-extrabold mb-1" style={{ color: '#1d4ed8' }}>實際廠商名稱（選填）</label>
+              <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#2563eb' }}>可輸入此類別的廠商名稱，方便後續統計；沒有需要統計時可留白。</p>
+              <input style={inputStyle({ border: '2px solid #60a5fa', background: 'white', fontWeight: 600 })} value={editActualVendor} onChange={e => setEditActualVendor(e.target.value)} placeholder="請輸入廠商名稱（可留白）" />
             </div>
           </div>
 

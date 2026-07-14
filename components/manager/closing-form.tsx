@@ -2710,7 +2710,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           <div style={{ marginBottom: 10 }}>
                             <div className="rounded-xl overflow-hidden shadow-md" style={{ border: '1px solid #f4f4f5', background: 'white' }}>
                               <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', flexWrap: 'wrap' }}>
-                                <span className="text-xs font-semibold" style={{ color: '#c2410c' }}>📷 收據</span>
                                 {/* S/M/L 大小切換 */}
                                 <div className="flex gap-0.5 ml-auto rounded-lg p-0.5" style={{ background: 'white', border: '1px solid #fed7aa' }}>
                                   {(['S', 'M', 'L'] as const).map(s => (
@@ -2837,8 +2836,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                         {/* 實際廠商 */}
                         <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', border: '1.5px solid #93c5fd', borderRadius: '10px', background: '#eff6ff' }}>
-                          <label style={{ fontSize: '13px', color: '#1d4ed8', fontWeight: 800 }}>實際廠商（選填，用於統計）</label>
-                          <p style={{ fontSize: '11px', color: '#2563eb', fontWeight: 600 }}>請選發票上實際開立的廠商；沒有需要統計時可留白。</p>
+                          <label style={{ fontSize: '13px', color: '#1d4ed8', fontWeight: 800 }}>實際廠商名稱（選填）</label>
+                          <p style={{ fontSize: '11px', color: '#2563eb', fontWeight: 600 }}>可輸入此類別的廠商名稱，方便後續統計；沒有需要統計時可留白。</p>
                           {(() => {
                             const options = actualVendorOptions(form.vendor_name)
                             const current = normalizeActualVendorName(form.actual_vendor_name)
@@ -2856,10 +2855,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   updateReceiptForm(form.id, 'actual_vendor_name', e.target.value)
                                 }}
                               >
-                                <option value="">{form.vendor_name.trim() ? '— 選擇實際廠商 —' : '先選廠商類別'}</option>
+                                <option value="">{form.vendor_name.trim() ? '— 選擇廠商名稱 —' : '先選擇廠商名稱'}</option>
                                 {current && !options.includes(current) && <option value={current}>目前：{current}</option>}
                                 {options.map(name => <option key={name} value={name}>{name}</option>)}
-                                <option value={NEW_ACTUAL_VENDOR_VALUE}>＋新增實際廠商</option>
+                                <option value={NEW_ACTUAL_VENDOR_VALUE}>＋新增廠商名稱</option>
                               </select>
                             )
                           })()}
@@ -3086,7 +3085,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             NEED_NOTE_NAMES.includes(form.vendor_name ?? '') ||
                             (form.items ?? []).some(i => NEED_NOTE_NAMES.includes(i.item_name))
                           return (
-                            <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', border: '1.5px solid #93c5fd', borderRadius: '10px', background: '#eff6ff' }}>
                               <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 備註（可空）
                                 {needNote && (
@@ -3111,7 +3110,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           const amountValid = isReceiptFormAmountValid(form)
                           const allowNegativeTotal = receiptFormAllowsNegativeTotal(form)
                           return (
-                            <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', border: '1.5px solid #93c5fd', borderRadius: '10px', background: '#eff6ff' }}>
                               <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 金額 *
                                 {hasItemsTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
@@ -3246,14 +3245,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                             {/* 實際廠商 */}
                             <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>實際廠商（選填，用於統計）</label>
+                              <label style={{ fontSize: '13px', color: '#1d4ed8', fontWeight: 800 }}>實際廠商名稱（選填）</label>
+                              <p style={{ fontSize: '11px', color: '#2563eb', fontWeight: 600 }}>可輸入此類別的廠商名稱，方便後續統計；沒有需要統計時可留白。</p>
                               {(() => {
                                 const options = actualVendorOptions(editVendor)
                                 const current = normalizeActualVendorName(editActualVendor)
                                 return (
                                   <select
                                     className="receipt-field"
-                                    style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
+                                    style={{ padding: '10px 12px', minHeight: '42px', border: '2px solid #60a5fa', borderRadius: '8px', fontSize: '14px', fontWeight: 700, fontFamily: 'inherit', background: 'white', outline: 'none', color: current ? '#18181b' : '#1d4ed8' }}
                                     value={current}
                                     disabled={!editVendor.trim()}
                                     onChange={e => {
@@ -3264,10 +3264,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                       setEditActualVendor(e.target.value)
                                     }}
                                   >
-                                    <option value="">{editVendor.trim() ? '— 選擇實際廠商 —' : '先選廠商類別'}</option>
+                                    <option value="">{editVendor.trim() ? '— 選擇廠商名稱 —' : '先選擇廠商名稱'}</option>
                                     {current && !options.includes(current) && <option value={current}>目前：{current}</option>}
                                     {options.map(name => <option key={name} value={name}>{name}</option>)}
-                                    <option value={NEW_ACTUAL_VENDOR_VALUE}>＋新增實際廠商</option>
+                                    <option value={NEW_ACTUAL_VENDOR_VALUE}>＋新增廠商名稱</option>
                                   </select>
                                 )
                               })()}
