@@ -12,14 +12,15 @@ export default async function Home() {
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('role, is_hq, primary_store_id, can_manage_users, can_manage_stores, can_manage_store_settings, can_manage_ck_settings, can_manage_items, can_manage_store_items, can_manage_ck_items, can_manage_store_receipts, can_manage_ck_receipts, can_manage_ck_prices, can_review_closings, can_export_reports')
+    .select('role, is_hq, store_ids, can_manage_users, can_manage_stores, can_manage_store_settings, can_manage_ck_settings, can_manage_items, can_manage_store_items, can_manage_ck_items, can_manage_store_receipts, can_manage_ck_receipts, can_manage_ck_prices, can_review_closings, can_export_reports')
     .eq('user_id', user.id)
     .single()
 
   const isHQ = hasAnyHQPermission(profile)
+  const hasAssignedStore = Array.isArray(profile?.store_ids) && profile.store_ids.length > 0
 
-  // 總公司人員若有設定主店 → 一律先進他自己店長端的主店畫面
-  if (isHQ && (profile as any)?.primary_store_id) {
+  // 只要有店家權限就優先進店長端；仍可從導覽列返回總公司。
+  if (hasAssignedStore) {
     redirect('/manager/dashboard')
   }
 

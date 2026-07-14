@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink, BarChart3, Settings } from 'lucide-react'
+import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink, BarChart3, Settings, Building2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
 
@@ -61,11 +61,14 @@ interface Props {
   storeType?: string
   stores?: { id: string; name: string; type?: string }[]
   currentStoreId?: string
+  canAccessHQ?: boolean
+  hqHref?: string
 }
 
-export default function ManagerNav({ userName, storeName, role, storeType, stores = [], currentStoreId = '' }: Props) {
+export default function ManagerNav({ userName, storeName, role, storeType, stores = [], currentStoreId = '', canAccessHQ = false, hqHref = '/hq/dashboard' }: Props) {
   const isCK = storeType === '央廚'
   const NAV_ITEMS = isCK ? CK_NAV_ITEMS : STORE_NAV_ITEMS
+  const displayIdentity = storeName && role ? `${storeName}${role}` : (role || storeName || '結帳系統')
   const pathname = usePathname()
   const router = useRouter()
   const { date, time } = useTaipeiNow()
@@ -98,7 +101,7 @@ export default function ManagerNav({ userName, storeName, role, storeType, store
           <img src="/icon-192.png" alt="logo" className="h-9 w-9 rounded-[10px] object-cover shrink-0" />
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>結帳系統</p>
-            <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>{storeName || '未指派'} · {role}</p>
+            <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>{displayIdentity}</p>
             {stores.length > 1 && currentStoreId && (
               <StoreSwitcher
                 stores={stores}
@@ -150,6 +153,14 @@ export default function ManagerNav({ userName, storeName, role, storeType, store
           })}
 
           <div style={{ borderTop: '1px solid #f4f4f5', margin: '12px 0 4px' }} />
+          {canAccessHQ && (
+            <Link href={hqHref}
+              className="flex w-full items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-semibold transition-colors hover:bg-slate-50"
+              style={{ color: '#0369a1' }}>
+              <Building2 className="h-[18px] w-[18px]" />
+              回總公司
+            </Link>
+          )}
           <button onClick={handleLogout}
             className="flex w-full items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-colors hover:bg-slate-50"
             style={{ color: '#52525b' }}>
@@ -166,8 +177,7 @@ export default function ManagerNav({ userName, storeName, role, storeType, store
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
           <img src="/icon-192.png" alt="logo" className="h-8 w-8 rounded-[8px] object-cover shrink-0" />
           <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-900 truncate leading-tight">{storeName || '結帳系統'}</p>
-            <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{role}</p>
+            <p className="text-sm font-bold text-slate-900 truncate leading-tight">{displayIdentity}</p>
             {stores.length > 1 && currentStoreId && (
               <StoreSwitcher
                 stores={stores}
@@ -193,6 +203,13 @@ export default function ManagerNav({ userName, storeName, role, storeType, store
           <ExternalLink className="h-3 w-3" />
           HR
         </a>
+        {canAccessHQ && (
+          <Link href={hqHref} className="ml-1 h-8 px-2 flex items-center justify-center gap-1 rounded-lg text-xs font-semibold shrink-0"
+            style={{ background: '#eff6ff', color: '#0369a1', border: '1px solid #bfdbfe' }}>
+            <Building2 className="h-3 w-3" />
+            總公司
+          </Link>
+        )}
         <button onClick={handleLogout} className="h-8 w-8 flex items-center justify-center rounded-lg transition-colors hover:bg-slate-50" style={{ color: '#a1a1aa' }}>
           <LogOut className="h-4 w-4" />
         </button>

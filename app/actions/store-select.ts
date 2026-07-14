@@ -2,19 +2,29 @@
 
 import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
+import { createClient } from '@/lib/supabase/server'
 
-export async function setManagerStore(storeId: string) {
+export async function setManagerStore(storeId: string, surface: 'hq' | 'manager' = 'hq') {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '未登入' }
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role, store_ids')
+    .eq('user_id', user.id)
+    .single()
+  const allowed = profile?.role === '老闆' || (profile?.store_ids ?? []).includes(storeId)
+  if (!allowed) return { error: '沒有此店家的店家權限' }
+
   const cookieStore = await cookies()
-  cookieStore.set('hq_viewing_store', storeId, {
+  const cookieName = surface === 'manager' ? 'manager_viewing_store' : 'hq_viewing_store'
+  cookieStore.set(cookieName, storeId, {
     maxAge: 60 * 60 * 24,
     path: '/',
-  })
-  // 店長端可切換到被授權的其他店家；與總公司切店 cookie 分開，
-  // 避免舊的總公司檢視狀態把店長端主店帶偏。
-  cookieStore.set('manager_viewing_store', storeId, {
-    maxAge: 60 * 60 * 24,
-    path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
   })
   revalidatePath('/manager', 'layout')
   revalidatePath('/hq', 'layout')
+  return { success: true }
 }

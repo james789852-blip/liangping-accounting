@@ -28,10 +28,10 @@ export default function StoreSwitcher({ stores, currentStoreId, className, style
           params.set('storeId', nextStoreId)
         }
         router.replace(`${pathname}?${params.toString()}`)
-        setManagerStore(nextStoreId).catch(() => {})
+        setManagerStore(nextStoreId, 'hq').catch(() => {})
       } else {
-        await setManagerStore(nextStoreId)
-        router.refresh()
+        const result = await setManagerStore(nextStoreId, 'manager')
+        if ('success' in result) router.refresh()
       }
     })
   }

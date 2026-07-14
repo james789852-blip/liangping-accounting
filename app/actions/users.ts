@@ -4,6 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { canManageUsers } from '@/lib/user-permissions'
+import { inferSystemRole, isHQTitle } from '@/lib/account-access'
 
 function getAdminClient() {
   return createAdminClient(
@@ -78,22 +79,21 @@ export async function createUser(formData: {
   })
   if (authError) return { error: readableUserCreateError(authError.message) }
 
-  const isOwner = formData.role === '老闆'
+  const systemRole = inferSystemRole(formData.title, formData.role)
+  const isOwner = systemRole === '老闆'
   const storeIds = isOwner ? [] : [...new Set(formData.store_ids)]
-  // 確保 primary_store_id 若有設定則必須在 store_ids 內
-  const primary = formData.primary_store_id && storeIds.includes(formData.primary_store_id)
-    ? formData.primary_store_id
-    : (storeIds.length > 0 ? storeIds[0] : null)
+  // 不再讓管理員另外設定主店：第一個店家權限就是登入預設店家。
+  const primary = storeIds[0] ?? null
 
   const { error: profileError } = await admin.from('user_profiles').insert({
     user_id: authUser.user.id,
     name: formData.name,
-    role: formData.role,
+    role: systemRole,
     title: formData.title ?? null,
     employee_id: formData.employee_id ?? null,
     store_ids: storeIds,
     primary_store_id: primary,
-    is_hq: isOwner ? true : (formData.is_hq ?? false),
+    is_hq: isOwner ? true : ((formData.is_hq ?? false) || isHQTitle(formData.title)),
     can_manage_users: isOwner ? true : (formData.can_manage_users ?? false),
     can_manage_stores: isOwner ? true : ((formData.can_manage_store_settings ?? false) || (formData.can_manage_ck_settings ?? false) || (formData.can_manage_stores ?? false)),
     can_manage_store_settings: isOwner ? true : (formData.can_manage_store_settings ?? formData.can_manage_stores ?? false),
@@ -161,11 +161,20 @@ export async function updateUser(userId: string, formData: {
 
   const patch: Record<string, unknown> = {}
   if (formData.name !== undefined) patch.name = formData.name
-  if (formData.role !== undefined) patch.role = formData.role
+  if (formData.role !== undefined || formData.title !== undefined) {
+    patch.role = inferSystemRole(formData.title, formData.role)
+  }
   if (formData.title !== undefined) patch.title = formData.title
   if (formData.employee_id !== undefined) patch.employee_id = formData.employee_id
-  if (formData.store_ids !== undefined) patch.store_ids = [...new Set(formData.store_ids)]
-  if (formData.is_hq !== undefined) patch.is_hq = formData.is_hq
+  if (formData.store_ids !== undefined) {
+    const storeIds = [...new Set(formData.store_ids)]
+    patch.store_ids = storeIds
+    patch.primary_store_id = storeIds[0] ?? null
+  }
+  if (formData.is_hq !== undefined || formData.title !== undefined) {
+    const nextRole = inferSystemRole(formData.title, formData.role)
+    patch.is_hq = nextRole === '老闆' || isHQTitle(formData.title) || formData.is_hq === true
+  }
   if (formData.can_manage_users !== undefined) patch.can_manage_users = formData.can_manage_users
   if (formData.can_manage_stores !== undefined) patch.can_manage_stores = formData.can_manage_stores
   if (formData.can_manage_store_settings !== undefined) patch.can_manage_store_settings = formData.can_manage_store_settings
@@ -195,19 +204,6 @@ export async function updateUser(userId: string, formData: {
   if (formData.can_review_closings !== undefined) patch.can_review_closings = formData.can_review_closings
   if (formData.can_export_reports !== undefined) patch.can_export_reports = formData.can_export_reports
   if (formData.active !== undefined) patch.active = formData.active
-
-  // primary_store_id：若 store_ids 一起更新，要確保 primary 在 store_ids 內
-  if (formData.primary_store_id !== undefined) {
-    const sids = formData.store_ids
-    if (formData.primary_store_id === null) {
-      patch.primary_store_id = null
-    } else if (!sids || sids.includes(formData.primary_store_id)) {
-      patch.primary_store_id = formData.primary_store_id
-    } else {
-      // 不一致時，自動修為 store_ids 第一家或 null
-      patch.primary_store_id = sids[0] ?? null
-    }
-  }
 
   const { error } = await admin
     .from('user_profiles')

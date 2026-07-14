@@ -35,7 +35,9 @@ export default async function HQLayout({ children }: { children: React.ReactNode
   const cookieStore = await cookies()
   const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
 
-  if (hasAnyHQPermission(profile)) {
+  // 總公司權限只代表能進入後台；可切換哪些店家仍以「店家權限」清單為準。
+  // 老闆例外，依既有規則可查看全部店家。
+  if (profile?.role === '老闆') {
     allStores = await getCachedAllStores()
   } else if (profile.store_ids?.length) {
     const all = await getCachedAllStores()
@@ -56,7 +58,7 @@ export default async function HQLayout({ children }: { children: React.ReactNode
     <div className="flex min-h-screen bg-slate-50">
       <HQNav
         userName={profile?.name ?? user.email ?? ''}
-        role={profile?.role ?? ''}
+        role={profile?.title ?? profile?.role ?? ''}
         allStores={allStores}
         currentStoreId={currentStoreId}
         permissions={{

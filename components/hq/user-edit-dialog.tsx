@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, X, Pencil, Trash2, Eye, EyeOff } from 'lucide-react'
 import { updateUser, updateUserPassword, deleteUser } from '@/app/actions/users'
+import { TITLE_OPTIONS, inferSystemRole, isHQTitle } from '@/lib/account-access'
 
 interface Store { id: string; name: string; type?: string }
 interface UserData {
@@ -30,8 +31,6 @@ interface UserData {
   can_review_closings?: boolean
   can_export_reports?: boolean
 }
-
-const ROLES = ['老闆', '總監', '經理', '顧問', '助理', '廠長', '副廠長', '店長', '副店長', '小幫手']
 
 const PERMISSION_TOGGLES = [
   { key: 'can_manage_users', label: '可管理帳號', desc: '新增、修改、停用使用者帳號' },
@@ -64,7 +63,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
     name: user.name ?? '',
     account: user.account ?? '',
     role: user.role ?? '店長',
-    title: user.title ?? '',
+    title: user.title ?? user.role ?? '店長',
     employee_id: user.employee_id ?? '',
     is_hq: user.is_hq ?? false,
     active: user.active ?? true,
@@ -82,16 +81,13 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
   const [selectedStores, setSelectedStores] = useState<string[]>(
     [...new Set(user.store_ids ?? [])]
   )
-  const [primaryStoreId, setPrimaryStoreId] = useState<string | null>(user.primary_store_id ?? null)
-
-  const isOwner = form.role === '老闆'
+  const isOwner = inferSystemRole(form.title, form.role) === '老闆'
+  const autoHQ = isHQTitle(form.title)
   const allSelected = stores.length > 0 && stores.every(s => selectedStores.includes(s.id))
 
   function toggleStore(id: string) {
     setSelectedStores(prev => {
       const next = prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
-      // 取消勾選的店若是主店，主店清空
-      if (primaryStoreId && !next.includes(primaryStoreId)) setPrimaryStoreId(null)
       return next
     })
   }
@@ -99,7 +95,6 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
   function toggleAllStores() {
     if (allSelected) {
       setSelectedStores([])
-      setPrimaryStoreId(null)
     } else {
       setSelectedStores(stores.map(s => s.id))
     }
@@ -121,12 +116,12 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
     const result = await updateUser(user.user_id, {
       name: form.name,
       ...(accountChanged && { account: form.account }),
-      role: form.role,
+      role: inferSystemRole(form.title, form.role),
       title: form.title || undefined,
       employee_id: form.employee_id || undefined,
       store_ids: isOwner ? [] : selectedStores,
-      primary_store_id: isOwner ? null : primaryStoreId,
-      is_hq: isOwner ? true : form.is_hq,
+      primary_store_id: isOwner ? null : (selectedStores[0] ?? null),
+      is_hq: isOwner ? true : (form.is_hq || autoHQ),
       can_manage_users: isOwner ? true : form.can_manage_users,
       can_manage_store_settings: isOwner ? true : form.can_manage_store_settings,
       can_manage_ck_settings: isOwner ? true : form.can_manage_ck_settings,
@@ -213,21 +208,16 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                 />
               </div>
 
-              {/* 職稱 + 角色 */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>顯示職稱</label>
-                  <input style={INPUT_STYLE} placeholder="如：廠長、營運總監"
-                    value={form.title}
-                    onChange={e => setForm(p => ({ ...p, title: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>系統角色</label>
-                  <select style={{ ...INPUT_STYLE, cursor: 'pointer' }}
-                    value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
-                    {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                </div>
+              {/* 職稱：可選擇建議職稱，也可直接輸入自訂職稱；系統權限由職稱自動推導 */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: '#52525b' }}>職稱</label>
+                <input list="account-title-options" style={INPUT_STYLE} placeholder="選擇或輸入職稱，例如：店長、財務經理"
+                  value={form.title}
+                  onChange={e => setForm(p => ({ ...p, title: e.target.value }))} />
+                <datalist id="account-title-options">
+                  {TITLE_OPTIONS.map(title => <option key={title} value={title} />)}
+                </datalist>
+                <p className="text-[10px] mt-1" style={{ color: '#a1a1aa' }}>選擇建議職稱即可，也可以直接新增自訂職稱。</p>
               </div>
 
               {/* 總公司 + 啟用 toggle */}
@@ -235,17 +225,17 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex items-center justify-between rounded-xl px-3 py-2.5"
                     style={{ border: '1px solid #f4f4f5', background: '#fafafa' }}>
-                    <span className="text-sm font-semibold" style={{ color: '#18181b' }}>總公司後台</span>
-                    <button type="button" onClick={() => setForm(p => ({ ...p, is_hq: !p.is_hq }))}
+                    <span className="text-sm font-semibold" style={{ color: '#18181b' }}>總公司權限</span>
+                    <button type="button" disabled={autoHQ} onClick={() => setForm(p => ({ ...p, is_hq: !p.is_hq }))}
                       style={{
                         position: 'relative', width: '36px', height: '20px', borderRadius: '10px',
-                        background: form.is_hq ? '#F59E0B' : '#d4d4d8', border: 'none', cursor: 'pointer',
+                        background: (form.is_hq || autoHQ) ? '#F59E0B' : '#d4d4d8', border: 'none', cursor: autoHQ ? 'default' : 'pointer',
                         transition: 'background 0.2s', flexShrink: 0,
                       }}>
                       <span style={{
                         position: 'absolute', top: '2px', left: '2px', width: '16px', height: '16px',
                         background: 'white', borderRadius: '50%',
-                        transform: form.is_hq ? 'translateX(16px)' : 'translateX(0)', transition: 'transform 0.2s',
+                        transform: (form.is_hq || autoHQ) ? 'translateX(16px)' : 'translateX(0)', transition: 'transform 0.2s',
                       }} />
                     </button>
                   </div>
@@ -295,11 +285,11 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                 </div>
               )}
 
-              {/* 指派店家 */}
+              {/* 店家權限 */}
               {!isOwner && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-semibold" style={{ color: '#52525b' }}>指派店家</label>
+                    <label className="text-xs font-semibold" style={{ color: '#52525b' }}>店家權限（可切換）</label>
                     <button type="button" onClick={toggleAllStores}
                       className="text-xs font-semibold px-2.5 py-1 rounded-lg"
                       style={{
@@ -338,28 +328,9 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                     </p>
                   )}
 
-                  {/* 主店（所屬店面）— 限定從已勾選店家中選 */}
-                  {selectedStores.length > 0 && (
-                    <div className="mt-3 rounded-xl px-3 py-2.5" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>
-                      <label className="block text-xs font-semibold mb-1.5" style={{ color: '#1e40af' }}>
-                        主要所屬店面（登入時預設）
-                      </label>
-                      <select
-                        value={primaryStoreId ?? ''}
-                        onChange={e => setPrimaryStoreId(e.target.value || null)}
-                        style={{ ...INPUT_STYLE, cursor: 'pointer', background: 'white' }}>
-                        <option value="">— 未指定（使用第一家） —</option>
-                        {selectedStores.map(id => {
-                          const s = stores.find(x => x.id === id)
-                          if (!s) return null
-                          return <option key={id} value={id}>{s.name}</option>
-                        })}
-                      </select>
-                      <p className="text-[10px] mt-1.5" style={{ color: '#1e40af' }}>
-                        多店管理人員登入時會先進到此店；其他店仍可從上方下拉切換。
-                      </p>
-                    </div>
-                  )}
+                  <p className="text-[10px] mt-2" style={{ color: '#1e40af' }}>
+                    勾選的店家就是此帳號可使用、可切換的店家；登入時自動進入第一個勾選的店家。
+                  </p>
                 </div>
               )}
 

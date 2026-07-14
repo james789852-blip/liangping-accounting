@@ -79,11 +79,6 @@ function UserRow({ user, stores, storeMap, account }: {
             ? '全部店面'
             : assignedNames.join('、') || '未指派店家'}
         </p>
-        {user.primary_store_id && storeMap[user.primary_store_id] && !isOwner && (
-          <p className="text-[11px] mt-0.5" style={{ color: '#0369a1' }}>
-            主店：<span className="font-semibold">{storeMap[user.primary_store_id]}</span>
-          </p>
-        )}
       </div>
 
       <UserEditDialog user={{
@@ -175,13 +170,11 @@ export default async function UsersPage() {
   const unassignedUsers: UserProfile[] = []
 
   for (const account of allUsers) {
-    if (account.role === '老闆' || account.is_hq) {
-      hqUsers.push(account)
-      continue
-    }
+    const isHQAccount = account.role === '老闆' || account.is_hq
+    if (isHQAccount) hqUsers.push(account)
     const assignedIds = [...new Set((account.store_ids ?? []) as string[])].filter(id => storeMap[id])
     if (assignedIds.length === 0) {
-      unassignedUsers.push(account)
+      if (!isHQAccount) unassignedUsers.push(account)
       continue
     }
     for (const storeId of assignedIds) {

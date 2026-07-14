@@ -18,6 +18,7 @@ import {
   canManageUsers,
   canReviewClosings,
   canExportReports,
+  getDefaultHQHref,
   hasAnyHQPermission,
   isStoreRole,
 } from '@/lib/user-permissions'
@@ -27,11 +28,10 @@ export default async function ManagerLayout({ children }: { children: React.Reac
   if (!user) redirect('/login')
 
   const profile = await getCachedUserProfile(user.id)
-  // 店面角色固定以自己的主店為主；總公司角色只要有設定主店，也先進店面端。
-  // 只有沒有主店的總公司角色才使用總公司端與切店 cookie。
+  // 只要帳號具有店家權限，就優先使用店長端；具總公司權限者仍可從導覽列返回後台。
   const isStoreManager = isStoreRole(profile?.role)
-  const hasPrimaryStore = !!(profile as any)?.primary_store_id
-  const isStoreView = isStoreManager || hasPrimaryStore
+  const hasAssignedStore = Array.isArray(profile?.store_ids) && profile.store_ids.length > 0
+  const isStoreView = isStoreManager || hasAssignedStore
   const isHQ = !!profile && hasAnyHQPermission(profile) && !isStoreView
 
   let storeId: string | null = null
@@ -43,7 +43,7 @@ export default async function ManagerLayout({ children }: { children: React.Reac
     const cookieStore = await cookies()
     const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
 
-    if (profile.role === '老闆' || profile.is_hq) {
+    if (profile.role === '老闆') {
       allStores = await getCachedAllStores()
     } else {
       const allStoreIds: string[] = profile.store_ids ?? []
@@ -113,10 +113,12 @@ export default async function ManagerLayout({ children }: { children: React.Reac
       <ManagerNav
         userName={profile?.name ?? user.email ?? ''}
         storeName={storeName}
-        role={profile?.role ?? ''}
+        role={profile?.title ?? profile?.role ?? ''}
         storeType={storeType}
         stores={allStores}
         currentStoreId={storeId ?? ''}
+        canAccessHQ={hasAnyHQPermission(profile)}
+        hqHref={getDefaultHQHref(profile)}
       />
       <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
         {children}

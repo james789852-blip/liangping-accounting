@@ -47,13 +47,14 @@ export default function LoginPage() {
 
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('role, is_hq, can_manage_users, can_manage_stores, can_manage_store_settings, can_manage_ck_settings, can_manage_items, can_manage_store_items, can_manage_ck_items, can_manage_store_receipts, can_manage_ck_receipts, can_manage_ck_prices, can_review_closings, can_export_reports')
+      .select('role, is_hq, store_ids, can_manage_users, can_manage_stores, can_manage_store_settings, can_manage_ck_settings, can_manage_items, can_manage_store_items, can_manage_ck_items, can_manage_store_receipts, can_manage_ck_receipts, can_manage_ck_prices, can_review_closings, can_export_reports')
       .eq('user_id', user.id)
       .single()
 
     const isHQ = hasAnyHQPermission(profile)
+    const hasAssignedStore = Array.isArray(profile?.store_ids) && profile.store_ids.length > 0
     toast.success('登入成功')
-    router.push(isHQ ? getDefaultHQHref(profile) : '/manager/dashboard')
+    router.push(hasAssignedStore ? '/manager/dashboard' : (isHQ ? getDefaultHQHref(profile) : '/manager/dashboard'))
     router.refresh()
   }
 
