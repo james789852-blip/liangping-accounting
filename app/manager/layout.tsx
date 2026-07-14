@@ -58,6 +58,8 @@ export default async function ManagerLayout({ children }: { children: React.Reac
       const primary = (profile as any)?.primary_store_id as string | undefined
       storeId = (cookieStoreId && allStores.some(s => s.id === cookieStoreId))
         ? cookieStoreId
+        : (user.user_metadata?.last_viewing_store_id && allStores.some(s => s.id === user.user_metadata.last_viewing_store_id))
+          ? user.user_metadata.last_viewing_store_id
         : (primary && allStores.some(s => s.id === primary))
           ? primary
           : allStores[0].id

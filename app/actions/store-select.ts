@@ -1,7 +1,7 @@
 'use server'
 
 import { cookies } from 'next/headers'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 
 export async function setManagerStore(storeId: string, _surface: 'hq' | 'manager' = 'hq') {
@@ -16,6 +16,11 @@ export async function setManagerStore(storeId: string, _surface: 'hq' | 'manager
     .single()
   const allowed = profile?.role === '老闆' || (profile?.store_ids ?? []).includes(storeId)
   if (!allowed) return { error: '沒有此店家的店家權限' }
+
+  const { error: preferenceError } = await supabase.auth.updateUser({
+    data: { ...user.user_metadata, last_viewing_store_id: storeId },
+  })
+  if (preferenceError) return { error: '無法儲存最近切換的店家' }
 
   const cookieStore = await cookies()
   // 總公司端與店長端共用最近一次選擇，確保跨端切換時畫面與選單一致。
@@ -36,5 +41,6 @@ export async function setManagerStore(storeId: string, _surface: 'hq' | 'manager
   })
   revalidatePath('/manager', 'layout')
   revalidatePath('/hq', 'layout')
+  revalidateTag('user-profile', 'default')
   return { success: true }
 }

@@ -49,6 +49,8 @@ export default async function HQLayout({ children }: { children: React.ReactNode
     const primary = (profile as any)?.primary_store_id as string | undefined
     currentStoreId = (cookieStoreId && allStores.some(s => s.id === cookieStoreId))
       ? cookieStoreId
+      : (user.user_metadata?.last_viewing_store_id && allStores.some(s => s.id === user.user_metadata.last_viewing_store_id))
+        ? user.user_metadata.last_viewing_store_id
       : (primary && allStores.some(s => s.id === primary))
         ? primary
         : allStores[0].id
