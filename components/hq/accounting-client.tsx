@@ -29,6 +29,8 @@ interface ClosingRow {
   expected_remit?: number
   actual_remit?: number
   should_include_delivery?: number
+  remittance_adjustments?: { amount?: number }[] | null
+  reserve_items?: { reason?: string; amount?: number }[] | null
 }
 interface CKRow {
   ck_store_id: string
@@ -846,6 +848,12 @@ function QuickClosingSummary({ closing }: { closing: ClosingRow }) {
   const actual = Number(closing.actual_remit ?? 0)
   const variance = Number(closing.variance ?? 0)
   const expected = Number(closing.should_include_delivery ?? closing.expected_remit ?? 0)
+  const reserves = Array.isArray(closing.reserve_items) ? closing.reserve_items : []
+  const totalReserved = reserves.reduce((sum, item) => sum + (Number(item?.amount) || 0), 0)
+  const adjustmentTotal = Array.isArray(closing.remittance_adjustments)
+    ? closing.remittance_adjustments.reduce((sum, item) => sum + (Number(item?.amount) || 0), 0)
+    : 0
+  const remitToHQ = actual + adjustmentTotal - totalReserved
 
   return (
     <div className="space-y-3">
@@ -860,6 +868,21 @@ function QuickClosingSummary({ closing }: { closing: ClosingRow }) {
           <Stat label="誤差" value={variance} color={Math.abs(variance) > 200 ? '#be123c' : '#0369a1'} />
         </div>
       </div>
+      {totalReserved > 0 && (
+        <div className="rounded-xl px-3 py-2.5" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+          <p className="text-xs font-semibold mb-1" style={{ color: '#c2410c' }}>🐷 預留款項（不影響原始實匯入／Excel）</p>
+          {reserves.map((item, index) => (
+            <div key={index} className="flex items-center justify-between text-xs" style={{ color: '#c2410c' }}>
+              <span>預留{item.reason || '款項'}</span>
+              <span className="tabular-nums font-semibold">−${fmt(Number(item.amount) || 0)}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between text-xs font-bold pt-1 mt-1" style={{ borderTop: '1px solid #fed7aa', color: '#9a3412' }}>
+            <span>扣除預留後實際匯入公司</span>
+            <span className="tabular-nums">${fmt(remitToHQ)}</span>
+          </div>
+        </div>
+      )}
       {closing.note && (
         <p className="text-xs rounded-xl px-3 py-2" style={{ background: '#f8fafc', color: '#52525b' }}>
           備註：{closing.note}

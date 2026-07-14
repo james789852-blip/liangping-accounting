@@ -230,7 +230,7 @@ async function loadDailyAccountingDetail(admin: ReturnType<typeof createAdminCli
       .select(`
         id, business_date, status, note, dispute_note, submitted_by,
         total_revenue, total_cost, total_expenses, expected_remit, variance,
-        actual_remit, should_include_delivery, remittance_adjustments,
+        actual_remit, should_include_delivery, remittance_adjustments, reserve_items,
         ck_delivery_photo_url, channel_photo_urls,
         envelope_photo_url, void_invoice_photo_urls, note_photo_url, extra_photo_urls,
         stores(id, name),
@@ -320,7 +320,7 @@ export async function fetchDailyClosingWithReceipts(storeId: string, date: strin
       .select(`
         id, business_date, status, note, dispute_note, submitted_by,
         total_revenue, total_cost, total_expenses, expected_remit, variance,
-        actual_remit, should_include_delivery, remittance_adjustments,
+        actual_remit, should_include_delivery, remittance_adjustments, reserve_items,
         ck_delivery_photo_url, channel_photo_urls,
         envelope_photo_url, void_invoice_photo_urls, note_photo_url, extra_photo_urls,
         stores(id, name),
