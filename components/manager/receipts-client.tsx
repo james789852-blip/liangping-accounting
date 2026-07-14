@@ -260,7 +260,6 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
             <div>
               <label className="block text-[11px] font-medium mb-1" style={{ color: '#71717a' }}>廠商名稱</label>
               <input style={inputStyle()} value={editVendor} onChange={e => setEditVendor(e.target.value)} placeholder="廠商" />
-              <input style={inputStyle()} value={editActualVendor} onChange={e => setEditActualVendor(e.target.value)} placeholder="實際廠商（可空）" />
             </div>
             <div>
               <label className="block text-[11px] font-medium mb-1" style={{ color: '#71717a' }}>單據類型</label>
@@ -269,6 +268,11 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
                 <option value="receipt">收據</option>
                 <option value="delivery_note">估價單</option>
               </select>
+            </div>
+            <div className="col-span-2 rounded-lg px-3 py-2" style={{ background: '#eff6ff', border: '1.5px solid #93c5fd' }}>
+              <label className="block text-xs font-extrabold mb-1" style={{ color: '#1d4ed8' }}>實際廠商（選填，用於統計）</label>
+              <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#2563eb' }}>請填發票上實際開立的廠商；不需要統計可留白。</p>
+              <input style={inputStyle({ border: '2px solid #60a5fa', background: 'white', fontWeight: 600 })} value={editActualVendor} onChange={e => setEditActualVendor(e.target.value)} placeholder="請輸入實際廠商（可留白）" />
             </div>
           </div>
 
@@ -301,8 +305,8 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
               {editItems.map((item, idx) => (
                 <div key={idx} className="grid grid-cols-[1fr_5rem_1.5rem] gap-1.5 items-start">
                   <div style={{ position: 'relative' }}>
-                    <input style={inputStyle({ padding: '7px 10px', fontSize: '13px' })}
-                      placeholder="搜尋或輸入品項名稱" value={item.item_name}
+                    <input style={inputStyle({ padding: '9px 10px', fontSize: '14px', border: '2px solid #60a5fa', background: '#eff6ff', fontWeight: 600 })}
+                      placeholder="搜尋或輸入品項（可用下拉選擇）" value={item.item_name}
                       onFocus={() => setOpenItemIdx(idx)}
                       onChange={e => { setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, item_name: e.target.value } : it)); setOpenItemIdx(idx) }}
                       onBlur={() => setTimeout(() => setOpenItemIdx(null), 200)}
@@ -312,9 +316,9 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
                     )}
                     {openItemIdx === idx && (() => {
                       const q = item.item_name.trim()
-                      // 央廚配送、退稅品項不在收據錄入下拉內（央廚有獨立流程，退稅是審核階段才用）
+                      // 央廚配送不在收據錄入下拉內；選擇退稅廠商時才顯示退稅品項。
                       const allNames = Object.keys(mappings).filter(n =>
-                        mappings[n]?.vendor_group !== '央廚配送' && mappings[n]?.vendor_group !== '退稅'
+                        mappings[n]?.vendor_group !== '央廚配送' && (mappings[n]?.vendor_group !== '退稅' || editVendor.trim() === '退稅')
                       )
                       // 顯示時剝離直接相連的 vendor_group 前綴；有分隔符的名稱保留完整（例：免洗-稅金）
                       const stripVg = (n: string) => {

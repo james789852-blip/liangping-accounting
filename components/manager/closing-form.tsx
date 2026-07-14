@@ -2836,15 +2836,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         </div>
 
                         {/* 實際廠商 */}
-                        <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>實際廠商（選填，用於統計）</label>
+                        <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', border: '1.5px solid #93c5fd', borderRadius: '10px', background: '#eff6ff' }}>
+                          <label style={{ fontSize: '13px', color: '#1d4ed8', fontWeight: 800 }}>實際廠商（選填，用於統計）</label>
+                          <p style={{ fontSize: '11px', color: '#2563eb', fontWeight: 600 }}>請選發票上實際開立的廠商；沒有需要統計時可留白。</p>
                           {(() => {
                             const options = actualVendorOptions(form.vendor_name)
                             const current = normalizeActualVendorName(form.actual_vendor_name)
                             return (
                               <select
                                 className="receipt-field"
-                                style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
+                                style={{ padding: '10px 12px', minHeight: '42px', border: '2px solid #60a5fa', borderRadius: '8px', fontSize: '14px', fontWeight: 700, fontFamily: 'inherit', background: 'white', outline: 'none', color: current ? '#18181b' : '#1d4ed8' }}
                                 value={current}
                                 disabled={!form.vendor_name.trim()}
                                 onChange={e => {
@@ -2907,8 +2908,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                           return (
                             <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>品項 *</label>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', gap: '8px' }}>
+                                <div>
+                                  <label style={{ fontSize: '14px', color: '#1e3a8a', fontWeight: 800 }}>品項下拉選擇 *</label>
+                                  <p style={{ fontSize: '11px', color: '#2563eb', fontWeight: 600, marginTop: '2px' }}>請選擇對應品項，退稅廠商會帶出「退稅」分類。</p>
+                                </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                   {vendorGroups.length > 0 && (
                                     <select
@@ -2954,11 +2958,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           ))
                                         }}
                                         className="receipt-field"
-                                        style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
+                                        style={{ flex: 1, minHeight: '42px', padding: '8px 10px', border: `2px solid ${item.item_name ? '#F59E0B' : '#60A5FA'}`, borderRadius: '8px', fontSize: '14px', fontWeight: 700, fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#1d4ed8', background: item.item_name ? 'white' : '#eff6ff' }}>
                                         <option value="">— 選擇{item.vendor_group_hint ? item.vendor_group_hint : ''}品項 —</option>
                                         {(() => {
                                           // 央廚配送品項不在收據錄入內
-                                          const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送' && c.vendor_group !== '退稅')
+                                          // 退稅品項只有在選到退稅廠商／分類時顯示，避免平常誤選。
+                                          const allowTaxItems = form.vendor_name === '退稅' || item.vendor_group_hint === '退稅' || form.category === '退稅'
+                                          const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送' && (c.vendor_group !== '退稅' || allowTaxItems))
                                           // 過濾優先序：
                                           //   1. form.vendor_name（如「菜商」「雜貨」「Duskin」）→ 直接 match vendor_group
                                           //   2. form.category（如「叫貨廠商」「固定成本」）→ fallback 寬鬆匹配
