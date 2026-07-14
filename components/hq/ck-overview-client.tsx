@@ -230,6 +230,7 @@ export default function CKOverviewClient({ stores, initialStoreId }: { stores: S
 
 function CKDailyPanel({ data, storeName, ckStoreId }: { data: CKDailyStats; storeName: string; ckStoreId: string }) {
   const badges = ckDailyBadges(data)
+  const reimbursementAmount = Math.max(0, data.totalExpense - data.externalRevenue)
   const [detail, setDetail] = useState<any | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   useEffect(() => {
@@ -256,8 +257,8 @@ function CKDailyPanel({ data, storeName, ckStoreId }: { data: CKDailyStats; stor
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <Stat label="營業額" value={data.revenue} color="#16a34a" />
             <Stat label="總支出" value={data.totalExpense} color="#be123c" />
-            <Stat label="待補款" value={data.hqPaid ? 0 : data.totalExpense} color="#dc2626" />
-            <Stat label="補款完成" value={data.hqPaid ? data.totalExpense : 0} color="#f59e0b" />
+            <Stat label="待補款" value={data.hqPaid ? 0 : reimbursementAmount} color="#dc2626" />
+            <Stat label="補款完成" value={data.hqPaid ? reimbursementAmount : 0} color="#f59e0b" />
           </div>
         </div>
 

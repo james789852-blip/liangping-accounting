@@ -10,6 +10,13 @@ import SafePhotoImage from './safe-photo-image'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
+// 體系外店家的訂單已由外部收入支應，不應再由總公司全額補給央廚。
+// 因此總公司實際應包給央廚 = 當日支出 − 體系外收入，最低為 0。
+function hqReimbursementAmount(d: Pick<CKStoreData, 'expenseTotal' | 'externalOrders'>) {
+  const externalTotal = d.externalOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0)
+  return Math.max(0, d.expenseTotal - externalTotal)
+}
+
 const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
   submitted: { bg: '#f0fdf4', text: '#15803d', label: '已送出' },
   verified:  { bg: '#dcfce7', text: '#15803d', label: '已審核' },
@@ -134,6 +141,8 @@ function PayButton({
   date,
   paid,
   expenseTotal,
+  originalExpenseTotal,
+  externalRevenue,
   photoUrls: initialPhotoUrls,
   sentAt,
   confirmed,
@@ -144,6 +153,8 @@ function PayButton({
   date: string
   paid: boolean
   expenseTotal: number
+  originalExpenseTotal?: number
+  externalRevenue?: number
   photoUrls: string[]
   sentAt?: string | null
   confirmed: boolean
@@ -225,6 +236,11 @@ function PayButton({
               <p className="text-xs" style={{ color: '#16a34a' }}>
                 已包 ${fmt(expenseTotal)} 給央廚{sentAt ? ` · ${new Date(sentAt).toLocaleString('zh-TW')}` : ''}
               </p>
+              {(externalRevenue ?? 0) > 0 && (originalExpenseTotal ?? expenseTotal) !== expenseTotal && (
+                <p className="text-xs" style={{ color: '#15803d' }}>
+                  原支出 ${fmt(originalExpenseTotal ?? expenseTotal)} − 體系外 ${fmt(externalRevenue ?? 0)}
+                </p>
+              )}
               {confirmedAt && (
                 <p className="text-xs" style={{ color: '#15803d' }}>點交時間：{new Date(confirmedAt).toLocaleString('zh-TW')}</p>
               )}
@@ -258,6 +274,11 @@ function PayButton({
           <div className="text-left">
             <p className="text-sm font-semibold" style={{ color: '#92400e' }}>補款信封照片</p>
             <p className="text-xs" style={{ color: '#a16207' }}>應包 ${fmt(expenseTotal)}</p>
+            {(externalRevenue ?? 0) > 0 && (originalExpenseTotal ?? expenseTotal) !== expenseTotal && (
+              <p className="text-xs" style={{ color: '#a16207' }}>
+                ${fmt(originalExpenseTotal ?? expenseTotal)} − 體系外 ${fmt(externalRevenue ?? 0)}
+              </p>
+            )}
           </div>
         </div>
         <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading || isPending}
@@ -299,6 +320,8 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const badges = ckRecordBadges(d.status, d.hqPaid, d.ckReimbursementConfirmed ?? false)
   const hasData = d.status !== 'none'
+  const externalRevenue = d.externalOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0)
+  const reimbursementAmount = Math.max(0, d.expenseTotal - externalRevenue)
 
   return (
     <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
@@ -346,7 +369,7 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
           {[
             { label: '營業額', value: d.revenueTotal, color: '#10b981' },
             { label: '當日支出', value: d.expenseTotal, color: '#f97316' },
-            { label: '待補款', value: d.hqPaid ? 0 : d.expenseTotal, color: d.hqPaid ? '#a1a1aa' : '#dc2626' },
+            { label: '待補款', value: d.hqPaid ? 0 : reimbursementAmount, color: d.hqPaid ? '#a1a1aa' : '#dc2626' },
           ].map(({ label, value, color }) => (
             <div key={label} className="px-3 py-2.5" style={{ background: '#fafafa' }}>
               <p className="text-[10px] font-semibold" style={{ color: '#a1a1aa' }}>{label}</p>
@@ -367,7 +390,7 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                 {[
                   { label: '營業額', value: d.revenueTotal, color: '#10b981' },
                   { label: '當日支出', value: d.expenseTotal, color: '#f97316' },
-                  { label: '待補款', value: d.hqPaid ? 0 : d.expenseTotal, color: d.hqPaid ? '#a1a1aa' : '#dc2626' },
+                  { label: '待補款', value: d.hqPaid ? 0 : reimbursementAmount, color: d.hqPaid ? '#a1a1aa' : '#dc2626' },
                 ].map(({ label, value, color }) => (
                   <div key={label} className="rounded-xl px-3 py-2.5" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
                     <p className="text-[10px] font-semibold" style={{ color: '#a1a1aa' }}>{label}</p>
@@ -456,14 +479,16 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
               )}
 
               {/* 補款管理 */}
-              {d.expenseTotal > 0 && (
+              {reimbursementAmount > 0 && (
                 <div>
                   <p className="text-xs font-semibold mb-2" style={{ color: '#a1a1aa' }}>補款管理</p>
                   <PayButton
                     ckStoreId={d.ckStore.id}
                     date={date}
                     paid={d.hqPaid}
-                    expenseTotal={d.expenseTotal}
+                    expenseTotal={reimbursementAmount}
+                    originalExpenseTotal={d.expenseTotal}
+                    externalRevenue={externalRevenue}
                     photoUrls={d.hqReimbursementPhotoUrls ?? []}
                     sentAt={d.hqReimbursementSentAt}
                     confirmed={d.ckReimbursementConfirmed ?? false}
@@ -537,7 +562,9 @@ export default function CKOverview({ data, date }: Props) {
   const totalExpense = data.reduce((s, d) => s + d.expenseTotal, 0)
   const submittedCount = data.filter(d => d.status === 'submitted' || d.status === 'verified').length
   const paidCount = data.filter(d => d.hqPaid).length
-  const unpaidExpense = data.filter(d => !d.hqPaid && d.expenseTotal > 0).reduce((s, d) => s + d.expenseTotal, 0)
+  const unpaidExpense = data
+    .filter(d => !d.hqPaid)
+    .reduce((s, d) => s + hqReimbursementAmount(d), 0)
 
   return (
     <div className="space-y-4">
