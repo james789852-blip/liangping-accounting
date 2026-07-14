@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import ManagerNav from '@/components/manager/nav'
 import HQNav from '@/components/hq/nav'
 import { getCachedUserProfile, getCachedAllStores, getCachedStoreById } from '@/lib/cached-queries'
+import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import {
   canManageCKItems,
   canManageCKPrices,
@@ -64,15 +65,11 @@ export default async function ManagerLayout({ children }: { children: React.Reac
       storeType = (currentStore as any)?.type ?? '店面'
     }
   } else {
-    // 店長端：店面角色與「有主店的總公司角色」都優先使用主店。
-    const cookieStore = await cookies()
-    const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
-    const primary = (profile as any)?.primary_store_id as string | undefined
+    // 店長端預設主店，但允許透過導覽列切換到帳號被授權的其他店家。
+    const stores = await getCachedAllStores()
     const storeIds = profile?.store_ids ?? []
-    // 店面角色需確認主店屬於其可用店面；總公司角色的主店可直接使用。
-    if (primary && (!isStoreManager || storeIds.includes(primary))) storeId = primary
-    else if (cookieStoreId && storeIds.includes(cookieStoreId)) storeId = cookieStoreId
-    else storeId = storeIds[0] ?? null
+    allStores = stores.filter((s: any) => storeIds.includes(s.id))
+    storeId = await getEffectiveStoreId(profile)
 
     if (storeId) {
       const store = await getCachedStoreById(storeId)
@@ -118,6 +115,8 @@ export default async function ManagerLayout({ children }: { children: React.Reac
         storeName={storeName}
         role={profile?.role ?? ''}
         storeType={storeType}
+        stores={allStores}
+        currentStoreId={storeId ?? ''}
       />
       <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
         {children}

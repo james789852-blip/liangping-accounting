@@ -14,7 +14,7 @@ export default async function OrderPage() {
   const supabase = await createClient()
 
   const { data: profile } = await supabase
-    .from('user_profiles').select('name, role, store_ids, is_hq').eq('user_id', user.id).single()
+    .from('user_profiles').select('name, role, store_ids, is_hq, primary_store_id').eq('user_id', user.id).single()
 
   const storeId = await getEffectiveStoreId(profile)
   if (!storeId) return (

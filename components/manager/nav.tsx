@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink, BarChart3, Settings } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import StoreSwitcher from '@/components/manager/store-switcher'
 
 const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
 
@@ -53,9 +54,16 @@ const CK_NAV_ITEMS = [
   { href: '/manager/history',    label: '歷史紀錄', icon: History },
 ]
 
-interface Props { userName: string; storeName: string; role: string; storeType?: string }
+interface Props {
+  userName: string
+  storeName: string
+  role: string
+  storeType?: string
+  stores?: { id: string; name: string; type?: string }[]
+  currentStoreId?: string
+}
 
-export default function ManagerNav({ userName, storeName, role, storeType }: Props) {
+export default function ManagerNav({ userName, storeName, role, storeType, stores = [], currentStoreId = '' }: Props) {
   const isCK = storeType === '央廚'
   const NAV_ITEMS = isCK ? CK_NAV_ITEMS : STORE_NAV_ITEMS
   const pathname = usePathname()
@@ -91,6 +99,13 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>結帳系統</p>
             <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>{storeName || '未指派'} · {role}</p>
+            {stores.length > 1 && currentStoreId && (
+              <StoreSwitcher
+                stores={stores}
+                currentStoreId={currentStoreId}
+                className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none"
+              />
+            )}
           </div>
         </div>
 
@@ -153,6 +168,13 @@ export default function ManagerNav({ userName, storeName, role, storeType }: Pro
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900 truncate leading-tight">{storeName || '結帳系統'}</p>
             <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{role}</p>
+            {stores.length > 1 && currentStoreId && (
+              <StoreSwitcher
+                stores={stores}
+                currentStoreId={currentStoreId}
+                className="mt-1 max-w-[130px] rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-700 outline-none"
+              />
+            )}
           </div>
         </div>
         {time && (

@@ -15,10 +15,15 @@ export async function getEffectiveStoreId(profile: {
 
   const cookieStore = await cookies()
   const cookieStoreId = cookieStore.get('hq_viewing_store')?.value
+  // 店面端的切店是明確的使用者操作，使用獨立 cookie，避免沿用總公司端
+  // 過期的切店狀態；沒有手動切換時才回到帳號設定的主店。
+  const managerOverrideId = cookieStore.get('manager_viewing_store')?.value
 
-  // 店家角色進入店長端時固定以個人主店為優先，避免被其他頁面留下的切店 cookie 蓋掉。
+  // 店家角色進入店長端時預設以個人主店為主；只有使用者在店長端
+  // 明確選擇其他授權店家時，才使用 manager_viewing_store。
   const isStoreRole = ['店長', '副店長', '小幫手', '廠長', '副廠長'].includes(profile.role)
   if (isStoreRole) {
+    if (managerOverrideId && (profile.store_ids ?? []).includes(managerOverrideId)) return managerOverrideId
     if (profile.primary_store_id && (profile.store_ids ?? []).includes(profile.primary_store_id)) {
       return profile.primary_store_id
     }

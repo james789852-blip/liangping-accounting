@@ -21,7 +21,7 @@ export default async function CKPage({
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('name, role, store_ids, is_hq')
+    .select('name, role, store_ids, is_hq, primary_store_id')
     .eq('user_id', user.id)
     .single()
 
