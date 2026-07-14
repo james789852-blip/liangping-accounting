@@ -37,6 +37,8 @@ interface LargeCashExpense {
   id: string
   description: string
   amount: number
+  /** 已由前幾日預留款支付，今天不應再從現金扣除。 */
+  preReserved?: boolean
 }
 
 interface TodayReceipt {
@@ -173,6 +175,12 @@ interface PrevDayReserve {
   }[]
 }
 
+interface PreReservedExpenseHint {
+  reason: string
+  amount: number
+  total_bill?: number
+}
+
 interface Props {
   store: Store
   ckPrices: CKPrice[]
@@ -184,6 +192,7 @@ interface Props {
   mappingColumns?: { name: string; category: string; vendor_group?: string; excel_column?: string }[]
   actualVendors?: { id: string; vendor_group: string; name: string }[]
   prevDayReserves?: PrevDayReserve | null
+  preReservedExpenseHints?: PreReservedExpenseHint[]
   isBackfill?: boolean  // 是否為補做過往帳目（非今日業務日）
   realToday?: string    // 真實今日業務日，用於日期切換器顯示「回到今日」
   calendarToday?: string
@@ -329,6 +338,9 @@ function initLargeCashExpenses(existing: any): LargeCashExpense[] {
         id: typeof row.id === 'string' ? row.id : crypto.randomUUID(),
         description: typeof row.description === 'string' ? row.description : '',
         amount: Math.abs(Number(row.amount) || 0),
+        // 舊資料沒有此欄位時保留 undefined，讓歷史預留款比對可以自動判定；
+        // 使用者曾明確取消的 false 則必須保留。
+        preReserved: typeof row.preReserved === 'boolean' ? row.preReserved : undefined,
       }
     })
     .filter(item => item.amount > 0 || item.description.trim())
@@ -360,12 +372,19 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
     (data.coins_5    * 5    + data.lump_5)    +
     (data.coins_1    * 1    + data.lump_1)
   const largeExpenseTotal = largeCashExpenses.reduce((sum, item) => sum + Math.abs(item.amount || 0), 0)
+  const preReservedExpenseTotal = Math.min(
+    largeExpenseTotal,
+    largeCashExpenses
+      .filter(item => item.preReserved === true)
+      .reduce((sum, item) => sum + Math.abs(item.amount || 0), 0),
+  )
+  const cashExpenseTotal = Math.max(0, largeExpenseTotal - preReservedExpenseTotal)
   // 顧客已完成轉帳但不在現金鈔箱；現金清點的總額仍要呈現這筆收入，
   // 下一步再透過負的匯款調整扣回，得到實際要包回公司的金額。
   const customerTransferTotal = adjustments
     .filter(item => item.type === 'customer_transfer')
     .reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0)
-  const cashTotal = cashSubtotal - largeExpenseTotal + customerTransferTotal
+  const cashTotal = cashSubtotal - cashExpenseTotal + customerTransferTotal
 
   const actualRemit = cashTotal - store.petty_cash
   const variance = actualRemit - shouldEnvelope
@@ -375,10 +394,14 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
   const netVariance = finalRemit - shouldEnvelope
   const totalReserved = reserves.reduce((sum, r) => sum + r.amount, 0)
   const remitToHQ = finalRemit - totalReserved
-  return { totalRevenue, platformTotal, platformPaid, storeRevenue, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashSubtotal, largeExpenseTotal, cashTotal, actualRemit, variance, adjustmentTotal, finalRemit, netVariance, totalReserved, remitToHQ }
+  return { totalRevenue, platformTotal, platformPaid, storeRevenue, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashSubtotal, largeExpenseTotal, preReservedExpenseTotal, cashExpenseTotal, cashTotal, actualRemit, variance, adjustmentTotal, finalRemit, netVariance, totalReserved, remitToHQ }
 }
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
+
+function normalizeReserveReason(value: string) {
+  return value.replace(/[\s　]+/g, '').trim()
+}
 
 function displayItemName(name: string, vendorGroup?: string | null) {
   const vg = vendorGroup?.trim()
@@ -725,7 +748,7 @@ function CategoryPicker({ categories, value, onChange }: {
   )
 }
 
-export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], actualVendors = [], prevDayReserves, isBackfill = false, realToday, calendarToday, isEarlyMorningBusinessDate = false, latestBackfillDraftDate }: Props) {
+export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], actualVendors = [], prevDayReserves, preReservedExpenseHints = [], isBackfill = false, realToday, calendarToday, isEarlyMorningBusinessDate = false, latestBackfillDraftDate }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
   const [largeCashExpenses, setLargeCashExpenses] = useState<LargeCashExpense[]>(() => initLargeCashExpenses(existingClosing))
@@ -1250,7 +1273,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     () => calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, largeCashExpenses),
     [data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, largeCashExpenses],
   )
-  const hasRemittanceChange = s.totalReserved > 0 || s.adjustmentTotal !== 0
+  const hasRemittanceChange = s.totalReserved > 0 || s.adjustmentTotal !== 0 || s.preReservedExpenseTotal > 0
   // 信封袋實際裝的是完成匯款調整、扣除預留款後要交回 HQ 的金額。
   // 例如整筆現金預留營業稅時 remitToHQ = 0，當天不會有信封，也不應要求照片。
   const requiresEnvelopePhoto = s.remitToHQ > 0
@@ -1265,6 +1288,26 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       (item.remaining_amount ?? ((item.total_bill ?? 0) - item.amount)) > 0
     ) ?? null
   }, [prevDayReserves])
+
+  // 若前幾日已有同名預留款，且本日輸入相同的大額支出，預設視為由預留款支付。
+  // 只有尚未明確設定過的資料才自動判定；使用者取消勾選後不會被重新勾回。
+  useEffect(() => {
+    if (isLocked || submitDone || preReservedExpenseHints.length === 0) return
+    setLargeCashExpenses(prev => {
+      let changed = false
+      const next = prev.map(item => {
+        if (item.preReserved !== undefined || item.amount <= 0 || !item.description.trim()) return item
+        const reason = normalizeReserveReason(item.description)
+        const hint = preReservedExpenseHints.find(candidate => normalizeReserveReason(candidate.reason) === reason)
+        if (!hint) return item
+        // 有帳單總額時只自動套用到同額支出；沒有總額的舊預留資料則以同名為準。
+        if (hint.total_bill && Math.abs(Math.abs(item.amount) - hint.total_bill) > 1) return item
+        changed = true
+        return { ...item, preReserved: true }
+      })
+      return changed ? next : prev
+    })
+  }, [isLocked, submitDone, preReservedExpenseHints, largeCashExpenses])
 
   useEffect(() => {
     if (!pendingRentReserve || isLocked || submitDone) return
@@ -4055,7 +4098,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold" style={{ color: '#9a3412' }}>大額支出</p>
-                    <p className="text-[11px]" style={{ color: '#c2410c' }}>例如房租、營業稅。輸入正數，系統會自動以負數扣除。</p>
+                    <p className="text-[11px]" style={{ color: '#c2410c' }}>例如房租、營業稅。一般會從今天現金扣除；若前幾日已預留，請勾選由預留款支付。</p>
                   </div>
                   {!isLocked && (
                     <button type="button" onClick={addLargeCashExpense}
@@ -4070,30 +4113,43 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 ) : (
                   <div className="space-y-2">
                     {largeCashExpenses.map(item => (
-                      <div key={item.id} className="grid items-center gap-2" style={{ gridTemplateColumns: isLocked ? '1fr 7rem' : '1fr 7rem 2rem' }}>
-                        <input
-                          type="text"
-                          value={item.description}
-                          placeholder="項目，例如房租"
-                          disabled={isLocked}
-                          onChange={e => updateLargeCashExpense(item.id, 'description', e.target.value)}
-                          style={{
-                            padding: '10px 12px', border: '1.5px solid #fed7aa', borderRadius: '10px',
-                            fontSize: '14px', background: isLocked ? '#fafafa' : 'white', outline: 'none',
-                            fontFamily: 'inherit', width: '100%', color: '#18181b', opacity: isLocked ? 0.5 : 1,
-                          }}
-                        />
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: '#dc2626' }}>-</span>
-                          <SInput value={item.amount} onChange={v => updateLargeCashExpense(item.id, 'amount', Math.abs(v || 0))} disabled={isLocked} />
+                      <div key={item.id} className="space-y-1.5">
+                        <div className="grid items-center gap-2" style={{ gridTemplateColumns: isLocked ? '1fr 7rem' : '1fr 7rem 2rem' }}>
+                          <input
+                            type="text"
+                            value={item.description}
+                            placeholder="項目，例如房租"
+                            disabled={isLocked}
+                            onChange={e => updateLargeCashExpense(item.id, 'description', e.target.value)}
+                            style={{
+                              padding: '10px 12px', border: '1.5px solid #fed7aa', borderRadius: '10px',
+                              fontSize: '14px', background: isLocked ? '#fafafa' : 'white', outline: 'none',
+                              fontFamily: 'inherit', width: '100%', color: '#18181b', opacity: isLocked ? 0.5 : 1,
+                            }}
+                          />
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: '#dc2626' }}>-</span>
+                            <SInput value={item.amount} onChange={v => updateLargeCashExpense(item.id, 'amount', Math.abs(v || 0))} disabled={isLocked} />
+                          </div>
+                          {!isLocked && (
+                            <button type="button" onClick={() => removeLargeCashExpense(item.id)}
+                              className="h-10 w-8 rounded-lg inline-flex items-center justify-center"
+                              style={{ border: '1px solid #fecaca', background: 'white', color: '#ef4444', cursor: 'pointer' }}>
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
-                        {!isLocked && (
-                          <button type="button" onClick={() => removeLargeCashExpense(item.id)}
-                            className="h-10 w-8 rounded-lg inline-flex items-center justify-center"
-                            style={{ border: '1px solid #fecaca', background: 'white', color: '#ef4444', cursor: 'pointer' }}>
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        )}
+                        <label className="flex items-center gap-2 pl-1 text-[11px]" style={{ color: item.preReserved ? '#15803d' : '#9a3412', cursor: isLocked ? 'default' : 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={item.preReserved === true}
+                            disabled={isLocked}
+                            onChange={e => updateLargeCashExpense(item.id, 'preReserved', e.target.checked)}
+                            style={{ accentColor: '#16a34a' }}
+                          />
+                          <span>前幾日已預留，今天不扣現金</span>
+                          {item.preReserved && <span style={{ color: '#16a34a' }}>（已自動判定）</span>}
+                        </label>
                       </div>
                     ))}
                   </div>
@@ -4102,6 +4158,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   <div className="flex justify-between text-sm font-semibold tabular-nums pt-2" style={{ borderTop: '1px solid #fed7aa', color: '#dc2626' }}>
                     <span>大額支出小計</span>
                     <span>-${fmt(s.largeExpenseTotal)}</span>
+                  </div>
+                )}
+                {s.preReservedExpenseTotal > 0 && (
+                  <div className="flex justify-between text-xs font-semibold tabular-nums" style={{ color: '#15803d' }}>
+                    <span>前幾日已預留（今日加回）</span>
+                    <span>+${fmt(s.preReservedExpenseTotal)}</span>
                   </div>
                 )}
               </div>
@@ -4124,6 +4186,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </div>
               <div className="mt-3 space-y-2">
                 {s.largeExpenseTotal > 0 && <SummaryBlock label="現金清點小計" value={`$${fmt(s.cashSubtotal)}`} />}
+                {s.preReservedExpenseTotal > 0 && <SummaryBlock label="今日現金實際扣除大額支出" value={`$${fmt(s.cashExpenseTotal)}`} />}
                 <SummaryBlock label="現金總額" value={`$${fmt(s.cashTotal)}`} />
                 <SummaryBlock label={`扣零用金（$${fmt(store.petty_cash)}）= 實匯入`} value={`$${fmt(s.actualRemit)}`} />
               </div>
@@ -4895,6 +4958,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     <div className="flex justify-between tabular-nums" style={{ color: '#2563eb' }}>
                       <span>匯款調整</span>
                       <span>{s.adjustmentTotal >= 0 ? '+' : '−'}${fmt(Math.abs(s.adjustmentTotal))}</span>
+                    </div>
+                  )}
+                  {s.preReservedExpenseTotal > 0 && (
+                    <div className="flex justify-between tabular-nums" style={{ color: '#15803d' }}>
+                      <span>前幾日已預留支出加回</span>
+                      <span>＋${fmt(s.preReservedExpenseTotal)}</span>
                     </div>
                   )}
                   {reserves.map(r => {

@@ -138,16 +138,30 @@ export default async function ClosingPage({
     started_date: string
     last_date: string
   }>()
+  const reserveExpenseHints = new Map<string, {
+    reason: string
+    amount: number
+    total_bill?: number
+  }>()
   for (const closing of prevReserveClosings ?? []) {
     const date = closing.business_date as string
     const items = Array.isArray(closing.reserve_items) ? closing.reserve_items as any[] : []
     for (const item of items) {
       const reason = typeof item.reason === 'string' && item.reason.trim() ? item.reason.trim() : '其他'
       const totalBill = Number(item.total_bill ?? 0)
+      const amount = Math.max(0, Number(item.amount ?? 0))
+      if (amount > 0) {
+        const hint = reserveExpenseHints.get(reason)
+        if (hint) {
+          hint.amount += amount
+          if (totalBill > 0) hint.total_bill = Math.max(hint.total_bill ?? 0, totalBill)
+        } else {
+          reserveExpenseHints.set(reason, { reason, amount, ...(totalBill > 0 ? { total_bill: totalBill } : {}) })
+        }
+      }
       if (totalBill <= 0) continue
       const key = `${reason}||${totalBill}`
       const existing = reserveGroups.get(key)
-      const amount = Math.max(0, Number(item.amount ?? 0))
       if (existing) {
         existing.amount += amount
         if (date < existing.started_date) existing.started_date = date
@@ -202,6 +216,7 @@ export default async function ClosingPage({
       mappingColumns={mappingColumns}
       actualVendors={actualVendors ?? []}
       prevDayReserves={prevDayReserves}
+      preReservedExpenseHints={Array.from(reserveExpenseHints.values())}
       isBackfill={isBackfill}
       realToday={realToday}
       calendarToday={calendarToday}
