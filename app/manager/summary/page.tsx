@@ -154,7 +154,14 @@ export default async function SummaryPage({
   const hasReserved = totalReserved > 0
   const hasRemittanceAdjustment = adjustmentTotal !== 0
   const hasRemittanceChange = hasReserved || hasRemittanceAdjustment
-  const displayExpectedEnvelope = hasReserved ? remitToHQ : Number(closing.should_include_delivery ?? 0)
+  const originalExpectedEnvelope = Number(closing.should_include_delivery ?? 0)
+  const displayExpectedEnvelope = hasRemittanceChange ? remitToHQ : originalExpectedEnvelope
+  const expectedEnvelopeDescription = hasRemittanceChange
+    ? [
+        hasRemittanceAdjustment ? `原始應包 ${fmt(originalExpectedEnvelope)} ${adjustmentTotal >= 0 ? '+' : '−'} 匯款調整 ${fmt(Math.abs(adjustmentTotal))}` : '',
+        hasReserved ? `扣預留款 ${fmt(totalReserved)}` : '',
+      ].filter(Boolean).join('；')
+    : ''
   const displayActualEnvelope = hasRemittanceChange ? remitToHQ : Number(closing.actual_remit ?? 0)
   const actualEnvelopeDescription = hasRemittanceChange
     ? [
@@ -252,6 +259,7 @@ export default async function SummaryPage({
               <div>
                 <p className="text-xs mb-1 opacity-70">應包進信封</p>
                 <p className="text-xl font-bold tabular-nums">${fmt(displayExpectedEnvelope)}</p>
+                {hasRemittanceChange && <p className="text-[11px] mt-1 opacity-75">{expectedEnvelopeDescription}</p>}
               </div>
             </div>
           </div>
@@ -279,10 +287,11 @@ export default async function SummaryPage({
           ))}
           <div className="flex items-center justify-between py-3.5 rounded-xl px-3 mt-2"
             style={{ background: 'linear-gradient(135deg,#FFFBEB,#f5f3ff)' }}>
-            <p className="text-sm font-bold" style={{ color: '#92400E' }}>＝ 應包進信封</p>
-            <span className="text-2xl font-extrabold tabular-nums" style={{ color: '#92400E' }}>
-              ${fmt(displayExpectedEnvelope)}
-            </span>
+            <div>
+              <p className="text-sm font-bold" style={{ color: '#92400E' }}>＝ 應包進信封</p>
+              {hasRemittanceChange && <p className="text-xs mt-1" style={{ color: '#b45309' }}>{expectedEnvelopeDescription}</p>}
+            </div>
+            <span className="text-2xl font-extrabold tabular-nums" style={{ color: '#92400E' }}>${fmt(displayExpectedEnvelope)}</span>
           </div>
           <div className="flex items-center justify-between py-3.5 mt-1">
             <div>
