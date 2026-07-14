@@ -360,7 +360,12 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
     (data.coins_5    * 5    + data.lump_5)    +
     (data.coins_1    * 1    + data.lump_1)
   const largeExpenseTotal = largeCashExpenses.reduce((sum, item) => sum + Math.abs(item.amount || 0), 0)
-  const cashTotal = cashSubtotal - largeExpenseTotal
+  // 顧客已完成轉帳但不在現金鈔箱；現金清點的總額仍要呈現這筆收入，
+  // 下一步再透過負的匯款調整扣回，得到實際要包回公司的金額。
+  const customerTransferTotal = adjustments
+    .filter(item => item.type === 'customer_transfer')
+    .reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0)
+  const cashTotal = cashSubtotal - largeExpenseTotal + customerTransferTotal
 
   const actualRemit = cashTotal - store.petty_cash
   const variance = actualRemit - shouldEnvelope
