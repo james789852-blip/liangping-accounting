@@ -3019,28 +3019,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                         value={item.item_name}
                                         onChange={e => updateItem(item.id, 'item_name', e.target.value)} />
                                     )}
-                                    {/* Excel 對應提示：讓店長知道這品項會出現在 Excel 哪一欄 */}
-                                    {item.item_name && mappingColumns.length > 0 && (() => {
-                                      const vgHint = item.vendor_group_hint
-                                      const match = vgHint
-                                        ? mappingColumns.find(c => c.name === item.item_name && c.vendor_group === vgHint)
-                                        : mappingColumns.find(c => c.name === item.item_name)
-                                      const col = match?.excel_column || match?.name
-                                      if (!col) return null
-                                      return (
-                                        <>
-                                          {vgHint && vgHint !== form.vendor_name && (
-                                            <span className="text-[10px] shrink-0" style={{ color: '#92400E', background: '#FEF3C7', padding: '2px 6px', borderRadius: 4 }}>
-                                              {vgHint}
-                                            </span>
-                                          )}
-                                          <span className="text-[10px] shrink-0" style={{ color: '#059669', background: '#d1fae5', padding: '2px 6px', borderRadius: 4 }}
-                                            title="這品項會匯出到 Excel 的這一欄">
-                                            → {col}
-                                          </span>
-                                        </>
-                                      )
-                                    })()}
                                     {(() => {
                                       // 「折扣 / 退貨」類品項：使用者輸入正數，系統自動存負數
                                       const neg = ['折扣', '退貨', '退款', '退費', '抵扣'].some(k => (item.item_name ?? '').includes(k))
@@ -3411,27 +3389,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             value={item.item_name}
                                             onChange={e => updateEditItemFn(idx, 'item_name', e.target.value)} />
                                         )}
-                                        {/* Excel 對應提示 */}
-                                        {item.item_name && mappingColumns.length > 0 && (() => {
-                                          const match = item.vendor_group_hint
-                                            ? mappingColumns.find(c => c.name === item.item_name && c.vendor_group === item.vendor_group_hint)
-                                            : findReceiptItemMapping(item.item_name, editVendor, editCategory, mappingColumns)
-                                          const col = match?.excel_column || match?.name
-                                          if (!col) return null
-                                          return (
-                                            <>
-                                              {item.vendor_group_hint && item.vendor_group_hint !== editVendor && (
-                                                <span className="text-[10px] shrink-0" style={{ color: '#92400E', background: '#FEF3C7', padding: '2px 6px', borderRadius: 4 }}>
-                                                  {item.vendor_group_hint}
-                                                </span>
-                                              )}
-                                              <span className="text-[10px] shrink-0" style={{ color: '#059669', background: '#d1fae5', padding: '2px 6px', borderRadius: 4 }}
-                                                title="這品項會匯出到 Excel 的這一欄">
-                                                → {col}
-                                              </span>
-                                            </>
-                                          )
-                                        })()}
                                         {(() => {
                                           const neg = ['折扣', '退貨', '退款', '退費', '抵扣'].some(k => (item.item_name ?? '').includes(k))
                                           const allowManualNegative = canUseNegativeOtherReceiptItem(item.item_name, editCategory)

@@ -220,6 +220,9 @@ input[type="number"] {
   align-items: center;
   min-width: 0;
 }
+.receipt-item-row > .receipt-field {
+  flex: 1 1 220px !important;
+}
 .ck-photo-pinned {
   position: static;
   z-index: auto;
@@ -233,7 +236,7 @@ input[type="number"] {
 .ck-photo-spacer-expanded {
   display: none;
 }
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .receipt-form-fields {
     grid-template-columns: 1fr;
   }
