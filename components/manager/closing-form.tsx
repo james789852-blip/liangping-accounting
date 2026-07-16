@@ -1863,9 +1863,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const ckPhotoFinal = ckPhotoUrl || ckPhotoPreview
     if (ckPhotoFinal) {
       const ckItems = ckPrices
-        .filter(p => (ckQuantities[p.id] ?? 0) > 0)
-        .map(p => ({ item_name: p.item_name, unit: '份', quantity: ckQuantities[p.id], unit_price: p.unit_price, amount: ckQuantities[p.id] * p.unit_price }))
-      items.push({ key: 'ck_delivery', type: 'ck', label: '央廚配送', photoUrl: ckPhotoFinal, inputAmount: dataRef.current.ck_total, confirmed: false, items: ckItems })
+        .filter(p => (ckQuantitiesRef.current[p.id] ?? 0) > 0)
+        .map(p => {
+          const quantity = ckQuantitiesRef.current[p.id] ?? 0
+          const unitPrice = ckPriceOverridesRef.current[p.id] ?? p.unit_price
+          return {
+            item_name: p.item_name,
+            unit: p.unit || '份',
+            quantity,
+            unit_price: unitPrice,
+            amount: quantity * unitPrice,
+          }
+        })
+      // 核對畫面必須直接以當下配送品項加總，不能讀可能尚未被 useEffect
+      // 同步的 data.ck_total，否則品項正確但右上總額會短暫顯示 $0。
+      const ckTotalLive = ckItems.reduce((sum, item) => sum + item.amount, 0)
+      items.push({ key: 'ck_delivery', type: 'ck', label: '央廚配送', photoUrl: ckPhotoFinal, inputAmount: ckTotalLive, confirmed: false, items: ckItems })
     }
     const channelLabelMap: Record<string, { label: string; amount: number }> = {}
     if (store.mode !== 'handwrite') channelLabelMap['pos'] = { label: store.ichef_uber_linked ? 'iChef 結帳總金額' : 'iChef 現場 POS', amount: dataRef.current.pos_cash }
