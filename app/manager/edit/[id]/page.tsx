@@ -144,6 +144,20 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
         excel_column: r.excel_column,
       })).sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
 
+  // 退回修改頁也必須和一般結帳頁相同：廠商下拉以該店最新的
+  // item_column_mappings 為準，不能繼續顯示 receipt_vendors 的舊分類。
+  const mappingVendorGroups = Array.from(new Set(
+    mappingColumns
+      .map(item => item.vendor_group?.trim())
+      .filter((name): name is string => !!name && !['未分類', '央廚配送'].includes(name)),
+  ))
+  const syncedReceiptCategories = receiptCategories.map(category => category.name !== '廠商' || mappingVendorGroups.length === 0
+    ? category
+    : {
+        ...category,
+        vendors: mappingVendorGroups.map((name, index) => ({ id: `mapping-vendor-${index}`, name })),
+      })
+
   return (
     <>
       <div className="bg-white px-6 py-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
@@ -158,7 +172,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
         userId={user.id}
         today={closing.business_date}
         todayReceipts={todayReceipts ?? []}
-        receiptCategories={receiptCategories}
+        receiptCategories={syncedReceiptCategories}
         mappingColumns={mappingColumns}
         actualVendors={actualVendors ?? []}
         preReservedExpenseHints={Array.from(reserveExpenseHints.values())}
