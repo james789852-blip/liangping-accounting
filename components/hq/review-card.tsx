@@ -58,25 +58,26 @@ type PhotoInfo = {
 }
 
 function normalizeExtraPhotos(extraPhotoUrls: Closing['extra_photo_urls']): PhotoInfo[] {
-  return (extraPhotoUrls ?? [])
-    .map((photo, index) => {
+  const photos: PhotoInfo[] = []
+  for (const [index, photo] of (extraPhotoUrls ?? []).entries()) {
       if (typeof photo === 'string') {
         const url = photo.trim()
-        return url ? { url, label: `附加照片 ${index + 1}`, kind: 'extra' as const } : null
+        if (url) photos.push({ url, label: `附加照片 ${index + 1}`, kind: 'extra' })
+        continue
       }
 
-      if (!photo || typeof photo !== 'object') return null
+      if (!photo || typeof photo !== 'object') continue
 
       const url = (photo.url ?? '').trim()
-      if (!url) return null
+      if (!url) continue
 
-      return {
+      photos.push({
         url,
         label: (photo.label ?? '').trim() || `附加照片 ${index + 1}`,
-        kind: 'extra' as const,
-      }
-    })
-    .filter((photo): photo is PhotoInfo => Boolean(photo))
+        kind: 'extra',
+      })
+  }
+  return photos
 }
 
 function SubLabel({ children }: { children: React.ReactNode }) {
