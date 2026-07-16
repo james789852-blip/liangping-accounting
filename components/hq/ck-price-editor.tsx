@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { updateCKPrice } from '@/app/actions/ck-prices'
+import { createCKPrice, updateCKPrice } from '@/app/actions/ck-prices'
 import { toast } from 'sonner'
-import { Loader2, Pencil, Check, X } from 'lucide-react'
+import { Loader2, Pencil, Check, X, Plus } from 'lucide-react'
 
 interface CKItem {
   id: string
@@ -22,6 +22,25 @@ export default function CKPriceEditor({ items, priceHistory = [], canEdit }: { i
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
   const [prices, setPrices] = useState<CKItem[]>(items)
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newUnit, setNewUnit] = useState('份')
+  const [newPrice, setNewPrice] = useState('')
+
+  async function addItem() {
+    const price = Number(newPrice)
+    if (!newName.trim()) { toast.error('請輸入品項名稱'); return }
+    if (newPrice === '' || !Number.isFinite(price) || price < 0) { toast.error('請輸入有效的單價'); return }
+    setLoading(true)
+    const result = await createCKPrice(newName, newUnit, price)
+    if (result.error) toast.error(result.error)
+    else {
+      setPrices(prev => [...prev, { ...result.item, updated_by_name: '剛剛新增' }])
+      setNewName(''); setNewUnit('份'); setNewPrice(''); setAdding(false)
+      toast.success('已新增，店面央廚配送步驟會立即同步')
+    }
+    setLoading(false)
+  }
 
   function startEdit(item: CKItem) {
     setEditing(item.id)
@@ -48,6 +67,29 @@ export default function CKPriceEditor({ items, priceHistory = [], canEdit }: { i
 
   return (
     <div>
+      {canEdit && (
+        <div className="mb-3">
+          {!adding ? (
+            <button type="button" onClick={() => setAdding(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
+              <Plus className="h-4 w-4" />新增配送品項
+            </button>
+          ) : (
+            <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1.5px solid #FDE68A' }}>
+              <p className="text-sm font-bold" style={{ color: '#92400E' }}>新增央廚配送品項</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="品項名稱" className="h-11 px-3 rounded-xl text-sm outline-none" style={{ border: '1.5px solid #e4e4e7' }} />
+                <input value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="單位，例如：包、鍋" className="h-11 px-3 rounded-xl text-sm outline-none" style={{ border: '1.5px solid #e4e4e7' }} />
+                <input type="number" min="0" step="0.5" value={newPrice} onChange={e => setNewPrice(e.target.value)} placeholder="單價" className="h-11 px-3 rounded-xl text-sm outline-none" style={{ border: '1.5px solid #e4e4e7' }} />
+              </div>
+              <p className="text-xs" style={{ color: '#71717a' }}>儲存後會立即同步到所有店面的「央廚配送」步驟；歷史帳目不受影響。</p>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setAdding(false)} className="px-4 py-2 rounded-xl text-sm" style={{ background: '#f4f4f5' }}>取消</button>
+                <button type="button" disabled={loading} onClick={addItem} className="px-4 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ background: '#F59E0B' }}>{loading ? '新增中…' : '新增並同步店面'}</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
       {prices.map((item, idx) => (
         <div key={item.id} className="flex items-center gap-4 px-4 py-3.5"
