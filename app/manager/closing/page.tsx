@@ -203,6 +203,22 @@ export default async function ClosingPage({
         excel_column: r.excel_column,
       })).sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
 
+  // 「品項對應管理」是店面單據廠商分類的 source of truth。
+  // receipt_vendors 是舊設定表，若總公司改了 vendor_group（例如油豆腐 → 豆腐商），
+  // 只讀舊表會讓店面下拉仍顯示舊名稱。保留其他收據類別，但讓「廠商」清單
+  // 每次開頁都直接反映該店目前的 mappings。
+  const mappingVendorGroups = Array.from(new Set(
+    mappingColumns
+      .map(item => item.vendor_group?.trim())
+      .filter((name): name is string => !!name && !['未分類', '央廚配送'].includes(name)),
+  ))
+  const syncedReceiptCategories = receiptCategories.map(category => category.name !== '廠商' || mappingVendorGroups.length === 0
+    ? category
+    : {
+        ...category,
+        vendors: mappingVendorGroups.map((name, index) => ({ id: `mapping-vendor-${index}`, name })),
+      })
+
   return (
     <ClosingForm
       key={`${storeId}-${today}`}
@@ -212,7 +228,7 @@ export default async function ClosingPage({
       userId={user.id}
       today={today}
       todayReceipts={todayReceipts ?? []}
-      receiptCategories={receiptCategories}
+      receiptCategories={syncedReceiptCategories}
       mappingColumns={mappingColumns}
       actualVendors={actualVendors ?? []}
       prevDayReserves={prevDayReserves}

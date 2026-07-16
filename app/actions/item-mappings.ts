@@ -579,6 +579,22 @@ export async function renameVendorGroup(oldName: string, newName: string, storeI
     await admin.from('item_column_mappings')
       .update({ vendor_group: trimmed, updated_at: new Date().toISOString() })
       .eq('store_id', storeId).eq('vendor_group', oldName)
+
+    // 舊版店面單據下拉另存於 receipt_vendors；一併改名，避免其他仍讀舊表的頁面不同步。
+    const { data: receiptCategory } = await admin.from('receipt_categories')
+      .select('id').eq('store_id', storeId).eq('name', '廠商').maybeSingle()
+    if (receiptCategory) {
+      const { data: existingNew } = await admin.from('receipt_vendors')
+        .select('id').eq('store_id', storeId).eq('category_id', receiptCategory.id).eq('name', trimmed).maybeSingle()
+      if (existingNew) {
+        await admin.from('receipt_vendors')
+          .delete().eq('store_id', storeId).eq('category_id', receiptCategory.id).eq('name', oldName)
+      } else {
+        await admin.from('receipt_vendors')
+          .update({ name: trimmed })
+          .eq('store_id', storeId).eq('category_id', receiptCategory.id).eq('name', oldName)
+      }
+    }
   } else {
     // 全域模式（無 storeId）：維持舊行為，改全域 system_vendor_groups + 所有 mappings
     const { data: dup } = await admin.from('system_vendor_groups').select('id').eq('name', trimmed).eq('active', true).maybeSingle()

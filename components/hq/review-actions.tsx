@@ -9,9 +9,10 @@ interface Props {
   closingId: string
   currentStatus: string
   onProcessed?: () => void
+  hideVerify?: boolean
 }
 
-export default function ReviewActions({ closingId, currentStatus, onProcessed }: Props) {
+export default function ReviewActions({ closingId, currentStatus, onProcessed, hideVerify = false }: Props) {
   const [loading, setLoading] = useState(false)
   const [showDisputeForm, setShowDisputeForm] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -107,7 +108,7 @@ export default function ReviewActions({ closingId, currentStatus, onProcessed }:
 
   return (
     <div className="flex gap-2 flex-wrap">
-      {canVerify && (
+      {canVerify && !hideVerify && (
         <button type="button" disabled={loading} onClick={handleVerify}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
           style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 2px 8px rgba(16,185,129,0.25)', opacity: loading ? 0.5 : 1 }}>

@@ -194,8 +194,6 @@ export default function ReviewsList({ pending, receiptsByClosing, canReview, can
                 receipts={receiptsByClosing[c.id] ?? []}
                 canReview={canReview}
                 canDispute={canDispute}
-                selected={selected.has(c.id)}
-                onToggleSelect={() => toggleSelect(c.id)}
                 onProcessed={() => handleProcessed(c.id)}
               />
             </div>

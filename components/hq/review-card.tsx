@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronUp, Image, FileText, AlertTriangle, Check } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image, FileText, AlertTriangle, Check, CheckCircle2, X, Camera } from 'lucide-react'
 import ReviewActions from './review-actions'
 import PhotoLightbox from './photo-lightbox'
 import SafePhotoImage from './safe-photo-image'
@@ -12,10 +12,10 @@ function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 interface RevenueItem { channel: string; account_name?: string; gross_amount: number }
 interface ExpenseItem { description: string; amount: number }
 interface OrderItem { item_name: string; quantity: number; total_amount: number }
-interface ReceiptItem { item_name: string; amount: number }
+interface ReceiptItem { item_name: string; amount: number; unit?: string; quantity?: number; unit_price?: number }
 interface Receipt {
-  id: string; vendor_name: string; receipt_type: string
-  total_amount: number; photo_url: string; receipt_items: ReceiptItem[]
+  id: string; vendor_name: string; actual_vendor_name?: string; receipt_type: string
+  total_amount: number; tax_amount?: number; notes?: string; photo_url: string; receipt_items: ReceiptItem[]
 }
 interface ReserveItem { reason: string; amount: number }
 interface Closing {
@@ -92,6 +92,10 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const shouldAutoExpand = defaultExpanded ?? (closing.variance !== 0 || closing.status === 'disputed')
   const [expanded, setExpanded] = useState(shouldAutoExpand)
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
+  const [openReceiptIds, setOpenReceiptIds] = useState<Set<string>>(new Set())
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewIndex, setReviewIndex] = useState(0)
+  const [confirmedPhotos, setConfirmedPhotos] = useState<Set<number>>(new Set())
   const showCheckbox = canReview && closing.status === 'submitted' && !!onToggleSelect
   const extraPhotos = normalizeExtraPhotos(closing.extra_photo_urls)
 
@@ -107,6 +111,25 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
     ...(closing.note_photo_url ? [{ url: closing.note_photo_url, label: '備註照片' }] : []),
     ...extraPhotos,
   ]
+  const currentPhoto = allPhotos[reviewIndex]
+  const currentReceipt = currentPhoto
+    ? receipts.find(r => r.photo_url === currentPhoto.url)
+    : undefined
+  const reviewComplete = allPhotos.length === 0 || confirmedPhotos.size === allPhotos.length
+
+  function confirmCurrentPhoto() {
+    setConfirmedPhotos(prev => new Set(prev).add(reviewIndex))
+    if (reviewIndex < allPhotos.length - 1) setReviewIndex(reviewIndex + 1)
+  }
+
+  function toggleReceipt(id: string) {
+    setOpenReceiptIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const absVar = Math.abs(closing.variance)
   const varColor = absVar === 0 ? '#047857' : absVar <= 200 ? '#b45309' : '#be123c'
@@ -140,6 +163,77 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
         onPrev={() => setLightboxIdx(i => (i !== null && i > 0 ? i - 1 : i))}
         onNext={() => setLightboxIdx(i => (i !== null && i < allPhotos.length - 1 ? i + 1 : i))}
       />
+    )}
+    {reviewOpen && (
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: 'rgba(9,9,11,0.72)' }}>
+        <div className="bg-white w-full sm:max-w-3xl sm:rounded-3xl overflow-hidden flex flex-col" style={{ maxHeight: '94dvh' }}>
+          <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #e4e4e7' }}>
+            <div>
+              <p className="text-sm font-bold" style={{ color: '#18181b' }}>逐張核對 · {closing.stores?.name}</p>
+              <p className="text-xs" style={{ color: '#71717a' }}>{allPhotos.length === 0 ? '本日沒有照片' : `${reviewIndex + 1} / ${allPhotos.length}　${currentPhoto?.label ?? ''}`}</p>
+            </div>
+            <button type="button" onClick={() => setReviewOpen(false)} className="p-2 rounded-full" style={{ background: '#f4f4f5' }} aria-label="關閉核對">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="overflow-y-auto p-4 grid sm:grid-cols-2 gap-4">
+            <div className="min-h-64 rounded-2xl overflow-hidden flex items-center justify-center" style={{ background: '#18181b' }}>
+              {currentPhoto ? (
+                <SafePhotoImage src={currentPhoto.url} alt={currentPhoto.label} className="w-full h-full max-h-[55dvh] object-contain" />
+              ) : (
+                <div className="text-center p-8" style={{ color: '#d4d4d8' }}><FileText className="h-10 w-10 mx-auto mb-2" /><p className="text-sm">沒有照片需要核對</p></div>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fafafa', border: '1px solid #e4e4e7' }}>
+                <p className="text-xs font-bold" style={{ color: '#52525b' }}>分店輸入內容</p>
+                {currentReceipt ? (
+                  <>
+                    <InfoRow label="廠商" value={currentReceipt.actual_vendor_name || currentReceipt.vendor_name || '未填寫'} />
+                    <InfoRow label="單據類型" value={TYPE_LABEL[currentReceipt.receipt_type] ?? currentReceipt.receipt_type} />
+                    <InfoRow label="單據總額" value={`$${fmt(currentReceipt.total_amount)}`} accent="#92400e" />
+                    {!!currentReceipt.tax_amount && <InfoRow label="稅額" value={`$${fmt(currentReceipt.tax_amount)}`} />}
+                    {currentReceipt.receipt_items.map((item, i) => (
+                      <div key={i} className="pt-2" style={{ borderTop: '1px solid #e4e4e7' }}>
+                        <InfoRow label={item.item_name || `品項 ${i + 1}`} value={`$${fmt(item.amount)}`} />
+                        {(item.quantity || item.unit || item.unit_price) && <p className="text-[11px] mt-0.5" style={{ color: '#a1a1aa' }}>{item.quantity ? `${item.quantity}` : ''}{item.unit || ''}{item.unit_price ? ` × $${fmt(item.unit_price)}` : ''}</p>}
+                      </div>
+                    ))}
+                    {currentReceipt.notes && <p className="text-xs pt-2" style={{ borderTop: '1px solid #e4e4e7', color: '#52525b' }}>備註：{currentReceipt.notes}</p>}
+                  </>
+                ) : <p className="text-xs" style={{ color: '#a1a1aa' }}>此照片沒有另外輸入單據內容，請確認照片清晰且類型正確。</p>}
+              </div>
+
+              {currentPhoto && (
+                <button type="button" onClick={confirmCurrentPhoto} className="w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+                  style={{ background: confirmedPhotos.has(reviewIndex) ? '#d1fae5' : 'linear-gradient(135deg,#f59e0b,#f97316)', color: confirmedPhotos.has(reviewIndex) ? '#047857' : 'white' }}>
+                  <CheckCircle2 className="h-4 w-4" />{confirmedPhotos.has(reviewIndex) ? '這張已核對' : '確認照片與輸入內容相符'}
+                </button>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" disabled={reviewIndex === 0} onClick={() => setReviewIndex(i => Math.max(0, i - 1))} className="py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1" style={{ background: '#f4f4f5', color: reviewIndex === 0 ? '#d4d4d8' : '#52525b' }}><ChevronLeft className="h-4 w-4" />上一張</button>
+                <button type="button" disabled={reviewIndex >= allPhotos.length - 1} onClick={() => setReviewIndex(i => Math.min(allPhotos.length - 1, i + 1))} className="py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1" style={{ background: '#f4f4f5', color: reviewIndex >= allPhotos.length - 1 ? '#d4d4d8' : '#52525b' }}>下一張<ChevronRight className="h-4 w-4" /></button>
+              </div>
+
+              {reviewComplete && (
+                <div className="rounded-2xl p-4 space-y-2" style={{ background: '#ecfdf5', border: '1px solid #6ee7b7' }}>
+                  <p className="text-sm font-bold" style={{ color: '#065f46' }}>照片核對完成，最後確認結算</p>
+                  <InfoRow label="應匯入" value={`$${fmt(closing.should_include_delivery)}`} />
+                  <InfoRow label="實匯入" value={`$${fmt(closing.actual_remit)}`} />
+                  {hasRemittanceChange && <InfoRow label="調整後應包回公司" value={`$${fmt(remitToHQ)}`} accent="#047857" />}
+                  <InfoRow label="結算誤差" value={`${closing.variance >= 0 ? '+' : ''}$${fmt(closing.variance)}`} accent={varColor} />
+                  <div className="pt-2" style={{ borderTop: '1px solid #a7f3d0' }}>
+                    <ReviewActions closingId={closing.id} currentStatus={closing.status} onProcessed={onProcessed} />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     )}
     <div className="bg-white rounded-2xl overflow-hidden transition-colors"
       style={{
@@ -319,9 +413,11 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {receipts.map(r => (
+                  {receipts.map(r => {
+                    const isOpen = openReceiptIds.has(r.id)
+                    return (
                     <div key={r.id} className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
-                      <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#fafafa' }}>
+                      <button type="button" onClick={() => toggleReceipt(r.id)} className="w-full flex items-center gap-2 px-3 py-2 text-left" style={{ background: '#fafafa' }}>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-xs font-medium" style={{ color: '#18181b' }}>{r.vendor_name || '（未填廠商）'}</span>
@@ -338,8 +434,9 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-xs font-bold tabular-nums" style={{ color: '#18181b' }}>${fmt(r.total_amount)}</span>
                           {r.photo_url && (
-                            <button
-                              onClick={() => {
+                            <span
+                              onClick={e => {
+                                e.stopPropagation()
                                 const idx = allPhotos.findIndex(x => x.url === r.photo_url)
                                 setLightboxIdx(idx >= 0 ? idx : 0)
                               }}
@@ -347,12 +444,27 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                               style={{ background: '#f4f4f5', color: '#a1a1aa' }}
                               title="放大檢視">
                               <Image className="h-3.5 w-3.5" />
-                            </button>
+                            </span>
                           )}
+                          {isOpen ? <ChevronUp className="h-4 w-4" style={{ color: '#a1a1aa' }} /> : <ChevronDown className="h-4 w-4" style={{ color: '#a1a1aa' }} />}
                         </div>
-                      </div>
+                      </button>
+                      {isOpen && (
+                        <div className="px-3 py-3 space-y-2" style={{ borderTop: '1px solid #f4f4f5', background: 'white' }}>
+                          <InfoRow label="廠商" value={r.actual_vendor_name || r.vendor_name || '未填寫'} />
+                          <InfoRow label="單據類型" value={TYPE_LABEL[r.receipt_type] ?? r.receipt_type} />
+                          {!!r.tax_amount && <InfoRow label="稅額" value={`$${fmt(r.tax_amount)}`} />}
+                          {r.receipt_items.length > 0 ? r.receipt_items.map((item, i) => (
+                            <div key={i} className="pt-2" style={{ borderTop: '1px solid #f4f4f5' }}>
+                              <InfoRow label={item.item_name || `品項 ${i + 1}`} value={`$${fmt(item.amount)}`} />
+                              {(item.quantity || item.unit || item.unit_price) && <p className="text-[10px]" style={{ color: '#a1a1aa' }}>{item.quantity ? item.quantity : ''}{item.unit || ''}{item.unit_price ? ` × $${fmt(item.unit_price)}` : ''}</p>}
+                            </div>
+                          )) : <p className="text-xs" style={{ color: '#a1a1aa' }}>未輸入品項明細</p>}
+                          {r.notes && <p className="text-xs pt-2" style={{ borderTop: '1px solid #f4f4f5', color: '#52525b' }}>備註：{r.notes}</p>}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                  )})}
                 </div>
               )}
             </div>
@@ -404,8 +516,13 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
         )}
 
         {/* 操作按鈕 */}
+        {canReview && (closing.status === 'submitted' || closing.status === 'disputed') && (
+          <button type="button" onClick={() => { setReviewIndex(0); setReviewOpen(true) }} className="w-full py-3 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg,#f59e0b,#f97316)', boxShadow: '0 3px 10px rgba(245,158,11,0.22)' }}>
+            <Camera className="h-4 w-4" />{confirmedPhotos.size > 0 && !reviewComplete ? `繼續核對（剩 ${allPhotos.length - confirmedPhotos.size} 張）` : '開始核對'}
+          </button>
+        )}
         {canReview || (canDispute && closing.status === 'verified') ? (
-          <ReviewActions closingId={closing.id} currentStatus={closing.status} onProcessed={onProcessed} />
+          <ReviewActions closingId={closing.id} currentStatus={closing.status} onProcessed={onProcessed} hideVerify />
         ) : null}
       </div>
     </div>

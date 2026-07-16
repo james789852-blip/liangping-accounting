@@ -32,7 +32,8 @@ export default async function ReviewsPage() {
     .select(`
       id, business_date, status, total_revenue, variance, note, dispute_note,
       submitted_at, should_include_delivery, actual_remit, total_cost, total_expenses,
-      remittance_adjustments, reserve_items,
+      remittance_adjustments, reserve_items, ck_delivery_photo_url, channel_photo_urls,
+      envelope_photo_url, void_invoice_photo_urls, note_photo_url, extra_photo_urls,
       cash_counts(large_expenses),
       stores(id, name),
       revenue_items(channel, account_name, gross_amount),
@@ -50,7 +51,7 @@ export default async function ReviewsPage() {
     if (storeIds.length > 0 && dates.length > 0) {
       const { data: receiptsBulk } = await admin
         .from('receipts')
-        .select('id, store_id, business_date, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, amount), created_at')
+        .select('id, store_id, business_date, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, notes, photo_url, receipt_items(item_name, unit, quantity, unit_price, amount), created_at')
         .in('store_id', storeIds).in('business_date', dates)
         .order('created_at', { ascending: true })
       const recMap: Record<string, any[]> = {}
