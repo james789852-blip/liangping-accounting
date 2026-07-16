@@ -42,7 +42,7 @@ interface Props {
 const TYPE_LABEL: Record<string, string> = { invoice: '發票', receipt: '收據', delivery_note: '估價單' }
 const CHANNEL_LABEL: Record<string, string> = {
   pos: 'POS 現金', uber: 'Uber Eats', panda: '熊貓',
-  twpay: '台灣Pay', online: '線上點餐', handwrite: '手寫訂單',
+  twpay: '台灣Pay', online: '線上點餐', online_cash: '線上點餐（現金）', handwrite: '手寫訂單',
 }
 const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
   submitted: { bg: '#FFFBEB', color: '#92400E', label: '待審核' },
@@ -50,14 +50,19 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
   verified:  { bg: '#d1fae5', color: '#047857', label: '已核准' },
 }
 
-type PhotoInfo = { url: string; label: string }
+type PhotoInfo = {
+  url: string
+  label: string
+  kind?: 'receipt' | 'ck' | 'channel' | 'envelope' | 'void' | 'note' | 'extra'
+  channel?: string
+}
 
 function normalizeExtraPhotos(extraPhotoUrls: Closing['extra_photo_urls']): PhotoInfo[] {
   return (extraPhotoUrls ?? [])
     .map((photo, index) => {
       if (typeof photo === 'string') {
         const url = photo.trim()
-        return url ? { url, label: `附加照片 ${index + 1}` } : null
+        return url ? { url, label: `附加照片 ${index + 1}`, kind: 'extra' as const } : null
       }
 
       if (!photo || typeof photo !== 'object') return null
@@ -68,6 +73,7 @@ function normalizeExtraPhotos(extraPhotoUrls: Closing['extra_photo_urls']): Phot
       return {
         url,
         label: (photo.label ?? '').trim() || `附加照片 ${index + 1}`,
+        kind: 'extra' as const,
       }
     })
     .filter((photo): photo is PhotoInfo => Boolean(photo))
@@ -100,21 +106,24 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const extraPhotos = normalizeExtraPhotos(closing.extra_photo_urls)
 
   // 統一收集所有照片給 lightbox（收據 + 其他）
-  const allPhotos: { url: string; label: string }[] = [
-    ...receipts.filter(r => r.photo_url).map(r => ({ url: r.photo_url, label: `收據：${r.vendor_name}` })),
-    ...(closing.ck_delivery_photo_url ? [{ url: closing.ck_delivery_photo_url, label: '央廚配送單' }] : []),
+  const allPhotos: PhotoInfo[] = [
+    ...receipts.filter(r => r.photo_url).map(r => ({ url: r.photo_url, label: `收據：${r.vendor_name}`, kind: 'receipt' as const })),
+    ...(closing.ck_delivery_photo_url ? [{ url: closing.ck_delivery_photo_url, label: '央廚配送單', kind: 'ck' as const }] : []),
     ...(closing.channel_photo_urls
-      ? Object.entries(closing.channel_photo_urls).filter(([, u]) => u).map(([k, u]) => ({ url: u as string, label: CHANNEL_LABEL[k] ?? k }))
+      ? Object.entries(closing.channel_photo_urls).filter(([, u]) => u).map(([k, u]) => ({ url: u as string, label: CHANNEL_LABEL[k] ?? k, kind: 'channel' as const, channel: k }))
       : []),
-    ...(closing.envelope_photo_url ? [{ url: closing.envelope_photo_url, label: '信封袋' }] : []),
-    ...(closing.void_invoice_photo_urls ?? []).map((url, i, arr) => ({ url, label: `作廢發票${arr.length > 1 ? ` ${i + 1}` : ''}` })),
-    ...(closing.note_photo_url ? [{ url: closing.note_photo_url, label: '備註照片' }] : []),
+    ...(closing.envelope_photo_url ? [{ url: closing.envelope_photo_url, label: '信封袋', kind: 'envelope' as const }] : []),
+    ...(closing.void_invoice_photo_urls ?? []).map((url, i, arr) => ({ url, label: `作廢發票${arr.length > 1 ? ` ${i + 1}` : ''}`, kind: 'void' as const })),
+    ...(closing.note_photo_url ? [{ url: closing.note_photo_url, label: '備註照片', kind: 'note' as const }] : []),
     ...extraPhotos,
   ]
   const currentPhoto = allPhotos[reviewIndex]
   const currentReceipt = currentPhoto
     ? receipts.find(r => r.photo_url === currentPhoto.url)
     : undefined
+  const currentChannelItems = currentPhoto?.kind === 'channel'
+    ? closing.revenue_items.filter(item => item.channel === currentPhoto.channel)
+    : []
   const reviewComplete = allPhotos.length === 0 || confirmedPhotos.size === allPhotos.length
 
   function confirmCurrentPhoto() {
@@ -203,7 +212,63 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                     ))}
                     {currentReceipt.notes && <p className="text-xs pt-2" style={{ borderTop: '1px solid #e4e4e7', color: '#52525b' }}>備註：{currentReceipt.notes}</p>}
                   </>
-                ) : <p className="text-xs" style={{ color: '#a1a1aa' }}>此照片沒有另外輸入單據內容，請確認照片清晰且類型正確。</p>}
+                ) : currentPhoto?.kind === 'ck' ? (
+                  <>
+                    <InfoRow label="步驟" value="央廚配送" />
+                    {closing.order_items.length > 0 ? closing.order_items.map((item, i) => (
+                      <div key={i} className="pt-2" style={{ borderTop: '1px solid #e4e4e7' }}>
+                        <InfoRow label={`${item.item_name} × ${item.quantity}`} value={`$${fmt(item.total_amount)}`} />
+                      </div>
+                    )) : <p className="text-xs" style={{ color: '#a1a1aa' }}>未輸入配送品項</p>}
+                    <div className="pt-2" style={{ borderTop: '1px solid #e4e4e7' }}>
+                      <InfoRow label="央廚配送總額" value={`$${fmt(closing.total_cost)}`} accent="#92400e" />
+                    </div>
+                  </>
+                ) : currentPhoto?.kind === 'channel' ? (
+                  <>
+                    <InfoRow label="步驟" value={currentPhoto.label} />
+                    {currentChannelItems.length > 0 ? currentChannelItems.map((item, i) => (
+                      <InfoRow key={i}
+                        label={item.account_name || CHANNEL_LABEL[item.channel] || item.channel}
+                        value={`$${fmt(item.gross_amount)}`} accent="#92400e" />
+                    )) : <InfoRow label="輸入金額" value="$0" muted />}
+                    {currentChannelItems.length > 1 && (
+                      <div className="pt-2" style={{ borderTop: '1px solid #e4e4e7' }}>
+                        <InfoRow label="通路合計" value={`$${fmt(currentChannelItems.reduce((sum, item) => sum + item.gross_amount, 0))}`} accent="#92400e" />
+                      </div>
+                    )}
+                  </>
+                ) : currentPhoto?.kind === 'envelope' ? (
+                  <>
+                    <InfoRow label="步驟" value="信封袋／匯款結算" />
+                    <InfoRow label="應匯入" value={`$${fmt(closing.should_include_delivery)}`} />
+                    <InfoRow label="實匯入" value={`$${fmt(closing.actual_remit)}`} accent="#92400e" />
+                    {hasRemittanceChange && <InfoRow label="調整後應包回公司" value={`$${fmt(remitToHQ)}`} accent="#047857" />}
+                    <InfoRow label="結算誤差" value={`${closing.variance >= 0 ? '+' : ''}$${fmt(closing.variance)}`} accent={varColor} />
+                    {remittanceAdjustments.filter((a: any) => Number(a?.amount) !== 0).map((a: any, i: number) => (
+                      <InfoRow key={i} label={a.label || '匯款調整'} value={`${a.amount >= 0 ? '+' : '−'}$${fmt(Math.abs(Number(a.amount) || 0))}`} />
+                    ))}
+                    {reserves.map((item, i) => <InfoRow key={i} label={`預留：${item.reason}`} value={`−$${fmt(item.amount)}`} />)}
+                  </>
+                ) : currentPhoto?.kind === 'void' ? (
+                  <>
+                    <InfoRow label="步驟" value="作廢發票確認" />
+                    <InfoRow label="照片用途" value={currentPhoto.label} />
+                    <p className="text-xs pt-2" style={{ borderTop: '1px solid #e4e4e7', color: '#71717a' }}>此步驟沒有另外輸入金額，請核對發票確實作廢且照片清晰。</p>
+                  </>
+                ) : currentPhoto?.kind === 'note' ? (
+                  <>
+                    <InfoRow label="步驟" value="結帳備註" />
+                    <InfoRow label="相關結算金額" value={`$${fmt(remitToHQ)}`} accent="#92400e" />
+                    <p className="text-xs pt-2" style={{ borderTop: '1px solid #e4e4e7', color: '#52525b' }}>備註：{closing.note || '未輸入文字備註'}</p>
+                  </>
+                ) : currentPhoto ? (
+                  <>
+                    <InfoRow label="步驟／照片用途" value={currentPhoto.label} />
+                    <InfoRow label="當日結算金額" value={`$${fmt(remitToHQ)}`} accent="#92400e" />
+                    {closing.note && <p className="text-xs pt-2" style={{ borderTop: '1px solid #e4e4e7', color: '#52525b' }}>備註：{closing.note}</p>}
+                  </>
+                ) : <p className="text-xs" style={{ color: '#a1a1aa' }}>沒有照片需要核對。</p>}
               </div>
 
               {currentPhoto && (
