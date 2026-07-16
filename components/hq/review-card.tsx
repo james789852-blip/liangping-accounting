@@ -152,8 +152,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   }
 
   function saveCurrentIssue() {
-    const note = issueDraft.trim()
-    if (!note) return
+    const note = issueDraft.trim() || '此照片內容有誤，請重新確認。'
     setPhotoIssues(prev => ({ ...prev, [reviewIndex]: note }))
     setConfirmedPhotos(prev => {
       const next = new Set(prev)
@@ -250,7 +249,6 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                 {currentReceipt ? (
                   <>
                     <InfoRow label="廠商" value={currentReceipt.actual_vendor_name || currentReceipt.vendor_name || '未填寫'} />
-                    <InfoRow label="單據類型" value={TYPE_LABEL[currentReceipt.receipt_type] ?? currentReceipt.receipt_type} />
                     <InfoRow label="單據總額" value={`$${fmt(currentReceipt.total_amount)}`} accent="#92400e" />
                     {!!currentReceipt.tax_amount && <InfoRow label="稅額" value={`$${fmt(currentReceipt.tax_amount)}`} />}
                     {currentReceipt.receipt_items.map((item, i) => (
@@ -335,13 +333,14 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
 
               {issueEditorOpen && (
                 <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fff1f2', border: '1px solid #fda4af' }}>
-                  <p className="text-xs font-bold" style={{ color: '#be123c' }}>請輸入這張照片／步驟的問題</p>
+                  <p className="text-xs font-bold" style={{ color: '#be123c' }}>問題說明（選填）</p>
+                  <p className="text-[11px]" style={{ color: '#9f1239' }}>若不填寫，退回時會自動提醒店長「此照片內容有誤，請重新確認」。</p>
                   <textarea autoFocus value={issueDraft} onChange={e => setIssueDraft(e.target.value)}
                     placeholder="例如：照片金額為 $4,570，但輸入 $4,750；請重新確認。"
                     className="w-full min-h-24 rounded-xl p-3 text-sm outline-none" style={{ background: 'white', border: '1px solid #fecdd3', resize: 'vertical' }} />
                   <div className="flex justify-end gap-2">
                     <button type="button" onClick={() => setIssueEditorOpen(false)} className="px-3 py-2 rounded-lg text-xs" style={{ background: 'white', color: '#71717a' }}>取消</button>
-                    <button type="button" disabled={!issueDraft.trim()} onClick={saveCurrentIssue} className="px-3 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40" style={{ background: '#e11d48' }}>記錄問題</button>
+                    <button type="button" onClick={saveCurrentIssue} className="px-3 py-2 rounded-lg text-xs font-bold text-white" style={{ background: '#e11d48' }}>{issueDraft.trim() ? '記錄問題' : '直接標記有誤'}</button>
                   </div>
                 </div>
               )}

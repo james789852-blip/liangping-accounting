@@ -621,8 +621,7 @@ function CKStepReview({ d, date, onClose }: { d: CKStoreData; date: string; onCl
     if (index < steps.length - 1) setIndex(index + 1)
   }
   function saveIssue() {
-    if (!draft.trim()) return
-    setIssues(prev => ({ ...prev, [index]: draft.trim() }))
+    setIssues(prev => ({ ...prev, [index]: draft.trim() || '此步驟內容有誤，請重新確認。' }))
     setConfirmed(prev => { const next = new Set(prev); next.delete(index); return next })
     setEditingIssue(false)
     if (index < steps.length - 1) setIndex(index + 1)
@@ -658,7 +657,7 @@ function CKStepReview({ d, date, onClose }: { d: CKStoreData; date: string; onCl
             {!editingIssue ? <div className="grid grid-cols-2 gap-2">
               <button onClick={markOkay} className="py-3 rounded-xl text-sm font-bold text-white" style={{ background: confirmed.has(index) ? '#10b981' : 'linear-gradient(135deg,#10b981,#059669)' }}>內容相符</button>
               <button onClick={() => { setDraft(issues[index] || ''); setEditingIssue(true) }} className="py-3 rounded-xl text-sm font-bold" style={{ background: '#fff1f2', color: '#be123c', border: '1px solid #fda4af' }}>{issues[index] ? '已記錄問題' : '內容有誤'}</button>
-            </div> : <div className="p-3 rounded-xl space-y-2" style={{ background: '#fff1f2', border: '1px solid #fda4af' }}><textarea autoFocus className="w-full min-h-24 p-3 rounded-lg" value={draft} onChange={e => setDraft(e.target.value)} placeholder="輸入此步驟的問題…" /><div className="flex justify-end gap-2"><button onClick={() => setEditingIssue(false)}>取消</button><button disabled={!draft.trim()} onClick={saveIssue} className="px-3 py-2 text-xs font-bold text-white rounded-lg disabled:opacity-40" style={{ background: '#e11d48' }}>記錄問題</button></div></div>}
+            </div> : <div className="p-3 rounded-xl space-y-2" style={{ background: '#fff1f2', border: '1px solid #fda4af' }}><p className="text-xs font-bold" style={{ color: '#be123c' }}>問題說明（選填）</p><p className="text-[11px]" style={{ color: '#9f1239' }}>不填寫時會自動提醒央廚「此步驟內容有誤，請重新確認」。</p><textarea autoFocus className="w-full min-h-24 p-3 rounded-lg" value={draft} onChange={e => setDraft(e.target.value)} placeholder="可輸入此步驟的詳細問題…" /><div className="flex justify-end gap-2"><button onClick={() => setEditingIssue(false)}>取消</button><button onClick={saveIssue} className="px-3 py-2 text-xs font-bold text-white rounded-lg" style={{ background: '#e11d48' }}>{draft.trim() ? '記錄問題' : '直接標記有誤'}</button></div></div>}
             <div className="grid grid-cols-2 gap-2"><button disabled={index === 0} onClick={() => setIndex(i => i - 1)} className="py-2 rounded-xl disabled:opacity-30" style={{ background: '#f4f4f5' }}><ChevronLeft className="inline h-4 w-4" />上一項</button><button disabled={index === steps.length - 1} onClick={() => setIndex(i => i + 1)} className="py-2 rounded-xl disabled:opacity-30" style={{ background: '#f4f4f5' }}>下一項<ChevronRight className="inline h-4 w-4" /></button></div>
             {complete && <button disabled={pending} onClick={() => finish(issueEntries.length ? 'disputed' : 'verified')} className="w-full py-3 rounded-xl font-bold text-white disabled:opacity-50" style={{ background: issueEntries.length ? '#e11d48' : '#059669' }}>{pending ? '處理中…' : issueEntries.length ? `彙整 ${issueEntries.length} 個問題並退回央廚` : '全部核對完成，審核通過'}</button>}
           </div>
