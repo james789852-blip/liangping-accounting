@@ -485,6 +485,23 @@ function fillSingleReceiptItemAmount(items: ReceiptFormItem[], totalAmount: numb
   return validItems.map(item => ({ ...item, amount: untaxedTotal }))
 }
 
+function needsExternalTaxInvoiceReminder(items: ReceiptFormItem[]): boolean {
+  return items.some(item => {
+    const name = item.item_name.replace(/[\s　（）()]/g, '')
+    return name.includes('選擇') && name.includes('商品') && name.includes('維修') && name.includes('單據類型')
+  })
+}
+
+function ExternalTaxInvoiceReminder() {
+  return (
+    <div className="rounded-xl px-3 py-2.5 text-xs font-semibold leading-relaxed"
+      style={{ background: '#fff7ed', border: '1.5px solid #fb923c', color: '#9a3412' }}>
+      ⚠️ 若單據類型選擇「發票」，而且稅金是外加，請新增／選擇
+      <span className="font-extrabold">「發票-稅金（稅外加）」</span>品項，並將稅金金額填在該品項內。
+    </div>
+  )
+}
+
 const DENOMINATIONS = [
   { label: '千元鈔', countKey: 'bills_1000' as const, lumpKey: 'lump_1000' as const, unit: 1000, unitLabel: '張' },
   { label: '五百元', countKey: 'bills_500'  as const, lumpKey: 'lump_500'  as const, unit: 500,  unitLabel: '張' },
@@ -2933,6 +2950,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 </div>
                               </div>
 
+                              {needsExternalTaxInvoiceReminder(form.items ?? []) && (
+                                <div className="mb-2"><ExternalTaxInvoiceReminder /></div>
+                              )}
+
                               {/* 細項列表：品項 + 金額 */}
                               <div className="space-y-1.5">
                                 {(form.items ?? []).map(item => (
@@ -3316,6 +3337,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                       </button>
                                     </div>
                                   </div>
+                                  {needsExternalTaxInvoiceReminder(editItems) && (
+                                    <div className="mb-2"><ExternalTaxInvoiceReminder /></div>
+                                  )}
                                   <div className="space-y-1.5">
                                     {editItems.map((item, idx) => (
                                       <div key={item.id} className="receipt-item-row">
