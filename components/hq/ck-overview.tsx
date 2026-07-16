@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronUp, CheckCircle2, Loader2, Banknote, Camera, X, Upload, RotateCcw, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Loader2, Banknote, Camera, X, Upload, RotateCcw, Trash2 } from 'lucide-react'
 import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
 import { toast } from 'sonner'
@@ -43,7 +43,7 @@ const CAT_COLORS: Record<string, { bg: string; text: string }> = {
 
 interface MemberStore { store_id: string; store_name: string; amount: number }
 interface ExternalOrder { name: string; amount: number }
-interface Expense { category: string; item_name: string; amount: number; payer_name?: string }
+interface Expense { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }
 
 interface CKStoreData {
   ckStore: { id: string; name: string }
@@ -347,6 +347,7 @@ function PayButton({
 function CKCard({ d, date }: { d: CKStoreData; date: string }) {
   const [open, setOpen] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
   const badges = ckRecordBadges(d.status, d.hqPaid, d.ckReimbursementConfirmed ?? false)
   const hasData = d.status !== 'none'
   const externalRevenue = deductibleExternalRevenue(d)
@@ -527,7 +528,14 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                 </div>
               )}
 
-              <ReviewActions ckStoreId={d.ckStore.id} date={date} status={d.status} />
+              {['submitted', 'disputed', 'draft'].includes(d.status) && (
+                <button type="button" onClick={() => setReviewOpen(true)}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-white"
+                  style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
+                  <Camera className="h-4 w-4" />開始逐步核對
+                </button>
+              )}
+              {d.status === 'verified' && <ReviewActions ckStoreId={d.ckStore.id} date={date} status={d.status} />}
 
               {/* 匯出 Excel */}
             </>
@@ -553,9 +561,114 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
             onClick={e => e.stopPropagation()} />
         </div>
       )}
+      {reviewOpen && <CKStepReview d={d} date={date} onClose={() => setReviewOpen(false)} />}
     </div>
   )
 }
+
+type CKReviewStep = {
+  key: string
+  title: string
+  photoUrl?: string
+  rows: Array<{ label: string; amount?: number; value?: string }>
+  total?: number
+}
+
+function CKStepReview({ d, date, onClose }: { d: CKStoreData; date: string; onClose: () => void }) {
+  const router = useRouter()
+  const [index, setIndex] = useState(0)
+  const [confirmed, setConfirmed] = useState<Set<number>>(new Set())
+  const [issues, setIssues] = useState<Record<number, string>>({})
+  const [editingIssue, setEditingIssue] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [pending, startTransition] = useTransition()
+
+  const expensePhotoSet = new Set(d.expenses.map(e => e.receipt_photo_url).filter(Boolean))
+  const unassignedPhotos = (d.receiptPhotoUrls ?? []).filter(url => !expensePhotoSet.has(url))
+  const steps: CKReviewStep[] = [
+    ...(d.memberStores.length ? [{ key: 'member', title: '體系內叫貨', rows: d.memberStores.map(item => ({ label: item.store_name, amount: item.amount })), total: d.memberStores.reduce((sum, item) => sum + item.amount, 0) }] : []),
+    ...(d.externalOrders.length ? [{ key: 'external', title: '體系外叫貨', rows: d.externalOrders.map(item => ({ label: item.name, amount: item.amount })), total: d.externalOrders.reduce((sum, item) => sum + item.amount, 0) }] : []),
+    ...d.expenses.map((item, i) => ({
+      key: `expense-${i}`, title: `支出：${item.item_name}`, photoUrl: item.receipt_photo_url,
+      rows: [
+        { label: '類別', value: item.category },
+        ...(item.vendor_group ? [{ label: '廠商分類', value: item.vendor_group }] : []),
+        ...(item.doc_type ? [{ label: '單據類型', value: item.doc_type }] : []),
+        ...(item.payer_name ? [{ label: '代墊人', value: item.payer_name }] : []),
+        { label: item.item_name, amount: item.amount },
+        ...(item.note ? [{ label: '備註', value: item.note }] : []),
+      ], total: item.amount,
+    })),
+    ...unassignedPhotos.map((url, i) => ({ key: `photo-${i}`, title: `其他收據照片 ${i + 1}`, photoUrl: url, rows: [{ label: '照片用途', value: '央廚收據／單據' }] })),
+    { key: 'summary', title: '央廚結算結果', rows: [
+      { label: '營業額', amount: d.revenueTotal },
+      { label: '當日支出', amount: d.expenseTotal },
+      { label: '結餘', amount: d.balance },
+      { label: '總公司應補款', amount: hqReimbursementAmount(d) },
+      ...(d.payerName ? [{ label: '貨款代墊', value: d.payerName }] : []),
+      ...(d.note ? [{ label: '備註', value: d.note }] : []),
+    ] },
+  ]
+  const step = steps[index]
+  const reviewedCount = new Set([...confirmed, ...Object.keys(issues).map(Number)]).size
+  const complete = reviewedCount === steps.length
+  const issueEntries = Object.entries(issues).filter(([, note]) => note.trim())
+
+  function markOkay() {
+    setConfirmed(prev => new Set(prev).add(index))
+    setIssues(prev => { const next = { ...prev }; delete next[index]; return next })
+    setEditingIssue(false)
+    if (index < steps.length - 1) setIndex(index + 1)
+  }
+  function saveIssue() {
+    if (!draft.trim()) return
+    setIssues(prev => ({ ...prev, [index]: draft.trim() }))
+    setConfirmed(prev => { const next = new Set(prev); next.delete(index); return next })
+    setEditingIssue(false)
+    if (index < steps.length - 1) setIndex(index + 1)
+  }
+  function finish(decision: 'verified' | 'disputed') {
+    const note = decision === 'disputed'
+      ? issueEntries.map(([i, text], n) => `${n + 1}. 【${steps[Number(i)]?.title}】${text}`).join('\n')
+      : undefined
+    startTransition(async () => {
+      const result = await reviewCKDailyRecord(d.ckStore.id, date, decision, note)
+      if (result.error) toast.error(result.error)
+      else { toast.success(decision === 'verified' ? '央廚帳目已審核通過' : `已退回並回報 ${issueEntries.length} 個問題`); onClose(); router.refresh() }
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: 'rgba(9,9,11,.75)' }}>
+      <div className="bg-white w-full sm:max-w-4xl sm:rounded-3xl overflow-hidden flex flex-col" style={{ maxHeight: '94dvh' }}>
+        <div className="p-4 flex justify-between items-center" style={{ borderBottom: '1px solid #e4e4e7' }}>
+          <div><p className="font-bold">逐步核對 · {d.ckStore.name}</p><p className="text-xs" style={{ color: '#71717a' }}>{index + 1} / {steps.length}　{step.title}</p></div>
+          <button onClick={onClose} className="p-2 rounded-full" style={{ background: '#f4f4f5' }}><X className="h-4 w-4" /></button>
+        </div>
+        <div className="overflow-y-auto p-4 grid sm:grid-cols-2 gap-4">
+          <div className="min-h-64 rounded-2xl flex items-center justify-center overflow-hidden" style={{ background: step.photoUrl ? '#18181b' : '#f8fafc', border: '1px solid #e4e4e7' }}>
+            {step.photoUrl ? <SafePhotoImage src={step.photoUrl} alt={step.title} className="w-full h-full max-h-[55dvh] object-contain" /> : <div className="text-center" style={{ color: '#a1a1aa' }}><FileTextFallback /><p className="text-sm mt-2">此步驟沒有照片，請核對輸入內容與金額</p></div>}
+          </div>
+          <div className="space-y-3">
+            <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fafafa', border: '1px solid #e4e4e7' }}>
+              <p className="text-xs font-bold" style={{ color: '#52525b' }}>央廚輸入內容</p>
+              {step.rows.map((row, i) => <Row key={i} left={row.label} right={row.amount !== undefined ? `$${fmt(row.amount)}` : row.value || '—'} />)}
+              {step.total !== undefined && <TotalRow label="步驟合計" value={step.total} color="#92400e" />}
+            </div>
+            {!editingIssue ? <div className="grid grid-cols-2 gap-2">
+              <button onClick={markOkay} className="py-3 rounded-xl text-sm font-bold text-white" style={{ background: confirmed.has(index) ? '#10b981' : 'linear-gradient(135deg,#10b981,#059669)' }}>內容相符</button>
+              <button onClick={() => { setDraft(issues[index] || ''); setEditingIssue(true) }} className="py-3 rounded-xl text-sm font-bold" style={{ background: '#fff1f2', color: '#be123c', border: '1px solid #fda4af' }}>{issues[index] ? '已記錄問題' : '內容有誤'}</button>
+            </div> : <div className="p-3 rounded-xl space-y-2" style={{ background: '#fff1f2', border: '1px solid #fda4af' }}><textarea autoFocus className="w-full min-h-24 p-3 rounded-lg" value={draft} onChange={e => setDraft(e.target.value)} placeholder="輸入此步驟的問題…" /><div className="flex justify-end gap-2"><button onClick={() => setEditingIssue(false)}>取消</button><button disabled={!draft.trim()} onClick={saveIssue} className="px-3 py-2 text-xs font-bold text-white rounded-lg disabled:opacity-40" style={{ background: '#e11d48' }}>記錄問題</button></div></div>}
+            <div className="grid grid-cols-2 gap-2"><button disabled={index === 0} onClick={() => setIndex(i => i - 1)} className="py-2 rounded-xl disabled:opacity-30" style={{ background: '#f4f4f5' }}><ChevronLeft className="inline h-4 w-4" />上一項</button><button disabled={index === steps.length - 1} onClick={() => setIndex(i => i + 1)} className="py-2 rounded-xl disabled:opacity-30" style={{ background: '#f4f4f5' }}>下一項<ChevronRight className="inline h-4 w-4" /></button></div>
+            {complete && <button disabled={pending} onClick={() => finish(issueEntries.length ? 'disputed' : 'verified')} className="w-full py-3 rounded-xl font-bold text-white disabled:opacity-50" style={{ background: issueEntries.length ? '#e11d48' : '#059669' }}>{pending ? '處理中…' : issueEntries.length ? `彙整 ${issueEntries.length} 個問題並退回央廚` : '全部核對完成，審核通過'}</button>}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FileTextFallback() { return <div className="text-4xl">📋</div> }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

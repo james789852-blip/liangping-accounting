@@ -88,7 +88,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount').in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
-      ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, receipt_photo_url').in('ck_daily_record_id', recordIds).order('sort_order')
+      ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type, note, receipt_photo_url').in('ck_daily_record_id', recordIds).order('sort_order')
       : Promise.resolve({ data: [] }),
   ])
 
@@ -101,7 +101,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
 
     let memberOrders: { store_id: string; store_name: string; amount: number }[] = []
     let externalOrders: { name: string; amount: number }[] = []
-    let expenses: { category: string; item_name: string; amount: number; payer_name?: string }[] = []
+    let expenses: { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }[] = []
 
     if (record) {
       const orders = (storeOrders ?? []).filter((o: any) => o.ck_daily_record_id === record.id)
@@ -113,7 +113,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
         .map((o: any) => ({ name: o.external_store_name, amount: Number(o.amount ?? 0) }))
       expenses = (expenseItems ?? [])
         .filter((e: any) => e.ck_daily_record_id === record.id)
-        .map((e: any) => ({ category: e.category, item_name: e.item_name, amount: Number(e.amount ?? 0), payer_name: e.payer_name ?? undefined, receipt_photo_url: e.receipt_photo_url ?? undefined }))
+        .map((e: any) => ({ category: e.category, item_name: e.item_name, amount: Number(e.amount ?? 0), payer_name: e.payer_name ?? undefined, vendor_group: e.vendor_group ?? undefined, doc_type: e.doc_type ?? undefined, note: e.note ?? undefined, receipt_photo_url: e.receipt_photo_url ?? undefined }))
     }
 
     const memberTotalFromOrders = memberOrders.reduce((s, o) => s + o.amount, 0)

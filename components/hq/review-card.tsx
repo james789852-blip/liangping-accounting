@@ -1,11 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image, FileText, AlertTriangle, Check, CheckCircle2, X, Camera } from 'lucide-react'
 import ReviewActions from './review-actions'
 import PhotoLightbox from './photo-lightbox'
 import SafePhotoImage from './safe-photo-image'
 import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
+import { disputeClosing } from '@/app/actions/closings'
+import { toast } from 'sonner'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -103,6 +105,10 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const [reviewOpen, setReviewOpen] = useState(false)
   const [reviewIndex, setReviewIndex] = useState(0)
   const [confirmedPhotos, setConfirmedPhotos] = useState<Set<number>>(new Set())
+  const [photoIssues, setPhotoIssues] = useState<Record<number, string>>({})
+  const [issueEditorOpen, setIssueEditorOpen] = useState(false)
+  const [issueDraft, setIssueDraft] = useState('')
+  const [rejectPending, startReject] = useTransition()
   const showCheckbox = canReview && closing.status === 'submitted' && !!onToggleSelect
   const extraPhotos = normalizeExtraPhotos(closing.extra_photo_urls)
 
@@ -125,11 +131,53 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const currentChannelItems = currentPhoto?.kind === 'channel'
     ? closing.revenue_items.filter(item => item.channel === currentPhoto.channel)
     : []
-  const reviewComplete = allPhotos.length === 0 || confirmedPhotos.size === allPhotos.length
+  const reviewedCount = new Set([...confirmedPhotos, ...Object.keys(photoIssues).map(Number)]).size
+  const reviewComplete = allPhotos.length === 0 || reviewedCount === allPhotos.length
+  const issueEntries = Object.entries(photoIssues).filter(([, note]) => note.trim())
 
   function confirmCurrentPhoto() {
     setConfirmedPhotos(prev => new Set(prev).add(reviewIndex))
+    setPhotoIssues(prev => {
+      const next = { ...prev }
+      delete next[reviewIndex]
+      return next
+    })
+    setIssueEditorOpen(false)
     if (reviewIndex < allPhotos.length - 1) setReviewIndex(reviewIndex + 1)
+  }
+
+  function openIssueEditor() {
+    setIssueDraft(photoIssues[reviewIndex] ?? '')
+    setIssueEditorOpen(true)
+  }
+
+  function saveCurrentIssue() {
+    const note = issueDraft.trim()
+    if (!note) return
+    setPhotoIssues(prev => ({ ...prev, [reviewIndex]: note }))
+    setConfirmedPhotos(prev => {
+      const next = new Set(prev)
+      next.delete(reviewIndex)
+      return next
+    })
+    setIssueEditorOpen(false)
+    if (reviewIndex < allPhotos.length - 1) setReviewIndex(reviewIndex + 1)
+  }
+
+  function rejectWithIssues() {
+    const note = issueEntries.map(([index, issue], order) => {
+      const photo = allPhotos[Number(index)]
+      return `${order + 1}. 【${photo?.label || `照片 ${Number(index) + 1}`}】${issue.trim()}`
+    }).join('\n')
+    startReject(async () => {
+      const result = await disputeClosing(closing.id, note)
+      if (result.error) toast.error(result.error)
+      else {
+        toast.success(`已退回，並回報 ${issueEntries.length} 個問題`)
+        setReviewOpen(false)
+        onProcessed?.()
+      }
+    })
   }
 
   function toggleReceipt(id: string) {
@@ -272,11 +320,30 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                 ) : <p className="text-xs" style={{ color: '#a1a1aa' }}>沒有照片需要核對。</p>}
               </div>
 
-              {currentPhoto && (
-                <button type="button" onClick={confirmCurrentPhoto} className="w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
-                  style={{ background: confirmedPhotos.has(reviewIndex) ? '#d1fae5' : 'linear-gradient(135deg,#f59e0b,#f97316)', color: confirmedPhotos.has(reviewIndex) ? '#047857' : 'white' }}>
-                  <CheckCircle2 className="h-4 w-4" />{confirmedPhotos.has(reviewIndex) ? '這張已核對' : '確認照片與輸入內容相符'}
-                </button>
+              {currentPhoto && !issueEditorOpen && (
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={confirmCurrentPhoto} className="py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+                    style={{ background: confirmedPhotos.has(reviewIndex) ? '#d1fae5' : 'linear-gradient(135deg,#10b981,#059669)', color: confirmedPhotos.has(reviewIndex) ? '#047857' : 'white' }}>
+                    <CheckCircle2 className="h-4 w-4" />{confirmedPhotos.has(reviewIndex) ? '已確認相符' : '內容相符'}
+                  </button>
+                  <button type="button" onClick={openIssueEditor} className="py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+                    style={{ background: photoIssues[reviewIndex] ? '#ffe4e6' : '#fff7ed', color: '#be123c', border: '1px solid #fda4af' }}>
+                    <AlertTriangle className="h-4 w-4" />{photoIssues[reviewIndex] ? '已記錄問題' : '照片內容有誤'}
+                  </button>
+                </div>
+              )}
+
+              {issueEditorOpen && (
+                <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fff1f2', border: '1px solid #fda4af' }}>
+                  <p className="text-xs font-bold" style={{ color: '#be123c' }}>請輸入這張照片／步驟的問題</p>
+                  <textarea autoFocus value={issueDraft} onChange={e => setIssueDraft(e.target.value)}
+                    placeholder="例如：照片金額為 $4,570，但輸入 $4,750；請重新確認。"
+                    className="w-full min-h-24 rounded-xl p-3 text-sm outline-none" style={{ background: 'white', border: '1px solid #fecdd3', resize: 'vertical' }} />
+                  <div className="flex justify-end gap-2">
+                    <button type="button" onClick={() => setIssueEditorOpen(false)} className="px-3 py-2 rounded-lg text-xs" style={{ background: 'white', color: '#71717a' }}>取消</button>
+                    <button type="button" disabled={!issueDraft.trim()} onClick={saveCurrentIssue} className="px-3 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40" style={{ background: '#e11d48' }}>記錄問題</button>
+                  </div>
+                </div>
               )}
 
               <div className="grid grid-cols-2 gap-2">
@@ -284,7 +351,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                 <button type="button" disabled={reviewIndex >= allPhotos.length - 1} onClick={() => setReviewIndex(i => Math.min(allPhotos.length - 1, i + 1))} className="py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1" style={{ background: '#f4f4f5', color: reviewIndex >= allPhotos.length - 1 ? '#d4d4d8' : '#52525b' }}>下一張<ChevronRight className="h-4 w-4" /></button>
               </div>
 
-              {reviewComplete && (
+              {reviewComplete && issueEntries.length === 0 && (
                 <div className="rounded-2xl p-4 space-y-2" style={{ background: '#ecfdf5', border: '1px solid #6ee7b7' }}>
                   <p className="text-sm font-bold" style={{ color: '#065f46' }}>照片核對完成，最後確認結算</p>
                   <InfoRow label="應匯入" value={`$${fmt(closing.should_include_delivery)}`} />
@@ -294,6 +361,17 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                   <div className="pt-2" style={{ borderTop: '1px solid #a7f3d0' }}>
                     <ReviewActions closingId={closing.id} currentStatus={closing.status} onProcessed={onProcessed} />
                   </div>
+                </div>
+              )}
+              {reviewComplete && issueEntries.length > 0 && (
+                <div className="rounded-2xl p-4 space-y-3" style={{ background: '#fff1f2', border: '1px solid #fda4af' }}>
+                  <p className="text-sm font-bold" style={{ color: '#9f1239' }}>已發現 {issueEntries.length} 個問題</p>
+                  <div className="space-y-2">
+                    {issueEntries.map(([index, issue]) => <div key={index} className="text-xs rounded-lg p-2" style={{ background: 'white', color: '#881337' }}><b>{allPhotos[Number(index)]?.label}：</b>{issue}</div>)}
+                  </div>
+                  <button type="button" disabled={rejectPending} onClick={rejectWithIssues} className="w-full py-3 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#f43f5e,#e11d48)' }}>
+                    {rejectPending ? '退回中…' : '彙整以上問題並退回店面'}
+                  </button>
                 </div>
               )}
             </div>
@@ -584,7 +662,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
         {/* 操作按鈕 */}
         {canReview && (closing.status === 'submitted' || closing.status === 'disputed') && (
           <button type="button" onClick={() => { setReviewIndex(0); setReviewOpen(true) }} className="w-full py-3 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg,#f59e0b,#f97316)', boxShadow: '0 3px 10px rgba(245,158,11,0.22)' }}>
-            <Camera className="h-4 w-4" />{confirmedPhotos.size > 0 && !reviewComplete ? `繼續核對（剩 ${allPhotos.length - confirmedPhotos.size} 張）` : '開始核對'}
+            <Camera className="h-4 w-4" />{reviewedCount > 0 && !reviewComplete ? `繼續核對（剩 ${allPhotos.length - reviewedCount} 張）` : '開始核對'}
           </button>
         )}
         {canReview || (canDispute && closing.status === 'verified') ? (
