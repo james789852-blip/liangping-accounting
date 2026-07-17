@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image, FileText, AlertTriangle, Check, CheckCircle2, X, Camera } from 'lucide-react'
 import ReviewActions from './review-actions'
 import PhotoLightbox from './photo-lightbox'
@@ -121,6 +121,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const [issueEditorOpen, setIssueEditorOpen] = useState(false)
   const [issueDraft, setIssueDraft] = useState('')
   const [rejectPending, startReject] = useTransition()
+  const skipProgressSaveRef = useRef(true)
   const showCheckbox = canReview && closing.status === 'submitted' && !!onToggleSelect
   const extraPhotos = normalizeExtraPhotos(closing.extra_photo_urls)
 
@@ -137,6 +138,8 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
     ...extraPhotos,
   ]
   const currentPhoto = allPhotos[reviewIndex]
+  const photoSignature = JSON.stringify(allPhotos.map(photo => `${photo.kind ?? ''}|${photo.url}`))
+  const progressStorageKey = `hq_photo_review_progress_${closing.id}`
   const currentReceipt = currentPhoto
     ? receipts.find(r => r.photo_url === currentPhoto.url)
     : undefined
@@ -146,6 +149,59 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const reviewedCount = new Set([...confirmedPhotos, ...Object.keys(photoIssues).map(Number)]).size
   const reviewComplete = allPhotos.length === 0 || reviewedCount === allPhotos.length
   const issueEntries = Object.entries(photoIssues).filter(([, note]) => note.trim())
+
+  useEffect(() => {
+    skipProgressSaveRef.current = true
+    try {
+      const raw = localStorage.getItem(progressStorageKey)
+      const saved = raw ? JSON.parse(raw) as {
+        signature?: string
+        confirmed?: number[]
+        issues?: Record<string, string>
+      } : null
+      if (saved?.signature === photoSignature) {
+        setConfirmedPhotos(new Set((saved.confirmed ?? []).filter(index => index >= 0 && index < allPhotos.length)))
+        setPhotoIssues(Object.fromEntries(
+          Object.entries(saved.issues ?? {}).filter(([index]) => Number(index) >= 0 && Number(index) < allPhotos.length),
+        ))
+      } else {
+        setConfirmedPhotos(new Set())
+        setPhotoIssues({})
+      }
+    } catch {
+      setConfirmedPhotos(new Set())
+      setPhotoIssues({})
+    }
+  }, [allPhotos.length, photoSignature, progressStorageKey])
+
+  useEffect(() => {
+    if (skipProgressSaveRef.current) {
+      skipProgressSaveRef.current = false
+      return
+    }
+    try {
+      localStorage.setItem(progressStorageKey, JSON.stringify({
+        signature: photoSignature,
+        confirmed: [...confirmedPhotos],
+        issues: photoIssues,
+      }))
+    } catch {}
+  }, [confirmedPhotos, photoIssues, photoSignature, progressStorageKey])
+
+  function clearReviewProgress() {
+    try { localStorage.removeItem(progressStorageKey) } catch {}
+  }
+
+  function handleProcessed() {
+    clearReviewProgress()
+    onProcessed?.()
+  }
+
+  function openReview() {
+    const firstPending = allPhotos.findIndex((_, index) => !confirmedPhotos.has(index) && !photoIssues[index])
+    setReviewIndex(firstPending >= 0 ? firstPending : 0)
+    setReviewOpen(true)
+  }
 
   function confirmCurrentPhoto() {
     setConfirmedPhotos(prev => new Set(prev).add(reviewIndex))
@@ -186,7 +242,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
       else {
         toast.success(`已退回，並回報 ${issueEntries.length} 個問題`)
         setReviewOpen(false)
-        onProcessed?.()
+        handleProcessed()
       }
     })
   }
@@ -370,7 +426,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                   {hasRemittanceChange && <InfoRow label="調整後應包回公司" value={`$${fmt(remitToHQ)}`} accent="#047857" />}
                   <InfoRow label="結算誤差" value={`${closing.variance >= 0 ? '+' : ''}$${fmt(closing.variance)}`} accent={varColor} />
                   <div className="pt-2" style={{ borderTop: '1px solid #a7f3d0' }}>
-                    <ReviewActions closingId={closing.id} currentStatus={closing.status} onProcessed={onProcessed} />
+                    <ReviewActions closingId={closing.id} currentStatus={closing.status} onProcessed={handleProcessed} />
                   </div>
                 </div>
               )}
@@ -672,12 +728,12 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
 
         {/* 操作按鈕 */}
         {canReview && (closing.status === 'submitted' || closing.status === 'disputed') && (
-          <button type="button" onClick={() => { setReviewIndex(0); setReviewOpen(true) }} className="w-full py-3 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg,#f59e0b,#f97316)', boxShadow: '0 3px 10px rgba(245,158,11,0.22)' }}>
+          <button type="button" onClick={openReview} className="w-full py-3 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg,#f59e0b,#f97316)', boxShadow: '0 3px 10px rgba(245,158,11,0.22)' }}>
             <Camera className="h-4 w-4" />{reviewedCount > 0 && !reviewComplete ? `繼續核對（剩 ${allPhotos.length - reviewedCount} 張）` : '開始核對'}
           </button>
         )}
         {canReview || (canDispute && closing.status === 'verified') ? (
-          <ReviewActions closingId={closing.id} currentStatus={closing.status} onProcessed={onProcessed} hideVerify />
+          <ReviewActions closingId={closing.id} currentStatus={closing.status} onProcessed={handleProcessed} hideVerify />
         ) : null}
       </div>
     </div>
