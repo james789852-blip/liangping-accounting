@@ -407,8 +407,34 @@ function displayItemName(name: string, vendorGroup?: string | null) {
   return /^[\s　\-－—–_]/.test(rest) ? name : rest
 }
 
+const DIRECT_RECEIPT_CATEGORIES = ['日常用品', '買東西或維修', '其他'] as const
+
+function isDirectReceiptCategory(categoryName: string | undefined) {
+  return DIRECT_RECEIPT_CATEGORIES.includes((categoryName ?? '').trim() as typeof DIRECT_RECEIPT_CATEGORIES[number])
+}
+
+function isOtherReceiptItem(itemName: string | undefined, categoryName: string | undefined, expectedName: string) {
+  return (categoryName ?? '').trim() === '其他' && (itemName ?? '').trim() === expectedName
+}
+
+function isAutoNegativeOtherReceiptItem(itemName: string | undefined, categoryName: string | undefined) {
+  return isOtherReceiptItem(itemName, categoryName, '賣給分店食材')
+}
+
 function canUseNegativeOtherReceiptItem(itemName: string | undefined, categoryName: string | undefined) {
-  return (categoryName ?? '').trim() === '其他' && (itemName ?? '').trim() === '其他'
+  return isOtherReceiptItem(itemName, categoryName, '其他') || isAutoNegativeOtherReceiptItem(itemName, categoryName)
+}
+
+function receiptFormForcesNegativeTotal(form: Pick<ReceiptForm, 'category' | 'items'>) {
+  return (form.items ?? []).some(item => isAutoNegativeOtherReceiptItem(item.item_name, form.category))
+}
+
+function editReceiptForcesNegativeTotal(category: string, items: ReceiptFormItem[]) {
+  return items.some(item => isAutoNegativeOtherReceiptItem(item.item_name, category))
+}
+
+function requiresPurchaseRepairNote(categoryName: string | undefined) {
+  return (categoryName ?? '').trim() === '買東西或維修'
 }
 
 function receiptFormAllowsNegativeTotal(form: Pick<ReceiptForm, 'category' | 'items'>) {
@@ -550,7 +576,7 @@ function fillSingleReceiptItemAmount(items: ReceiptFormItem[], totalAmount: numb
   const validItems = items.filter(i => i.item_name.trim())
   const untaxedTotal = Math.round(totalAmount - taxAmount)
   const itemTotal = validItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
-  if (validItems.length !== 1 || untaxedTotal <= 0 || itemTotal !== 0) return validItems
+  if (validItems.length !== 1 || untaxedTotal === 0 || itemTotal !== 0) return validItems
   return validItems.map(item => ({ ...item, amount: untaxedTotal }))
 }
 
@@ -789,6 +815,39 @@ function dropdownGroupRank(name: string): number {
 }
 
 type MappingColumn = { name: string; category: string; vendor_group?: string; excel_column?: string; is_tax_addon?: boolean }
+
+function directReceiptOptions(categoryName: string, categories: CategoryWithVendors[], mappingColumns: MappingColumn[]) {
+  if (categoryName === '其他') return ['與分店購買食材', '賣給分店食材', '其他']
+
+  if (categoryName === '買東西或維修') {
+    const mappedOptions = mappingColumns
+      .filter(column => !column.is_tax_addon && (column.category === categoryName || column.vendor_group === categoryName))
+      .map(column => column.name.trim())
+      .filter(Boolean)
+    if (mappedOptions.length > 0) return Array.from(new Set(mappedOptions))
+    const category = categories.find(item => item.name === categoryName)
+    const options = category?.vendors.map(item => item.name).filter(Boolean) ?? []
+    return options.length > 0 ? Array.from(new Set(options)) : DOC_TYPE_GROUPS
+  }
+
+  if (categoryName === '日常用品') {
+    return Array.from(new Set(
+      mappingColumns
+        .filter(column => !column.is_tax_addon && (column.category === categoryName || column.vendor_group === categoryName))
+        .map(column => column.name.trim())
+        .filter(Boolean),
+    ))
+  }
+
+  return []
+}
+
+function directReceiptLabel(categoryName: string) {
+  if (categoryName === '日常用品') return '品項'
+  if (categoryName === '買東西或維修') return '選擇單據類型'
+  if (categoryName === '其他') return '請選擇'
+  return '廠商'
+}
 
 function receiptEntryGroups(mappingColumns: MappingColumn[]): string[] {
   const groups = new Set<string>()
@@ -1653,7 +1712,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (!editingReceiptId) return
     const editAmountValid = editAmount > 0 || (editAmount < 0 && editReceiptAllowsNegativeTotal(editCategory, editItems))
     if (!editAmountValid) {
-      toast.error(editAmount < 0 ? '只有「其他」類別的「其他」品項可輸入負數' : '請填寫金額')
+      toast.error(editAmount < 0 ? '只有「其他」類別的「其他」或「賣給分店食材」可輸入負數' : '請填寫金額')
+      return
+    }
+    if (requiresPurchaseRepairNote(editCategory) && !editNotes.trim()) {
+      toast.error('請在備註輸入購買或維修內容')
       return
     }
     const configuredEditTaxMapping = findTaxAddonMapping(mappingColumns, editVendor, editCategory, editItems)
@@ -1790,6 +1853,102 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setReceiptForms(prev => prev.map(f => f.id === id ? { ...f, [field]: value } : f))
   }
 
+  function updateReceiptFormContext(id: string, category: string, vendorName: string) {
+    setReceiptForms(prev => prev.map(f => {
+      if (f.id !== id) return f
+      if (isDirectReceiptCategory(category)) {
+        const first = f.items?.[0]
+        const mapping = mappingColumns.find(column =>
+          column.name === vendorName && (column.category === category || column.vendor_group === category),
+        )
+        const forceNegative = isAutoNegativeOtherReceiptItem(vendorName, category)
+        return {
+          ...f,
+          category,
+          vendor_name: vendorName,
+          actual_vendor_name: '',
+          total_amount: forceNegative ? -Math.abs(f.total_amount || 0) : f.total_amount,
+          items: [{
+            id: first?.id ?? crypto.randomUUID(),
+            item_name: vendorName,
+            unit: first?.unit ?? '',
+            quantity: first?.quantity ?? 1,
+            unit_price: first?.unit_price ?? 0,
+            amount: forceNegative ? -Math.abs(first?.amount ?? 0) : first?.amount ?? 0,
+            vendor_group_hint: mapping?.vendor_group,
+          }],
+        }
+      }
+      let items = resetReceiptItemsForContext(f.items ?? [], category, vendorName, mappingColumns)
+      // Categories without configured sub-items are themselves the item. Keep
+      // the amount already entered, but never carry an item from the previous
+      // category into the new context.
+      if (category && !vendorName && mappingColumns.length > 0) {
+        const hasSubItems = mappingColumns.some(c => c.vendor_group === category)
+        const isDirectItem = mappingColumns.some(c => c.name === category)
+        if (!hasSubItems && !isDirectItem) {
+          const first = items[0]
+          items = [{
+            id: first?.id ?? crypto.randomUUID(),
+            item_name: category,
+            unit: first?.unit ?? '',
+            quantity: first?.quantity ?? 1,
+            unit_price: first?.unit_price ?? 0,
+            amount: first?.amount ?? 0,
+          }]
+        }
+      }
+      return { ...f, category, vendor_name: vendorName, items }
+    }))
+  }
+
+  function updateEditContext(category: string, vendorName: string) {
+    setEditCategory(category)
+    setEditVendor(vendorName)
+    if (isDirectReceiptCategory(category)) {
+      setEditActualVendor('')
+      setEditItems(prev => {
+        const first = prev[0]
+        const mapping = mappingColumns.find(column =>
+          column.name === vendorName && (column.category === category || column.vendor_group === category),
+        )
+        const forceNegative = isAutoNegativeOtherReceiptItem(vendorName, category)
+        return [{
+          id: first?.id ?? crypto.randomUUID(),
+          item_name: vendorName,
+          unit: first?.unit ?? '',
+          quantity: first?.quantity ?? 1,
+          unit_price: first?.unit_price ?? 0,
+          amount: forceNegative ? -Math.abs(first?.amount ?? 0) : first?.amount ?? 0,
+          vendor_group_hint: mapping?.vendor_group,
+        }]
+      })
+      if (isAutoNegativeOtherReceiptItem(vendorName, category)) {
+        setEditAmount(value => -Math.abs(value || 0))
+      }
+      return
+    }
+    setEditItems(prev => {
+      let items = resetReceiptItemsForContext(prev, category, vendorName, mappingColumns)
+      if (category && !vendorName && mappingColumns.length > 0) {
+        const hasSubItems = mappingColumns.some(c => c.vendor_group === category)
+        const isDirectItem = mappingColumns.some(c => c.name === category)
+        if (!hasSubItems && !isDirectItem) {
+          const first = items[0]
+          items = [{
+            id: first?.id ?? crypto.randomUUID(),
+            item_name: category,
+            unit: first?.unit ?? '',
+            quantity: first?.quantity ?? 1,
+            unit_price: first?.unit_price ?? 0,
+            amount: first?.amount ?? 0,
+          }]
+        }
+      }
+      return items
+    })
+  }
+
   function addKnownActualVendor(vendorGroup: string, rawName: string) {
     const name = normalizeActualVendorName(rawName)
     if (!name) return ''
@@ -1832,7 +1991,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   async function saveReceiptForm(form: ReceiptForm) {
     const amountValid = isReceiptFormAmountValid(form)
     if (!amountValid) {
-      toast.error(form.total_amount < 0 ? '只有「其他」類別的「其他」品項可輸入負數' : '請填寫金額')
+      toast.error(form.total_amount < 0 ? '只有「其他」類別的「其他」或「賣給分店食材」可輸入負數' : '請填寫金額')
+      return
+    }
+    if (requiresPurchaseRepairNote(form.category) && !form.notes.trim()) {
+      toast.error('請在備註輸入購買或維修內容')
       return
     }
     const configuredTaxMapping = findTaxAddonMapping(mappingColumns, form.vendor_name, form.category, form.items ?? [])
@@ -2909,33 +3072,33 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             value={form.category}
                             onChange={v => {
                               const catObj = categories.find(c => c.name === v)
-                              const autoVendor = catObj && catObj.vendors.length === 0 ? v : ''
-                              // 如果選的類別在 mappingColumns 沒有子品項，自動帶入一行
-                              if (v && mappingColumns.length > 0) {
-                                const hasSubItems = mappingColumns.some(c => c.vendor_group === v)
-                                const isDirectItem = mappingColumns.some(c => c.name === v)
-                                if (!hasSubItems && !isDirectItem) {
-                                  setReceiptForms(prev => prev.map(f => f.id === form.id
-                                    ? { ...f, category: v, vendor_name: autoVendor, items: f.items?.length ? f.items : [{ id: crypto.randomUUID(), item_name: v, unit: '', quantity: 1, unit_price: 0, amount: 0 }] }
-                                    : f))
-                                  return
-                                }
-                              }
-                              updateReceiptForm(form.id, 'category', v)
-                              updateReceiptForm(form.id, 'vendor_name', autoVendor)
+                              const autoVendor = !isDirectReceiptCategory(v) && catObj && catObj.vendors.length === 0 ? v : ''
+                              updateReceiptFormContext(form.id, v, autoVendor)
                             }}
                           />
                         </div>
 
-                        {/* 廠商 */}
+                        {/* 廠商／特殊類別的直接選擇 */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>廠商</label>
+                          <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>{directReceiptLabel(form.category)}</label>
                           {(() => {
                             const catObj = categories.find(c => c.name === form.category)
+                            if (isDirectReceiptCategory(form.category)) {
+                              const options = directReceiptOptions(form.category, categories, mappingColumns)
+                              return (
+                                <select value={form.vendor_name}
+                                  onChange={e => updateReceiptFormContext(form.id, form.category, e.target.value)}
+                                  className="receipt-field"
+                                  style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
+                                  <option value="">— 選擇 —</option>
+                                  {options.map(option => <option key={option} value={option}>{option}</option>)}
+                                </select>
+                              )
+                            }
                             if (catObj && catObj.vendors.length > 0) {
                               return (
                                 <select value={form.vendor_name}
-                                  onChange={e => updateReceiptForm(form.id, 'vendor_name', e.target.value)}
+                                  onChange={e => updateReceiptFormContext(form.id, form.category, e.target.value)}
                                   className="receipt-field"
                                   style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
                                   <option value="">— 選擇 —</option>
@@ -2948,13 +3111,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 className="receipt-field"
                                 style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
                                 value={form.vendor_name}
-                                onChange={e => updateReceiptForm(form.id, 'vendor_name', e.target.value)} />
+                                onChange={e => updateReceiptFormContext(form.id, form.category, e.target.value)} />
                             )
                           })()}
                         </div>
 
                         {/* 實際廠商 */}
-                        <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', border: '1.5px solid #93c5fd', borderRadius: '10px', background: '#eff6ff' }}>
+                        {!isDirectReceiptCategory(form.category) && <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', border: '1.5px solid #93c5fd', borderRadius: '10px', background: '#eff6ff' }}>
                           <label style={{ fontSize: '13px', color: '#1d4ed8', fontWeight: 800 }}>實際廠商名稱（選填）</label>
                           <p style={{ fontSize: '11px', color: '#2563eb', fontWeight: 600 }}>可輸入此類別的廠商名稱，方便後續統計；沒有需要統計時可留白。</p>
                           {(() => {
@@ -2981,10 +3144,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               </select>
                             )
                           })()}
-                        </div>
+                        </div>}
 
                         {/* 品項 — 若廠商下沒子品項（廠商本身就是品項，例：瓦斯/水費/電費）→ 隱藏 */}
-                        {(() => {
+                        {!isDirectReceiptCategory(form.category) && ((() => {
                           const vendorHasSubItems = !!form.vendor_name && mappingColumns.some(c => c.vendor_group === form.vendor_name)
                           const isNoItemMode = !!form.vendor_name && !vendorHasSubItems
                           return isNoItemMode
@@ -3121,8 +3284,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                     )}
                                     {(() => {
                                       // 「折扣 / 退貨」類品項：使用者輸入正數，系統自動存負數
-                                      const neg = ['折扣', '退貨', '退款', '退費', '抵扣'].some(k => (item.item_name ?? '').includes(k))
-                                      const allowManualNegative = canUseNegativeOtherReceiptItem(item.item_name, form.category)
+                                      const neg = ['折扣', '退貨', '退款', '退費', '抵扣'].some(k => (item.item_name ?? '').includes(k)) || isAutoNegativeOtherReceiptItem(item.item_name, form.category)
+                                      const allowManualNegative = canUseNegativeOtherReceiptItem(item.item_name, form.category) && !isAutoNegativeOtherReceiptItem(item.item_name, form.category)
                                       const displayed = item.amount === 0 ? '' : (neg ? Math.abs(item.amount) : item.amount)
                                       return (
                                         <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
@@ -3154,7 +3317,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               </div>
                             </div>
                           )
-                        })()}
+                        })())}
 
                         {(() => {
                           const taxMapping = findTaxAddonMapping(mappingColumns, form.vendor_name, form.category, form.items ?? [])
@@ -3185,22 +3348,25 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                         {/* 備註（品項之後） */}
                         {(() => {
-                          const NEED_NOTE_NAMES = ['發票', '收據', '估價單', '其他']
+                          const NEED_NOTE_NAMES = ['發票', '收據', '估價單']
                           const needNote =
-                            NEED_NOTE_NAMES.includes(form.vendor_name ?? '') ||
-                            (form.items ?? []).some(i => NEED_NOTE_NAMES.includes(i.item_name))
+                            requiresPurchaseRepairNote(form.category) ||
+                            (!isDirectReceiptCategory(form.category) && (
+                              NEED_NOTE_NAMES.includes(form.vendor_name ?? '') ||
+                              (form.items ?? []).some(i => NEED_NOTE_NAMES.includes(i.item_name))
+                            ))
                           return (
                             <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', border: '1.5px solid #93c5fd', borderRadius: '10px', background: '#eff6ff' }}>
                               <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 備註（可空）
                                 {needNote && (
                                   <span style={{ fontSize: '10px', color: '#B45309', background: '#FEF3C7', padding: '1px 8px', borderRadius: '8px', fontWeight: 700 }}>
-                                    💡 記得備注購買的東西
+                                    💡 請輸入購買或維修內容
                                   </span>
                                 )}
                               </label>
                               <textarea
-                                placeholder={needNote ? '請寫下購買的東西（例：燈泡、清潔劑…）' : ''}
+                                placeholder={needNote ? '請寫下購買或維修內容（例：燈泡、清潔劑、冷氣維修…）' : ''}
                                 style={{ padding: '8px 10px', border: `1.5px solid ${needNote && !form.notes?.trim() ? '#FBBF24' : '#e4e4e7'}`, borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', resize: 'none', minHeight: '64px' }}
                                 value={form.notes}
                                 onChange={e => updateReceiptForm(form.id, 'notes', e.target.value)} />
@@ -3218,6 +3384,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           const hasAutoTotal = hasItemsTotal || appliedTaxAmount > 0
                           const amountValid = isReceiptFormAmountValid(form)
                           const allowNegativeTotal = receiptFormAllowsNegativeTotal(form)
+                          const forceNegativeTotal = receiptFormForcesNegativeTotal(form)
                           return (
                             <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', border: '1.5px solid #93c5fd', borderRadius: '10px', background: '#eff6ff' }}>
                               <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -3227,13 +3394,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               <input type="number" min={allowNegativeTotal ? undefined : 0} inputMode={allowNegativeTotal ? 'decimal' : 'numeric'} placeholder="0" readOnly={hasAutoTotal}
                                 style={{ padding: '8px 10px', border: `1.5px solid ${hasAutoTotal ? '#FDE68A' : amountValid ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: hasAutoTotal ? '#f5f5ff' : 'white', outline: 'none', color: displayedTotal < 0 ? '#dc2626' : '#18181b', cursor: hasAutoTotal ? 'default' : 'text' }}
                                 value={displayedTotal || ''}
-                                onChange={e => { if (!hasAutoTotal) updateReceiptForm(form.id, 'total_amount', allowNegativeTotal ? (parseInt(e.target.value) || 0) : Math.max(0, parseInt(e.target.value) || 0)) }} />
+                                onChange={e => {
+                                  if (hasAutoTotal) return
+                                  const value = parseInt(e.target.value) || 0
+                                  updateReceiptForm(form.id, 'total_amount', forceNegativeTotal ? -Math.abs(value) : allowNegativeTotal ? value : Math.max(0, value))
+                                }} />
                               {appliedTaxAmount > 0 && (
                                 <div style={{ fontSize: '11px', color: '#9a3412', textAlign: 'right', fontWeight: 700 }}>
                                   商品 ${form.total_amount.toLocaleString()} ＋ 稅金 ${appliedTaxAmount.toLocaleString()} ＝ ${displayedTotal.toLocaleString()}
                                 </div>
                               )}
-                              {allowNegativeTotal && !hasItemsTotal && (
+                              {allowNegativeTotal && !forceNegativeTotal && !hasItemsTotal && (
                                 <button
                                   type="button"
                                   onClick={() => updateReceiptForm(form.id, 'total_amount', form.total_amount < 0 ? Math.abs(form.total_amount) : -Math.abs(form.total_amount || 0))}
@@ -3318,29 +3489,31 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 value={editCategory}
                                 onChange={v => {
                                   const catObj = categories.find(c => c.name === v)
-                                  const autoVendor = catObj && catObj.vendors.length === 0 ? v : ''
-                                  setEditCategory(v)
-                                  setEditVendor(autoVendor)
-                                  // 如果選的類別在 mappingColumns 沒有子品項，自動帶入一行
-                                  if (v && mappingColumns.length > 0) {
-                                    const hasSubItems = mappingColumns.some(c => c.vendor_group === v)
-                                    const isDirectItem = mappingColumns.some(c => c.name === v)
-                                    if (!hasSubItems && !isDirectItem && editItems.length === 0) {
-                                      setEditItems([{ id: crypto.randomUUID(), item_name: v, unit: '', quantity: 1, unit_price: 0, amount: 0 }])
-                                    }
-                                  }
+                                  const autoVendor = !isDirectReceiptCategory(v) && catObj && catObj.vendors.length === 0 ? v : ''
+                                  updateEditContext(v, autoVendor)
                                 }}
                               />
                             </div>
 
-                            {/* 廠商 */}
+                            {/* 廠商／特殊類別的直接選擇 */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>廠商</label>
+                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>{directReceiptLabel(editCategory)}</label>
                               {(() => {
                                 const catObj = categories.find(c => c.name === editCategory)
+                                if (isDirectReceiptCategory(editCategory)) {
+                                  const options = directReceiptOptions(editCategory, categories, mappingColumns)
+                                  return (
+                                    <select value={editVendor} onChange={e => updateEditContext(editCategory, e.target.value)}
+                                      className="receipt-field"
+                                      style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
+                                      <option value="">— 選擇 —</option>
+                                      {options.map(option => <option key={option} value={option}>{option}</option>)}
+                                    </select>
+                                  )
+                                }
                                 if (catObj && catObj.vendors.length > 0) {
                                   return (
-                                    <select value={editVendor} onChange={e => setEditVendor(e.target.value)}
+                                    <select value={editVendor} onChange={e => updateEditContext(editCategory, e.target.value)}
                                       className="receipt-field"
                                       style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
                                       <option value="">— 選擇 —</option>
@@ -3352,13 +3525,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   <input placeholder="廠商名稱（可空）"
                                     className="receipt-field"
                                     style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
-                                    value={editVendor} onChange={e => setEditVendor(e.target.value)} />
+                                    value={editVendor} onChange={e => updateEditContext(editCategory, e.target.value)} />
                                 )
                               })()}
                             </div>
 
                             {/* 實際廠商 */}
-                            <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {!isDirectReceiptCategory(editCategory) && <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <label style={{ fontSize: '13px', color: '#1d4ed8', fontWeight: 800 }}>實際廠商名稱（選填）</label>
                               <p style={{ fontSize: '11px', color: '#2563eb', fontWeight: 600 }}>可輸入此類別的廠商名稱，方便後續統計；沒有需要統計時可留白。</p>
                               {(() => {
@@ -3385,12 +3558,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   </select>
                                 )
                               })()}
-                            </div>
+                            </div>}
 
                             {/* 稅外加 UI 已移除 — 稅金請直接選稅金品項輸入金額 */}
 
                             {/* 品項 — 若廠商下沒子品項（廠商本身就是品項）→ 隱藏 */}
-                            {(() => {
+                            {!isDirectReceiptCategory(editCategory) && ((() => {
                               const vendorHasSubItems = !!editVendor && mappingColumns.some(c => c.vendor_group === editVendor)
                               return !!editVendor && !vendorHasSubItems
                             })() ? (
@@ -3511,8 +3684,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             onChange={e => updateEditItemFn(idx, 'item_name', e.target.value)} />
                                         )}
                                         {(() => {
-                                          const neg = ['折扣', '退貨', '退款', '退費', '抵扣'].some(k => (item.item_name ?? '').includes(k))
-                                          const allowManualNegative = canUseNegativeOtherReceiptItem(item.item_name, editCategory)
+                                          const neg = ['折扣', '退貨', '退款', '退費', '抵扣'].some(k => (item.item_name ?? '').includes(k)) || isAutoNegativeOtherReceiptItem(item.item_name, editCategory)
+                                          const allowManualNegative = canUseNegativeOtherReceiptItem(item.item_name, editCategory) && !isAutoNegativeOtherReceiptItem(item.item_name, editCategory)
                                           const displayed = item.amount === 0 ? '' : (neg ? Math.abs(item.amount) : item.amount)
                                           return (
                                             <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
@@ -3544,7 +3717,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   </div>
                                 </div>
                               )
-                            })()}
+                            })())}
 
                             {(() => {
                               const taxMapping = findTaxAddonMapping(mappingColumns, editVendor, editCategory, editItems)
@@ -3575,9 +3748,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                             {/* 備註（品項之後） */}
                             <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>備註（可空）</label>
-                              <textarea placeholder=""
-                                style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', resize: 'none', minHeight: '64px' }}
+                              <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                備註（可空）
+                                {requiresPurchaseRepairNote(editCategory) && <span style={{ fontSize: '10px', color: '#B45309', background: '#FEF3C7', padding: '1px 8px', borderRadius: '8px', fontWeight: 700 }}>💡 請輸入購買或維修內容</span>}
+                              </label>
+                              <textarea placeholder={requiresPurchaseRepairNote(editCategory) ? '請寫下購買或維修內容（例：燈泡、清潔劑、冷氣維修…）' : ''}
+                                style={{ padding: '8px 10px', border: `1.5px solid ${requiresPurchaseRepairNote(editCategory) && !editNotes.trim() ? '#FBBF24' : '#e4e4e7'}`, borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b', resize: 'none', minHeight: '64px' }}
                                 value={editNotes} onChange={e => setEditNotes(e.target.value)} />
                             </div>
 
@@ -3590,6 +3766,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               const displayedEditTotal = editAmount + appliedEditTaxAmount
                               const editHasAutoTotal = editHasItemsTotal || appliedEditTaxAmount > 0
                               const allowNegativeTotal = editReceiptAllowsNegativeTotal(editCategory, editItems)
+                              const forceNegativeTotal = editReceiptForcesNegativeTotal(editCategory, editItems)
                               const editAmountValid = editAmount > 0 || (editAmount < 0 && allowNegativeTotal)
                               return (
                                 <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -3600,13 +3777,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   <input type="number" min={allowNegativeTotal ? undefined : 0} inputMode={allowNegativeTotal ? 'decimal' : 'numeric'} placeholder="0" readOnly={editHasAutoTotal}
                                     style={{ padding: '8px 10px', border: `1.5px solid ${editHasAutoTotal ? '#FDE68A' : editAmountValid ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: editHasAutoTotal ? '#f5f5ff' : 'white', outline: 'none', color: displayedEditTotal < 0 ? '#dc2626' : '#18181b', cursor: editHasAutoTotal ? 'default' : 'text' }}
                                     value={displayedEditTotal || ''}
-                                    onChange={e => { if (!editHasAutoTotal) setEditAmount(allowNegativeTotal ? (parseInt(e.target.value) || 0) : Math.max(0, parseInt(e.target.value) || 0)) }} />
+                                    onChange={e => {
+                                      if (editHasAutoTotal) return
+                                      const value = parseInt(e.target.value) || 0
+                                      setEditAmount(forceNegativeTotal ? -Math.abs(value) : allowNegativeTotal ? value : Math.max(0, value))
+                                    }} />
                                   {appliedEditTaxAmount > 0 && (
                                     <div style={{ fontSize: '11px', color: '#9a3412', textAlign: 'right', fontWeight: 700 }}>
                                       商品 ${editAmount.toLocaleString()} ＋ 稅金 ${appliedEditTaxAmount.toLocaleString()} ＝ ${displayedEditTotal.toLocaleString()}
                                     </div>
                                   )}
-                                  {allowNegativeTotal && !editHasItemsTotal && (
+                                  {allowNegativeTotal && !forceNegativeTotal && !editHasItemsTotal && (
                                     <button
                                       type="button"
                                       onClick={() => setEditAmount(editAmount < 0 ? Math.abs(editAmount) : -Math.abs(editAmount || 0))}
