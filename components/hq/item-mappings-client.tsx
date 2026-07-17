@@ -20,7 +20,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 
 interface Mapping {
-  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; vg_sort_order?: number
+  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_tax_addon?: boolean; vg_sort_order?: number
 }
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
@@ -997,6 +997,7 @@ function SortableItemRow({
           <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
             style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
           <RefundToggle mappingId={m.id} isRefund={!!m.is_refund} />
+          <TaxAddonToggle mappingId={m.id} enabled={!!m.is_tax_addon} />
           <span className="hidden md:inline text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
           <button onClick={() => startEdit(m)} style={{ color: '#d4d4d8' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#F59E0B')}
@@ -1186,6 +1187,44 @@ function RefundToggle({ mappingId, isRefund }: { mappingId: string; isRefund: bo
         : { background: 'white', color: '#a1a1aa', border: '1.5px solid #e4e4e7' }}
       title={checked ? '已納入梁平退稅總額（點擊取消）' : '未納入梁平退稅（點擊勾選）'}>
       {checked ? '✓ 退稅' : '退稅'}
+    </button>
+  )
+}
+
+/** 標記為稅外加自動品項；啟用後不再出現在店長端品項下拉。 */
+function TaxAddonToggle({ mappingId, enabled }: { mappingId: string; enabled: boolean }) {
+  const [checked, setChecked] = useState(enabled)
+  const [pending, startTransition] = useTransition()
+  const router = useRouter()
+  useEffect(() => setChecked(enabled), [enabled])
+
+  function toggle() {
+    const next = !checked
+    setChecked(next)
+    startTransition(async () => {
+      const { setItemTaxAddonFlag } = await import('@/app/actions/item-mappings')
+      const result = await setItemTaxAddonFlag(mappingId, next)
+      if (result.error) {
+        setChecked(!next)
+        toast.error(result.error)
+      } else {
+        toast.success(next ? '已設為稅外加品項，店長端將自動隱藏' : '已取消稅外加品項')
+        router.refresh()
+      }
+    })
+  }
+
+  return (
+    <button type="button" onClick={toggle} disabled={pending}
+      className="text-xs px-2 py-1 rounded-full shrink-0 font-semibold"
+      style={{
+        background: checked ? '#fff7ed' : 'white',
+        color: checked ? '#c2410c' : '#a1a1aa',
+        border: `1.5px solid ${checked ? '#fb923c' : '#e4e4e7'}`,
+        opacity: pending ? 0.6 : 1,
+      }}
+      title={checked ? '此品項由店長端稅外加欄位自動寫入' : '設為此廠商分類的稅外加品項'}>
+      {checked ? '✓ 稅外加' : '稅外加'}
     </button>
   )
 }

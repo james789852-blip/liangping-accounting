@@ -35,7 +35,7 @@ async function loadStoreItemsFromMappings(storeId: string): Promise<ResolvedStor
     // 分頁撈：避免 PostgREST 1000 max-rows 截斷
     fetchAllPaged<any>(() => admin
       .from('item_column_mappings')
-      .select('id,item_name,item_category,vendor_group,doc_type_override,sort_order,vg_sort_order,store_id,is_refund')
+      .select('id,item_name,item_category,vendor_group,doc_type_override,sort_order,vg_sort_order,store_id,is_refund,is_tax_addon')
       .eq('store_id', storeId)),
     admin.from('system_vendor_groups').select('id, name, doc_type, sort_order, tax_mode, merge_across_category').eq('active', true),
   ])
@@ -71,6 +71,7 @@ async function loadStoreItemsFromMappings(storeId: string): Promise<ResolvedStor
       sort_order: (m.sort_order ?? 1000) as number,
       vg_merge_across_category: !!vg?.merge_across_category,
       is_refund: !!m.is_refund,
+      is_tax_addon: !!m.is_tax_addon,
     })
   }
 

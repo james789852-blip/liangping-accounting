@@ -561,6 +561,30 @@ export async function setItemRefundFlag(id: string, isRefund: boolean) {
   return { success: true as const }
 }
 
+/** 將品項設為該廠商分類唯一的「稅外加」自動入帳品項。 */
+export async function setItemTaxAddonFlag(id: string, enabled: boolean) {
+  const admin = createAdminClient()
+  const { data: mapping } = await admin.from('item_column_mappings')
+    .select('id, store_id, vendor_group').eq('id', id).maybeSingle()
+  if (!mapping) return { error: '找不到品項' }
+  const auth = await requireCanManageItems(mapping.store_id ?? null)
+  if (auth.error) return { error: auth.error }
+  if (!mapping.store_id || !mapping.vendor_group) return { error: '稅外加品項必須屬於指定店家與廠商分類' }
+
+  if (enabled) {
+    const { error: clearError } = await admin.from('item_column_mappings')
+      .update({ is_tax_addon: false, updated_at: new Date().toISOString() })
+      .eq('store_id', mapping.store_id).eq('vendor_group', mapping.vendor_group)
+    if (clearError) return { error: clearError.message }
+  }
+  const { error } = await admin.from('item_column_mappings')
+    .update({ is_tax_addon: enabled, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) return { error: error.message }
+  revalidate()
+  return { success: true as const }
+}
+
 /** 修改廠商群組名稱（同步更新 system_vendor_groups + item_column_mappings） */
 export async function renameVendorGroup(oldName: string, newName: string, storeId?: string) {
   const auth = await requireCanManageItems(storeId)

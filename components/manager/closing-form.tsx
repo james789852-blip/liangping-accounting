@@ -190,7 +190,7 @@ interface Props {
   today: string
   todayReceipts?: TodayReceipt[]
   receiptCategories?: CategoryWithVendors[]
-  mappingColumns?: { name: string; category: string; vendor_group?: string; excel_column?: string }[]
+  mappingColumns?: MappingColumn[]
   actualVendors?: { id: string; vendor_group: string; name: string }[]
   prevDayReserves?: PrevDayReserve | null
   preReservedExpenseHints?: PreReservedExpenseHint[]
@@ -429,7 +429,7 @@ function deriveReceiptCategory(
   vendorName: string | undefined,
   items: { item_name?: string }[] | undefined,
   categories: CategoryWithVendors[],
-  mappingColumns: { name: string; category: string; vendor_group?: string; excel_column?: string }[],
+  mappingColumns: MappingColumn[],
 ) {
   const vendor = vendorName?.trim() ?? ''
   if (vendor) {
@@ -464,7 +464,7 @@ function findReceiptItemMapping(
   itemName: string,
   vendorName: string,
   categoryName: string,
-  mappingColumns: { name: string; category: string; vendor_group?: string; excel_column?: string }[],
+  mappingColumns: MappingColumn[],
 ) {
   const name = itemName.trim()
   const vendor = vendorName.trim()
@@ -475,6 +475,75 @@ function findReceiptItemMapping(
     ?? mappingColumns.find(c => c.name === name && c.category === category)
     ?? mappingColumns.find(c => c.name === name)
   )
+}
+
+/**
+ * Return the item mappings shown by a receipt item's dropdown for the current
+ * category/vendor context.  Keeping this in one place is important: when the
+ * category or vendor changes, the existing item value must be checked against
+ * the same list that the dropdown renders.
+ */
+function receiptItemMappingsForContext(
+  mappingColumns: MappingColumn[],
+  categoryName: string,
+  vendorName: string,
+  vendorGroupHint?: string,
+  allowTaxItems = false,
+): MappingColumn[] {
+  const baseAll = mappingColumns.filter(c =>
+    !c.is_tax_addon && c.vendor_group !== '央廚配送' && (c.vendor_group !== '退稅' || allowTaxItems),
+  )
+  let base = baseAll
+  if (vendorGroupHint) {
+    const filtered = baseAll.filter(c => c.vendor_group === vendorGroupHint)
+    if (filtered.length > 0) base = filtered
+  } else if (vendorName) {
+    const filtered = baseAll.filter(c => c.vendor_group === vendorName)
+    if (filtered.length > 0) base = filtered
+  } else if (categoryName) {
+    const merged = new Map<string, MappingColumn>()
+    for (const c of baseAll) {
+      if (c.vendor_group === categoryName || c.category === categoryName || c.name === categoryName) {
+        const key = `${c.vendor_group ?? c.category}|${c.name}`
+        if (!merged.has(key)) merged.set(key, c)
+      }
+    }
+    if (merged.size > 0) base = Array.from(merged.values())
+  }
+  return base
+}
+
+function findTaxAddonMapping(
+  mappingColumns: MappingColumn[],
+  vendorName: string,
+  categoryName: string,
+  items: ReceiptFormItem[],
+) {
+  const groups = new Set<string>([vendorName.trim(), categoryName.trim()].filter(Boolean))
+  for (const item of items) {
+    if (item.vendor_group_hint) groups.add(item.vendor_group_hint)
+    const mapping = mappingColumns.find(column =>
+      !column.is_tax_addon && column.name === item.item_name
+      && (!item.vendor_group_hint || column.vendor_group === item.vendor_group_hint),
+    )
+    if (mapping?.vendor_group) groups.add(mapping.vendor_group)
+  }
+  return mappingColumns.find(column => column.is_tax_addon && !!column.vendor_group && groups.has(column.vendor_group))
+}
+
+function resetReceiptItemsForContext(
+  items: ReceiptFormItem[],
+  categoryName: string,
+  vendorName: string,
+  mappingColumns: MappingColumn[],
+): ReceiptFormItem[] {
+  return items.map(item => {
+    const name = item.item_name.trim()
+    if (!name) return { ...item, vendor_group_hint: undefined }
+    const options = receiptItemMappingsForContext(mappingColumns, categoryName, vendorName, undefined, vendorName === '退稅' || categoryName === '退稅')
+    const stillValid = options.some(c => c.name === name && (!item.vendor_group_hint || c.vendor_group === item.vendor_group_hint))
+    return stillValid ? item : { ...item, item_name: '', vendor_group_hint: undefined }
+  })
 }
 
 function fillSingleReceiptItemAmount(items: ReceiptFormItem[], totalAmount: number, taxAmount = 0): ReceiptFormItem[] {
@@ -719,7 +788,7 @@ function dropdownGroupRank(name: string): number {
   return 2 // 日用品/維護廠商
 }
 
-type MappingColumn = { name: string; category: string; vendor_group?: string; excel_column?: string }
+type MappingColumn = { name: string; category: string; vendor_group?: string; excel_column?: string; is_tax_addon?: boolean }
 
 function receiptEntryGroups(mappingColumns: MappingColumn[]): string[] {
   const groups = new Set<string>()
@@ -1587,6 +1656,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       toast.error(editAmount < 0 ? '只有「其他」類別的「其他」品項可輸入負數' : '請填寫金額')
       return
     }
+    const configuredEditTaxMapping = findTaxAddonMapping(mappingColumns, editVendor, editCategory, editItems)
+    if (configuredEditTaxMapping && editHasTax && editTaxAmount <= 0) {
+      toast.error('請輸入稅外加金額')
+      return
+    }
     const vendorHasSubItems = !!editVendor && mappingColumns.some(c => c.vendor_group === editVendor)
     const isNoItemMode = !!editVendor && !vendorHasSubItems
     if (!isNoItemMode && !editItems.some(i => i.item_name.trim())) { toast.error('請至少選擇一個品項'); return }
@@ -1604,10 +1678,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (!('error' in uploadResult)) newPhotoUrl = uploadResult.publicUrl
     }
 
-    const finalTotal = editHasTax ? editAmount + editTaxAmount : editAmount
-    let validItems = fillSingleReceiptItemAmount(editItems, finalTotal, editHasTax ? editTaxAmount : 0)
+    const taxMapping = findTaxAddonMapping(mappingColumns, editVendor, editCategory, editItems)
+    const taxAmount = taxMapping && editHasTax ? Math.max(0, editTaxAmount) : 0
+    const finalTotal = editAmount + taxAmount
+    let validItems = fillSingleReceiptItemAmount(editItems.filter(item => !mappingColumns.some(column => column.is_tax_addon && column.name === item.item_name)), finalTotal, taxAmount)
     if (validItems.length === 0 && (isNoItemMode || mappingColumns.some(c => c.name === editVendor.trim()))) {
-      validItems = [{ id: crypto.randomUUID(), item_name: editVendor.trim(), unit: '', quantity: 1, unit_price: 0, amount: finalTotal }]
+      validItems = [{ id: crypto.randomUUID(), item_name: editVendor.trim(), unit: '', quantity: 1, unit_price: 0, amount: editAmount }]
+    }
+    if (taxMapping && taxAmount > 0) {
+      validItems.push({ id: crypto.randomUUID(), item_name: taxMapping.name, unit: '', quantity: 1, unit_price: 0, amount: taxAmount, vendor_group_hint: taxMapping.vendor_group })
     }
     const resolveEditItemMapping = (item: ReceiptFormItem) => item.vendor_group_hint
       ? mappingColumns.find(c => c.name === item.item_name && c.vendor_group === item.vendor_group_hint)
@@ -1616,7 +1695,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const updatedReceipts = localReceipts.map(r =>
       r.id === editingReceiptId ? {
         ...r, vendor_name: editVendor, actual_vendor_name: normalizeActualVendorName(editActualVendor) || null, total_amount: finalTotal,
-        tax_amount: editHasTax ? editTaxAmount : 0,
+        tax_amount: taxAmount,
         receipt_type: r.receipt_type,
         photo_url: newPhotoUrl,
         notes: editNotes.trim() || undefined,
@@ -1632,7 +1711,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       vendor_name: editVendor,
       actual_vendor_name: normalizeActualVendorName(editActualVendor) || null,
       total_amount: finalTotal,
-      tax_amount: editHasTax ? editTaxAmount : 0,
+      tax_amount: taxAmount,
       photo_url: newPhotoUrl,
       notes: editNotes.trim() || null,
     }).eq('id', editingReceiptId)
@@ -1756,6 +1835,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       toast.error(form.total_amount < 0 ? '只有「其他」類別的「其他」品項可輸入負數' : '請填寫金額')
       return
     }
+    const configuredTaxMapping = findTaxAddonMapping(mappingColumns, form.vendor_name, form.category, form.items ?? [])
+    if (configuredTaxMapping && form.has_tax && form.tax_amount <= 0) {
+      toast.error('請輸入稅外加金額')
+      return
+    }
     // 判別「無品項模式」：廠商下沒有子品項（廠商本身即品項，例：瓦斯 / 水費 / 電費）
     const vendorHasSubItems = !!form.vendor_name && mappingColumns.some(c => c.vendor_group === form.vendor_name)
     const isNoItemMode = !!form.vendor_name && !vendorHasSubItems
@@ -1779,7 +1863,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       const uploadResult = await uploadReceiptPhoto(path, form.file)
       if (!('error' in uploadResult)) photo_url = uploadResult.publicUrl
     }
-    const finalTotal = form.has_tax ? form.total_amount + form.tax_amount : form.total_amount
+    const taxMapping = findTaxAddonMapping(mappingColumns, form.vendor_name, form.category, form.items ?? [])
+    const taxAmount = taxMapping && form.has_tax ? Math.max(0, form.tax_amount) : 0
+    const finalTotal = form.total_amount + taxAmount
     const { data: saved, error } = await supabase.from('receipts').insert({
       store_id: store.id,
       business_date: today,
@@ -1787,7 +1873,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       actual_vendor_name: normalizeActualVendorName(form.actual_vendor_name) || null,
       receipt_type: 'receipt',
       total_amount: finalTotal,
-      tax_amount: form.has_tax ? form.tax_amount : 0,
+      tax_amount: taxAmount,
       photo_url: photo_url || null,
       notes: form.notes.trim() || null,
     }).select('id').single()
@@ -1797,10 +1883,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return
     }
     await rememberActualVendor(supabase, form.vendor_name, form.actual_vendor_name)
-    let validItems = fillSingleReceiptItemAmount(form.items ?? [], finalTotal, form.has_tax ? form.tax_amount : 0)
+    let validItems = fillSingleReceiptItemAmount((form.items ?? []).filter(item => !mappingColumns.some(column => column.is_tax_addon && column.name === item.item_name)), finalTotal, taxAmount)
     if (validItems.length === 0 && (isNoItemMode || mappingColumns.some(c => c.name === form.vendor_name.trim()))) {
       // 廠商本身就是品項 → 自動用 vendor_name 建 1 個 item
-      validItems = [{ id: crypto.randomUUID(), item_name: form.vendor_name.trim(), unit: '', quantity: 1, unit_price: 0, amount: finalTotal }]
+      validItems = [{ id: crypto.randomUUID(), item_name: form.vendor_name.trim(), unit: '', quantity: 1, unit_price: 0, amount: form.total_amount }]
+    }
+    if (taxMapping && taxAmount > 0) {
+      validItems.push({ id: crypto.randomUUID(), item_name: taxMapping.name, unit: '', quantity: 1, unit_price: 0, amount: taxAmount, vendor_group_hint: taxMapping.vendor_group })
     }
     const resolveFormItemMapping = (item: ReceiptFormItem) => item.vendor_group_hint
       ? mappingColumns.find(c => c.name === item.item_name && c.vendor_group === item.vendor_group_hint)
@@ -1828,7 +1917,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       vendor_name: form.vendor_name.trim(),
       actual_vendor_name: normalizeActualVendorName(form.actual_vendor_name) || null,
       total_amount: finalTotal,
-      tax_amount: form.has_tax ? form.tax_amount : 0,
+      tax_amount: taxAmount,
       receipt_type: 'receipt',
       photo_url,
       notes: form.notes.trim() || undefined,
@@ -2997,30 +3086,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           // 央廚配送品項不在收據錄入內
                                           // 退稅品項只有在選到退稅廠商／分類時顯示，避免平常誤選。
                                           const allowTaxItems = form.vendor_name === '退稅' || item.vendor_group_hint === '退稅' || form.category === '退稅'
-                                          const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送' && (c.vendor_group !== '退稅' || allowTaxItems))
-                                          // 過濾優先序：
-                                          //   1. form.vendor_name（如「菜商」「雜貨」「Duskin」）→ 直接 match vendor_group
-                                          //   2. form.category（如「叫貨廠商」「固定成本」）→ fallback 寬鬆匹配
-                                          //   3. 都沒選 → 顯示全部
-                                          let base = baseAll
-                                          const rowVendorHint = item.vendor_group_hint
-                                          if (rowVendorHint) {
-                                            const filtered = baseAll.filter(c => c.vendor_group === rowVendorHint)
-                                            if (filtered.length > 0) base = filtered
-                                          } else if (form.vendor_name) {
-                                            const filtered = baseAll.filter(c => c.vendor_group === form.vendor_name)
-                                            if (filtered.length > 0) base = filtered
-                                          } else if (form.category) {
-                                            const merged = new Map<string, typeof mappingColumns[0]>()
-                                            for (const c of baseAll) {
-                                              if (c.vendor_group === form.category
-                                                  || c.category === form.category
-                                                  || c.name === form.category) {
-                                                if (!merged.has(c.name)) merged.set(c.name, c)
-                                              }
-                                            }
-                                            if (merged.size > 0) base = Array.from(merged.values())
-                                          }
+                                          const base = receiptItemMappingsForContext(mappingColumns, form.category, form.vendor_name, item.vendor_group_hint, allowTaxItems)
                                           const groups: { group: string; items: typeof mappingColumns }[] = []
                                           for (const col of base) {
                                             const g = col.vendor_group ?? col.category
@@ -3086,6 +3152,33 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   </div>
                                 ))}
                               </div>
+                            </div>
+                          )
+                        })()}
+
+                        {(() => {
+                          const taxMapping = findTaxAddonMapping(mappingColumns, form.vendor_name, form.category, form.items ?? [])
+                          if (!taxMapping) return null
+                          return (
+                            <div style={{ gridColumn: '1/-1', padding: '10px 12px', border: '1.5px solid #fdba74', borderRadius: '10px', background: '#fff7ed' }}>
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-bold" style={{ color: '#9a3412' }}>稅外加</p>
+                                  <p className="text-[11px]" style={{ color: '#c2410c' }}>稅金由店長依發票自行填寫，將自動歸入「{taxMapping.name}」。</p>
+                                </div>
+                                <button type="button" onClick={() => updateReceiptForm(form.id, 'has_tax', !form.has_tax)}
+                                  className="px-3 py-2 rounded-full text-xs font-bold shrink-0"
+                                  style={{ background: form.has_tax ? '#f97316' : 'white', color: form.has_tax ? 'white' : '#9a3412', border: '1.5px solid #fb923c' }}>
+                                  {form.has_tax ? '已開啟' : '開啟'}
+                                </button>
+                              </div>
+                              {form.has_tax && (
+                                <input type="number" min={0} inputMode="numeric" placeholder="自行輸入稅金金額"
+                                  value={form.tax_amount || ''}
+                                  onChange={event => updateReceiptForm(form.id, 'tax_amount', Math.max(0, parseInt(event.target.value) || 0))}
+                                  className="mt-3 w-full rounded-lg px-3 py-2 text-right text-base font-bold outline-none"
+                                  style={{ border: '1.5px solid #fb923c', background: 'white', color: '#9a3412' }} />
+                              )}
                             </div>
                           )
                         })()}
@@ -3377,25 +3470,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
                                             <option value="">— 選擇{item.vendor_group_hint ? item.vendor_group_hint : ''}品項 —</option>
                                             {(() => {
-                                              const baseAll = mappingColumns.filter(c => c.vendor_group !== '央廚配送' && c.vendor_group !== '退稅')
-                                              let base = baseAll
-                                              if (item.vendor_group_hint) {
-                                                const filtered = baseAll.filter(c => c.vendor_group === item.vendor_group_hint)
-                                                if (filtered.length > 0) base = filtered
-                                              } else if (editVendor) {
-                                                const filtered = baseAll.filter(c => c.vendor_group === editVendor)
-                                                if (filtered.length > 0) base = filtered
-                                              } else if (editCategory) {
-                                                const merged = new Map<string, typeof mappingColumns[0]>()
-                                                for (const c of baseAll) {
-                                                  if (c.vendor_group === editCategory
-                                                      || c.category === editCategory
-                                                      || c.name === editCategory) {
-                                                    if (!merged.has(`${c.vendor_group ?? c.category}|${c.name}`)) merged.set(`${c.vendor_group ?? c.category}|${c.name}`, c)
-                                                  }
-                                                }
-                                                if (merged.size > 0) base = Array.from(merged.values())
-                                              }
+                                              const base = receiptItemMappingsForContext(mappingColumns, editCategory, editVendor, item.vendor_group_hint)
                                               const groups: { group: string; items: typeof mappingColumns }[] = []
                                               for (const col of base) {
                                                 const g = col.vendor_group ?? col.category
@@ -3458,6 +3533,33 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                       </div>
                                     ))}
                                   </div>
+                                </div>
+                              )
+                            })()}
+
+                            {(() => {
+                              const taxMapping = findTaxAddonMapping(mappingColumns, editVendor, editCategory, editItems)
+                              if (!taxMapping) return null
+                              return (
+                                <div style={{ gridColumn: '1/-1', padding: '10px 12px', border: '1.5px solid #fdba74', borderRadius: '10px', background: '#fff7ed' }}>
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                      <p className="text-sm font-bold" style={{ color: '#9a3412' }}>稅外加</p>
+                                      <p className="text-[11px]" style={{ color: '#c2410c' }}>自行輸入稅金，系統會歸入「{taxMapping.name}」。</p>
+                                    </div>
+                                    <button type="button" onClick={() => setEditHasTax(value => !value)}
+                                      className="px-3 py-2 rounded-full text-xs font-bold shrink-0"
+                                      style={{ background: editHasTax ? '#f97316' : 'white', color: editHasTax ? 'white' : '#9a3412', border: '1.5px solid #fb923c' }}>
+                                      {editHasTax ? '已開啟' : '開啟'}
+                                    </button>
+                                  </div>
+                                  {editHasTax && (
+                                    <input type="number" min={0} inputMode="numeric" placeholder="自行輸入稅金金額"
+                                      value={editTaxAmount || ''}
+                                      onChange={event => setEditTaxAmount(Math.max(0, parseInt(event.target.value) || 0))}
+                                      className="mt-3 w-full rounded-lg px-3 py-2 text-right text-base font-bold outline-none"
+                                      style={{ border: '1.5px solid #fb923c', background: 'white', color: '#9a3412' }} />
+                                  )}
                                 </div>
                               )
                             })()}
@@ -3553,7 +3655,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             <div className="flex gap-1 shrink-0">
                               <button onClick={() => {
                                 const derivedCategory = deriveReceiptCategory(r.vendor_name, r.receipt_items, categories, mappingColumns)
-                                const restoredItems = (r.receipt_items ?? []).map(i => {
+                                const restoredItems = (r.receipt_items ?? []).filter(i => {
+                                  const match = findReceiptItemMapping(i.item_name, r.vendor_name || '', derivedCategory, mappingColumns)
+                                  return !match?.is_tax_addon
+                                }).map(i => {
                                   const match = findReceiptItemMapping(i.item_name, r.vendor_name || '', derivedCategory, mappingColumns)
                                   return {
                                     id: crypto.randomUUID(),

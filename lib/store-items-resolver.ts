@@ -27,6 +27,8 @@ export interface ResolvedStoreItem {
   vg_merge_across_category?: boolean
   /** 是否納入梁平退稅總額（跟 vg 解耦，明確標記） */
   is_refund?: boolean
+  /** 店長輸入稅外加時由系統自動寫入的隱藏稅金品項 */
+  is_tax_addon?: boolean
 }
 
 /** 撈出某店家「實際啟用的品項列表」(含系統 + 自訂) */
@@ -127,5 +129,6 @@ export function toMappingColumns(items: ResolvedStoreItem[]) {
     vendor_group: i.vendor_group,
     // excel_column 在新系統由匯出邏輯動態決定，這裡先填 name 作為過渡
     excel_column: i.name,
+    is_tax_addon: !!i.is_tax_addon,
   }))
 }
