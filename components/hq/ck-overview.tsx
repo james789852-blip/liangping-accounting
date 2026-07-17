@@ -669,8 +669,8 @@ function CKStepReview({ d, date, onClose }: { d: CKStoreData; date: string; onCl
                 <div key={i} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 py-2.5 px-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
                   <span className="text-sm font-medium">{row.label}</span>
                   <span className="text-sm font-bold tabular-nums">${fmt(row.amount ?? 0)}</span>
-                  <span className="text-sm font-bold tabular-nums" style={{ color: row.managerAmount === null ? '#a1a1aa' : row.managerAmount === row.amount ? '#059669' : '#dc2626' }}>
-                    {row.managerAmount === null ? '尚未送出' : `$${fmt(row.managerAmount)}`}
+                  <span className="text-sm font-bold tabular-nums" style={{ color: row.managerAmount == null ? '#a1a1aa' : row.managerAmount === row.amount ? '#059669' : '#dc2626' }}>
+                    {row.managerAmount == null ? '尚未送出' : `$${fmt(row.managerAmount)}`}
                   </span>
                 </div>
               ) : <Row key={i} left={row.label} right={row.amount !== undefined ? `$${fmt(row.amount)}` : row.value || '—'} />)}
