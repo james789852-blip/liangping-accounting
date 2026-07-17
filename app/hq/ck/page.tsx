@@ -83,6 +83,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
   const [
     { data: storeOrders },
     { data: expenseItems },
+    { data: managerClosings },
   ] = await Promise.all([
     recordIds.length > 0
       ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount').in('ck_daily_record_id', recordIds)
@@ -90,9 +91,20 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     recordIds.length > 0
       ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type, note, receipt_photo_url').in('ck_daily_record_id', recordIds).order('sort_order')
       : Promise.resolve({ data: [] }),
+    uniqueAssignedIds.length > 0
+      ? admin.from('daily_closings')
+          .select('store_id, total_cost')
+          .in('store_id', uniqueAssignedIds)
+          .eq('business_date', date)
+          .in('status', ['submitted', 'verified', 'disputed'])
+      : Promise.resolve({ data: [] }),
   ])
 
   const assignedStoreMap = Object.fromEntries((assignedStores ?? []).map((s: any) => [s.id, s.name as string]))
+  const managerAmountByStore = (managerClosings ?? []).reduce<Record<string, number>>((amounts, closing: any) => {
+    amounts[closing.store_id] = (amounts[closing.store_id] ?? 0) + Number(closing.total_cost ?? 0)
+    return amounts
+  }, {})
 
   const ckData = ckStores.map(ckStore => {
     const record = (ckRecords ?? []).find(r => r.ck_store_id === ckStore.id) ?? null
@@ -123,7 +135,12 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
 
     const allMemberStores = assignedIds.map(id => {
       const existing = memberOrders.find(o => o.store_id === id)
-      return { store_id: id, store_name: assignedStoreMap[id] ?? id, amount: existing?.amount ?? 0 }
+      return {
+        store_id: id,
+        store_name: assignedStoreMap[id] ?? id,
+        amount: existing?.amount ?? 0,
+        manager_amount: managerAmountByStore[id] ?? null,
+      }
     })
 
     return {
