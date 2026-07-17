@@ -3212,18 +3212,27 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         {(() => {
                           const itemsTotal = (form.items ?? []).filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
                           const hasItemsTotal = itemsTotal !== 0
+                          const taxMapping = findTaxAddonMapping(mappingColumns, form.vendor_name, form.category, form.items ?? [])
+                          const appliedTaxAmount = taxMapping && form.has_tax ? Math.max(0, form.tax_amount) : 0
+                          const displayedTotal = form.total_amount + appliedTaxAmount
+                          const hasAutoTotal = hasItemsTotal || appliedTaxAmount > 0
                           const amountValid = isReceiptFormAmountValid(form)
                           const allowNegativeTotal = receiptFormAllowsNegativeTotal(form)
                           return (
                             <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', border: '1.5px solid #93c5fd', borderRadius: '10px', background: '#eff6ff' }}>
                               <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 金額 *
-                                {hasItemsTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
+                                {hasAutoTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
                               </label>
-                              <input type="number" min={allowNegativeTotal ? undefined : 0} inputMode={allowNegativeTotal ? 'decimal' : 'numeric'} placeholder="0" readOnly={hasItemsTotal}
-                                style={{ padding: '8px 10px', border: `1.5px solid ${hasItemsTotal ? '#FDE68A' : amountValid ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: hasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: form.total_amount < 0 ? '#dc2626' : '#18181b', cursor: hasItemsTotal ? 'default' : 'text' }}
-                                value={form.total_amount || ''}
-                                onChange={e => { if (!hasItemsTotal) updateReceiptForm(form.id, 'total_amount', allowNegativeTotal ? (parseInt(e.target.value) || 0) : Math.max(0, parseInt(e.target.value) || 0)) }} />
+                              <input type="number" min={allowNegativeTotal ? undefined : 0} inputMode={allowNegativeTotal ? 'decimal' : 'numeric'} placeholder="0" readOnly={hasAutoTotal}
+                                style={{ padding: '8px 10px', border: `1.5px solid ${hasAutoTotal ? '#FDE68A' : amountValid ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: hasAutoTotal ? '#f5f5ff' : 'white', outline: 'none', color: displayedTotal < 0 ? '#dc2626' : '#18181b', cursor: hasAutoTotal ? 'default' : 'text' }}
+                                value={displayedTotal || ''}
+                                onChange={e => { if (!hasAutoTotal) updateReceiptForm(form.id, 'total_amount', allowNegativeTotal ? (parseInt(e.target.value) || 0) : Math.max(0, parseInt(e.target.value) || 0)) }} />
+                              {appliedTaxAmount > 0 && (
+                                <div style={{ fontSize: '11px', color: '#9a3412', textAlign: 'right', fontWeight: 700 }}>
+                                  商品 ${form.total_amount.toLocaleString()} ＋ 稅金 ${appliedTaxAmount.toLocaleString()} ＝ ${displayedTotal.toLocaleString()}
+                                </div>
+                              )}
                               {allowNegativeTotal && !hasItemsTotal && (
                                 <button
                                   type="button"
@@ -3576,18 +3585,27 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             {(() => {
                               const editItemsTotal = editItems.filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
                               const editHasItemsTotal = editItemsTotal !== 0
+                              const editTaxMapping = findTaxAddonMapping(mappingColumns, editVendor, editCategory, editItems)
+                              const appliedEditTaxAmount = editTaxMapping && editHasTax ? Math.max(0, editTaxAmount) : 0
+                              const displayedEditTotal = editAmount + appliedEditTaxAmount
+                              const editHasAutoTotal = editHasItemsTotal || appliedEditTaxAmount > 0
                               const allowNegativeTotal = editReceiptAllowsNegativeTotal(editCategory, editItems)
                               const editAmountValid = editAmount > 0 || (editAmount < 0 && allowNegativeTotal)
                               return (
                                 <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                   <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                                     金額 *
-                                    {editHasItemsTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
+                                    {editHasAutoTotal && <span style={{ fontSize: '10px', color: '#F59E0B', background: '#FFFBEB', padding: '1px 6px', borderRadius: '8px' }}>自動加總</span>}
                                   </label>
-                                  <input type="number" min={allowNegativeTotal ? undefined : 0} inputMode={allowNegativeTotal ? 'decimal' : 'numeric'} placeholder="0" readOnly={editHasItemsTotal}
-                                    style={{ padding: '8px 10px', border: `1.5px solid ${editHasItemsTotal ? '#FDE68A' : editAmountValid ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: editHasItemsTotal ? '#f5f5ff' : 'white', outline: 'none', color: editAmount < 0 ? '#dc2626' : '#18181b', cursor: editHasItemsTotal ? 'default' : 'text' }}
-                                    value={editAmount || ''}
-                                    onChange={e => { if (!editHasItemsTotal) setEditAmount(allowNegativeTotal ? (parseInt(e.target.value) || 0) : Math.max(0, parseInt(e.target.value) || 0)) }} />
+                                  <input type="number" min={allowNegativeTotal ? undefined : 0} inputMode={allowNegativeTotal ? 'decimal' : 'numeric'} placeholder="0" readOnly={editHasAutoTotal}
+                                    style={{ padding: '8px 10px', border: `1.5px solid ${editHasAutoTotal ? '#FDE68A' : editAmountValid ? '#e4e4e7' : '#fda4af'}`, borderRadius: '8px', fontSize: '16px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: editHasAutoTotal ? '#f5f5ff' : 'white', outline: 'none', color: displayedEditTotal < 0 ? '#dc2626' : '#18181b', cursor: editHasAutoTotal ? 'default' : 'text' }}
+                                    value={displayedEditTotal || ''}
+                                    onChange={e => { if (!editHasAutoTotal) setEditAmount(allowNegativeTotal ? (parseInt(e.target.value) || 0) : Math.max(0, parseInt(e.target.value) || 0)) }} />
+                                  {appliedEditTaxAmount > 0 && (
+                                    <div style={{ fontSize: '11px', color: '#9a3412', textAlign: 'right', fontWeight: 700 }}>
+                                      商品 ${editAmount.toLocaleString()} ＋ 稅金 ${appliedEditTaxAmount.toLocaleString()} ＝ ${displayedEditTotal.toLocaleString()}
+                                    </div>
+                                  )}
                                   {allowNegativeTotal && !editHasItemsTotal && (
                                     <button
                                       type="button"
