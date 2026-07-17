@@ -41,7 +41,6 @@ interface Props {
   selected?: boolean; onToggleSelect?: () => void; onProcessed?: () => void; defaultExpanded?: boolean
 }
 
-const TYPE_LABEL: Record<string, string> = { invoice: '發票', receipt: '收據', delivery_note: '估價單' }
 const CHANNEL_LABEL: Record<string, string> = {
   pos: 'POS 現金', uber: 'Uber Eats', panda: '熊貓',
   twpay: '台灣Pay', online: '線上點餐', online_cash: '線上點餐（現金）', handwrite: '手寫訂單',
@@ -632,9 +631,6 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-xs font-medium" style={{ color: '#18181b' }}>{r.vendor_name || '（未填廠商）'}</span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: '#f4f4f5', color: '#71717a' }}>
-                              {TYPE_LABEL[r.receipt_type] ?? r.receipt_type}
-                            </span>
                           </div>
                           {r.receipt_items.length > 0 && (
                             <p className="text-[10px] mt-0.5 truncate" style={{ color: '#a1a1aa' }}>
@@ -663,7 +659,6 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                       {isOpen && (
                         <div className="px-3 py-3 space-y-2" style={{ borderTop: '1px solid #f4f4f5', background: 'white' }}>
                           <InfoRow label="廠商" value={r.actual_vendor_name || r.vendor_name || '未填寫'} />
-                          <InfoRow label="單據類型" value={TYPE_LABEL[r.receipt_type] ?? r.receipt_type} />
                           {!!r.tax_amount && <InfoRow label="稅額" value={`$${fmt(r.tax_amount)}`} />}
                           {r.receipt_items.length > 0 ? r.receipt_items.map((item, i) => (
                             <div key={i} className="pt-2" style={{ borderTop: '1px solid #f4f4f5' }}>
