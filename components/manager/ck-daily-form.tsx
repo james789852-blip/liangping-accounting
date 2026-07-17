@@ -100,6 +100,8 @@ interface PhotoExpenseForm {
   vendor_group: string
   doc_type: string
   note: string
+  has_tax?: boolean
+  tax_amount?: string
 }
 interface ExistingRecord {
   id: string
@@ -235,7 +237,7 @@ function mergeExternalOrders(configuredStores: ExternalStore[], existingOrders?:
   return Array.from(byName.values())
 }
 
-function buildPhotoExpenseForms(photoUrls: string[], expenses: Expense[]): PhotoExpenseForm[] {
+function buildPhotoExpenseForms(photoUrls: string[], expenses: Expense[], mappingItems: MappingItem[]): PhotoExpenseForm[] {
   const used = new Set<string>()
   const grouped = new Map<string, Expense[]>()
   for (const expense of expenses) {
@@ -247,7 +249,9 @@ function buildPhotoExpenseForms(photoUrls: string[], expenses: Expense[]): Photo
 
   const fromExpenses = Array.from(grouped.entries())
     .map(([url, group], index) => {
-      const first = group[0]
+      const taxExpense = group.find(expense => mappingItems.some(mapping => mapping.is_tax_addon && mapping.item_name === expense.item_name))
+      const regularExpenses = group.filter(expense => expense !== taxExpense)
+      const first = regularExpenses[0] ?? group[0]
       return {
         id: first.id || `expense-${index}`,
         photoUrl: url,
@@ -256,7 +260,7 @@ function buildPhotoExpenseForms(photoUrls: string[], expenses: Expense[]): Photo
         category_name: undefined,
         item_name: first.item_name,
         amount: first.amount ? String(first.amount) : '',
-        items: group.map(e => ({
+        items: regularExpenses.map(e => ({
           id: e.id || makePhotoItemId(),
           savedExpenseId: e.id,
           item_name: e.item_name,
@@ -267,6 +271,8 @@ function buildPhotoExpenseForms(photoUrls: string[], expenses: Expense[]): Photo
         vendor_group: first.vendor_group || '',
         doc_type: first.doc_type || '發票',
         note: first.note || '',
+        has_tax: !!taxExpense,
+        tax_amount: taxExpense?.amount ? String(taxExpense.amount) : '',
       }
     })
   const photoOnly = photoUrls
@@ -283,6 +289,8 @@ function buildPhotoExpenseForms(photoUrls: string[], expenses: Expense[]): Photo
       vendor_group: '',
       doc_type: '發票',
       note: '',
+      has_tax: false,
+      tax_amount: '',
     }))
   return [...fromExpenses, ...photoOnly]
 }
@@ -464,7 +472,7 @@ function CKDoneCard({
   )
 }
 
-interface MappingItem { item_name: string; vendor_group: string | null; item_category: string; excel_column: string; sort_order: number | null }
+interface MappingItem { item_name: string; vendor_group: string | null; item_category: string; excel_column: string; sort_order: number | null; is_tax_addon?: boolean }
 interface ReceiptCat { id: string; name: string; vendors: { id: string; name: string }[] }
 interface Props {
   ckStoreId: string
@@ -513,7 +521,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   const [photoUrls, setPhotoUrls] = useState<string[]>(existing?.receiptPhotoUrls ?? [])
   const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string>(existing?.receiptPhotoUrls?.[0] ?? '')
   const [photoForms, setPhotoForms] = useState<PhotoExpenseForm[]>(
-    () => buildPhotoExpenseForms(existing?.receiptPhotoUrls ?? [], existing?.expenses ?? [])
+    () => buildPhotoExpenseForms(existing?.receiptPhotoUrls ?? [], existing?.expenses ?? [], mappingItems)
   )
   const [expandedPhotoFormIds, setExpandedPhotoFormIds] = useState<string[]>([])
   const [memberOrderInputs, setMemberOrderInputs] = useState<Record<string, string>>(
@@ -535,7 +543,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   const expenseItemOptions = useMemo(() => {
     if (!activeVendor) return []
     return mappingItems
-      .filter(m => (m.vendor_group ?? '') === activeVendor)
+      .filter(m => !m.is_tax_addon && (m.vendor_group ?? '') === activeVendor)
       .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999) || a.item_name.localeCompare(b.item_name, 'zh-Hant'))
   }, [activeVendor, mappingItems])
   const hasMappedExpenseItems = expenseItemOptions.length > 0
@@ -647,7 +655,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         const categoryName = resolveReceiptCategoryName(form, receiptCategories)
         const useVendorItem = shouldUseVendorAsItem(categoryName, form.vendor_group)
         const requiresItem = shouldRequireExplicitItem(categoryName, form.vendor_group)
-        return getPhotoExpenseItems(form).map((line, index) => {
+        const regularExpenses = getPhotoExpenseItems(form).map((line, index) => {
           const itemName = useVendorItem
             ? form.vendor_group.trim()
             : requiresItem
@@ -667,6 +675,22 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
             receipt_photo_url: form.photoUrl,
           } as Expense
         }).filter(Boolean) as Expense[]
+        const taxMapping = mappingItems.find(mapping => mapping.is_tax_addon && mapping.vendor_group === form.vendor_group)
+        const taxAmount = form.has_tax ? Number(form.tax_amount) || 0 : 0
+        if (taxMapping && taxAmount > 0) {
+          regularExpenses.push({
+            id: `${form.id}-tax`,
+            category: normalizeExpenseCategory(taxMapping.item_category) ?? form.category,
+            item_name: taxMapping.item_name,
+            amount: taxAmount,
+            payer_name: form.payer_name.trim(),
+            vendor_group: form.vendor_group.trim(),
+            doc_type: form.doc_type,
+            note: form.note.trim(),
+            receipt_photo_url: form.photoUrl,
+          })
+        }
+        return regularExpenses
       })
     return [...manualExpenses, ...photoExpenses]
   }
@@ -772,7 +796,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   function photoItemOptions(vendorName: string) {
     if (!vendorName) return []
     return mappingItems
-      .filter(m => (m.vendor_group ?? '') === vendorName)
+      .filter(m => !m.is_tax_addon && (m.vendor_group ?? '') === vendorName)
       .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999) || a.item_name.localeCompare(b.item_name, 'zh-Hant'))
   }
 
@@ -806,6 +830,26 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       toast.error('請選擇廠商/品項並填寫金額')
       return
     }
+    const taxMapping = mappingItems.find(mapping => mapping.is_tax_addon && mapping.vendor_group === form.vendor_group)
+    const taxAmount = form.has_tax ? Number(form.tax_amount) || 0 : 0
+    if (form.has_tax && taxMapping && taxAmount <= 0) {
+      toast.error('請輸入稅外加金額')
+      return
+    }
+    if (taxMapping && taxAmount > 0) {
+      nextExpenses.push({
+        id: `${form.id}-tax`,
+        category: normalizeExpenseCategory(taxMapping.item_category) ?? form.category,
+        item_name: taxMapping.item_name,
+        amount: taxAmount,
+        payer_name: form.payer_name.trim(),
+        vendor_group: form.vendor_group.trim(),
+        doc_type: form.doc_type,
+        note: form.note.trim(),
+        receipt_photo_url: form.photoUrl,
+      })
+    }
+    const regularSavedExpenses = nextExpenses.filter(expense => expense.item_name !== taxMapping?.item_name)
     setExpenses(prev => {
       const savedIds = new Set(nextExpenses.map(e => e.id))
       const withoutSamePhoto = prev.filter(e => !savedIds.has(e.id) && e.receipt_photo_url !== form.photoUrl)
@@ -813,11 +857,11 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     })
     setPhotoForms(prev => prev.map(f => f.id === form.id ? {
       ...f,
-      savedExpenseId: nextExpenses[0].id,
-      item_name: nextExpenses[0].item_name,
-      amount: String(Number(nextExpenses[0].amount) || 0),
-      category: nextExpenses[0].category,
-      items: nextExpenses.map(expense => ({
+      savedExpenseId: regularSavedExpenses[0].id,
+      item_name: regularSavedExpenses[0].item_name,
+      amount: String(Number(regularSavedExpenses[0].amount) || 0),
+      category: regularSavedExpenses[0].category,
+      items: regularSavedExpenses.map(expense => ({
         id: expense.id,
         savedExpenseId: expense.id,
         item_name: expense.item_name,
@@ -868,6 +912,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
           vendor_group: '',
           doc_type: '發票',
           note: '',
+          has_tax: false,
+          tax_amount: '',
         }])
       }
     }
@@ -1209,13 +1255,16 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                     const useVendorAsPhotoItem = shouldUseVendorAsItem(activeCategoryName, form.vendor_group)
                     const requiresPhotoItem = shouldRequireExplicitItem(activeCategoryName, form.vendor_group)
                     const formItems = getPhotoExpenseItems(form)
+                    const taxMapping = mappingItems.find(mapping => mapping.is_tax_addon && mapping.vendor_group === form.vendor_group)
+                    const taxAmount = form.has_tax && taxMapping ? Number(form.tax_amount) || 0 : 0
                     const saved = !!form.savedExpenseId || formItems.some(item => !!item.savedExpenseId)
                     const expanded = !saved || expandedPhotoFormIds.includes(form.id)
                     const filledItems = formItems.filter(item => item.item_name.trim() || item.amount)
                     const displayName = useVendorAsPhotoItem
                       ? form.vendor_group
                       : (filledItems.map(item => item.item_name).filter(Boolean).slice(0, 2).join('、') || form.vendor_group)
-                    const displayAmount = formItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+                    const itemDisplayAmount = formItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+                    const displayAmount = itemDisplayAmount + taxAmount
                     if (!expanded) {
                       return (
                         <div key={form.id} className="rounded-2xl p-3 flex items-center gap-3"
@@ -1302,6 +1351,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                     item_name: '',
                                     amount: '',
                                     items: [blankPhotoExpenseItem()],
+                                    has_tax: false,
+                                    tax_amount: '',
                                   })
                                 }}>
                                 <option value="">選擇類別</option>
@@ -1321,6 +1372,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                     amount: '',
                                     items: [blankPhotoExpenseItem()],
                                     doc_type: vgRec?.doc_type ?? form.doc_type,
+                                    has_tax: false,
+                                    tax_amount: '',
                                   })
                                 }}>
                                 <option value="">{activeCategoryName ? '— 選擇廠商/群組 —' : '（先選類別）'}</option>
@@ -1396,6 +1449,38 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                   <Plus className="h-4 w-4" />
                                   新增品項
                                 </button>
+                              )}
+                              {taxMapping && (
+                                <div className="rounded-2xl p-3" style={{ background: '#fff7ed', border: '1.5px solid #fb923c' }}>
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                      <p className="text-sm font-bold" style={{ color: '#9a3412' }}>稅外加</p>
+                                      <p className="text-[11px]" style={{ color: '#c2410c' }}>稅金由結帳人員依發票自行填寫，將自動歸入「{taxMapping.item_name}」。</p>
+                                    </div>
+                                    <button type="button" onClick={() => updatePhotoForm(form.id, { has_tax: !form.has_tax, tax_amount: form.has_tax ? '' : form.tax_amount })}
+                                      className="px-3 py-2 rounded-full text-xs font-bold shrink-0"
+                                      style={{ background: form.has_tax ? '#f97316' : 'white', color: form.has_tax ? 'white' : '#9a3412', border: '1.5px solid #fb923c' }}>
+                                      {form.has_tax ? '已開啟' : '開啟'}
+                                    </button>
+                                  </div>
+                                  {form.has_tax && (
+                                    <input type="number" min={0} inputMode="numeric" placeholder="自行輸入稅金金額"
+                                      value={form.tax_amount || ''}
+                                      onChange={event => updatePhotoForm(form.id, { tax_amount: event.target.value })}
+                                      className="mt-3 w-full rounded-xl px-3 py-2 text-right text-base font-bold outline-none"
+                                      style={{ border: '1.5px solid #fb923c', background: 'white', color: '#9a3412' }} />
+                                  )}
+                                </div>
+                              )}
+                              <div className="flex items-center justify-between rounded-xl px-3 py-2.5"
+                                style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                                <span className="text-sm font-semibold" style={{ color: '#9a3412' }}>本張單據品項合計</span>
+                                <span className="text-lg font-extrabold tabular-nums" style={{ color: '#c2410c' }}>${fmt(displayAmount)}</span>
+                              </div>
+                              {taxAmount > 0 && (
+                                <p className="text-xs font-bold text-right" style={{ color: '#9a3412' }}>
+                                  商品 ${fmt(itemDisplayAmount)} ＋ 稅金 ${fmt(taxAmount)} ＝ ${fmt(displayAmount)}
+                                </p>
                               )}
                             </div>
                           </div>

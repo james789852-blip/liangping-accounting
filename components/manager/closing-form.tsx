@@ -3164,7 +3164,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               <div className="flex items-center justify-between gap-3">
                                 <div>
                                   <p className="text-sm font-bold" style={{ color: '#9a3412' }}>稅外加</p>
-                                  <p className="text-[11px]" style={{ color: '#c2410c' }}>稅金由店長依發票自行填寫，將自動歸入「{taxMapping.name}」。</p>
+                                  <p className="text-[11px]" style={{ color: '#c2410c' }}>稅金由結帳人員依發票自行填寫，將自動歸入「{taxMapping.name}」。</p>
                                 </div>
                                 <button type="button" onClick={() => updateReceiptForm(form.id, 'has_tax', !form.has_tax)}
                                   className="px-3 py-2 rounded-full text-xs font-bold shrink-0"

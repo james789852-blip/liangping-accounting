@@ -83,7 +83,7 @@ export default async function CKPage({
       .order('sort_order').order('name'),
     // 央廚品項對應（跟店面版一樣，xlsx 匯出對應 excel_column）
     admin.from('item_column_mappings')
-      .select('store_id, item_name, vendor_group, item_category, excel_column, sort_order')
+      .select('store_id, item_name, vendor_group, item_category, excel_column, sort_order, is_tax_addon')
       .eq('store_id', storeId)
       .order('sort_order'),
   ])
@@ -216,7 +216,7 @@ export default async function CKPage({
         externalStores={externalStores ?? []}
         existing={existing}
         vendorGroups={(ckVendorGroups ?? []) as { id: string; name: string; doc_type: string | null }[]}
-        mappingItems={(mappings ?? []) as { item_name: string; vendor_group: string | null; item_category: string; excel_column: string; sort_order: number | null }[]}
+        mappingItems={(mappings ?? []) as { item_name: string; vendor_group: string | null; item_category: string; excel_column: string; sort_order: number | null; is_tax_addon?: boolean }[]}
         receiptCategories={receiptCategories}
       />
     </div>
