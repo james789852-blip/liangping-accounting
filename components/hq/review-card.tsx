@@ -46,6 +46,18 @@ const CHANNEL_LABEL: Record<string, string> = {
   pos: 'POS 現金', uber: 'Uber Eats', panda: '熊貓',
   twpay: '台灣Pay', online: '線上點餐', online_cash: '線上點餐（現金）', handwrite: '手寫訂單',
 }
+function getChannelPhotoLabel(key: string) {
+  if (key.startsWith('uber_')) return `Uber Eats — ${key.slice(5)}`
+  return CHANNEL_LABEL[key] ?? key
+}
+
+function matchesChannelPhoto(item: RevenueItem, photoKey?: string) {
+  if (!photoKey) return false
+  if (photoKey.startsWith('uber_')) {
+    return item.channel === 'uber' && item.account_name === photoKey.slice(5)
+  }
+  return item.channel === photoKey
+}
 const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
   submitted: { bg: '#FFFBEB', color: '#92400E', label: '待審核' },
   disputed:  { bg: '#fff7ed', color: '#c2410c', label: '已退回' },
@@ -117,7 +129,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
     ...receipts.filter(r => r.photo_url).map(r => ({ url: r.photo_url, label: `收據：${r.vendor_name}`, kind: 'receipt' as const })),
     ...(closing.ck_delivery_photo_url ? [{ url: closing.ck_delivery_photo_url, label: '央廚配送單', kind: 'ck' as const }] : []),
     ...(closing.channel_photo_urls
-      ? Object.entries(closing.channel_photo_urls).filter(([, u]) => u).map(([k, u]) => ({ url: u as string, label: CHANNEL_LABEL[k] ?? k, kind: 'channel' as const, channel: k }))
+      ? Object.entries(closing.channel_photo_urls).filter(([, u]) => u).map(([k, u]) => ({ url: u as string, label: getChannelPhotoLabel(k), kind: 'channel' as const, channel: k }))
       : []),
     ...(closing.envelope_photo_url ? [{ url: closing.envelope_photo_url, label: '信封袋', kind: 'envelope' as const }] : []),
     ...(closing.void_invoice_photo_urls ?? []).map((url, i, arr) => ({ url, label: `作廢發票${arr.length > 1 ? ` ${i + 1}` : ''}`, kind: 'void' as const })),
@@ -129,7 +141,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
     ? receipts.find(r => r.photo_url === currentPhoto.url)
     : undefined
   const currentChannelItems = currentPhoto?.kind === 'channel'
-    ? closing.revenue_items.filter(item => item.channel === currentPhoto.channel)
+    ? closing.revenue_items.filter(item => matchesChannelPhoto(item, currentPhoto.channel))
     : []
   const reviewedCount = new Set([...confirmedPhotos, ...Object.keys(photoIssues).map(Number)]).size
   const reviewComplete = allPhotos.length === 0 || reviewedCount === allPhotos.length
