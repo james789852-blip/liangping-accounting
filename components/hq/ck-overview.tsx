@@ -602,7 +602,6 @@ function CKStepReview({ d, date, onClose }: { d: CKStoreData; date: string; onCl
       rows: [
         { label: '類別', value: item.category },
         ...(item.vendor_group ? [{ label: '廠商分類', value: item.vendor_group }] : []),
-        ...(item.doc_type ? [{ label: '單據類型', value: item.doc_type }] : []),
         ...(item.payer_name ? [{ label: '代墊人', value: item.payer_name }] : []),
         { label: item.item_name, amount: item.amount },
         ...(item.note ? [{ label: '備註', value: item.note }] : []),
