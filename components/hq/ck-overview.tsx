@@ -348,8 +348,10 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
   const [open, setOpen] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
-  const badges = ckRecordBadges(d.status, d.hqPaid, d.ckReimbursementConfirmed ?? false)
-  const hasData = d.status !== 'none'
+  const [reviewDecision, setReviewDecision] = useState<'verified' | 'disputed' | null>(null)
+  const displayStatus = reviewDecision ?? d.status
+  const badges = ckRecordBadges(displayStatus, d.hqPaid, d.ckReimbursementConfirmed ?? false)
+  const hasData = displayStatus !== 'none'
   const externalRevenue = deductibleExternalRevenue(d)
   const reimbursementAmount = Math.max(0, d.expenseTotal - externalRevenue)
 
@@ -528,15 +530,15 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                 </div>
               )}
 
-              {['submitted', 'disputed', 'draft'].includes(d.status) && (
+              {['submitted', 'disputed', 'draft'].includes(displayStatus) && (
                 <button type="button" onClick={() => setReviewOpen(true)}
                   className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-white"
                   style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
                   <Camera className="h-4 w-4" />開始逐步核對
                 </button>
               )}
-              {['submitted', 'verified', 'disputed', 'draft'].includes(d.status) && (
-                <ReviewActions ckStoreId={d.ckStore.id} date={date} status={d.status} />
+              {['submitted', 'verified', 'disputed', 'draft'].includes(displayStatus) && (
+                <ReviewActions ckStoreId={d.ckStore.id} date={date} status={displayStatus} />
               )}
 
               {/* 匯出 Excel */}
@@ -563,7 +565,7 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
             onClick={e => e.stopPropagation()} />
         </div>
       )}
-      {reviewOpen && <CKStepReview d={d} date={date} onClose={() => setReviewOpen(false)} />}
+      {reviewOpen && <CKStepReview d={d} date={date} onClose={() => setReviewOpen(false)} onReviewed={setReviewDecision} />}
     </div>
   )
 }
@@ -577,7 +579,7 @@ type CKReviewStep = {
   managerTotal?: number
 }
 
-function CKStepReview({ d, date, onClose }: { d: CKStoreData; date: string; onClose: () => void }) {
+function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: string; onClose: () => void; onReviewed: (decision: 'verified' | 'disputed') => void }) {
   const router = useRouter()
   const [index, setIndex] = useState(0)
   const [confirmed, setConfirmed] = useState<Set<number>>(new Set())
@@ -641,7 +643,13 @@ function CKStepReview({ d, date, onClose }: { d: CKStoreData; date: string; onCl
     startTransition(async () => {
       const result = await reviewCKDailyRecord(d.ckStore.id, date, decision, note)
       if (result.error) toast.error(result.error)
-      else { toast.success(decision === 'verified' ? '央廚帳目已審核通過' : `已退回並回報 ${issueEntries.length} 個問題`); onClose(); router.refresh() }
+      else {
+        onReviewed(decision)
+        toast.success(decision === 'verified' ? '央廚帳目已審核通過' : `已退回並回報 ${issueEntries.length} 個問題`)
+        onClose()
+        router.refresh()
+        window.setTimeout(() => window.location.reload(), 250)
+      }
     })
   }
 
