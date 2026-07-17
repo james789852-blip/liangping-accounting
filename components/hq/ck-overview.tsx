@@ -41,7 +41,7 @@ const CAT_COLORS: Record<string, { bg: string; text: string }> = {
   '雜項': { bg: '#f4f4f5', text: '#52525b' },
 }
 
-interface MemberStore { store_id: string; store_name: string; amount: number }
+interface MemberStore { store_id: string; store_name: string; amount: number; manager_amount: number | null }
 interface ExternalOrder { name: string; amount: number }
 interface Expense { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }
 
@@ -535,7 +535,9 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                   <Camera className="h-4 w-4" />開始逐步核對
                 </button>
               )}
-              {d.status === 'verified' && <ReviewActions ckStoreId={d.ckStore.id} date={date} status={d.status} />}
+              {['submitted', 'verified', 'disputed', 'draft'].includes(d.status) && (
+                <ReviewActions ckStoreId={d.ckStore.id} date={date} status={d.status} />
+              )}
 
               {/* 匯出 Excel */}
             </>
@@ -570,8 +572,9 @@ type CKReviewStep = {
   key: string
   title: string
   photoUrl?: string
-  rows: Array<{ label: string; amount?: number; value?: string }>
+  rows: Array<{ label: string; amount?: number; value?: string; managerAmount?: number | null }>
   total?: number
+  managerTotal?: number
 }
 
 function CKStepReview({ d, date, onClose }: { d: CKStoreData; date: string; onClose: () => void }) {
@@ -586,7 +589,13 @@ function CKStepReview({ d, date, onClose }: { d: CKStoreData; date: string; onCl
   const expensePhotoSet = new Set(d.expenses.map(e => e.receipt_photo_url).filter(Boolean))
   const unassignedPhotos = (d.receiptPhotoUrls ?? []).filter(url => !expensePhotoSet.has(url))
   const steps: CKReviewStep[] = [
-    ...(d.memberStores.length ? [{ key: 'member', title: '體系內叫貨', rows: d.memberStores.map(item => ({ label: item.store_name, amount: item.amount })), total: d.memberStores.reduce((sum, item) => sum + item.amount, 0) }] : []),
+    ...(d.memberStores.length ? [{
+      key: 'member',
+      title: '體系內叫貨',
+      rows: d.memberStores.map(item => ({ label: item.store_name, amount: item.amount, managerAmount: item.manager_amount })),
+      total: d.memberStores.reduce((sum, item) => sum + item.amount, 0),
+      managerTotal: d.memberStores.reduce((sum, item) => sum + (item.manager_amount ?? 0), 0),
+    }] : []),
     ...(d.externalOrders.length ? [{ key: 'external', title: '體系外叫貨', rows: d.externalOrders.map(item => ({ label: item.name, amount: item.amount })), total: d.externalOrders.reduce((sum, item) => sum + item.amount, 0) }] : []),
     ...d.expenses.map((item, i) => ({
       key: `expense-${i}`, title: `支出：${item.item_name}`, photoUrl: item.receipt_photo_url,
@@ -651,8 +660,27 @@ function CKStepReview({ d, date, onClose }: { d: CKStoreData; date: string; onCl
           <div className="space-y-3">
             <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fafafa', border: '1px solid #e4e4e7' }}>
               <p className="text-xs font-bold" style={{ color: '#52525b' }}>央廚輸入內容</p>
-              {step.rows.map((row, i) => <Row key={i} left={row.label} right={row.amount !== undefined ? `$${fmt(row.amount)}` : row.value || '—'} />)}
-              {step.total !== undefined && <TotalRow label="步驟合計" value={step.total} color="#92400e" />}
+              {step.key === 'member' && (
+                <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 text-[10px] font-bold" style={{ color: '#a1a1aa' }}>
+                  <span>店家</span><span>央廚輸入</span><span>店長輸入</span>
+                </div>
+              )}
+              {step.rows.map((row, i) => step.key === 'member' ? (
+                <div key={i} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 py-2.5 px-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
+                  <span className="text-sm font-medium">{row.label}</span>
+                  <span className="text-sm font-bold tabular-nums">${fmt(row.amount ?? 0)}</span>
+                  <span className="text-sm font-bold tabular-nums" style={{ color: row.managerAmount === null ? '#a1a1aa' : row.managerAmount === row.amount ? '#059669' : '#dc2626' }}>
+                    {row.managerAmount === null ? '尚未送出' : `$${fmt(row.managerAmount)}`}
+                  </span>
+                </div>
+              ) : <Row key={i} left={row.label} right={row.amount !== undefined ? `$${fmt(row.amount)}` : row.value || '—'} />)}
+              {step.total !== undefined && (step.key === 'member' ? (
+                <div className="grid grid-cols-[1fr_auto_auto] items-center gap-3 py-2.5 px-3" style={{ background: '#fff7ed', borderTop: '1px solid #fed7aa' }}>
+                  <span className="text-xs font-bold" style={{ color: '#9a3412' }}>步驟合計</span>
+                  <span className="text-sm font-bold tabular-nums" style={{ color: '#92400e' }}>${fmt(step.total)}</span>
+                  <span className="text-sm font-bold tabular-nums" style={{ color: step.managerTotal === step.total ? '#059669' : '#dc2626' }}>${fmt(step.managerTotal ?? 0)}</span>
+                </div>
+              ) : <TotalRow label="步驟合計" value={step.total} color="#92400e" />)}
             </div>
             {!editingIssue ? <div className="grid grid-cols-2 gap-2">
               <button onClick={markOkay} className="py-3 rounded-xl text-sm font-bold text-white" style={{ background: confirmed.has(index) ? '#10b981' : 'linear-gradient(135deg,#10b981,#059669)' }}>內容相符</button>

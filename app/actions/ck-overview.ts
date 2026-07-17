@@ -38,13 +38,20 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
   if (!ckStore) return { error: '找不到央廚' as const }
 
   const assignedIds: string[] = (ckStore.assigned_store_ids as string[] | null) ?? []
-  const [{ data: assignedStores }, { data: extStores }, orderRes, expRes] = await Promise.all([
+  const [{ data: assignedStores }, { data: extStores }, orderRes, expRes, closingRes] = await Promise.all([
     assignedIds.length > 0
       ? admin.from('stores').select('id, name').in('id', assignedIds)
       : Promise.resolve({ data: [] }),
     admin.from('ck_external_stores').select('*').eq('ck_store_id', ckStoreId),
     rec ? admin.from('ck_store_orders').select('store_id, external_store_name, amount, ck_confirmed_amount').eq('ck_daily_record_id', rec.id) : Promise.resolve({ data: [] }),
     rec ? admin.from('ck_expense_items').select('category, item_name, amount, payer_name, vendor_group, doc_type, receipt_photo_url').eq('ck_daily_record_id', rec.id).order('sort_order') : Promise.resolve({ data: [] }),
+    assignedIds.length > 0
+      ? admin.from('daily_closings')
+          .select('store_id, total_cost')
+          .in('store_id', assignedIds)
+          .eq('business_date', date)
+          .in('status', ['submitted', 'verified', 'disputed'])
+      : Promise.resolve({ data: [] }),
   ])
 
   const nameMap = Object.fromEntries((assignedStores ?? []).map((s: any) => [s.id, s.name as string]))
@@ -60,9 +67,18 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
     doc_type: e.doc_type ?? undefined,
     receipt_photo_url: e.receipt_photo_url ?? undefined,
   }))
+  const managerAmountByStore = ((closingRes.data ?? []) as any[]).reduce<Record<string, number>>((amounts, closing) => {
+    amounts[closing.store_id] = (amounts[closing.store_id] ?? 0) + Number(closing.total_cost ?? 0)
+    return amounts
+  }, {})
   const memberStores = assignedIds.map(id => {
     const existing = memberOrders.find(o => o.store_id === id)
-    return { store_id: id, store_name: nameMap[id] ?? id, amount: existing?.amount ?? 0 }
+    return {
+      store_id: id,
+      store_name: nameMap[id] ?? id,
+      amount: existing?.amount ?? 0,
+      manager_amount: managerAmountByStore[id] ?? null,
+    }
   })
   const revenueTotal = [...memberOrders, ...externalOrders].reduce((s, o) => s + o.amount, 0)
   const expenseTotal = expenses.reduce((s, e) => s + e.amount, 0)
