@@ -54,6 +54,25 @@ function displayHeader(name: string, vg?: string): string {
   return name
 }
 
+/**
+ * 匯出欄位的相容比對鍵。
+ * 舊收據曾把「（賣）給分店食材」存成「賣給分店食材」，
+ * 匯出時應仍能落到目前設定的完整名稱欄位。
+ */
+function normalizeItemLookupKey(value: string): string {
+  return value.replace(/[\s　()（）-]/g, '').trim()
+}
+
+function itemValueForExport(items: Record<string, number>, key: string): { value: number; sourceKey: string } {
+  const directKey = key in items ? key : key.replace(/-/g, '')
+  if (directKey in items) return { value: items[directKey] ?? 0, sourceKey: directKey }
+
+  const compatible = Object.keys(items).find(itemName =>
+    normalizeItemLookupKey(itemName) === normalizeItemLookupKey(key),
+  )
+  return compatible ? { value: items[compatible] ?? 0, sourceKey: compatible } : { value: 0, sourceKey: key }
+}
+
 /** Build the column layout for a store */
 function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAccounts: string[] = []): ColumnDef[] {
   const cols: ColumnDef[] = []
@@ -727,11 +746,12 @@ export async function addFoodCostSheet(
         cell.numFmt = ZERO_NUM_FMT
       } else if (c.kind === 'item' && dd) {
         // nameKey = 完整 item_name（aggregator items 用），header 可能剝過前綴
-        // 先精確比對，再去掉連字號再比（處理「小雲-稅金」↔「小雲稅金」等改名差異）
+        // 先精確比對，再以相容鍵比對（處理「小雲-稅金」↔「小雲稅金」、
+        // 「（賣）給分店食材」↔「賣給分店食材」等舊名稱差異）
         const key = c.nameKey ?? c.header
-        const v = dd.items[key] ?? dd.items[key.replace(/-/g, '')] ?? 0
+        const { value: v, sourceKey } = itemValueForExport(dd.items, key)
         cell.value = v
-        const note = dd.notes[key] ?? dd.notes[key.replace(/-/g, '')]
+        const note = dd.notes[sourceKey]
         if (note?.trim()) cell.note = note
         cell.numFmt = numFmtForColumn(c)
         // 負數用紅色（折扣/退貨/退費類）
