@@ -417,8 +417,13 @@ function isOtherReceiptItem(itemName: string | undefined, categoryName: string |
   return (categoryName ?? '').trim() === '其他' && (itemName ?? '').trim() === expectedName
 }
 
+function normalizeOtherReceiptItemName(value: string | undefined) {
+  return (value ?? '').replace(/[\s　()（）]/g, '').trim()
+}
+
 function isAutoNegativeOtherReceiptItem(itemName: string | undefined, categoryName: string | undefined) {
-  return isOtherReceiptItem(itemName, categoryName, '賣給分店食材')
+  return (categoryName ?? '').trim() === '其他'
+    && normalizeOtherReceiptItemName(itemName) === '賣給分店食材'
 }
 
 function canUseNegativeOtherReceiptItem(itemName: string | undefined, categoryName: string | undefined) {
@@ -459,7 +464,10 @@ function deriveReceiptCategory(
 ) {
   const vendor = vendorName?.trim() ?? ''
   if (vendor) {
-    const byVendor = categories.find(c => c.vendors.some(v => v.name === vendor))
+    const byVendor = categories.find(c => c.vendors.some(v =>
+      v.name === vendor
+      || (c.name === '其他' && normalizeOtherReceiptItemName(v.name) === normalizeOtherReceiptItemName(vendor)),
+    ))
     if (byVendor) return byVendor.name
     const byCategoryName = categories.find(c => c.name === vendor)
     if (byCategoryName) return byCategoryName.name
@@ -500,6 +508,13 @@ function findReceiptItemMapping(
     ?? mappingColumns.find(c => c.name === name && c.vendor_group === category)
     ?? mappingColumns.find(c => c.name === name && c.category === category)
     ?? mappingColumns.find(c => c.name === name)
+    // 兼容舊資料曾將「（賣）」括號省略的情況；新資料仍完整儲存設定名稱。
+    ?? (category === '其他'
+      ? mappingColumns.find(c =>
+        normalizeOtherReceiptItemName(c.name) === normalizeOtherReceiptItemName(name)
+        && (c.category === category || c.vendor_group === category),
+      )
+      : undefined)
   )
 }
 
@@ -817,7 +832,15 @@ function dropdownGroupRank(name: string): number {
 type MappingColumn = { name: string; category: string; vendor_group?: string; excel_column?: string; is_tax_addon?: boolean }
 
 function directReceiptOptions(categoryName: string, categories: CategoryWithVendors[], mappingColumns: MappingColumn[]) {
-  if (categoryName === '其他') return ['與分店購買食材', '賣給分店食材', '其他']
+  if (categoryName === '其他') {
+    const configuredOptions = categories
+      .find(category => category.name === categoryName)
+      ?.vendors.map(vendor => vendor.name.trim())
+      .filter(Boolean) ?? []
+    return configuredOptions.length > 0
+      ? Array.from(new Set(configuredOptions))
+      : ['與分店買食材', '（賣）給分店食材', '其他']
+  }
 
   if (categoryName === '買東西或維修') {
     const mappedOptions = mappingColumns
@@ -847,6 +870,16 @@ function directReceiptLabel(categoryName: string) {
   if (categoryName === '買東西或維修') return '選擇單據類型'
   if (categoryName === '其他') return '請選擇'
   return '廠商'
+}
+
+function displayConfiguredOtherReceiptName(vendorName: string | undefined, categories: CategoryWithVendors[]) {
+  const name = vendorName?.trim() ?? ''
+  if (!name) return name
+  const configuredName = categories
+    .find(category => category.name === '其他')
+    ?.vendors.find(vendor => normalizeOtherReceiptItemName(vendor.name) === normalizeOtherReceiptItemName(name))
+    ?.name.trim()
+  return configuredName || name
 }
 
 function receiptEntryGroups(mappingColumns: MappingColumn[]): string[] {
@@ -3839,7 +3872,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           )}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold truncate" style={{ color: '#18181b' }}>
-                              {r.vendor_name || (r.receipt_items ?? []).filter(i => i.item_name.trim()).map(i => i.item_name).join('、') || '（未填廠商）'}
+                              {displayConfiguredOtherReceiptName(r.vendor_name, categories) || (r.receipt_items ?? []).filter(i => i.item_name.trim()).map(i => i.item_name).join('、') || '（未填廠商）'}
                             </p>
                             <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>
                               {isCK ? '央廚配送' : '現金支出'}
