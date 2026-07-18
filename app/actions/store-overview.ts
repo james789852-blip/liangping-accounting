@@ -334,7 +334,7 @@ export async function fetchDailyClosingWithReceipts(storeId: string, date: strin
       .eq('store_id', storeId)
       .eq('business_date', date),
     admin.from('receipts')
-      .select('id, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, amount), created_at')
+      .select('id, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, notes, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
       .eq('store_id', storeId)
       .eq('business_date', date)
       .order('created_at'),
