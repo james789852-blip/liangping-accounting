@@ -264,10 +264,12 @@ export default async function ClosingPage({
   // receipt_vendors 是舊設定表，若總公司改了 vendor_group（例如油豆腐 → 豆腐商），
   // 只讀舊表會讓店面下拉仍顯示舊名稱。保留其他收據類別，但讓「廠商」清單
   // 每次開頁都直接反映該店目前的 mappings。
+  // 這些是結帳流程的系統類別，不是廠商設定；不可混入「廠商」下拉選單。
+  const systemReceiptGroupNames = new Set(['未分類', '央廚配送', '日常用品', '買東西或維修', '其他', '退稅'])
   const mappingVendorGroups = Array.from(new Set(
     mappingColumns
       .map(item => item.vendor_group?.trim())
-      .filter((name): name is string => !!name && !['未分類', '央廚配送'].includes(name)),
+      .filter((name): name is string => !!name && !systemReceiptGroupNames.has(name)),
   ))
   const syncedReceiptCategories = receiptCategories.map(category => category.name !== '廠商' || mappingVendorGroups.length === 0
     ? category
