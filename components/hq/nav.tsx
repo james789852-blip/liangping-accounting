@@ -59,7 +59,7 @@ const hqSections = [
     label: '每日工作',
     items: [
       { href: '/hq/accounting', label: '帳目中心', icon: BookOpen },
-      { href: '/hq/dashboard',  label: '即時儀表板', icon: LayoutDashboard },
+      { href: '/hq/dashboard',  label: '統計中心', icon: LayoutDashboard },
     ],
   },
   // ── 系統與權限 ─────────────
@@ -91,7 +91,7 @@ const managerSections = [
 
 const mobileHQTabs = [
   { href: '/hq/accounting',     label: '帳目',   icon: BookOpen },
-  { href: '/hq/dashboard',      label: '儀表板', icon: LayoutDashboard },
+  { href: '/hq/dashboard',      label: '統計', icon: LayoutDashboard },
   { href: '/hq/item-mappings',  label: '品項',   icon: Package },
   { href: '/hq/stores',         label: '店家',   icon: Store },
 ]
