@@ -25,6 +25,7 @@ interface Closing {
   total_revenue: number; variance: number; note: string; dispute_note: string
   submitted_at: string; should_include_delivery: number; actual_remit: number
   total_cost: number; total_expenses: number; stores: { name: string }
+  submitter_name?: string | null
   revenue_items: RevenueItem[]; expense_items: ExpenseItem[]; order_items: OrderItem[]
   remittance_adjustments?: any[]; reserve_items?: ReserveItem[]
   cash_counts?: { large_expenses?: unknown }[]
@@ -295,6 +296,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
             <div>
               <p className="text-sm font-bold" style={{ color: '#18181b' }}>逐張核對 · {closing.stores?.name}</p>
               <p className="text-xs" style={{ color: '#71717a' }}>{allPhotos.length === 0 ? '本日沒有照片' : `${reviewIndex + 1} / ${allPhotos.length}　${currentPhoto?.label ?? ''}`}</p>
+              <p className="text-xs mt-0.5" style={{ color: '#71717a' }}>送出人：{closing.submitter_name ?? '未記錄'}</p>
             </div>
             <button type="button" onClick={() => setReviewOpen(false)} className="p-2 rounded-full" style={{ background: '#f4f4f5' }} aria-label="關閉核對">
               <X className="h-4 w-4" />
@@ -473,6 +475,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
               </span>
             </div>
             <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>{closing.business_date}</p>
+            <p className="text-xs mt-0.5" style={{ color: '#71717a' }}>送出人：{closing.submitter_name ?? '未記錄'}</p>
           </div>
           <div className="text-right shrink-0">
             <p className="text-sm font-bold tabular-nums" style={{ color: '#18181b' }}>${fmt(closing.total_revenue)}</p>

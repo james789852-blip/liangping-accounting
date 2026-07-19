@@ -754,7 +754,7 @@ function StoreDetail({
     } else {
       setLoading(true)
     }
-    fetchDailyClosingWithReceipts(storeId, date, false)
+    fetchDailyClosingWithReceipts(storeId, date)
       .then(result => {
         if (requestId !== requestIdRef.current) return
         if ('error' in result) {
@@ -764,7 +764,10 @@ function StoreDetail({
         if (!('success' in result)) return
         const next = {
           stats: null,
-          detail: { closing: result.closing, receipts: result.receipts ?? [] },
+          detail: {
+            closing: result.closing ? { ...result.closing, submitter_name: result.submitterName } : null,
+            receipts: result.receipts ?? [],
+          },
         }
         setStats(next.stats)
         setDetail(next.detail)

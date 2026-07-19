@@ -30,7 +30,7 @@ export default async function ReviewsPage() {
   const { data: pending } = await admin
     .from('daily_closings')
     .select(`
-      id, business_date, status, total_revenue, variance, note, dispute_note,
+      id, business_date, status, total_revenue, variance, note, dispute_note, submitted_by,
       submitted_at, should_include_delivery, actual_remit, total_cost, total_expenses,
       remittance_adjustments, reserve_items, ck_delivery_photo_url, channel_photo_urls,
       envelope_photo_url, void_invoice_photo_urls, note_photo_url, extra_photo_urls,
@@ -42,6 +42,22 @@ export default async function ReviewsPage() {
     `)
     .in('status', ['submitted', 'disputed'])
     .order('submitted_at', { ascending: true })
+
+  const submitterIds = [...new Set((pending ?? []).map((closing: any) => closing.submitted_by).filter(Boolean))]
+  const submitterNames: Record<string, string> = {}
+  if (submitterIds.length > 0) {
+    const { data: submitters } = await admin
+      .from('user_profiles')
+      .select('user_id, name')
+      .in('user_id', submitterIds)
+    submitters?.forEach((submitter: any) => {
+      if (submitter.name) submitterNames[submitter.user_id] = submitter.name
+    })
+  }
+  const pendingWithSubmitter = (pending ?? []).map((closing: any) => ({
+    ...closing,
+    submitter_name: closing.submitted_by ? (submitterNames[closing.submitted_by] ?? null) : null,
+  }))
 
   // 一次撈所有待審 closings 的 receipts，JS 端 group by (store_id, business_date)
   const receiptsByClosing: Record<string, any[]> = {}
@@ -107,7 +123,7 @@ export default async function ReviewsPage() {
             </div>
           ) : (
             <ReviewsList
-              pending={pending as any}
+              pending={pendingWithSubmitter as any}
               receiptsByClosing={receiptsByClosing}
               canReview={canReview}
               canDispute={canDispute}

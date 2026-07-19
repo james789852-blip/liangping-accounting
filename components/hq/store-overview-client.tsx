@@ -379,7 +379,7 @@ function DailyPanel({ data, storeName, storeId, prev }: { data: DailyStats; stor
         <div>
           <h3 className="text-sm font-bold mb-2 px-1" style={{ color: '#18181b' }}>📋 當日帳目審核</h3>
           <ReviewCard
-            closing={{ ...reviewData.closing, stores: { name: storeName } } as any}
+            closing={{ ...reviewData.closing, submitter_name: reviewData.submitterName, stores: { name: storeName } } as any}
             receipts={reviewData.receipts as any}
             canReview={true}
             canDispute={true}

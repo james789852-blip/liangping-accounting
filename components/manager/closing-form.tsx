@@ -1128,15 +1128,20 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const notePhotoInputRef = useRef<HTMLInputElement>(null)
 
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
+  // 初始化時先讀取本機草稿，再允許寫回。否則首次 render 的空陣列會先覆蓋
+  // 使用者剛輸入的手寫菜單金額，造成重新整理後資料消失。
+  const [handwriteOrdersHydrated, setHandwriteOrdersHydrated] = useState(false)
   const handwriteOrdersRef = useRef(handwriteOrders)
   handwriteOrdersRef.current = handwriteOrders
   const handwriteOrdersLsKey = `handwrite_orders_${store.id}_${today}`
   useEffect(() => {
-    if ((existingClosing?.handwrite_orders ?? []).length > 0) return
-    try {
-      const stored = JSON.parse(localStorage.getItem(handwriteOrdersLsKey) ?? '[]')
-      if (Array.isArray(stored) && stored.length > 0) setHandwriteOrders(stored)
-    } catch {}
+    if ((existingClosing?.handwrite_orders ?? []).length === 0) {
+      try {
+        const stored = JSON.parse(localStorage.getItem(handwriteOrdersLsKey) ?? '[]')
+        if (Array.isArray(stored) && stored.length > 0) setHandwriteOrders(stored)
+      } catch {}
+    }
+    setHandwriteOrdersHydrated(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const [adjustments, setAdjustments] = useState<RemittanceAdjustment[]>(() => {
@@ -1533,12 +1538,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [pendingRentReserve, isLocked, submitDone, existingClosing?.reserve_items, reserves, reserveLsKey, s.finalRemit])
 
   useEffect(() => {
-    if (isLocked || submitDone) return
+    if (!handwriteOrdersHydrated || isLocked || submitDone) return
     try {
       if (handwriteOrders.length > 0) localStorage.setItem(handwriteOrdersLsKey, JSON.stringify(handwriteOrders))
       else localStorage.removeItem(handwriteOrdersLsKey)
     } catch {}
-  }, [handwriteOrders, handwriteOrdersLsKey, isLocked, submitDone])
+  }, [handwriteOrders, handwriteOrdersHydrated, handwriteOrdersLsKey, isLocked, submitDone])
 
   const absVar = Math.abs(s.variance)
   const varColor = absVar === 0 ? '#047857' : absVar <= 200 ? '#b45309' : '#be123c'
