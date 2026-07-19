@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CheckCircle2, AlertT
 import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
 import { toast } from 'sonner'
+import { centralKitchenPhotoPath } from '@/lib/storage-paths'
 import SafePhotoImage from './safe-photo-image'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -205,7 +206,7 @@ function PayButton({
         const formData = new FormData()
         formData.append('file', file)
         const ext = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
-        const path = `ck-reimbursements/${ckStoreId}/${date}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+        const path = centralKitchenPhotoPath(ckStoreId, date, 'reimbursements', `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`)
         const r = await uploadToStorage(formData, 'receipts', path)
         if ('error' in r) throw new Error(r.error)
         uploaded.push(r.publicUrl)

@@ -68,7 +68,7 @@ export default async function CKPage({
       : Promise.resolve({ data: [] }),
     admin.from('ck_external_stores').select('id, name').eq('ck_store_id', storeId).order('created_at'),
     admin.from('ck_daily_records')
-      .select('id, payer_name, note, status, review_note, reviewed_at, receipt_photo_urls, hq_paid, hq_paid_at, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
+      .select('id, payer_name, note, status, review_note, reviewed_at, updated_at, receipt_photo_urls, hq_paid, hq_paid_at, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
       .eq('ck_store_id', storeId)
       .eq('business_date', today)
       .maybeSingle(),
@@ -115,6 +115,7 @@ export default async function CKPage({
     status: string
     review_note?: string | null
     reviewed_at?: string | null
+    updated_at?: string | null
     hq_paid?: boolean
     hq_paid_at?: string | null
     hq_reimbursement_photo_urls?: string[]
@@ -154,6 +155,7 @@ export default async function CKPage({
       status: ckRecord.status,
       review_note: (ckRecord as any).review_note ?? null,
       reviewed_at: (ckRecord as any).reviewed_at ?? null,
+      updated_at: (ckRecord as any).updated_at ?? null,
       hq_paid: (ckRecord as any).hq_paid ?? false,
       hq_paid_at: (ckRecord as any).hq_paid_at ?? null,
       hq_reimbursement_photo_urls: ((ckRecord as any).hq_reimbursement_photo_urls as string[] | null) ?? [],

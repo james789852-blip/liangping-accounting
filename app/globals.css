@@ -167,6 +167,21 @@
     max-width: 100%;
     height: auto;
   }
+  /* 原生日期、月份與下拉欄位在手機上有額外內距；避免欄位寬度超出卡片。 */
+  input, select, textarea {
+    box-sizing: border-box;
+    max-width: 100%;
+  }
+  /* iOS 的 date input 會套用內建最小寬度；歷史搜尋欄位必須服從外層卡片。 */
+  .history-date-input {
+    display: block;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    -webkit-appearance: none;
+    appearance: none;
+  }
 }
 
 /* 店長結帳表單的固定底部動作列：手機要避開底部 tab + 安全區，桌機固定底部 */

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { centralKitchenPhotoPath } from '@/lib/storage-paths'
 import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn, Pencil, BarChart3, ClipboardList, Banknote, ArrowLeft, ArrowRight, ClipboardCheck } from 'lucide-react'
 import { saveCKDailyRecord, confirmCKReimbursementHandoff } from '@/app/actions/ck'
 import CKHelp from './ck-help'
@@ -110,6 +111,7 @@ interface ExistingRecord {
   status: string
   review_note?: string | null
   reviewed_at?: string | null
+  updated_at?: string | null
   hq_paid?: boolean
   hq_paid_at?: string | null
   hq_reimbursement_photo_urls?: string[]
@@ -575,6 +577,13 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     try {
       const draft = JSON.parse(raw)
       if (draft?.ckStoreId !== ckStoreId || draft?.date !== date) return
+      // 送出／退回後以資料庫最新版本為準，避免舊的瀏覽器草稿把已保存內容覆蓋成空白。
+      const draftSavedAt = typeof draft.savedAt === 'string' ? Date.parse(draft.savedAt) : NaN
+      const recordUpdatedAt = existing?.updated_at ? Date.parse(existing.updated_at) : NaN
+      if (Number.isFinite(draftSavedAt) && Number.isFinite(recordUpdatedAt) && draftSavedAt <= recordUpdatedAt) {
+        window.localStorage.removeItem(draftKey)
+        return
+      }
       if (Array.isArray(draft.extOrders)) setExtOrders(draft.extOrders)
       if (Array.isArray(draft.expenses)) setExpenses(draft.expenses)
       if (Array.isArray(draft.photoUrls)) setPhotoUrls(draft.photoUrls)
@@ -596,7 +605,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     } catch {
       window.localStorage.removeItem(draftKey)
     }
-  }, [ckStoreId, date, draftKey, isLocked])
+  }, [ckStoreId, date, draftKey, existing?.updated_at, isLocked])
 
   useEffect(() => {
     if (isLocked || typeof window === 'undefined') return
@@ -891,7 +900,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       const file = await compressImage(rawFile)
       const fd = new FormData()
       fd.append('file', file)
-      const path = `ck/${ckStoreId}/${date}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+      const path = centralKitchenPhotoPath(ckStoreId, date, 'expenses', `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`)
       const result = await uploadToStorage(fd, 'receipts', path)
       if ('error' in result) { toast.error('上傳失敗：' + result.error) }
       else {

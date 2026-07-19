@@ -283,9 +283,9 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
       {/* 預留款 */}
       {(() => {
         const reserves = (closing.reserve_items as any[]) ?? []
-        if (reserves.length === 0 && preReservedExpenseTotal <= 0) return null
         const adjustments = (closing.remittance_adjustments as any[]) ?? []
         const adjustmentTotal = adjustments.reduce((sum: number, a: any) => sum + (a.amount ?? 0), 0)
+        if (reserves.length === 0 && preReservedExpenseTotal <= 0) return null
         const totalReserved = reserves.reduce((sum: number, r: any) => sum + (r.amount ?? 0), 0)
         const remitToHQ = (closing.actual_remit ?? 0) + adjustmentTotal - totalReserved + preReservedExpenseTotal
         return (
@@ -440,7 +440,7 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1.5 text-sm">
-            <div className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 text-[10px] text-slate-400">
+            <div className="grid grid-cols-[3rem_minmax(0,1fr)_minmax(0,1fr)_3.5rem] gap-x-2 text-[10px] text-slate-400">
               <span />
               <span className="text-center">張 / 枚</span>
               <span className="text-center">整筆金額</span>
@@ -452,7 +452,7 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
               const sub   = count * unit + lump
               if (sub === 0) return null
               return (
-                <div key={label} className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 items-baseline text-slate-600">
+                <div key={label} className="grid grid-cols-[3rem_minmax(0,1fr)_minmax(0,1fr)_3.5rem] gap-x-2 items-baseline text-slate-600">
                   <span className="text-xs">{label}</span>
                   <span className="text-xs text-center">{count > 0 ? `${count} ${ul}` : '—'}</span>
                   <span className="text-xs text-center tabular-nums">{lump > 0 ? `$${fmt(lump)}` : '—'}</span>
@@ -500,7 +500,7 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
                 <span className="tabular-nums">{fmtTs(pettyCountsPayload.verified_at)}</span>
               </div>
             )}
-            <div className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 text-[10px] text-slate-400">
+            <div className="grid grid-cols-[3rem_minmax(0,1fr)_minmax(0,1fr)_3.5rem] gap-x-2 text-[10px] text-slate-400">
               <span />
               <span className="text-center">張 / 枚</span>
               <span className="text-center">整筆金額</span>
@@ -512,7 +512,7 @@ export default async function HistoryDetailPage({ params }: { params: Promise<{ 
               const sub = count * unit + lump
               if (sub === 0) return null
               return (
-                <div key={label} className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-x-2 items-baseline text-slate-600">
+                <div key={label} className="grid grid-cols-[3rem_minmax(0,1fr)_minmax(0,1fr)_3.5rem] gap-x-2 items-baseline text-slate-600">
                   <span className="text-xs">{label}</span>
                   <span className="text-xs text-center">{count > 0 ? `${count} ${ul}` : '—'}</span>
                   <span className="text-xs text-center tabular-nums">{lump > 0 ? `$${fmt(lump)}` : '—'}</span>

@@ -4,42 +4,31 @@ import { getAuthedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { getBusinessDate } from '@/lib/business-date'
-import {
-  CheckSquare, AlertTriangle, BarChart3, TrendingUp,
-  Clock, ChevronRight, Calendar, FileText, LayoutDashboard,
-} from 'lucide-react'
-import Link from 'next/link'
-import { sortStores } from '@/lib/store-order'
+import { BarChart3, Calendar, ChefHat, ChevronDown, LayoutDashboard, Store } from 'lucide-react'
 import { getCachedAllStores } from '@/lib/cached-queries'
-import HQAlertsCard from '@/components/hq/hq-alerts-card'
 import { canExportReports, canReviewClosings } from '@/lib/user-permissions'
 
 export const dynamic = 'force-dynamic'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
-const AVATAR_GRADS = [
-  'linear-gradient(135deg,#F59E0B,#F97316)',
-  'linear-gradient(135deg,#f97316,#f59e0b)',
-  'linear-gradient(135deg,#06b6d4,#F59E0B)',
-  'linear-gradient(135deg,#10b981,#06b6d4)',
-  'linear-gradient(135deg,#FBBF24,#f43f5e)',
-  'linear-gradient(135deg,#F97316,#FBBF24)',
-  'linear-gradient(135deg,#f59e0b,#ef4444)',
-  'linear-gradient(135deg,#F59E0B,#06b6d4)',
-  'linear-gradient(135deg,#10b981,#F59E0B)',
-  'linear-gradient(135deg,#f97316,#FBBF24)',
-]
-
-const DOT_STYLE: Record<string, { dot: string; ring: string; label: string }> = {
-  verified:  { dot: '#10b981', ring: '#d1fae5', label: '已審核' },
-  submitted: { dot: '#10b981', ring: '#d1fae5', label: '已送出' },
-  disputed:  { dot: '#f59e0b', ring: '#fef3c7', label: '退回中' },
-  draft:     { dot: '#a1a1aa', ring: '#f4f4f5', label: '草稿'   },
-  none:      { dot: '#a1a1aa', ring: '#f4f4f5', label: '未送出' },
+type VendorDetail = { name: string; total: number; count: number }
+type VendorStat = { storeId: string; storeName: string; group: string; total: number; count: number; vendors: VendorDetail[] }
+type StoreSummary = {
+  id: string
+  name: string
+  type?: string | null
+  revenue: number
+  cost: number
+  costRate: number
+  vendors: VendorStat[]
 }
 
-export default async function HQDashboard() {
+export default async function HQDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ year?: string; month?: string }>
+}) {
   const supabase = await createClient()
   const user = await getAuthedUser()
   if (!user) redirect('/login')
@@ -50,315 +39,286 @@ export default async function HQDashboard() {
 
   const admin = createAdminClient()
   const today = getBusinessDate()
-  const [y, m] = today.split('-')
-  const firstOfMonth = `${y}-${m}-01`
+  const [todayYear, todayMonth] = today.split('-').map(Number)
+  const params = await searchParams
+  const requestedYear = Number(params.year)
+  const requestedMonth = Number(params.month)
+  const yearNumber = Number.isInteger(requestedYear) && requestedYear >= 2020 && requestedYear <= todayYear
+    ? requestedYear
+    : todayYear
+  const monthNumber = Number.isInteger(requestedMonth) && requestedMonth >= 1 && requestedMonth <= 12
+    ? requestedMonth
+    : todayMonth
+  const year = String(yearNumber)
+  const month = String(monthNumber).padStart(2, '0')
+  const firstOfMonth = `${year}-${month}-01`
+  const lastDay = new Date(Date.UTC(yearNumber, monthNumber, 0)).getUTCDate()
+  const selectedEnd = yearNumber === todayYear && monthNumber === todayMonth
+    ? today
+    : `${year}-${month}-${String(lastDay).padStart(2, '0')}`
 
-  const [
-    stores,
-    { data: todayClosings },
-    { data: monthClosings },
-    { data: pendingCount },
-    { data: todayHolidays },
-  ] = await Promise.all([
+  const [stores, { data: monthClosings }, { data: monthReceipts }] = await Promise.all([
     getCachedAllStores(),
-    admin.from('daily_closings').select('id, store_id, status, total_revenue, variance').eq('business_date', today),
-    admin.from('daily_closings').select('store_id, total_revenue, status')
-      .gte('business_date', firstOfMonth).lte('business_date', today).in('status', ['submitted', 'verified']),
-    admin.from('daily_closings').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
-    admin.from('store_holidays').select('store_id').eq('holiday_date', today),
+    admin.from('daily_closings')
+      .select('store_id, total_revenue, status')
+      .gte('business_date', firstOfMonth).lte('business_date', selectedEnd)
+      .in('status', ['submitted', 'verified']),
+    admin.from('receipts')
+      .select('store_id, vendor_name, actual_vendor_name, total_amount')
+      .gte('business_date', firstOfMonth).lte('business_date', selectedEnd),
   ])
-  const holidayStoreIds = new Set((todayHolidays ?? []).map((h: any) => h.store_id as string))
 
-  const storeList = sortStores(stores)
-  const closingByStore = Object.fromEntries((todayClosings ?? []).map(c => [c.store_id, c]))
-  const storeMap = Object.fromEntries(storeList.map(s => [s.id, s.name]))
+  const storeMap = Object.fromEntries(stores.map(store => [store.id, store.name]))
+  const revenueByStore: Record<string, number> = {}
+  for (const closing of monthClosings ?? []) {
+    revenueByStore[closing.store_id] = (revenueByStore[closing.store_id] || 0) + Number(closing.total_revenue ?? 0)
+  }
 
-  const monthByStore: Record<string, number> = {}
-  for (const c of monthClosings ?? []) monthByStore[c.store_id] = (monthByStore[c.store_id] || 0) + c.total_revenue
+  // 央廚營業額不是 daily_closings，而是本月各成員店的叫貨收入。
+  const ckIds = stores.filter(store => store.type === '央廚').map(store => store.id)
+  const ckRevenueByStore: Record<string, number> = {}
+  if (ckIds.length > 0) {
+    const { data: ckRecords } = await admin.from('ck_daily_records')
+      .select('id, ck_store_id')
+      .in('ck_store_id', ckIds)
+      .gte('business_date', firstOfMonth).lte('business_date', selectedEnd)
+    const recordIds = (ckRecords ?? []).map(record => record.id)
+    if (recordIds.length > 0) {
+      const { data: ckOrders } = await admin.from('ck_store_orders')
+        .select('ck_daily_record_id, store_id, amount, ck_confirmed_amount')
+        .in('ck_daily_record_id', recordIds)
+        .not('store_id', 'is', null)
+      const ckIdByRecord = new Map((ckRecords ?? []).map(record => [record.id as string, record.ck_store_id as string]))
+      for (const order of ckOrders ?? []) {
+        const ckId = ckIdByRecord.get(order.ck_daily_record_id as string)
+        if (!ckId) continue
+        // 已確認時採央廚確認金額；尚未確認則先採店家叫貨金額，避免統計顯示為 0。
+        const amount = Number(order.ck_confirmed_amount ?? order.amount ?? 0)
+        ckRevenueByStore[ckId] = (ckRevenueByStore[ckId] || 0) + amount
+      }
+    }
+  }
 
-  const monthTotal = Object.values(monthByStore).reduce((s, v) => s + v, 0)
-  const submittedToday = (todayClosings ?? []).filter(c => ['submitted', 'verified'].includes(c.status)).length
-  const bigVarianceStores = (todayClosings ?? []).filter(c =>
-    ['submitted', 'verified'].includes(c.status) && Math.abs(c.variance) > 200
-  )
-  const bigVarianceCount = bigVarianceStores.length
-  // 排除公休店：totalStores = 應做帳店數（不含當日公休）
-  const holidayCount = storeList.filter(s => holidayStoreIds.has(s.id)).length
-  const totalStores = storeList.length - holidayCount
-  const pendingN = (pendingCount as any)?.count ?? 0
-  const twHour = new Date(Date.now() + 8 * 3600000).getUTCHours()
-  const greeting = twHour < 12 ? '早安' : twHour < 18 ? '午安' : '晚安'
+  type VendorGroupDraft = VendorStat & { vendorMap: Map<string, VendorDetail> }
+  const vendorMap = new Map<string, VendorGroupDraft>()
+  const costByStore: Record<string, number> = {}
+  for (const receipt of monthReceipts ?? []) {
+    const amount = Number(receipt.total_amount ?? 0)
+    if (amount <= 0) continue
+    const group = receipt.vendor_name?.trim() || '未分類'
+    const actualVendor = receipt.actual_vendor_name?.trim() || ''
+    const key = `${receipt.store_id}|${group}`
+    const row = vendorMap.get(key) ?? {
+      storeId: receipt.store_id,
+      storeName: storeMap[receipt.store_id] ?? '未知店家',
+      group,
+      total: 0,
+      count: 0,
+      vendors: [],
+      vendorMap: new Map<string, VendorDetail>(),
+    }
+    row.total += amount
+    row.count += 1
+    if (actualVendor) {
+      const detail = row.vendorMap.get(actualVendor) ?? { name: actualVendor, total: 0, count: 0 }
+      detail.total += amount
+      detail.count += 1
+      row.vendorMap.set(actualVendor, detail)
+    }
+    vendorMap.set(key, row)
+    costByStore[receipt.store_id] = (costByStore[receipt.store_id] || 0) + amount
+  }
+
+  const vendorStats: VendorStat[] = [...vendorMap.values()]
+    .map(({ vendorMap: _vendorMap, ...row }) => ({ ...row, vendors: [..._vendorMap.values()].sort((a, b) => b.total - a.total) }))
+    .sort((a, b) => b.total - a.total)
+  const vendorsByStore = new Map<string, VendorStat[]>()
+  for (const vendor of vendorStats) {
+    const rows = vendorsByStore.get(vendor.storeId) ?? []
+    rows.push(vendor)
+    vendorsByStore.set(vendor.storeId, rows)
+  }
+  const storeStats: StoreSummary[] = stores.map(store => {
+    const revenue = store.type === '央廚'
+      ? (ckRevenueByStore[store.id] || 0)
+      : (revenueByStore[store.id] || 0)
+    const cost = costByStore[store.id] || 0
+    return {
+      ...store,
+      revenue,
+      cost,
+      costRate: revenue > 0 ? (cost / revenue) * 100 : 0,
+      vendors: vendorsByStore.get(store.id) ?? [],
+    }
+  }).sort((a, b) => b.revenue - a.revenue)
+
+  const monthRevenue = storeStats.reduce((sum, store) => sum + store.revenue, 0)
+  const monthCost = vendorStats.reduce((sum, vendor) => sum + vendor.total, 0)
+  const averageRevenue = stores.length > 0 ? monthRevenue / stores.length : 0
+  const vendorCount = new Set(vendorStats.map(vendor => vendor.group)).size
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
-
-      {/* 頁面標頭 */}
-      <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-        <div className="flex items-center justify-between max-w-6xl mx-auto">
+      <div className="bg-white px-5 sm:px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
-              <LayoutDashboard className="h-3.5 w-3.5" />
-              總公司 · 即時儀表板
+              <LayoutDashboard className="h-3.5 w-3.5" />總公司 · 統計中心
             </div>
-            <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>
-              {greeting}，{profile?.name ?? ''}
-            </h1>
+            <h1 className="text-xl font-bold" style={{ color: '#18181b' }}>營運數據總覽</h1>
+            <p className="text-xs mt-1" style={{ color: '#a1a1aa' }}>集中查看本月各店業績與廠商叫貨支出</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-semibold" style={{ color: '#18181b' }}>{profile?.name ?? ''}</p>
-              <p className="text-xs" style={{ color: '#a1a1aa' }}>總公司 · {profile?.role ?? ''}</p>
-            </div>
-            <div className="h-9 w-9 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
-              style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)' }}>
-              {profile?.role ?? '?'}
-            </div>
-          </div>
+          <form method="get" className="flex items-center gap-2 flex-wrap justify-end">
+            <label className="flex items-center gap-1.5 h-10 px-2.5 rounded-xl text-xs font-semibold" style={{ color: '#92400E', background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+              <Calendar className="h-4 w-4" />
+              <span className="sr-only">統計年份</span>
+              <select name="year" defaultValue={year} className="bg-transparent outline-none font-bold cursor-pointer" aria-label="統計年份">
+                {Array.from({ length: 6 }, (_, index) => todayYear - index).map(optionYear => <option key={optionYear} value={optionYear}>{optionYear} 年</option>)}
+              </select>
+            </label>
+            <label className="h-10 px-2.5 rounded-xl flex items-center text-xs font-semibold" style={{ color: '#92400E', background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+              <span className="sr-only">統計月份</span>
+              <select name="month" defaultValue={String(monthNumber)} className="bg-transparent outline-none font-bold cursor-pointer" aria-label="統計月份">
+                {Array.from({ length: 12 }, (_, index) => index + 1).map(optionMonth => <option key={optionMonth} value={optionMonth}>{optionMonth} 月</option>)}
+              </select>
+            </label>
+            <button type="submit" className="h-10 px-3 rounded-xl text-xs font-bold" style={{ background: '#F59E0B', color: 'white' }}>套用</button>
+          </form>
         </div>
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-5 pb-24 lg:pb-8">
-
-        {/* 今日提醒 */}
-        <HQAlertsCard />
-
-        {/* Hero — 深色漸層 */}
-        <div className="rounded-3xl p-8 relative overflow-hidden text-white"
+        <div className="rounded-3xl p-6 sm:p-8 relative overflow-hidden text-white"
           style={{ background: 'linear-gradient(135deg,#18181b 0%,#92400E 60%,#FBBF24 100%)', boxShadow: '0 20px 50px -10px rgba(245,158,11,0.3)' }}>
-          <div className="absolute rounded-full pointer-events-none"
-            style={{ top: '-50%', right: '-10%', width: '400px', height: '400px', background: 'radial-gradient(circle, rgba(255,255,255,0.12), transparent)' }} />
-          <div className="flex items-center gap-2 text-sm mb-2 relative" style={{ opacity: 0.85 }}>
-            <Calendar className="h-3.5 w-3.5" />
-            {today} · {totalStores} 家店即時概覽
+          <div className="absolute rounded-full pointer-events-none" style={{ top: '-55%', right: '-8%', width: '420px', height: '420px', background: 'radial-gradient(circle, rgba(255,255,255,0.12), transparent)' }} />
+          <div className="flex items-center gap-2 text-sm mb-3 relative" style={{ opacity: 0.85 }}>
+            <BarChart3 className="h-4 w-4" />{year} 年 {parseInt(month)} 月營運統計（統計至 {selectedEnd}）
           </div>
-          <div className="font-extrabold tabular-nums leading-none mb-2 relative"
-            style={{ fontSize: 'clamp(40px,6vw,56px)', letterSpacing: '-0.03em' }}>
-            $ {fmt(monthTotal)}
+          <div className="font-extrabold tabular-nums leading-none mb-2 relative" style={{ fontSize: 'clamp(40px,6vw,56px)', letterSpacing: '-0.03em' }}>
+            $ {fmt(monthRevenue)}
           </div>
-          <div className="text-sm mb-5 relative" style={{ opacity: 0.7 }}>本月累積營業額</div>
-          <div className="flex gap-7 flex-wrap relative">
-            <div>
-              <p className="text-xs mb-1" style={{ opacity: 0.7 }}>已送出</p>
-              <p className="text-2xl font-bold tabular-nums">{submittedToday} / {totalStores} 店</p>
-            </div>
-            <div>
-              <p className="text-xs mb-1" style={{ opacity: 0.7 }}>待審核</p>
-              <p className="text-2xl font-bold tabular-nums">{pendingN} 件</p>
-            </div>
-            <div>
-              <p className="text-xs mb-1" style={{ opacity: 0.7 }}>誤差警示</p>
-              <p className="text-2xl font-bold tabular-nums">{bigVarianceCount} 件</p>
-            </div>
+          <div className="text-sm mb-6 relative" style={{ opacity: 0.72 }}>本月各店已送出／已核准帳目的營業額</div>
+          <div className="flex gap-8 flex-wrap relative">
+            <SummaryValue label="廠商叫貨" value={`$ ${fmt(monthCost)}`} />
+            <SummaryValue label="單據筆數" value={`${monthReceipts?.length ?? 0} 筆`} />
+            <SummaryValue label="店家／廠商分類" value={`${stores.length} / ${vendorCount}`} />
           </div>
         </div>
 
-        {/* 4 統計卡片 */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {([
-            {
-              color: '#F59E0B' as string, Icon: TrendingUp, label: '今日進度',
-              num: <>{submittedToday}<span className="text-xl font-normal ml-1" style={{ color: '#a1a1aa' }}>/ {totalStores}</span></> as ReactNode,
-              sub: '店已送出',
-            },
-            {
-              color: '#10b981' as string, Icon: BarChart3, label: `${parseInt(m)} 月累積`,
-              num: `$${fmt(monthTotal)}` as ReactNode,
-              sub: '本月總計',
-            },
-            {
-              color: '#f97316' as string, Icon: Clock, label: '未送出',
-              num: (totalStores - submittedToday) as ReactNode,
-              sub: totalStores - submittedToday > 0 ? '店未送出' : '全部完成',
-            },
-            {
-              color: '#F97316' as string, Icon: AlertTriangle, label: '誤差警示',
-              num: bigVarianceCount as ReactNode,
-              sub: bigVarianceCount > 0 ? '筆誤差 > $200' : '今日無異常',
-            },
-          ]).map(({ color, Icon, label, num, sub }) => (
-            <div key={label} className="bg-white rounded-2xl p-5 relative overflow-hidden"
-              style={{ border: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div className="absolute left-0 top-0 w-1 h-full rounded-l-2xl" style={{ background: color }} />
-              <div className="flex items-center gap-1.5 text-xs font-medium mb-2 pl-2" style={{ color: '#71717a' }}>
-                <Icon className="h-3.5 w-3.5" style={{ color: '#a1a1aa' }} />
-                {label}
-              </div>
-              <div className="text-3xl font-bold tabular-nums pl-2" style={{ letterSpacing: '-0.02em', color: '#18181b' }}>
-                {num}
-              </div>
-              <div className="text-xs font-semibold mt-1.5 pl-2" style={{ color: '#a1a1aa' }}>{sub}</div>
-            </div>
-          ))}
+          <MetricCard label="本月營業額" value={`$${fmt(monthRevenue)}`} sub="所有營運據點" color="#F59E0B" />
+          <MetricCard label="本月廠商叫貨" value={`$${fmt(monthCost)}`} sub={`${monthReceipts?.length ?? 0} 筆單據`} color="#10b981" />
+          <MetricCard label="平均店營業額" value={`$${fmt(averageRevenue)}`} sub="本月平均" color="#818cf8" />
+          <MetricCard label="叫貨占營業額" value={monthRevenue > 0 ? `${(monthCost / monthRevenue * 100).toFixed(1)}%` : '—'} sub="支出結構參考" color="#f97316" />
         </div>
 
-        {/* 雙欄主內容 */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <StoreStatsSection
+          icon={<Store className="h-4 w-4" />}
+          title={`${parseInt(month)} 月店面統計`}
+          description="每間店獨立查看營業額、廠商叫貨與單據明細；點擊店家可展開"
+          stores={storeStats.filter(store => store.type !== '央廚')}
+          variant="store"
+        />
 
-          {/* 左欄：各店今日狀態 (2/3) */}
-          <div className="lg:col-span-2 bg-white rounded-2xl p-6"
-            style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-base font-semibold flex items-center gap-2.5" style={{ color: '#18181b' }}>
-                <span className="h-8 w-8 rounded-xl flex items-center justify-center text-base" style={{ background: '#FFFBEB' }}>🏪</span>
-                {totalStores} 店今日狀態
-              </h3>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: '#FFFBEB', color: '#92400E' }}>即時</span>
-            </div>
-            <div className="space-y-2">
-              {(['店面', '央廚'] as const).map(type => {
-                const group = storeList.filter(s => (s.type ?? '店面') === type)
-                if (group.length === 0) return null
-                return (
-                  <div key={type}>
-                    <p className="text-[10px] font-semibold uppercase tracking-wide px-1 mb-1.5 mt-3 first:mt-0"
-                      style={{ color: '#a1a1aa' }}>{type}</p>
-                    {group.map((store, idx) => {
-                      const closing = closingByStore[store.id]
-                      const statusKey = closing?.status ?? 'none'
-                      const st = DOT_STYLE[statusKey] ?? DOT_STYLE.none
-                      const hasRevenue = closing && ['submitted', 'verified'].includes(closing.status)
-                      const overviewHref = type === '央廚'
-                        ? `/hq/ck-overview?storeId=${store.id}`
-                        : `/hq/store-overview?storeId=${store.id}`
-                      return (
-                        <Link key={store.id} href={overviewHref}
-                          className="flex items-center gap-3 px-4 py-3 rounded-xl border transition-all hover:translate-x-1 hover:shadow-sm mb-1.5"
-                          style={{ borderColor: '#f4f4f5', opacity: hasRevenue ? 1 : 0.55 }}>
-                          <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white font-bold shrink-0"
-                            style={{ background: AVATAR_GRADS[idx % AVATAR_GRADS.length], fontSize: store.name.length > 2 ? '10px' : '13px' }}>
-                            {store.name}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold" style={{ color: '#18181b' }}>{store.name}</p>
-                            {hasRevenue && closing!.variance !== 0 && (
-                              <p className="text-xs tabular-nums" style={{ color: Math.abs(closing!.variance) > 200 ? '#dc2626' : '#d97706' }}>
-                                誤差 {closing!.variance >= 0 ? '+' : ''}{fmt(closing!.variance)}
-                              </p>
-                            )}
-                          </div>
-                          <div className="text-base font-bold tabular-nums shrink-0" style={{ color: hasRevenue ? '#18181b' : '#a1a1aa' }}>
-                            {hasRevenue ? `$${fmt(closing!.total_revenue)}` : '—'}
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0" style={{ minWidth: '64px' }}>
-                            <div className="h-2 w-2 rounded-full shrink-0"
-                              style={{ background: st.dot, boxShadow: `0 0 0 3px ${st.ring}` }} />
-                            <span className="text-xs font-semibold" style={{ color: '#52525b' }}>{st.label}</span>
-                          </div>
-                          <ChevronRight className="h-[18px] w-[18px] shrink-0" style={{ color: '#a1a1aa' }} />
-                        </Link>
-                      )
-                    })}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* 右欄：通知 + 月度圖表 */}
-          <div className="space-y-4">
-
-            {/* 需要關注 */}
-            <div className="bg-white rounded-2xl p-5"
-              style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <div className="flex items-center gap-2.5 mb-4">
-                <span className="h-8 w-8 rounded-xl flex items-center justify-center text-base" style={{ background: '#ffedd5' }}>🔔</span>
-                <h3 className="text-base font-semibold" style={{ color: '#18181b' }}>需要關注</h3>
-              </div>
-
-              {bigVarianceStores.map(c => (
-                <div key={c.store_id} className="flex gap-3 p-3 rounded-xl mb-2" style={{ background: '#f8fafc' }}>
-                  <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: '#ffe4e6', color: '#be123c' }}>
-                    <AlertTriangle className="h-[18px] w-[18px]" />
-                  </div>
-                  <div className="flex-1 min-w-0 text-sm leading-snug">
-                    <b className="block mb-0.5" style={{ color: '#18181b' }}>
-                      {storeMap[c.store_id]} 誤差 {c.variance >= 0 ? '+' : ''}{fmt(c.variance)}
-                    </b>
-                    <span className="text-[11px]" style={{ color: '#a1a1aa' }}>今日 · 請聯絡店長確認</span>
-                  </div>
-                </div>
-              ))}
-
-              {pendingN > 0 && (
-                <Link href="/hq/reviews"
-                  className="flex gap-3 p-3 rounded-xl mb-2 transition-opacity hover:opacity-80"
-                  style={{ background: '#f8fafc' }}>
-                  <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: '#fef3c7', color: '#b45309' }}>
-                    <FileText className="h-[18px] w-[18px]" />
-                  </div>
-                  <div className="flex-1 min-w-0 text-sm leading-snug">
-                    <b className="block mb-0.5" style={{ color: '#18181b' }}>{pendingN} 張帳目待審核</b>
-                    <span className="text-[11px]" style={{ color: '#a1a1aa' }}>點此前往審核中心 →</span>
-                  </div>
-                </Link>
-              )}
-
-              {bigVarianceCount === 0 && pendingN === 0 && (
-                <div className="flex gap-3 p-3 rounded-xl" style={{ background: '#f8fafc' }}>
-                  <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: '#d1fae5', color: '#047857' }}>
-                    <CheckSquare className="h-[18px] w-[18px]" />
-                  </div>
-                  <div className="flex-1 text-sm leading-snug">
-                    <b className="block mb-0.5" style={{ color: '#18181b' }}>目前無需關注項目</b>
-                    <span className="text-[11px]" style={{ color: '#a1a1aa' }}>今日運作順暢</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 月度各店走勢 */}
-            <div className="bg-white rounded-2xl p-5"
-              style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <div className="flex items-center gap-2.5 mb-4">
-                <span className="h-8 w-8 rounded-xl flex items-center justify-center text-base text-white"
-                  style={{ background: 'linear-gradient(135deg,#06b6d4,#F59E0B)' }}>📈</span>
-                <h3 className="text-base font-semibold" style={{ color: '#18181b' }}>{parseInt(m)} 月各店</h3>
-              </div>
-              <div className="space-y-2">
-                {(['店面', '央廚'] as const).map(type => {
-                  const group = storeList.filter(s => (s.type ?? '店面') === type)
-                  if (group.length === 0) return null
-                  const maxRev = Math.max(...Object.values(monthByStore), 1)
-                  return (
-                    <div key={type}>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide mb-1.5 mt-2 first:mt-0"
-                        style={{ color: '#a1a1aa' }}>{type}</p>
-                      {group.map(store => {
-                        const rev = monthByStore[store.id] || 0
-                        const pct = Math.round((rev / maxRev) * 100)
-                        return (
-                          <div key={store.id} className="mb-2.5">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-medium" style={{ color: '#52525b' }}>{store.name}</span>
-                              <span className="text-xs font-bold tabular-nums" style={{ color: '#18181b' }}>
-                                {rev > 0 ? `$${fmt(rev)}` : '—'}
-                              </span>
-                            </div>
-                            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#f1f5f9' }}>
-                              <div className="h-full rounded-full transition-all"
-                                style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#F59E0B,#818cf8)' }} />
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="flex items-center justify-between pt-3 mt-3"
-                style={{ borderTop: '1px solid #f4f4f5' }}>
-                <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>月份合計</span>
-                <span className="text-base font-bold tabular-nums" style={{ color: '#92400E' }}>${fmt(monthTotal)}</span>
-              </div>
-            </div>
-
-          </div>
-        </div>
-
+        <StoreStatsSection
+          icon={<ChefHat className="h-4 w-4" />}
+          title={`${parseInt(month)} 月央廚統計`}
+          description="央廚營業額為各店叫貨收入；點擊央廚可展開查看支出與廠商明細"
+          stores={storeStats.filter(store => store.type === '央廚')}
+          variant="kitchen"
+        />
       </div>
     </div>
   )
+}
+
+function StoreStatsSection({
+  icon,
+  title,
+  description,
+  stores,
+  variant,
+}: {
+  icon: ReactNode
+  title: string
+  description: string
+  stores: StoreSummary[]
+  variant: 'store' | 'kitchen'
+}) {
+  const isKitchen = variant === 'kitchen'
+  return (
+    <div className="bg-white rounded-2xl p-5 md:p-6" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+      <SectionTitle icon={icon} title={title} description={description} />
+      {stores.length === 0 ? (
+        <p className="text-sm text-center py-8" style={{ color: '#a1a1aa' }}>目前沒有可顯示的{isKitchen ? '央廚' : '店面'}資料</p>
+      ) : (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-5">
+          {stores.map(store => <StoreStatsCard key={store.id} store={store} isKitchen={isKitchen} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StoreStatsCard({ store, isKitchen }: { store: StoreSummary; isKitchen: boolean }) {
+  return (
+    <details className="group rounded-2xl overflow-hidden" style={{ border: '1px solid #e4e4e7' }}>
+      <summary className="list-none cursor-pointer select-none" style={{ background: isKitchen ? '#f5f3ff' : '#fffbeb' }}>
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 font-bold" style={{ background: isKitchen ? '#EDE9FE' : '#FEF3C7', color: isKitchen ? '#6D28D9' : '#92400E' }}>{isKitchen ? '央' : '店'}</span>
+            <div className="min-w-0">
+              <p className="font-bold truncate" style={{ color: '#18181b' }}>{store.name}</p>
+              <p className="text-[10px]" style={{ color: '#a1a1aa' }}>{isKitchen ? '央廚' : '店面'} · 點擊展開明細</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="text-base font-bold tabular-nums" style={{ color: '#92400E' }}>${fmt(store.revenue)}</span>
+            <ChevronDown className="h-5 w-5 transition-transform group-open:rotate-180" style={{ color: '#a1a1aa' }} />
+          </div>
+        </div>
+      </summary>
+      <div>
+        <div className="grid grid-cols-3 gap-px" style={{ background: '#e4e4e7' }}>
+          <SmallStat label={isKitchen ? '叫貨收入' : '營業額'} value={`$${fmt(store.revenue)}`} />
+          <SmallStat label="叫貨支出" value={`$${fmt(store.cost)}`} tone="orange" />
+          <SmallStat label="單據／支出率" value={`${store.vendors.reduce((sum, v) => sum + v.count, 0)} 筆 · ${store.revenue ? store.costRate.toFixed(1) : '—'}%`} />
+        </div>
+        <div className="p-3">
+          {store.vendors.length === 0 ? <p className="text-xs text-center py-3" style={{ color: '#a1a1aa' }}>本月尚無廠商叫貨</p> : <div className="space-y-1.5">
+            {store.vendors.map(group => <div key={`${group.storeId}-${group.group}`} className="rounded-lg overflow-hidden" style={{ background: '#f8fafc' }}>
+              <div className="grid grid-cols-[1fr_55px_95px] gap-2 items-center px-2.5 py-2">
+                <span className="text-sm font-semibold truncate" style={{ color: '#52525b' }}>{group.group}</span>
+                <span className="text-xs text-center tabular-nums" style={{ color: '#a1a1aa' }}>{group.count} 筆</span>
+                <span className="text-sm text-right font-bold tabular-nums" style={{ color: '#c2410c' }}>${fmt(group.total)}</span>
+              </div>
+              {group.vendors.length > 0 ? <div className="ml-3 mr-2 mb-2 pl-3 space-y-1" style={{ borderLeft: '2px solid #e2e8f0' }}>
+                {group.vendors.map(actual => <div key={actual.name} className="grid grid-cols-[1fr_55px_95px] gap-2 items-center px-2 py-1.5 rounded-md" style={{ background: 'white' }}>
+                  <span className="text-xs truncate" style={{ color: '#71717a' }}>↳ {actual.name}</span>
+                  <span className="text-[11px] text-center tabular-nums" style={{ color: '#a1a1aa' }}>{actual.count} 筆</span>
+                  <span className="text-xs text-right font-semibold tabular-nums" style={{ color: '#c2410c' }}>${fmt(actual.total)}</span>
+                </div>)}
+              </div> : <p className="px-3 pb-2 text-[11px]" style={{ color: '#a1a1aa' }}>未填實際廠商</p>}
+            </div>)}
+          </div>}
+        </div>
+      </div>
+    </details>
+  )
+}
+
+function SummaryValue({ label, value }: { label: string; value: string }) {
+  return <div><p className="text-xs mb-1" style={{ opacity: 0.7 }}>{label}</p><p className="text-2xl font-bold tabular-nums">{value}</p></div>
+}
+
+function MetricCard({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
+  return <div className="bg-white rounded-2xl p-5 relative overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}><div className="absolute left-0 top-0 w-1 h-full rounded-l-2xl" style={{ background: color }} /><p className="text-xs font-medium mb-2 pl-2" style={{ color: '#71717a' }}>{label}</p><p className="text-2xl sm:text-3xl font-bold tabular-nums pl-2" style={{ color: '#18181b' }}>{value}</p><p className="text-xs font-semibold mt-1.5 pl-2" style={{ color: '#a1a1aa' }}>{sub}</p></div>
+}
+
+function SmallStat({ label, value, tone }: { label: string; value: string; tone?: 'orange' }) {
+  return <div className="bg-white px-3 py-2.5 min-w-0"><p className="text-[10px] truncate" style={{ color: '#a1a1aa' }}>{label}</p><p className="text-sm font-bold tabular-nums truncate" style={{ color: tone === 'orange' ? '#c2410c' : '#18181b' }}>{value}</p></div>
+}
+
+function SectionTitle({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
+  return <div className="flex items-start gap-2.5"><span className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#FFFBEB', color: '#92400E' }}>{icon}</span><div><h2 className="text-base font-semibold" style={{ color: '#18181b' }}>{title}</h2><p className="text-xs mt-1" style={{ color: '#a1a1aa' }}>{description}</p></div></div>
 }

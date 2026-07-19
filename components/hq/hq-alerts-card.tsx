@@ -5,12 +5,14 @@ import Link from 'next/link'
 import {
   AlertTriangle,
   ArrowRight,
+  CalendarClock,
   CheckCircle2,
   ClipboardCheck,
   Clock3,
+  ChevronDown,
   Loader2,
 } from 'lucide-react'
-import { fetchHQAlerts, type HQAlerts } from '@/app/actions/hq-alerts'
+import { fetchHQAlerts, type HQAlerts, type OverdueAlert } from '@/app/actions/hq-alerts'
 
 type AlertItem = { id: string; name: string }
 
@@ -51,9 +53,18 @@ const toneStyle = {
   },
 }
 
+const overdueStatusStyle: Record<OverdueAlert['status'], { label: string; bg: string; color: string }> = {
+  not_submitted: { label: '未送出', bg: '#fff1f2', color: '#be123c' },
+  draft: { label: '草稿未送出', bg: '#fff7ed', color: '#c2410c' },
+  review: { label: '待審核', bg: '#eff6ff', color: '#1d4ed8' },
+  dispute: { label: '退回待修改', bg: '#fff1f2', color: '#be123c' },
+  handoff: { label: '待點交', bg: '#fffbeb', color: '#92400e' },
+}
+
 export default function HQAlertsCard() {
   const [alerts, setAlerts] = useState<HQAlerts | null>(null)
   const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState(true)
 
   useEffect(() => {
     fetchHQAlerts()
@@ -158,7 +169,8 @@ export default function HQAlertsCard() {
   ]
 
   const activeSections = sections.filter(section => section.items.length > 0)
-  const totalIssues = activeSections.reduce((sum, section) => sum + section.items.length, 0)
+  const overdueCount = alerts.overdue.length
+  const totalIssues = activeSections.reduce((sum, section) => sum + section.items.length, 0) + overdueCount
   const storeDoneText = `${alerts.storeCompleted}/${Math.max(alerts.totalStores, 0)}`
   const ckDoneText = `${alerts.ckCompleted}/${Math.max(alerts.totalCkStores, 0)}`
 
@@ -200,7 +212,7 @@ export default function HQAlertsCard() {
       className="rounded-2xl p-4 md:p-5"
       style={{ background: '#fffaf3', border: '1px solid #fed7aa' }}
     >
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white" style={{ color: '#c2410c' }}>
             <ClipboardCheck className="h-5 w-5" />
@@ -218,27 +230,17 @@ export default function HQAlertsCard() {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={`/hq/accounting?tab=store&date=${encodeURIComponent(alerts.today)}`}
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-white px-3 text-sm font-bold hover:bg-orange-50"
-            style={{ border: '1px solid #fed7aa', color: '#c2410c' }}
-          >
-            店家帳目
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-          <Link
-            href={`/hq/accounting?tab=ck&date=${encodeURIComponent(alerts.today)}`}
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-white px-3 text-sm font-bold hover:bg-orange-50"
-            style={{ border: '1px solid #fed7aa', color: '#c2410c' }}
-          >
-            央廚帳目
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
+        <button type="button" onClick={() => setExpanded(value => !value)}
+          className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg bg-white px-3 text-sm font-bold"
+          style={{ border: '1px solid #fed7aa', color: '#c2410c' }}>
+          <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+          {expanded ? '收合' : '展開'}
+        </button>
       </div>
 
-      <div className="mt-5 grid gap-3 xl:grid-cols-[260px_1fr]">
+      {!expanded && <p className="mt-3 pl-14 text-xs" style={{ color: '#a16207' }}>提醒內容已收合，仍有 {totalIssues} 件需要追蹤。</p>}
+
+      {expanded && <div className="mt-5 grid gap-3 xl:grid-cols-[260px_1fr]">
         <div className="space-y-3 rounded-xl bg-white p-3" style={{ border: '1px solid #fed7aa' }}>
           <ProgressRow label="店家已審核" value={storeDoneText} />
           <ProgressRow label="央廚已審核" value={ckDoneText} />
@@ -254,6 +256,7 @@ export default function HQAlertsCard() {
         </div>
 
         <div className="grid gap-3 md:grid-cols-2">
+          {overdueCount > 0 && <OverdueSection items={alerts.overdue} />}
           {activeSections.map(section => (
             <ActionSection key={section.key} section={section} date={alerts.today} />
           ))}
@@ -261,6 +264,51 @@ export default function HQAlertsCard() {
             <CompletedSection key={section.key} section={section} />
           ))}
         </div>
+      </div>}
+    </div>
+  )
+}
+
+function OverdueSection({ items }: { items: OverdueAlert[] }) {
+  return (
+    <div className="md:col-span-2 rounded-xl bg-white p-3" style={{ border: '1px solid #fecdd3' }}>
+      <div className="flex items-start justify-between gap-3 px-2 pb-2">
+        <div className="flex items-start gap-2">
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg" style={{ background: '#fff1f2', color: '#be123c' }}>
+            <CalendarClock className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="text-sm font-bold" style={{ color: '#881337' }}>逾期帳目提醒</p>
+            <p className="text-xs" style={{ color: '#9f1239' }}>前幾天尚未送出、審核或點交的帳目</p>
+          </div>
+        </div>
+        <span className="rounded-full px-2.5 py-1 text-xs font-bold" style={{ background: '#ffe4e6', color: '#be123c' }}>
+          {items.length} 件
+        </span>
+      </div>
+      <div className="max-h-[430px] space-y-2 overflow-y-auto px-1">
+        {items.map(item => {
+          const meta = overdueStatusStyle[item.status]
+          const href = item.entity === 'ck'
+            ? `/hq/accounting?tab=ck&ckStoreId=${encodeURIComponent(item.storeId)}&date=${encodeURIComponent(item.date)}`
+            : `/hq/accounting?tab=store&storeId=${encodeURIComponent(item.storeId)}&date=${encodeURIComponent(item.date)}`
+          return (
+            <Link key={item.id} href={href}
+              className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-opacity hover:opacity-75"
+              style={{ background: '#fffafa', border: '1px solid #fce7f3' }}>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold" style={{ color: '#18181b' }}>
+                  {item.entity === 'ck' ? '央廚' : '店家'} · {item.name}
+                </p>
+                <p className="mt-0.5 text-xs" style={{ color: '#71717a' }}>{item.date} · 逾期 {item.ageDays} 天</p>
+              </div>
+              <span className="shrink-0 rounded-full px-2 py-1 text-[11px] font-bold" style={{ background: meta.bg, color: meta.color }}>
+                {meta.label}
+              </span>
+              <ArrowRight className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />
+            </Link>
+          )
+        })}
       </div>
     </div>
   )

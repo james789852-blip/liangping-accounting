@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2, ChevronLeft, ChevronRight, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays, FileArchive, Check, Square, X } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, ChevronDown, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays, FileArchive, Check, Square, X } from 'lucide-react'
 import { fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
 import { fetchCKDailyDetail } from '@/app/actions/ck-overview'
 import { setManagerStore } from '@/app/actions/store-select'
@@ -13,6 +13,7 @@ import ReviewCard from './review-card'
 import CKOverview from './ck-overview'
 import HolidaysEditor from './holidays-editor'
 import BatchHolidaysDialog from './batch-holidays-dialog'
+import HQAlertsCard from './hq-alerts-card'
 import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 
 interface Store { id: string; name: string }
@@ -128,6 +129,7 @@ export default function AccountingClient({
   const [storeDetailCache, setStoreDetailCache] = useState<StoreDetailCache>(buildInitialStoreCache)
   const [showBatchHolidays, setShowBatchHolidays] = useState(false)
   const [showBatchExcel, setShowBatchExcel] = useState(false)
+  const [statusExpanded, setStatusExpanded] = useState(true)
   const ckDetailCacheRef = useRef<Map<string, CKDetailState>>(new Map())
 
   useEffect(() => { setSelectedStoreId(initialStoreId) }, [initialStoreId])
@@ -287,6 +289,9 @@ export default function AccountingClient({
           </button>
         </div>
       </div>
+      <div className="max-w-4xl mx-auto px-4 pt-4">
+        <HQAlertsCard />
+      </div>
       {showBatchHolidays && (
         <BatchHolidaysDialog
           stores={stores}
@@ -307,10 +312,21 @@ export default function AccountingClient({
       <div className="max-w-4xl mx-auto px-4 py-5 pb-28 space-y-4">
         {/* 狀態卡片 grid：所有店家或央廚 */}
         <div>
-          <p className="text-xs font-semibold mb-2 px-1" style={{ color: '#71717a' }}>
-            {tab === 'store' ? `店家（${stores.length} 家）` : `央廚（${ckStores.length} 間）`}
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+          <div className="flex items-center justify-between gap-3 mb-2 px-1">
+            <div>
+              <p className="text-sm font-bold" style={{ color: '#3f3f46' }}>
+                {tab === 'store' ? `店家狀態（${stores.length} 家）` : `央廚狀態（${ckStores.length} 間）`}
+              </p>
+              <p className="text-[11px] mt-0.5" style={{ color: '#a1a1aa' }}>選擇一個據點查看下方詳細帳目</p>
+            </div>
+            <button type="button" onClick={() => setStatusExpanded(value => !value)}
+              className="h-9 px-3 rounded-lg flex items-center gap-1.5 text-xs font-bold shrink-0"
+              style={{ background: 'white', color: '#52525b', border: '1px solid #e4e4e7' }}>
+              <ChevronDown className={`h-4 w-4 transition-transform ${statusExpanded ? 'rotate-180' : ''}`} />
+              {statusExpanded ? '收合' : '展開'}
+            </button>
+          </div>
+          {statusExpanded && <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
             {tab === 'store' ? stores.map(s => {
               const c = closingByStore[s.id]
               const isHoliday = holidaySet.has(s.id)
@@ -355,6 +371,7 @@ export default function AccountingClient({
               )
             })}
           </div>
+          }
         </div>
 
         {/* 選中詳情 */}

@@ -15,6 +15,7 @@ import { normalizeItemAmount } from '@/lib/negative-items'
 import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
 import SharedSafePhotoImage from '@/components/shared/safe-photo-image'
+import { storePhotoPath } from '@/lib/storage-paths'
 
 interface RemittanceAdjustment {
   id: string
@@ -372,9 +373,9 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
     (data.coins_5    * 5    + data.lump_5)    +
     (data.coins_1    * 1    + data.lump_1)
   const largeExpenseTotal = largeCashExpenses.reduce((sum, item) => sum + Math.abs(item.amount || 0), 0)
-  const preReservedExpenseTotal = getPreReservedExpenseTotal(largeCashExpenses)
   // 現金清點、實匯入、誤差與 Excel 維持原始邏輯：大額支出一律先從今日現金扣除。
   // 「前幾日已預留」只在最後包回 HQ 的金額加回，不改動上述原始帳務數字。
+  const preReservedExpenseTotal = getPreReservedExpenseTotal(largeCashExpenses)
   const cashExpenseTotal = largeExpenseTotal
   // 顧客已完成轉帳但不在現金鈔箱；現金清點的總額仍要呈現這筆收入，
   // 下一步再透過負的匯款調整扣回，得到實際要包回公司的金額。
@@ -1537,6 +1538,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     })
   }, [pendingRentReserve, isLocked, submitDone, existingClosing?.reserve_items, reserves, reserveLsKey, s.finalRemit])
 
+  // 歷史資料補足後，舊草稿可能還留著前一版自動帶入的房租預留。
+  // 沒有未結清帳單時移除這筆暫存，避免畫面仍顯示已完成的差額。
+  useEffect(() => {
+    if (pendingRentReserve || isLocked || submitDone) return
+    setReserves(prev => {
+      const next = prev.filter(item => !(item.auto_reserved && item.reason.trim() === '房租'))
+      return next.length === prev.length ? prev : next
+    })
+  }, [pendingRentReserve, isLocked, submitDone])
+
   useEffect(() => {
     if (!handwriteOrdersHydrated || isLocked || submitDone) return
     try {
@@ -1571,7 +1582,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const removeLargeCashExpense = useCallback((id: string) => {
     setLargeCashExpenses(prev => prev.filter(item => item.id !== id))
   }, [])
-
   useEffect(() => {
     if (isLocked || submitDone) return
     const t = setInterval(() => handleSave(true), 60000)
@@ -1644,7 +1654,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     e.target.value = ''
     setCkPhotoPreview(URL.createObjectURL(file))
     const ext = file.name.split('.').pop() || 'jpg'
-    const path = `receipts/${store.id}/${today}/ck-delivery.${ext}`
+    const path = storePhotoPath(store.id, today, 'closing/ck-delivery', `ck-delivery.${ext}`)
     const result = await uploadReceiptPhoto(path, file)
     if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
     setCkPhotoUrl(result.publicUrl)
@@ -1665,7 +1675,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     e.target.value = ''
     setEnvelopePhotoPreview(URL.createObjectURL(file))
     const ext = file.name.split('.').pop() || 'jpg'
-    const path = `receipts/${store.id}/${today}/envelope.${ext}`
+    const path = storePhotoPath(store.id, today, 'closing/envelope', `envelope.${ext}`)
     const result = await uploadReceiptPhoto(path, file)
     if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
     setEnvelopePhotoUrl(result.publicUrl)
@@ -1683,7 +1693,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const uniqueId = (typeof crypto !== 'undefined' && crypto.randomUUID)
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const path = `receipts/${store.id}/${today}/extra-${uniqueId}.${ext}`
+    const path = storePhotoPath(store.id, today, 'closing/extra', `extra-${uniqueId}.${ext}`)
     const result = await uploadReceiptPhoto(path, file)
     setExtraPhotoUploading(false)
     if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
@@ -1698,7 +1708,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setVoidInvoiceUploading(true)
     const ext = file.name.split('.').pop() || 'jpg'
     const idx = voidInvoicePhotos.length
-    const path = `receipts/${store.id}/${today}/void-invoice-${idx}.${ext}`
+    const path = storePhotoPath(store.id, today, 'closing/void-invoice', `void-invoice-${idx}.${ext}`)
     const result = await uploadReceiptPhoto(path, file)
     setVoidInvoiceUploading(false)
     if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
@@ -1712,7 +1722,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     e.target.value = ''
     setNotePhotoPreview(URL.createObjectURL(file))
     const ext = file.name.split('.').pop() || 'jpg'
-    const path = `receipts/${store.id}/${today}/note.${ext}`
+    const path = storePhotoPath(store.id, today, 'closing/note', `note.${ext}`)
     const result = await uploadReceiptPhoto(path, file)
     if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
     setNotePhotoUrl(result.publicUrl)
@@ -1774,7 +1784,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     let newPhotoUrl = oldReceipt.photo_url
     if (editPhotoFile) {
       const ext = editPhotoFile.name.split('.').pop()?.toLowerCase() || 'jpg'
-      const path = `receipts/${store.id}/${today}/${editingReceiptId}.${ext}`
+      const path = storePhotoPath(store.id, today, 'receipts', `${editingReceiptId}.${ext}`)
       const uploadResult = await uploadReceiptPhoto(path, editPhotoFile)
       if (!('error' in uploadResult)) newPhotoUrl = uploadResult.publicUrl
     }
@@ -1864,7 +1874,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     newForms.forEach(async form => {
       if (!form.file) return
       const ext = form.file.name.split('.').pop()?.toLowerCase() || 'jpg'
-      const path = `receipts/${store.id}/${today}/${form.id}.${ext}`
+      const path = storePhotoPath(store.id, today, 'receipts', `${form.id}.${ext}`)
       const result = await uploadReceiptPhoto(path, form.file)
       if (!('error' in result)) {
         setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploadedPhotoUrl: result.publicUrl } : f))
@@ -2060,7 +2070,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     let photo_url = form.uploadedPhotoUrl ?? ''
     if (!photo_url && form.file) {
       const ext = form.file.name.split('.').pop()?.toLowerCase() || 'jpg'
-      const path = `receipts/${store.id}/${today}/${form.id}.${ext}`
+      const path = storePhotoPath(store.id, today, 'receipts', `${form.id}.${ext}`)
       const uploadResult = await uploadReceiptPhoto(path, form.file)
       if (!('error' in uploadResult)) photo_url = uploadResult.publicUrl
     }
@@ -2241,7 +2251,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
     const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
     const safeKey = [...key].map(c => /[\w-]/.test(c) ? c : c.codePointAt(0)!.toString()).join('')
-    const path = `receipts/${store.id}/${today}/rev-${safeKey}.${ext}`
+    const path = storePhotoPath(store.id, today, 'closing/revenue', `rev-${safeKey}.${ext}`)
     const uploadResult = await uploadReceiptPhoto(path, file)
     if ('error' in uploadResult) {
       toast.error(`照片上傳失敗：${uploadResult.error}`)
@@ -2924,7 +2934,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         )}
 
         {/* 未完成預留款提醒 */}
-        {prevDayReserves && prevDayReserves.items.length > 0 && (
+        {(stepId === 'receipts' || (isLocked && !submitDone)) && prevDayReserves && prevDayReserves.items.length > 0 && (
           <div className="rounded-2xl px-4 py-3.5" style={{ background: '#fff7ed', border: '1.5px solid #fed7aa' }}>
             <div className="flex items-center gap-2 mb-2">
               <PiggyBank className="h-4 w-4 shrink-0" style={{ color: '#ea580c' }} />
@@ -2954,6 +2964,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   </div>
                 )
               })}
+            </div>
+          </div>
+        )}
+
+        {(stepId === 'receipts' || (isLocked && !submitDone)) && preReservedExpenseHints.length > 0 && (
+          <div className="rounded-2xl px-4 py-3.5 flex items-start gap-2.5" style={{ background: '#fff7ed', border: '1.5px solid #fdba74' }}>
+            <FileText className="h-4 w-4 mt-0.5 shrink-0" style={{ color: '#c2410c' }} />
+            <div>
+              <p className="text-sm font-semibold" style={{ color: '#c2410c' }}>預留款提醒</p>
+              <p className="text-xs mt-0.5" style={{ color: '#9a3412' }}>
+                前幾日有預留款，若今天確實已支付，請在「上傳單據」新增對應支出單據，再到現金清點登記大額支出。
+              </p>
             </div>
           </div>
         )}
@@ -4399,7 +4421,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         {(stepId === 'cash' || (isLocked && !submitDone)) && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="現金清點"
-              desc="輸入各幣值張數；若有房租、營業稅等大額支出，可在下方登記扣除。" />}
+              desc="輸入各幣值張數；如有今天實際支付的大額支出，請在下方登記。" />}
 
             <SectionCard icon={<Calculator className="h-4 w-4" />} title="現金清點" iconColor="#10b981">
               <div className="space-y-2.5">
@@ -4437,7 +4459,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold" style={{ color: '#9a3412' }}>大額支出</p>
-                    <p className="text-[11px]" style={{ color: '#c2410c' }}>例如房租、營業稅。現金清點與實匯入維持原始計算；系統會自動判定前幾日預留並在最後包款加回。</p>
+                    <p className="text-[11px]" style={{ color: '#c2410c' }}>填寫實匯入預留款的大額支出金額</p>
                   </div>
                   {!isLocked && (
                     <button type="button" onClick={addLargeCashExpense}
@@ -4806,6 +4828,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           {remaining !== null && (
                             <p className="text-xs mt-1 tabular-nums" style={{ color: '#be123c' }}>
                               {r.accumulated_before ? `累計已預留 $${fmt(accumulatedTotal)}，` : ''}尚差 ${fmt(remaining)}，明日繼續預留
+                            </p>
+                          )}
+                          {r.total_bill && remaining === null && (
+                            <p className="text-xs mt-1" style={{ color: '#047857' }}>
+                              ✓ 今日已完成預留（不代表已付款）
                             </p>
                           )}
                         </div>

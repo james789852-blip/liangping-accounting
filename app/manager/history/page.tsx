@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronRight, History, Search } from 'lucide-react'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
-import { getMonthLastDay } from '@/lib/business-date'
+import { getBusinessDate, getMonthLastDay } from '@/lib/business-date'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +16,46 @@ const STATUS: Record<string, { label: string; dot: string; ring: string }> = {
   submitted: { label: '已送出', dot: '#F59E0B', ring: '#FEF3C7' },
   verified:  { label: '已審核', dot: '#10b981', ring: '#d1fae5' },
   disputed:  { label: '退回中', dot: '#f43f5e', ring: '#ffe4e6' },
+}
+
+// 日期／月份欄位在 iOS 會帶有瀏覽器原生的最小寬度；明確採 border-box
+// 才能讓外框、內距與欄位寬度都留在搜尋卡片內。
+const HISTORY_INPUT_STYLE = {
+  boxSizing: 'border-box' as const,
+  width: '100%',
+  maxWidth: '100%',
+  minWidth: 0,
+  height: '40px',
+  display: 'block',
+  border: '1.5px solid #e4e4e7',
+  borderRadius: '12px',
+  fontSize: '16px',
+  outline: 'none',
+  background: 'white',
+  fontFamily: 'inherit',
+  color: '#18181b',
+}
+
+const HISTORY_DATE_INPUT_STYLE = {
+  ...HISTORY_INPUT_STYLE,
+  appearance: 'none' as const,
+  WebkitAppearance: 'none' as const,
+}
+
+function buildMonthOptions(selectedMonth: string) {
+  const [anchorYear, anchorMonth] = getBusinessDate().slice(0, 7).split('-').map(Number)
+  const options: { value: string; label: string }[] = []
+  for (let offset = 0; offset < 36; offset++) {
+    const serial = anchorYear * 12 + (anchorMonth - 1) - offset
+    const year = Math.floor(serial / 12)
+    const month = (serial % 12) + 1
+    const value = `${year}-${String(month).padStart(2, '0')}`
+    options.push({ value, label: `${year} 年 ${month} 月` })
+  }
+  if (selectedMonth && !options.some(option => option.value === selectedMonth)) {
+    options.unshift({ value: selectedMonth, label: `${selectedMonth}（目前選取）` })
+  }
+  return options
 }
 
 export default async function HistoryPage({
@@ -36,6 +76,7 @@ export default async function HistoryPage({
   const params = await searchParams
   const searchDate = params.date ?? ''
   const searchMonth = params.month ?? ''
+  const monthOptions = buildMonthOptions(searchMonth)
   const admin = createAdminClient()
 
   const { data: currentStore } = await admin
@@ -100,28 +141,33 @@ export default async function HistoryPage({
             </div>
             <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>帳目紀錄</h1>
             <form method="GET" action="/manager/history" className="mt-4 rounded-2xl bg-white p-3" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-              <p className="text-xs font-bold mb-2" style={{ color: '#71717a' }}>搜尋帳目</p>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_150px_auto_auto]">
+              <p className="text-xs font-bold" style={{ color: '#71717a' }}>搜尋帳目</p>
+              <p className="mt-1 mb-3 text-xs leading-5" style={{ color: '#92400e' }}>請選擇指定日期或月份，查詢歷史帳目。</p>
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_150px_auto_auto]">
                 <label className="min-w-0">
                   <span className="mb-1 block text-[11px] font-semibold" style={{ color: '#a1a1aa' }}>指定日期</span>
-                  <div className="relative">
+                  <div className="relative w-full min-w-0">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#a1a1aa' }} />
-                    <input type="date" name="date" defaultValue={searchDate}
-                      style={{ width: '100%', minWidth: 0, height: '40px', padding: '0 10px 0 36px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '16px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b' }} />
+                    <input type="date" name="date" aria-label="選擇指定日期" defaultValue={searchDate}
+                      className="history-date-input"
+                      style={{ ...HISTORY_DATE_INPUT_STYLE, padding: '0 10px 0 36px' }} />
                   </div>
                 </label>
                 <label className="min-w-0">
                   <span className="mb-1 block text-[11px] font-semibold" style={{ color: '#a1a1aa' }}>整月查詢</span>
-                  <input type="month" name="month" defaultValue={searchMonth}
+                  <select name="month" aria-label="選擇整月" defaultValue={searchMonth}
                     className="min-w-0"
-                    style={{ width: '100%', minWidth: 0, height: '40px', padding: '0 10px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '16px', outline: 'none', background: 'white', fontFamily: 'inherit', color: '#18181b' }} />
+                    style={{ ...HISTORY_INPUT_STYLE, padding: '0 10px' }}>
+                    <option value="">請選擇月份</option>
+                    {monthOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
                 </label>
-                <button type="submit" className="rounded-xl text-sm font-semibold text-white sm:mt-[18px]" style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', height: '40px', minWidth: '64px' }}>搜尋</button>
+                <button type="submit" className="rounded-xl text-sm font-semibold text-white lg:mt-[18px]" style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', height: '40px', minWidth: '64px' }}>搜尋</button>
                 {(searchDate || searchMonth) && (
-                  <a href="/manager/history" className="rounded-xl text-sm font-medium flex items-center justify-center sm:mt-[18px]" style={{ border: '1.5px solid #e4e4e7', color: '#71717a', height: '40px', minWidth: '56px', background: 'white' }}>清除</a>
+                  <a href="/manager/history" className="rounded-xl text-sm font-medium flex items-center justify-center lg:mt-[18px]" style={{ border: '1.5px solid #e4e4e7', color: '#71717a', height: '40px', minWidth: '56px', background: 'white' }}>清除</a>
                 )}
               </div>
-              <p className="mt-2 text-[11px]" style={{ color: '#a1a1aa' }}>可查單日帳目，也可選月份查看整月紀錄。</p>
+              <p className="mt-2 text-[11px]" style={{ color: '#a1a1aa' }}>單日與月份只能擇一查詢；可查單日帳目，也可選月份查看整月紀錄。</p>
             </form>
           </div>
         </div>
@@ -215,54 +261,50 @@ export default async function HistoryPage({
 
           {/* 搜尋列 */}
           <form method="GET" action="/manager/history" className="mt-4 rounded-2xl bg-white p-3" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-            <p className="text-xs font-bold mb-2" style={{ color: '#71717a' }}>搜尋帳目</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_150px_auto_auto]">
+            <p className="text-xs font-bold" style={{ color: '#71717a' }}>搜尋帳目</p>
+            <p className="mt-1 mb-3 text-xs leading-5" style={{ color: '#92400e' }}>請選擇指定日期或月份，查詢歷史帳目。</p>
+            <div className="grid grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_150px_auto_auto]">
               <label className="min-w-0">
                 <span className="mb-1 block text-[11px] font-semibold" style={{ color: '#a1a1aa' }}>指定日期</span>
-                <div className="relative">
+                <div className="relative w-full min-w-0">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#a1a1aa' }} />
                   <input
                     type="date"
                     name="date"
                     defaultValue={searchDate}
-                    style={{
-                      width: '100%', minWidth: 0, height: '40px', padding: '0 10px 0 36px',
-                      border: '1.5px solid #e4e4e7', borderRadius: '12px',
-                      fontSize: '16px', outline: 'none', background: 'white',
-                      fontFamily: 'inherit', color: '#18181b',
-                    }}
+                    aria-label="選擇指定日期"
+                    className="history-date-input"
+                    style={{ ...HISTORY_DATE_INPUT_STYLE, padding: '0 10px 0 36px' }}
                   />
                 </div>
               </label>
               <label className="min-w-0">
                 <span className="mb-1 block text-[11px] font-semibold" style={{ color: '#a1a1aa' }}>整月查詢</span>
-                <input
-                  type="month"
+                <select
                   name="month"
                   defaultValue={searchMonth}
                   className="min-w-0"
-                  style={{
-                    width: '100%', minWidth: 0, height: '40px', padding: '0 10px',
-                    border: '1.5px solid #e4e4e7', borderRadius: '12px',
-                    fontSize: '16px', outline: 'none', background: 'white',
-                    fontFamily: 'inherit', color: '#18181b',
-                  }}
-                />
+                  aria-label="選擇整月"
+                  style={{ ...HISTORY_INPUT_STYLE, padding: '0 10px' }}
+                >
+                  <option value="">請選擇月份</option>
+                  {monthOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
               </label>
               <button type="submit"
-                className="rounded-xl text-sm font-semibold text-white sm:mt-[18px]"
+                className="rounded-xl text-sm font-semibold text-white lg:mt-[18px]"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', height: '40px', minWidth: '64px' }}>
                 搜尋
               </button>
               {(searchDate || searchMonth) && (
                 <a href="/manager/history"
-                  className="rounded-xl text-sm font-medium flex items-center justify-center sm:mt-[18px]"
+                  className="rounded-xl text-sm font-medium flex items-center justify-center lg:mt-[18px]"
                   style={{ border: '1.5px solid #e4e4e7', color: '#71717a', height: '40px', minWidth: '56px', background: 'white' }}>
                   清除
                 </a>
               )}
             </div>
-            <p className="mt-2 text-[11px]" style={{ color: '#a1a1aa' }}>可查單日帳目，也可選月份查看整月紀錄。</p>
+            <p className="mt-2 text-[11px]" style={{ color: '#a1a1aa' }}>單日與月份只能擇一查詢；可查單日帳目，也可選月份查看整月紀錄。</p>
           </form>
         </div>
       </div>

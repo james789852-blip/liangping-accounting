@@ -235,20 +235,22 @@ export default function ItemMappingsClient({
   }
 
   function handleAdd() {
-    if (!newName.trim()) return
+    if (!newName.trim() || batchStoreIds.length === 0) return
     const excelCol = newCol.trim() || newName.trim()
     startTransition(async () => {
-      const targets: string[] = [activeStoreId]
-      const results = await Promise.all(
-        targets.map(sid => saveItemMapping(newName.trim(), excelCol, newCat, sid, newVendorGroup.trim() || undefined))
-      )
+      const targets = Array.from(new Set(batchStoreIds))
+      // 逐店建立，避免第一次新增自訂品項時多個請求同時建立 system_items 造成競態。
+      const results: any[] = []
+      for (const sid of targets) {
+        results.push(await saveItemMapping(newName.trim(), excelCol, newCat, sid, newVendorGroup.trim() || undefined))
+      }
       const errors = results.filter((r): r is { error: string } => !!(r as any)?.error)
       if (errors.length > 0) {
         toast.error(`新增失敗：${errors.map(e => e.error).join('；')}`)
         return
       }
       if (newDocType.trim()) {
-        await Promise.all(targets.map(sid => setItemDocOverride(newName.trim(), sid ?? null, newDocType.trim())))
+        for (const sid of targets) await setItemDocOverride(newName.trim(), sid, newDocType.trim())
       }
       // Optimistic：若 auto-create 了新 vg，立即加入 vgsState
       for (const r of results) {
@@ -502,7 +504,15 @@ export default function ItemMappingsClient({
                 style={{ background: 'white', border: '1.5px solid #E0F2FE', color: '#0369A1' }}>
                 <Tag className="h-3.5 w-3.5" /> 新增分類
               </button>
-              <button onClick={() => { setShowAdd(!showAdd); setNewName(''); setNewCol(''); setNewCat('食材'); setNewDocType('') }}
+              <button onClick={() => {
+                const opening = !showAdd
+                setShowAdd(opening)
+                setNewName('')
+                setNewCol('')
+                setNewCat('食材')
+                setNewDocType('')
+                setBatchStoreIds(opening ? [activeStoreId] : [])
+              }}
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-white text-sm font-semibold"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
                 <Plus className="h-4 w-4" /> 新增品項
@@ -602,7 +612,7 @@ export default function ItemMappingsClient({
         {showAdd && (
           <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1.5px solid #FEF3C7', boxShadow: '0 2px 8px rgba(245,158,11,0.12)' }}>
             <p className="text-sm font-semibold" style={{ color: '#92400E' }}>
-              新增品項對應（{stores.find(s => s.id === activeStoreId)?.name ?? '此店'} 專屬）
+              新增品項對應（可套用到多間店面）
             </p>
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -651,13 +661,44 @@ export default function ItemMappingsClient({
                 </select>
               </div>
             </div>
+            <div className="rounded-xl p-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div>
+                  <p className="text-xs font-semibold" style={{ color: '#334155' }}>一起套用到其他店面</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: '#94a3b8' }}>同一個品項會分別建立到勾選的店面，不會覆蓋其他品項。</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button type="button" onClick={() => setBatchStoreIds(stores.map(s => s.id))}
+                    className="text-[11px] font-semibold px-2 py-1 rounded-lg"
+                    style={{ background: 'white', border: '1px solid #cbd5e1', color: '#475569' }}>全選</button>
+                  <button type="button" onClick={() => setBatchStoreIds([activeStoreId])}
+                    className="text-[11px] font-semibold px-2 py-1 rounded-lg"
+                    style={{ background: 'white', border: '1px solid #cbd5e1', color: '#475569' }}>只選目前店</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-32 overflow-y-auto pr-1">
+                {stores.map(store => {
+                  const checked = batchStoreIds.includes(store.id)
+                  return (
+                    <label key={store.id} className="flex items-center gap-2 min-h-10 px-2.5 rounded-lg cursor-pointer"
+                      style={{ background: checked ? '#fffbeb' : 'white', border: `1px solid ${checked ? '#fbbf24' : '#e2e8f0'}` }}>
+                      <input type="checkbox" checked={checked}
+                        onChange={() => setBatchStoreIds(prev => checked ? prev.filter(id => id !== store.id) : [...prev, store.id])}
+                        className="h-4 w-4 shrink-0" style={{ accentColor: '#F59E0B' }} />
+                      <span className="text-xs font-medium truncate" style={{ color: checked ? '#92400E' : '#475569' }}>{store.name}</span>
+                    </label>
+                  )
+                })}
+              </div>
+              {batchStoreIds.length === 0 && <p className="text-[11px] mt-2" style={{ color: '#be123c' }}>請至少選擇一間店面</p>}
+            </div>
             <div className="flex gap-2">
-              <button onClick={handleAdd} disabled={!newName.trim() || isPending}
-                className="px-4 py-2 rounded-xl text-sm font-semibold text-white"
-                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', opacity: !newName.trim() || isPending ? 0.5 : 1 }}>
-                儲存
+              <button onClick={handleAdd} disabled={!newName.trim() || batchStoreIds.length === 0 || isPending}
+                className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', opacity: !newName.trim() || batchStoreIds.length === 0 || isPending ? 0.5 : 1 }}>
+                {isPending ? '儲存中…' : `儲存到 ${batchStoreIds.length} 間店`}
               </button>
-              <button onClick={() => setShowAdd(false)}
+              <button onClick={() => { setShowAdd(false); setBatchStoreIds([]) }}
                 className="px-4 py-2 rounded-xl text-sm font-semibold"
                 style={{ background: 'white', border: '1px solid #e4e4e7', color: '#52525b' }}>
                 取消
@@ -937,7 +978,7 @@ function SortableItemRow({
     background: isDragging ? '#fef3c7' : undefined,
   }
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-2 md:py-2.5">
+    <div ref={setNodeRef} style={style} className="flex flex-wrap items-center gap-1.5 md:gap-2 px-2 md:px-3 py-2 md:py-2.5">
       {/* 選取模式：checkbox */}
       {selectMode && (
         <input type="checkbox" checked={isSelected} onChange={onToggleSelect}
@@ -953,7 +994,7 @@ function SortableItemRow({
           <GripVertical className="h-4 w-4" />
         </button>
       )}
-      <span className="flex-1 text-sm font-semibold flex flex-wrap items-center gap-1.5" style={{ color: '#18181b' }}>
+      <span className="min-w-0 flex-1 text-sm font-semibold flex flex-wrap items-center gap-1.5" style={{ color: '#18181b' }}>
         <InlineItemNameEditor mappingId={m.id} currentName={displayName(m)} fullName={m.item_name} excelColumn={m.excel_column} />
         {false && (
           <button onClick={() => setShowStores(v => !v)}
@@ -976,22 +1017,23 @@ function SortableItemRow({
         />
       )}
       {editId === m.id ? (
-        <>
-          <input list="excel-col-list" style={SELECT_STYLE}
+        <div className="w-full sm:w-auto flex flex-wrap items-center gap-2 pt-1 sm:pt-0">
+          <input list="excel-col-list" className="w-full sm:w-auto min-w-0 flex-1 sm:flex-none min-h-11 sm:min-h-0" style={{ ...SELECT_STYLE, height: undefined }}
             value={editCol} onChange={e => setEditCol(e.target.value)}
             placeholder="Excel 欄位" />
-          <select style={SELECT_STYLE} value={editCat} onChange={e => setEditCat(e.target.value)}>
+          <select className="w-full sm:w-auto min-h-11 sm:min-h-0" style={{ ...SELECT_STYLE, height: undefined }} value={editCat} onChange={e => setEditCat(e.target.value)}>
             <option>食材</option><option>耗材</option><option>雜項</option>
           </select>
           <input placeholder="分類（廠商或發票）" value={editVendorGroup} onChange={e => setEditVendorGroup(e.target.value)}
-            style={{ height: '32px', padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit', width: '110px' }} />
-          <button onClick={() => handleUpdate(m.id)} style={{ color: '#047857' }}>
+            className="w-full sm:w-[110px] min-h-11 sm:min-h-0"
+            style={{ height: undefined, padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit' }} />
+          <button onClick={() => handleUpdate(m.id)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg" style={{ color: '#047857' }} aria-label="儲存修改">
             <Check className="h-4 w-4" />
           </button>
-          <button onClick={() => setEditId(null)} style={{ color: '#a1a1aa' }}>
+          <button onClick={() => setEditId(null)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg" style={{ color: '#a1a1aa' }} aria-label="取消修改">
             <X className="h-4 w-4" />
           </button>
-        </>
+        </div>
       ) : (
         <>
           <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
@@ -999,12 +1041,12 @@ function SortableItemRow({
           <RefundToggle mappingId={m.id} isRefund={!!m.is_refund} />
           <TaxAddonToggle mappingId={m.id} enabled={!!m.is_tax_addon} />
           <span className="hidden md:inline text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
-          <button onClick={() => startEdit(m)} style={{ color: '#d4d4d8' }}
+          <button onClick={() => startEdit(m)} className="min-h-10 min-w-10 flex items-center justify-center rounded-lg" style={{ color: '#d4d4d8' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#F59E0B')}
             onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
             <Edit2 className="h-4 w-4" />
           </button>
-          <button onClick={() => handleDelete(m.id)} style={{ color: '#d4d4d8' }}
+          <button onClick={() => handleDelete(m.id)} className="min-h-10 min-w-10 flex items-center justify-center rounded-lg" style={{ color: '#d4d4d8' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#be123c')}
             onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
             <Trash2 className="h-4 w-4" />

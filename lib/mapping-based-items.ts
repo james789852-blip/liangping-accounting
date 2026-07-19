@@ -42,11 +42,12 @@ async function loadStoreItemsFromMappings(storeId: string): Promise<ResolvedStor
 
   const vgByName = new Map<string, any>((vgs ?? []).map((v: any) => [v.name as string, v]))
 
-  // 同店同名只保留一筆；正常情況資料庫不應有重複，這裡保守去重。
+  // 同一品名可以分屬不同廠商分類（例如「油豆腐」分類內的「油豆腐」品項）。
   const byName = new Map<string, any>()
   for (const m of mappings ?? []) {
-    const existing = byName.get(m.item_name)
-    if (!existing) byName.set(m.item_name, m)
+    const key = `${m.item_name}||${m.vendor_group ?? ''}`
+    const existing = byName.get(key)
+    if (!existing) byName.set(key, m)
   }
 
   const items: ResolvedStoreItem[] = []

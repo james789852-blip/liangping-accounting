@@ -281,15 +281,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
   )
 
   if (columns) {
-    // Save columns.json with plain string arrays (backward compatible with route.ts/google-sheets.ts readers)
-    const colsForJson = {
-      食材: columns['食材'].map(c => c.name),
-      耗材: columns['耗材'].map(c => c.name),
-      雜項: columns['雜項'].map(c => c.name),
-    }
-    const colBuf = new TextEncoder().encode(JSON.stringify(colsForJson))
-    await admin.storage.from(BUCKET).upload(`${storeId}-columns.json`, colBuf, { upsert: true, contentType: 'application/json' })
-
     // Get vendor groups keyed by column NUMBER (handles duplicate column names correctly)
     let vendorGroupByCol: Record<number, string> = {}
     let headerRowNum = -1
@@ -299,6 +290,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
       }
       if (headerRowNum > 2) vendorGroupByCol = getVendorGroupByCol(wsUsed, headerRowNum)
     }
+
+    // 舊版 Excel 可能把廠商分類標題重複放在品項列（例如「菜商」）。
+    // 這是群組標題，不是實際品項，不能新增成 Excel 欄位。
+    const isRepeatedVendorLabel = (item: ColItem) => {
+      const vendor = (vendorGroupByCol[item.col] ?? '').trim()
+      return !!vendor && vendor !== '未分類' && item.name.trim() === vendor
+    }
+    columns = {
+      食材: columns['食材'].filter(item => !isRepeatedVendorLabel(item)),
+      耗材: columns['耗材'].filter(item => !isRepeatedVendorLabel(item)),
+      雜項: columns['雜項'].filter(item => !isRepeatedVendorLabel(item)),
+    }
+
+    // Save columns.json with plain string arrays (backward compatible with route.ts/google-sheets.ts readers)
+    const colsForJson = {
+      食材: columns['食材'].map(c => c.name),
+      耗材: columns['耗材'].map(c => c.name),
+      雜項: columns['雜項'].map(c => c.name),
+    }
+    const colBuf = new TextEncoder().encode(JSON.stringify(colsForJson))
+    await admin.storage.from(BUCKET).upload(`${storeId}-columns.json`, colBuf, { upsert: true, contentType: 'application/json' })
 
     // Build flat list with column positions and categories
     const allCols = [

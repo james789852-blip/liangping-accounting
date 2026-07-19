@@ -9,6 +9,7 @@ import { saveItemMappingsBatch } from '@/app/actions/item-mappings'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import { Camera, Loader2, CheckCircle2, Plus, Trash2, X, Sparkles } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
+import { storePhotoPath } from '@/lib/storage-paths'
 
 interface MappingMap {
   [itemName: string]: { excel_column: string; item_category: string }
@@ -142,7 +143,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
     setStep('recognizing')
     const supabase = createClient()
     const ext = file.name.split('.').pop() || 'jpg'
-    const path = `${storeId}/${today}/${Date.now()}.${ext}`
+    const path = storePhotoPath(storeId, today, 'receipts', `${Date.now()}.${ext}`)
     const { error: upErr } = await supabase.storage.from('receipts').upload(path, file)
     if (upErr) { setError('上傳失敗：' + upErr.message); setStep('upload'); return }
 

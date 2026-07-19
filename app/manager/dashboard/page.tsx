@@ -21,13 +21,13 @@ function parseDateOnly(date: string) {
   return new Date(year, month - 1, day)
 }
 
-const STATUS_DESC: Record<string, { label: string; pct: number; btnLabel: string }> = {
-  none:      { label: '今日尚未開始，點下方按鈕開始', pct: 0,   btnLabel: '開始今日結帳' },
-  draft:     { label: '草稿進行中，點下方繼續填寫',   pct: 55,  btnLabel: '繼續今日結帳' },
-  petty_pending: { label: '已送出資料，請完成零用金核對', pct: 90, btnLabel: '完成零用金核對' },
-  submitted: { label: '已送出，等待總公司審核中',      pct: 100, btnLabel: '查看今日結帳' },
-  verified:  { label: '已對帳完成',                   pct: 100, btnLabel: '查看今日結帳' },
-  disputed:  { label: '有異議需修正，請重新填寫',      pct: 30,  btnLabel: '修正退回帳目' },
+const STATUS_DESC: Record<string, { label: string; btnLabel: string }> = {
+  none:      { label: '今日尚未開始，點下方按鈕開始', btnLabel: '開始今日結帳' },
+  draft:     { label: '草稿進行中，點下方繼續填寫',   btnLabel: '繼續今日結帳' },
+  petty_pending: { label: '已送出資料，請完成零用金核對', btnLabel: '完成零用金核對' },
+  submitted: { label: '已送出，等待總公司審核中',      btnLabel: '查看今日結帳' },
+  verified:  { label: '已對帳完成',                   btnLabel: '查看今日結帳' },
+  disputed:  { label: '有異議需修正，請重新填寫',      btnLabel: '修正退回帳目' },
 }
 
 const HIST_STATUS: Record<string, string> = {
@@ -477,14 +477,8 @@ export default async function ManagerDashboard() {
                 {storeName || '今日結帳'}
               </h2>
 
-              {/* 進度條 */}
-              <div className="rounded-full overflow-hidden mb-2" style={{ background: 'rgba(255,255,255,0.2)', height: '6px' }}>
-                <div className="h-full rounded-full transition-all" style={{ width: `${cfg.pct}%`, background: 'white' }} />
-              </div>
-              <div className="flex justify-between text-xs mb-5" style={{ opacity: 0.9 }}>
-                <span>{cfg.label}</span>
-                {cfg.pct > 0 && cfg.pct < 100 && <span>進度 {cfg.pct}%</span>}
-                {cfg.pct === 100 && <span>100% 完成</span>}
+              <div className="text-sm mb-5" style={{ opacity: 0.9 }}>
+                {cfg.label}
               </div>
 
               {/* 按鈕 */}

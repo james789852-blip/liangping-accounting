@@ -28,6 +28,29 @@ export interface HQAlerts {
   ckPendingReview: Array<{ id: string; name: string }>
   ckInDispute: Array<{ id: string; name: string }>
   ckHandoffPending: Array<{ id: string; name: string }>
+  overdue: OverdueAlert[]
+}
+
+export type OverdueAlert = {
+  id: string
+  storeId: string
+  entity: 'store' | 'ck'
+  name: string
+  date: string
+  ageDays: number
+  status: 'not_submitted' | 'draft' | 'review' | 'dispute' | 'handoff'
+}
+
+function addCalendarDays(date: string, offset: number) {
+  const d = new Date(`${date}T12:00:00+08:00`)
+  d.setDate(d.getDate() + offset)
+  return d.toISOString().slice(0, 10)
+}
+
+function daysSince(date: string, today: string) {
+  const from = new Date(`${date}T12:00:00+08:00`).getTime()
+  const to = new Date(`${today}T12:00:00+08:00`).getTime()
+  return Math.max(1, Math.round((to - from) / 86400000))
 }
 
 /** 今日各店結帳異常提醒 */
@@ -97,6 +120,68 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
     if (record?.hq_paid && !record?.ck_reimbursement_confirmed) ckHandoffPending.push({ id: s.id, name: s.name })
   }
 
+  // 系統自 2026/07/12 起正式使用；只追蹤這天之後的歷史帳目，之前不提醒。
+  // 公休日不列入「未送出」，但已建立的草稿／待審核／待點交仍會保留提醒。
+  const overdueStart = '2026-07-12'
+  const [{ data: recentClosings }, { data: recentCK }, { data: recentHolidays }] = await Promise.all([
+    admin.from('daily_closings')
+      .select('store_id, business_date, status, updated_at')
+      .gte('business_date', overdueStart).lt('business_date', today)
+      .order('business_date', { ascending: true }).order('updated_at', { ascending: true }),
+    admin.from('ck_daily_records')
+      .select('ck_store_id, business_date, status, hq_paid, ck_reimbursement_confirmed, updated_at')
+      .gte('business_date', overdueStart).lt('business_date', today)
+      .order('business_date', { ascending: true }).order('updated_at', { ascending: true }),
+    admin.from('store_holidays')
+      .select('store_id, holiday_date')
+      .gte('holiday_date', overdueStart).lt('holiday_date', today),
+  ])
+
+  const storeStatusByDate = new Map<string, string>()
+  for (const row of recentClosings ?? []) {
+    storeStatusByDate.set(`${row.store_id}|${row.business_date}`, row.status)
+  }
+  const ckRecordByDate = new Map<string, { status: string; hq_paid: boolean; ck_reimbursement_confirmed: boolean }>()
+  for (const row of recentCK ?? []) {
+    ckRecordByDate.set(`${row.ck_store_id}|${row.business_date}`, {
+      status: row.status,
+      hq_paid: !!row.hq_paid,
+      ck_reimbursement_confirmed: !!row.ck_reimbursement_confirmed,
+    })
+  }
+  const holidayKeys = new Set((recentHolidays ?? []).map(row => `${row.store_id}|${row.holiday_date}`))
+  const overdue: OverdueAlert[] = []
+  const overdueStatus = (status: string | undefined): OverdueAlert['status'] | null => {
+    if (!status) return 'not_submitted'
+    if (status === 'draft') return 'draft'
+    if (status === 'submitted') return 'review'
+    if (status === 'disputed') return 'dispute'
+    return null
+  }
+  const startTime = new Date(`${overdueStart}T12:00:00+08:00`).getTime()
+  const todayTime = new Date(`${today}T12:00:00+08:00`).getTime()
+  const daysToCheck = Math.max(0, Math.floor((todayTime - startTime) / 86400000))
+  for (let offset = 0; offset < daysToCheck; offset += 1) {
+    const date = addCalendarDays(overdueStart, offset)
+    const ageDays = daysSince(date, today)
+    for (const s of storeList) {
+      const key = `${s.id}|${date}`
+      if (holidayKeys.has(key)) continue
+      const status = overdueStatus(storeStatusByDate.get(key))
+      if (status) overdue.push({ id: `store-${s.id}-${date}`, storeId: s.id, entity: 'store', name: s.name, date, ageDays, status })
+    }
+    for (const s of ckList) {
+      const key = `${s.id}|${date}`
+      if (holidayKeys.has(key)) continue
+      const record = ckRecordByDate.get(key)
+      let status: OverdueAlert['status'] | null = overdueStatus(record?.status)
+      if (record?.status === 'verified' && record.hq_paid && !record.ck_reimbursement_confirmed) status = 'handoff'
+      if (status) overdue.push({ id: `ck-${s.id}-${date}`, storeId: s.id, entity: 'ck', name: s.name, date, ageDays, status })
+    }
+  }
+  const overdueRank: Record<OverdueAlert['status'], number> = { handoff: 0, review: 1, dispute: 2, draft: 3, not_submitted: 4 }
+  overdue.sort((a, b) => a.date.localeCompare(b.date) || overdueRank[a.status] - overdueRank[b.status] || a.name.localeCompare(b.name, 'zh-Hant'))
+
   return {
     success: true,
     alerts: {
@@ -113,6 +198,7 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
       ckPendingReview,
       ckInDispute,
       ckHandoffPending,
+      overdue,
     },
   }
 }

@@ -436,20 +436,21 @@ function CustomItemRow({ item, storeId, vendorGroups, disabled, onUpdated }: { i
 
   if (editing) {
     return (
-      <div className="px-4 py-3 space-y-2" style={{ borderBottom: '1px solid #f4f4f5', background: '#fffbeb' }}>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} placeholder="品項名稱" />
-          <select value={category} onChange={e => setCategory(e.target.value as any)} style={inputStyle}>
+      <div className="px-3 sm:px-4 py-4 space-y-3" style={{ borderBottom: '1px solid #f4f4f5', background: '#fffbeb' }}>
+        <p className="text-xs font-semibold" style={{ color: '#92400E' }}>修改品項</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <input value={name} onChange={e => setName(e.target.value)} className="text-base min-h-11" style={inputStyle} placeholder="品項名稱" />
+          <select value={category} onChange={e => setCategory(e.target.value as any)} className="text-base min-h-11" style={inputStyle}>
             <option>食材</option><option>耗材</option><option>雜項</option>
           </select>
-          <select value={vgId} onChange={e => setVgId(e.target.value)} style={inputStyle}>
+          <select value={vgId} onChange={e => setVgId(e.target.value)} className="text-base min-h-11" style={inputStyle}>
             {vendorGroups.filter(v => v.active).map(v => (<option key={v.id} value={v.id}>{v.name}</option>))}
           </select>
         </div>
         <div className="flex gap-2">
-          <button onClick={save} disabled={isPending} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
-            style={{ background: '#10b981', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>儲存</button>
-          <button onClick={() => setEditing(false)} className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+          <button onClick={save} disabled={isPending} className="flex-1 sm:flex-none min-h-11 px-5 rounded-xl text-sm font-semibold text-white"
+            style={{ background: '#10b981', border: 'none', cursor: 'pointer', fontFamily: 'inherit', opacity: isPending ? 0.6 : 1 }}>{isPending ? '儲存中…' : '儲存修改'}</button>
+          <button onClick={() => setEditing(false)} disabled={isPending} className="flex-1 sm:flex-none min-h-11 px-5 rounded-xl text-sm font-semibold"
             style={{ background: 'white', border: '1px solid #e4e4e7', cursor: 'pointer', fontFamily: 'inherit' }}>取消</button>
         </div>
       </div>
@@ -457,17 +458,25 @@ function CustomItemRow({ item, storeId, vendorGroups, disabled, onUpdated }: { i
   }
 
   return (
-    <div className="px-4 py-2.5 flex items-center gap-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
+    <div className="px-3 sm:px-4 py-2.5 flex items-center gap-2 sm:gap-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
       <CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: '#10b981' }} />
-      <span className="flex-1 text-sm font-semibold" style={{ color: '#18181b' }}>{item.custom_name}</span>
-      <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: catSt.bg, color: catSt.color }}>{item.custom_category}</span>
-      <span className="text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{ background: '#FEF3C7', color: '#92400E' }}>店家自訂</span>
-      <button onClick={() => setEditing(true)} disabled={disabled} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: 8, minWidth: 36, minHeight: 36 }}>
-        <Pencil className="h-4 w-4" />
-      </button>
-      <button onClick={remove} disabled={disabled} style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: 8, minWidth: 36, minHeight: 36 }}>
-        <Trash2 className="h-4 w-4" />
-      </button>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold truncate" style={{ color: '#18181b' }}>{item.custom_name}</p>
+        <div className="flex flex-wrap items-center gap-1 mt-1">
+          <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: catSt.bg, color: catSt.color }}>{item.custom_category}</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#FEF3C7', color: '#92400E' }}>店家自訂</span>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5">
+        <button onClick={() => setEditing(true)} disabled={disabled} aria-label={`修改${item.custom_name}`} className="min-w-11 min-h-11 flex items-center justify-center rounded-lg"
+          style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: 8 }}>
+          <Pencil className="h-4 w-4" />
+        </button>
+        <button onClick={remove} disabled={disabled} aria-label={`刪除${item.custom_name}`} className="min-w-11 min-h-11 flex items-center justify-center rounded-lg"
+          style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: 8 }}>
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   )
 }

@@ -68,11 +68,18 @@ export async function saveItemMapping(
   const admin = createAdminClient()
 
   // 檢查是否已存在（避免 unique constraint 錯誤）
-  let query = admin.from('item_column_mappings').select('id').eq('item_name', itemName)
+  let query = admin.from('item_column_mappings').select('id, vendor_group').eq('item_name', itemName)
   if (storeId) query = query.eq('store_id', storeId)
   else query = query.is('store_id', null)
   const { data: existing } = await query.maybeSingle()
-  if (existing) return { error: `品項「${itemName}」已存在對應` }
+  if (existing) {
+    const existingGroup = (existing.vendor_group ?? '').trim()
+    const requestedGroup = (vendorGroup ?? '').trim()
+    if (existingGroup === requestedGroup) {
+      return { success: true as const, alreadyExists: true as const }
+    }
+    return { error: `品項「${itemName}」已存在於「${existingGroup || '未分類'}」，請先確認分類` }
+  }
 
   // 1. 寫 item_column_mappings
   //    sort_order 排到該 vg 內現有最大值 +10 → 新品項永遠在該分類最下方
