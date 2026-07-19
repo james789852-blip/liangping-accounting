@@ -248,11 +248,19 @@ export async function getRangeStats(
     }
 
     const receiptItems = (r.receipt_items ?? []) as any[]
-    const itemSum = receiptItems.reduce((sum, it) => sum + ((it.amount ?? 0) as number), 0)
-    const untaxedTotal = Math.round(((r.total_amount ?? 0) as number) - ((r.tax_amount ?? 0) as number))
+    const taxAmount = Number(r.tax_amount) || 0
+    // 稅外加會另存一筆「X-稅金」品項；這筆已包含在 item sum 中，
+    // 不能再拿含稅品項總和去和未稅 total 比較，否則會從第一個品項重複扣稅。
+    const nonTaxItems = receiptItems.filter(item => {
+      const name = String(item.item_name ?? '').replace(/[\s　]/g, '')
+      const amount = Number(item.amount) || 0
+      return !(taxAmount > 0 && amount === taxAmount && (name.endsWith('稅金') || name.endsWith('稅')))
+    })
+    const itemSum = nonTaxItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+    const untaxedTotal = Math.round((Number(r.total_amount) || 0) - taxAmount)
     const remainder = untaxedTotal - itemSum
-    if (remainder !== 0 && receiptItems.length > 0) {
-      const target = receiptItems.find(it => (it.item_name ?? '').trim())
+    if (remainder !== 0 && nonTaxItems.length > 0) {
+      const target = nonTaxItems.find(item => (item.item_name ?? '').trim())
       if (target?.item_name) {
         dd.items[target.item_name] = (dd.items[target.item_name] ?? 0) + remainder
       }

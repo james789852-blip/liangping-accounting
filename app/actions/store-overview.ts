@@ -163,11 +163,19 @@ function buildDailyAccountingStats({
     }
 
     const receiptItems = (receipt.receipt_items ?? []) as any[]
-    const itemSum = receiptItems.reduce((sum, item) => sum + ((item.amount ?? 0) as number), 0)
-    const untaxedTotal = Math.round(((receipt.total_amount ?? 0) as number) - ((receipt.tax_amount ?? 0) as number))
+    const taxAmount = Number(receipt.tax_amount) || 0
+    // 稅外加已另存「X-稅金」品項時，排除該筆再和未稅總額核對，
+    // 避免把稅金第二次從第一個品項扣掉。
+    const nonTaxItems = receiptItems.filter(item => {
+      const name = String(item.item_name ?? '').replace(/[\s　]/g, '')
+      const amount = Number(item.amount) || 0
+      return !(taxAmount > 0 && amount === taxAmount && (name.endsWith('稅金') || name.endsWith('稅')))
+    })
+    const itemSum = nonTaxItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+    const untaxedTotal = Math.round((Number(receipt.total_amount) || 0) - taxAmount)
     const remainder = untaxedTotal - itemSum
-    if (remainder !== 0 && receiptItems.length > 0) {
-      const target = receiptItems.find(item => (item.item_name ?? '').trim())
+    if (remainder !== 0 && nonTaxItems.length > 0) {
+      const target = nonTaxItems.find(item => (item.item_name ?? '').trim())
       if (target?.item_name) {
         day.items[target.item_name] = (day.items[target.item_name] ?? 0) + remainder
       }
