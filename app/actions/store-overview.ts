@@ -182,7 +182,11 @@ function buildDailyAccountingStats({
     }
 
     const tax = (receipt.tax_amount ?? 0) as number
-    if (tax > 0) {
+    const hasExplicitTaxItem = receiptItems.some(item => {
+      const name = String(item.item_name ?? '').replace(/[\s　]/g, '')
+      return tax > 0 && (Number(item.amount) || 0) === tax && (name.endsWith('稅金') || name.endsWith('稅'))
+    })
+    if (tax > 0 && !hasExplicitTaxItem) {
       const hasPack = (receipt.receipt_items ?? []).some((it: any) => itemMeta.get(it.item_name)?.category === '耗材')
       if (hasPack) {
         day.items['免洗稅金'] = (day.items['免洗稅金'] ?? 0) + tax

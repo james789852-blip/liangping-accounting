@@ -268,7 +268,11 @@ export async function getRangeStats(
 
     // 稅金分流：receipt 內有耗材品項 → 稅算「免洗稅金」；否則歸雜項
     const tax = (r.tax_amount ?? 0) as number
-    if (tax > 0) {
+    const hasExplicitTaxItem = receiptItems.some(item => {
+      const name = String(item.item_name ?? '').replace(/[\s　]/g, '')
+      return tax > 0 && (Number(item.amount) || 0) === tax && (name.endsWith('稅金') || name.endsWith('稅'))
+    })
+    if (tax > 0 && !hasExplicitTaxItem) {
       const hasPack = (r.receipt_items ?? []).some((it: any) => {
         if (it.item_category === '耗材') return true
         const m = itemMeta.get(it.item_name)
