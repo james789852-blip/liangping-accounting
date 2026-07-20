@@ -142,6 +142,23 @@ function shouldRequireExplicitItem(categoryName: string, vendorName: string) {
   return categoryName === '其他' && vendorName.trim() === '購買-選擇單據類型'
 }
 
+/**
+ * 央廚的這四種收據類別都是「一張單據對應一個品項」：
+ * 選擇直接放在類別右側，不再多一層廠商／新增品項欄位。
+ */
+function isDirectPhotoItemCategory(categoryName: string) {
+  return ['日常用品', '買東西或維修', '加油或停車', '退稅'].includes(categoryName)
+}
+
+function isBuyOrRepairCategory(categoryName: string) {
+  return categoryName === '買東西或維修'
+}
+
+function shouldShowPhotoTaxAddon(categoryName: string, docType: string) {
+  // 買東西／維修只有選擇「發票」時才需要提供稅外加。
+  return !isBuyOrRepairCategory(categoryName) || docType === '發票'
+}
+
 function inferExpenseCategory(categoryName: string): '食材' | '耗材' | '雜項' {
   if (categoryName === '耗材') return '耗材'
   if (isMiscCategoryName(categoryName)) return '雜項'
@@ -684,7 +701,9 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
             receipt_photo_url: form.photoUrl,
           } as Expense
         }).filter(Boolean) as Expense[]
-        const taxMapping = mappingItems.find(mapping => mapping.is_tax_addon && mapping.vendor_group === form.vendor_group)
+        const taxMapping = shouldShowPhotoTaxAddon(categoryName, form.doc_type)
+          ? mappingItems.find(mapping => mapping.is_tax_addon && mapping.vendor_group === form.vendor_group)
+          : undefined
         const taxAmount = form.has_tax ? Number(form.tax_amount) || 0 : 0
         if (taxMapping && taxAmount > 0) {
           regularExpenses.push({
@@ -839,7 +858,9 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       toast.error('請選擇廠商/品項並填寫金額')
       return
     }
-    const taxMapping = mappingItems.find(mapping => mapping.is_tax_addon && mapping.vendor_group === form.vendor_group)
+    const taxMapping = shouldShowPhotoTaxAddon(categoryName, form.doc_type)
+      ? mappingItems.find(mapping => mapping.is_tax_addon && mapping.vendor_group === form.vendor_group)
+      : undefined
     const taxAmount = form.has_tax ? Number(form.tax_amount) || 0 : 0
     if (form.has_tax && taxMapping && taxAmount <= 0) {
       toast.error('請輸入稅外加金額')
@@ -1261,10 +1282,21 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                     const formVendors = receiptCategories.find(c => c.name === activeCategoryName)?.vendors ?? []
                     const itemOptions = photoItemOptions(form.vendor_group)
                     const hasItemOptions = itemOptions.length > 0
+                    const usesDirectPhotoItem = isDirectPhotoItemCategory(activeCategoryName)
+                    const isBuyOrRepair = isBuyOrRepairCategory(activeCategoryName)
+                    // 日常用品、加油／停車、退稅都直接讀取品項對應管理的同名群組。
+                    // 買東西／維修則直接使用收據設定中的單據類型（發票、收據、估價單、其他）。
+                    const directItemOptions = isBuyOrRepair
+                      ? formVendors.map(v => ({ item_name: v.name, item_category: form.category }))
+                      : usesDirectPhotoItem
+                        ? photoItemOptions(activeCategoryName)
+                        : []
                     const useVendorAsPhotoItem = shouldUseVendorAsItem(activeCategoryName, form.vendor_group)
                     const requiresPhotoItem = shouldRequireExplicitItem(activeCategoryName, form.vendor_group)
                     const formItems = getPhotoExpenseItems(form)
-                    const taxMapping = mappingItems.find(mapping => mapping.is_tax_addon && mapping.vendor_group === form.vendor_group)
+                    const taxMapping = shouldShowPhotoTaxAddon(activeCategoryName, form.doc_type)
+                      ? mappingItems.find(mapping => mapping.is_tax_addon && mapping.vendor_group === form.vendor_group)
+                      : undefined
                     const taxAmount = form.has_tax && taxMapping ? Number(form.tax_amount) || 0 : 0
                     const saved = !!form.savedExpenseId || formItems.some(item => !!item.savedExpenseId)
                     const expanded = !saved || expandedPhotoFormIds.includes(form.id)
@@ -1369,30 +1401,98 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                   <option key={c.id} value={c.name}>{c.name}</option>
                                 ))}
                               </select>
-                              <select className={INPUT} style={{ ...INPUT_STYLE, minWidth: 0, fontSize: 16 }}
-                                value={form.vendor_group}
-                                disabled={!activeCategoryName}
-                                onChange={e => {
-                                  const vendor = e.target.value
-                                  const vgRec = vendorGroups.find(g => g.name === vendor)
-                                  updatePhotoForm(form.id, {
-                                    vendor_group: vendor,
-                                    item_name: '',
-                                    amount: '',
-                                    items: [blankPhotoExpenseItem()],
-                                    doc_type: vgRec?.doc_type ?? form.doc_type,
-                                    has_tax: false,
-                                    tax_amount: '',
-                                  })
-                                }}>
-                                <option value="">{activeCategoryName ? '— 選擇廠商/群組 —' : '（先選類別）'}</option>
-                                {formVendors.map(v => (
-                                  <option key={v.id} value={v.name}>{v.name}</option>
-                                ))}
-                              </select>
+                              {usesDirectPhotoItem ? (
+                                <select className={INPUT} style={{ ...INPUT_STYLE, minWidth: 0, fontSize: 16 }}
+                                  value={isBuyOrRepair ? form.doc_type : (formItems[0]?.item_name ?? '')}
+                                  disabled={!activeCategoryName}
+                                  aria-label={isBuyOrRepair ? '選擇單據類型' : '選擇品項'}
+                                  onChange={e => {
+                                    const selected = e.target.value
+                                    const selectedMapping = directItemOptions.find(item => item.item_name === selected)
+                                    const first = formItems[0] ?? blankPhotoExpenseItem()
+                                    const category = normalizeExpenseCategory(selectedMapping?.item_category) ?? form.category
+                                    updatePhotoForm(form.id, {
+                                      // 以類別名稱當 Excel 對應群組；右邊的選項就是實際品項。
+                                      vendor_group: activeCategoryName,
+                                      item_name: selected,
+                                      amount: first.amount,
+                                      items: [{ ...first, item_name: selected, category }],
+                                      category,
+                                      doc_type: isBuyOrRepair ? selected : form.doc_type,
+                                      has_tax: isBuyOrRepair && selected !== '發票' ? false : form.has_tax,
+                                      tax_amount: isBuyOrRepair && selected !== '發票' ? '' : form.tax_amount,
+                                    })
+                                  }}>
+                                  <option value="">
+                                    {!activeCategoryName
+                                      ? '（先選類別）'
+                                      : isBuyOrRepair
+                                        ? '— 選擇單據類型 —'
+                                        : activeCategoryName === '加油或停車'
+                                          ? '— 選擇加油或停車 —'
+                                          : activeCategoryName === '退稅'
+                                            ? '— 選擇總發票-稅金 —'
+                                            : '— 選擇品項 —'}
+                                  </option>
+                                  {directItemOptions.map(item => (
+                                    <option key={item.item_name} value={item.item_name}>{item.item_name}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <select className={INPUT} style={{ ...INPUT_STYLE, minWidth: 0, fontSize: 16 }}
+                                  value={form.vendor_group}
+                                  disabled={!activeCategoryName}
+                                  onChange={e => {
+                                    const vendor = e.target.value
+                                    const vgRec = vendorGroups.find(g => g.name === vendor)
+                                    updatePhotoForm(form.id, {
+                                      vendor_group: vendor,
+                                      item_name: '',
+                                      amount: '',
+                                      items: [blankPhotoExpenseItem()],
+                                      doc_type: vgRec?.doc_type ?? form.doc_type,
+                                      has_tax: false,
+                                      tax_amount: '',
+                                    })
+                                  }}>
+                                  <option value="">{activeCategoryName ? '— 選擇廠商/群組 —' : '（先選類別）'}</option>
+                                  {formVendors.map(v => (
+                                    <option key={v.id} value={v.name}>{v.name}</option>
+                                  ))}
+                                </select>
+                              )}
                             </div>
                             <div className="space-y-2">
-                              {formItems.map((line, lineIndex) => (
+                              {usesDirectPhotoItem ? (
+                                <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2 items-start">
+                                  <input type="number" min={isBuyOrRepair && form.doc_type === '其他' ? undefined : '0'} className={INPUT}
+                                    style={{ ...INPUT_STYLE, minWidth: 0, textAlign: 'right', fontSize: 16 }}
+                                    placeholder="金額"
+                                    value={formItems[0]?.amount ?? ''}
+                                    disabled={!activeCategoryName || !(isBuyOrRepair ? form.doc_type : formItems[0]?.item_name)}
+                                    onChange={e => {
+                                      const first = formItems[0] ?? blankPhotoExpenseItem()
+                                      updatePhotoItem(form.id, first.id, { amount: e.target.value })
+                                    }} />
+                                  {isBuyOrRepair && form.doc_type === '其他' && (
+                                    <button type="button"
+                                      disabled={!formItems[0]?.amount}
+                                      onClick={() => {
+                                        const first = formItems[0] ?? blankPhotoExpenseItem()
+                                        const value = Number(first.amount) || 0
+                                        updatePhotoItem(form.id, first.id, { amount: String(value > 0 ? -value : Math.abs(value)) })
+                                      }}
+                                      className="h-10 px-4 rounded-xl text-sm font-semibold"
+                                      style={{
+                                        background: formItems[0]?.amount ? '#ecfdf5' : '#f4f4f5',
+                                        color: formItems[0]?.amount ? '#047857' : '#a1a1aa',
+                                        border: `1px solid ${formItems[0]?.amount ? '#86efac' : '#e4e4e7'}`,
+                                      }}>
+                                      {(Number(formItems[0]?.amount) || 0) < 0 ? '轉正' : '轉負'}
+                                    </button>
+                                  )}
+                                </div>
+                              ) : formItems.map((line, lineIndex) => (
                                 <div key={line.id} className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(112px,150px)_auto] gap-2 items-start">
                                   <div className="min-w-0 space-y-1">
                                     {useVendorAsPhotoItem ? (
@@ -1446,7 +1546,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                               {form.vendor_group && requiresPhotoItem && !hasItemOptions && (
                                 <p className="text-xs text-rose-500">此廠商需要選擇品項，請先在品項管理新增可選品項。</p>
                               )}
-                              {!useVendorAsPhotoItem && (
+                              {!useVendorAsPhotoItem && !usesDirectPhotoItem && (
                                 <button type="button" onClick={() => addPhotoItem(form.id)}
                                   disabled={!activeCategoryName || !form.vendor_group}
                                   className="inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold"
