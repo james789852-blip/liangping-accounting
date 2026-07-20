@@ -495,9 +495,9 @@ export default function ItemMappingsClient({
                 各店專屬品項對應 — Excel 匯出實際會用到的品項
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
               <button onClick={() => { setSortMode(v => !v); setSelectMode(false) }}
-                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                className="flex w-full items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors sm:w-auto"
                 style={sortMode
                   ? { background: '#F59E0B', color: 'white', boxShadow: '0 2px 8px rgba(245,158,11,0.3)' }
                   : { background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}
@@ -505,7 +505,7 @@ export default function ItemMappingsClient({
                 {sortMode ? <><Check className="h-3.5 w-3.5" /> 完成</> : <><ChevronUp className="h-3.5 w-3.5" /> 排序</>}
               </button>
               <button onClick={() => { setSelectMode(v => !v); setSortMode(false); if (selectMode) setSelectedIds(new Set()) }}
-                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                className="flex w-full items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors sm:w-auto"
                 style={selectMode
                   ? { background: '#dc2626', color: 'white', boxShadow: '0 2px 8px rgba(220,38,38,0.3)' }
                   : { background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}
@@ -514,7 +514,7 @@ export default function ItemMappingsClient({
               </button>
               <CopyToStoreButton fromStoreId={activeStoreId} stores={stores} />
               <button onClick={() => setShowAddVg(true)}
-                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold"
+                className="flex w-full items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold sm:w-auto"
                 style={{ background: 'white', border: '1.5px solid #E0F2FE', color: '#0369A1' }}>
                 <Tag className="h-3.5 w-3.5" /> 新增分類
               </button>
@@ -527,7 +527,7 @@ export default function ItemMappingsClient({
                 setNewDocType('')
                 setBatchStoreIds(opening ? [activeStoreId] : [])
               }}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-white text-sm font-semibold"
+                className="flex w-full items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-white text-sm font-semibold sm:w-auto"
                 style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
                 <Plus className="h-4 w-4" /> 新增品項
               </button>
@@ -760,7 +760,7 @@ export default function ItemMappingsClient({
           const hasVgRecord = vg !== '未分類'
           return (
             <div key={vg}>
-              <div className="flex items-center gap-2 mb-2 px-1">
+              <div className="flex flex-wrap items-center gap-2 mb-2 px-1">
                 {sortMode && hasVgRecord && (
                   <div className="flex flex-col" style={{ width: 20, background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, padding: 2 }}>
                     <button onClick={() => moveVendorGroup(vg, 'up')} disabled={isVgFirst || isPending}
@@ -1008,7 +1008,7 @@ function SortableItemRow({
           <GripVertical className="h-4 w-4" />
         </button>
       )}
-      <span className="min-w-0 flex-1 text-sm font-semibold flex flex-wrap items-center gap-1.5" style={{ color: '#18181b' }}>
+      <span className="min-w-0 flex-1 basis-full text-sm font-semibold flex flex-wrap items-center gap-1.5 sm:basis-auto" style={{ color: '#18181b' }}>
         <InlineItemNameEditor mappingId={m.id} currentName={displayName(m)} fullName={m.item_name} excelColumn={m.excel_column} />
         {false && (
           <button onClick={() => setShowStores(v => !v)}
@@ -1024,11 +1024,14 @@ function SortableItemRow({
         )}
       </span>
       {editId !== m.id && (
-        <ItemDocOverrideSelector
-          itemName={m.item_name}
-          storeId={m.store_id ?? null}
-          currentOverride={m.doc_type_override ?? null}
-        />
+        <div className="w-full sm:w-auto">
+          <ItemDocOverrideSelector
+            itemName={m.item_name}
+            storeId={m.store_id ?? null}
+            currentOverride={m.doc_type_override ?? null}
+            className="w-full sm:w-auto"
+          />
+        </div>
       )}
       {editId === m.id ? (
         <div className="w-full sm:w-auto flex flex-wrap items-center gap-2 pt-1 sm:pt-0">
@@ -1370,8 +1373,8 @@ function docColor(doc: string): { bg: string; fg: string; bd: string } {
   }
 }
 /** 品項層級 doc_type override（覆蓋 vg 預設） */
-function ItemDocOverrideSelector({ itemName, storeId, currentOverride, extraOptions = [] }: {
-  itemName: string; storeId: string | null; currentOverride: string | null; extraOptions?: string[]
+function ItemDocOverrideSelector({ itemName, storeId, currentOverride, extraOptions = [], className = '' }: {
+  itemName: string; storeId: string | null; currentOverride: string | null; extraOptions?: string[]; className?: string
 }) {
   const [doc, setDoc] = useState(currentOverride ?? '')
   const [saving, setSaving] = useState(false)
@@ -1398,7 +1401,7 @@ function ItemDocOverrideSelector({ itemName, storeId, currentOverride, extraOpti
     }
   }
   return (
-    <select value={doc} onChange={e => handleChange(e.target.value)} disabled={saving}
+    <select value={doc} onChange={e => handleChange(e.target.value)} disabled={saving} className={className}
       title={`「${itemName}」的單據 override（覆蓋廠商群組預設）`}
       style={{
         height: 22, padding: '0 4px', fontSize: 10, borderRadius: 4,
@@ -1439,9 +1442,9 @@ function CopyToStoreButton({ fromStoreId, stores }: { fromStoreId: string; store
   }
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="w-full sm:w-auto" style={{ position: 'relative' }}>
       <button onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+        className="flex w-full items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors sm:w-auto"
         style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}
         title="把目前店的品項設定複製到另一店（手動一次性操作）">
         複製到其他店…
