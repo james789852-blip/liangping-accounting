@@ -1038,6 +1038,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [])
   const ckPhotoSectionRef = useRef<HTMLDivElement>(null)
   const ckPhotoInputRef = useRef<HTMLInputElement>(null)
+  // 只要有任一央廚配送數量，就必須有已成功上傳的配送單照片。
+  // 預覽圖不算完成上傳，避免檔案上傳失敗時仍能略過驗證。
+  const hasCkDeliveryQuantity = ckPrices.some(p => (ckQuantities[p.id] ?? 0) > 0)
+  const hasCkDeliveryPhoto = Boolean(ckPhotoUrl)
 
   // Envelope bag photo
   const [envelopePhotoPreview, setEnvelopePhotoPreview] = useState<string | undefined>(undefined)
@@ -2552,6 +2556,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (pettyStepIdx >= 0) goToStep(pettyStepIdx)
       return
     }
+    if (hasCkDeliveryQuantity && !hasCkDeliveryPhoto) {
+      toast.error('已有央廚配送數量，請先上傳當日配送單照片')
+      goToStep(STEPS.findIndex(s => s.id === 'ck_delivery'))
+      return
+    }
     setSubmitting(true)
     try {
       const cid = await handleSave(true)
@@ -2613,6 +2622,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const totalSteps = STEPS.length
   const submitStepIdx = STEPS.findIndex(s => s.id === 'submit')
   const pettyStepIdx = STEPS.findIndex(s => s.id === 'petty')
+  const ckDeliveryStepIdx = STEPS.findIndex(s => s.id === 'ck_delivery')
   const isPostSubmit = submitDone || status === 'submitted' || status === 'verified'
   const pettyIsComplete = pettyFinished || !!(existingClosing as { petty_counts?: { verified_at?: string } } | null)?.petty_counts?.verified_at
   const step = isLocked && !submitDone
@@ -2652,6 +2662,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         toast.error(`請先儲存 ${receiptForms.length} 筆未儲存的收據`)
         return
       }
+    }
+    if (stepId === 'ck_delivery' && !isLocked && hasCkDeliveryQuantity && !hasCkDeliveryPhoto) {
+      toast.error('已有央廚配送數量，請先上傳當日配送單照片')
+      ckPhotoSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
     }
     if (stepId === 'revenue' && !isLocked) {
       const missing: string[] = []
@@ -2694,6 +2709,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
   }
   function canNavigateToStep(n: number) {
+    if (!isLocked && n > ckDeliveryStepIdx && hasCkDeliveryQuantity && !hasCkDeliveryPhoto) {
+      toast.error('已有央廚配送數量，請先上傳當日配送單照片')
+      goToStep(ckDeliveryStepIdx)
+      return false
+    }
     if (!isLocked && n >= submitStepIdx && pettyStepIdx >= 0 && !pettyIsComplete) {
       toast.error('請先完成零用金核對，才能送出帳目')
       goToStep(pettyStepIdx)
@@ -3978,7 +3998,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         {(stepId === 'ck_delivery' || (isLocked && !submitDone)) && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="央廚配送"
-              desc="填寫今日各品項配送數量；若有配送單，可上傳照片供總公司核對。" />}
+              desc="填寫今日各品項配送數量；只要有配送數量，就必須上傳配送單照片供總公司核對。" />}
 
             {/* 配送單照片用大圖展示，不固定在畫面上，避免影響下面品項輸入。 */}
             {!isLocked && (
@@ -3999,7 +4019,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         style={{ border: '2px dashed #fed7aa', background: '#fff7ed', color: '#f97316' }}>
                         <Camera className="h-9 w-9" />
                         <p className="text-base font-semibold">請上傳當日配送單照片</p>
-                        <p className="text-xs" style={{ color: '#fdba74' }}>沒有配送或沒有照片也可以繼續</p>
+                        <p className="text-xs" style={{ color: '#fdba74' }}>
+                          {hasCkDeliveryQuantity ? '已有配送數量，照片為必填' : '沒有配送數量，可不需上傳照片'}
+                        </p>
                       </button>
                     )}
                   </div>
