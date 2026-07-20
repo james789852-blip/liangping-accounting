@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Calendar, ChevronDown, ExternalLink, Image as ImageIcon, Search, Store, X } from 'lucide-react'
+import { ArrowLeft, Calendar, ChevronDown, ExternalLink, Image as ImageIcon, Search, Store, X } from 'lucide-react'
 
 export interface PhotoLibraryItem {
   id: string
@@ -45,7 +45,7 @@ export default function PhotosClient({ photos, year, month, currentYear }: Props
       return true
     })
   }, [kindFilter, photos, search, storeFilter])
-  const grouped = useMemo(() => {
+  const storeSummaries = useMemo(() => {
     const map = new Map<string, { storeId: string; storeName: string; storeType: string; photos: PhotoLibraryItem[] }>()
     for (const photo of filtered) {
       const key = `${photo.storeType}|${photo.storeId}`
@@ -55,6 +55,26 @@ export default function PhotosClient({ photos, year, month, currentYear }: Props
     }
     return [...map.values()].sort((a, b) => `${a.storeType}${a.storeName}`.localeCompare(`${b.storeType}${b.storeName}`, 'zh-Hant'))
   }, [filtered])
+  const selectedStore = storeFilter === 'all' ? null : stores.find(store => store.id === storeFilter) ?? null
+  const dateGroups = useMemo(() => {
+    if (!selectedStore) return []
+    const byDate = new Map<string, Map<string, PhotoLibraryItem[]>>()
+    for (const photo of filtered) {
+      const kindMap = byDate.get(photo.date) ?? new Map<string, PhotoLibraryItem[]>()
+      const items = kindMap.get(photo.kind) ?? []
+      items.push(photo)
+      kindMap.set(photo.kind, items)
+      byDate.set(photo.date, kindMap)
+    }
+    return [...byDate.entries()]
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([date, kindMap]) => ({
+        date,
+        kinds: [...kindMap.entries()]
+          .sort(([a], [b]) => a.localeCompare(b, 'zh-Hant'))
+          .map(([kind, items]) => ({ kind, photos: items })),
+      }))
+  }, [filtered, selectedStore])
 
   function changeMonth(nextYear: number, nextMonth: number) {
     router.push(`/hq/photos?year=${nextYear}&month=${nextMonth}`)
@@ -71,7 +91,7 @@ export default function PhotosClient({ photos, year, month, currentYear }: Props
             <div>
               <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-orange-700"><ImageIcon className="h-4 w-4" />總公司 · 照片管理</div>
               <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">帳目照片分類</h1>
-              <p className="mt-1 text-sm text-slate-500">依店面、央廚、日期與照片用途整理，舊照片也能直接搜尋。</p>
+              <p className="mt-1 text-sm text-slate-500">先選店家，再依日期與照片類型查看，避免不同帳目的照片混在一起。</p>
             </div>
             <div className="flex items-center gap-2 rounded-xl bg-orange-50 px-3 py-2 text-sm font-bold text-orange-800">
               <ImageIcon className="h-4 w-4" /> {filtered.length} 張
@@ -113,33 +133,67 @@ export default function PhotosClient({ photos, year, month, currentYear }: Props
           </div>
         </header>
 
-        {grouped.length === 0 ? (
+        {storeSummaries.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-400">這個月份與篩選條件沒有照片</div>
-        ) : (
+        ) : !selectedStore ? (
           <div className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <div>
+                <h2 className="font-bold text-slate-900">店家照片總覽</h2>
+                <p className="mt-0.5 text-xs text-slate-500">選擇店家後，會依日期與照片類型分類顯示。</p>
+              </div>
+              <span className="text-sm font-semibold text-slate-500">{storeSummaries.length} 個單位</span>
+            </div>
             {(['店面', '央廚'] as const).map(type => {
-              const groups = grouped.filter(group => group.storeType === type)
+              const groups = storeSummaries.filter(group => group.storeType === type)
               if (!groups.length) return null
               return (
                 <section key={type} className="space-y-3">
                   <div className="flex items-center gap-2 px-1"><span className={`rounded-lg px-2.5 py-1 text-xs font-bold ${type === '央廚' ? 'bg-violet-100 text-violet-700' : 'bg-amber-100 text-amber-800'}`}>{type}</span><span className="text-sm font-semibold text-slate-500">{groups.reduce((sum, group) => sum + group.photos.length, 0)} 張</span></div>
-                  {groups.map(group => (
-                    <div key={group.storeId} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-3 sm:px-5">
-                        <div><h2 className="font-bold text-slate-900">{group.storeName}</h2><p className="text-xs text-slate-500">{group.photos.length} 張 · 點選照片查看原圖</p></div>
-                        <span className="text-xs text-slate-400">{fmtDate(group.photos[group.photos.length - 1]?.date)} — {fmtDate(group.photos[0]?.date)}</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-4 lg:grid-cols-6">
-                        {group.photos.map(photo => (
-                          <button key={photo.id} type="button" onClick={() => setPreview(photo)} className="group overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-                            <div className="aspect-square overflow-hidden bg-slate-100"><img src={photo.url} alt={photo.label || photo.kind} loading="lazy" className="h-full w-full object-cover transition group-hover:scale-105" /></div>
-                            <div className="space-y-0.5 p-2"><p className="truncate text-xs font-bold text-slate-700">{photo.kind}</p><p className="truncate text-[11px] text-slate-500">{photo.label || photo.source}</p><p className="text-[10px] text-slate-400">{fmtDate(photo.date)}</p></div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {groups.map(group => {
+                      const kinds = [...new Set(group.photos.map(photo => photo.kind))]
+                      const dates = group.photos.map(photo => photo.date).sort()
+                      return (
+                        <button key={group.storeId} type="button" onClick={() => setStoreFilter(group.storeId)} className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md">
+                          <div className="flex items-start justify-between gap-3"><div><h3 className="text-lg font-bold text-slate-900">{group.storeName}</h3><p className="mt-1 text-xs text-slate-500">{fmtDate(dates[0])} — {fmtDate(dates[dates.length - 1])}</p></div><span className="rounded-lg bg-orange-50 px-2.5 py-1 text-sm font-bold text-orange-700">{group.photos.length} 張</span></div>
+                          <p className="mt-4 line-clamp-2 text-xs leading-5 text-slate-500">{kinds.slice(0, 4).join(' · ')}{kinds.length > 4 ? ` 等 ${kinds.length} 類` : ''}</p>
+                          <p className="mt-4 text-sm font-bold text-orange-700">查看分類照片 →</p>
+                        </button>
+                      )
+                    })}
+                  </div>
                 </section>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:px-5">
+              <div className="flex items-center gap-3"><button type="button" onClick={() => setStoreFilter('all')} className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200" aria-label="回到全部店家"><ArrowLeft className="h-4 w-4" /></button><div><p className="text-xs font-semibold text-slate-500">{selectedStore.type}</p><h2 className="font-bold text-slate-900">{selectedStore.name}</h2></div></div>
+              <span className="rounded-lg bg-orange-50 px-3 py-1.5 text-sm font-bold text-orange-700">{filtered.length} 張</span>
+            </div>
+            {dateGroups.map(({ date, kinds }, index) => {
+              const count = kinds.reduce((sum, group) => sum + group.photos.length, 0)
+              return (
+                <details key={date} open={index === 0} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 sm:px-5"><div><h3 className="font-bold text-slate-900">{fmtDate(date)}</h3><p className="mt-0.5 text-xs text-slate-500">{kinds.length} 種照片類型</p></div><span className="rounded-lg bg-slate-100 px-2.5 py-1 text-sm font-bold text-slate-600">{count} 張</span></summary>
+                  <div className="space-y-5 border-t border-slate-100 p-4 sm:p-5">
+                    {kinds.map(group => (
+                      <section key={group.kind}>
+                        <div className="mb-2 flex items-center gap-2"><span className="rounded-md bg-orange-50 px-2 py-1 text-xs font-bold text-orange-800">{group.kind}</span><span className="text-xs text-slate-400">{group.photos.length} 張</span></div>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+                          {group.photos.map(photo => (
+                            <button key={photo.id} type="button" onClick={() => setPreview(photo)} className="group overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+                              <div className="aspect-square overflow-hidden bg-slate-100"><img src={photo.url} alt={photo.label || photo.kind} loading="lazy" className="h-full w-full object-cover transition group-hover:scale-105" /></div>
+                              <div className="space-y-0.5 p-2"><p className="truncate text-xs font-bold text-slate-700">{photo.label || photo.source}</p><p className="text-[10px] text-slate-400">{photo.source}</p></div>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                </details>
               )
             })}
           </div>
