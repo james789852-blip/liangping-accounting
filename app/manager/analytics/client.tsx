@@ -78,7 +78,7 @@ interface RevData { total: number; pos: number; uber: number; panda: number; twp
 interface DayRev { date: string; total: number }
 interface VendorItem { name: string; curAvg: number; prevAvg: number; curCount: number; prevCount: number }
 interface Vendor { name: string; cur: number; prev: number; items: VendorItem[] }
-interface ActualVendor { name: string; cur: number; prev: number; count: number }
+interface ActualVendor { name: string; cur: number; prev: number; count: number; notes: string[] }
 interface VendorGroupAnalysis { name: string; cur: number; prev: number; count: number; vendors: ActualVendor[] }
 interface BookkeepingDay { date: string; status: string; revenue: number; cost: number }
 interface DeliveryStoreStat { name: string; cur: number; prev: number; count: number }
@@ -242,7 +242,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
             .select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount')
             .in('ck_daily_record_id', ids),
           supabase.from('ck_expense_items')
-            .select('ck_daily_record_id, item_name, amount, payer_name, vendor_group')
+            .select('ck_daily_record_id, item_name, amount, payer_name, vendor_group, note')
             .in('ck_daily_record_id', ids),
         ])
         return { records: records ?? [], orders: ordersRes.data ?? [], expenses: expensesRes.data ?? [] }
@@ -334,7 +334,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
         return map
       }
       function ckVendorGroups(data: Awaited<ReturnType<typeof loadCKRange>>, prevRows: Awaited<ReturnType<typeof loadCKRange>>) {
-        const current = new Map<string, Map<string, { total: number; count: number }>>()
+        const current = new Map<string, Map<string, { total: number; count: number; notes: Set<string> }>>()
         const previous = new Map<string, Map<string, number>>()
         for (const expense of data.expenses as any[]) {
           const group = expense.vendor_group?.trim() || '未分類'
@@ -342,9 +342,11 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
           // 營運統計應由廠商分類往下顯示實際買了什麼。
           const actual = expense.item_name?.trim() || '未指定品項'
           if (!current.has(group)) current.set(group, new Map())
-          const row = current.get(group)!.get(actual) ?? { total: 0, count: 0 }
+          const row = current.get(group)!.get(actual) ?? { total: 0, count: 0, notes: new Set<string>() }
           row.total += Number(expense.amount ?? 0)
           row.count += 1
+          const note = String(expense.note ?? '').trim()
+          if (note) row.notes.add(note)
           current.get(group)!.set(actual, row)
         }
         for (const expense of prevRows.expenses as any[]) {
@@ -363,6 +365,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
             cur: curMap.get(actual)?.total ?? 0,
             prev: prevMap.get(actual) ?? 0,
             count: curMap.get(actual)?.count ?? 0,
+            notes: Array.from(curMap.get(actual)?.notes ?? []),
           })).sort((a, b) => b.cur - a.cur)
           return {
             name,
@@ -408,10 +411,10 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
         .eq('store_id', storeId).gte('business_date', prev.start).lte('business_date', prev.end)
         .order('business_date', { ascending: true }),
       supabase.from('receipts')
-        .select('business_date, vendor_name, actual_vendor_name, total_amount, receipt_items(item_name, amount)')
+        .select('business_date, vendor_name, actual_vendor_name, total_amount, notes, receipt_items(item_name, amount)')
         .eq('store_id', storeId).gte('business_date', start).lte('business_date', end),
       supabase.from('receipts')
-        .select('business_date, vendor_name, actual_vendor_name, total_amount, receipt_items(item_name, amount)')
+        .select('business_date, vendor_name, actual_vendor_name, total_amount, notes, receipt_items(item_name, amount)')
         .eq('store_id', storeId).gte('business_date', prev.start).lte('business_date', prev.end),
     ])
 
@@ -494,15 +497,17 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
       return map
     }
     function receiptVendorGroups(rows: any[], prevRows: any[]): VendorGroupAnalysis[] {
-      const current = new Map<string, Map<string, { total: number; count: number }>>()
+      const current = new Map<string, Map<string, { total: number; count: number; notes: Set<string> }>>()
       const previous = new Map<string, Map<string, number>>()
       for (const receipt of rows) {
         const group = receipt.vendor_name?.trim() || '未分類'
         const actual = receipt.actual_vendor_name?.trim() || '未指定'
         if (!current.has(group)) current.set(group, new Map())
-        const row = current.get(group)!.get(actual) ?? { total: 0, count: 0 }
+        const row = current.get(group)!.get(actual) ?? { total: 0, count: 0, notes: new Set<string>() }
         row.total += Number(receipt.total_amount ?? 0)
         row.count += 1
+        const note = String(receipt.notes ?? '').trim()
+        if (note) row.notes.add(note)
         current.get(group)!.set(actual, row)
       }
       for (const receipt of prevRows) {
@@ -521,6 +526,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
           cur: curMap.get(actual)?.total ?? 0,
           prev: prevMap.get(actual) ?? 0,
           count: curMap.get(actual)?.count ?? 0,
+          notes: Array.from(curMap.get(actual)?.notes ?? []),
         })).sort((a, b) => b.cur - a.cur)
         return {
           name,
@@ -838,6 +844,11 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
                                       <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
                                         {vendor.count} 筆 · 佔分類 {share}%{change === null ? ' · 本期新增' : ` · 較前期 ${change > 0 ? '+' : ''}${change}%`}
                                       </p>
+                                      {vendor.notes.length > 0 && (
+                                        <div className="mt-1.5 rounded-lg px-2 py-1.5 text-xs leading-5" style={{ background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a' }}>
+                                          <span className="font-bold">備註：</span>{vendor.notes.join('；')}
+                                        </div>
+                                      )}
                                     </div>
                                     <p className="text-base font-extrabold tabular-nums shrink-0">${fmt(vendor.cur)}</p>
                                   </div>
