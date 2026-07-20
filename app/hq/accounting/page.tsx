@@ -67,13 +67,30 @@ export default async function AccountingPage({
   ])
 
   const holidayIds = new Set((holidays ?? []).map((h: any) => h.store_id as string))
+  // 帳目中心初次載入使用的是同一批 closing 資料；在此先補上送出者姓名，
+  // 避免明明已有 submitted_by，畫面卻因沒有查 user_profiles 而顯示「未記錄」。
+  const submitterIds = [...new Set((closings ?? []).map((closing: any) => closing.submitted_by).filter(Boolean))]
+  const submitterNames: Record<string, string> = {}
+  if (submitterIds.length > 0) {
+    const { data: submitters } = await admin
+      .from('user_profiles')
+      .select('user_id, name')
+      .in('user_id', submitterIds)
+    submitters?.forEach((submitter: any) => {
+      if (submitter.name) submitterNames[submitter.user_id] = submitter.name
+    })
+  }
+  const closingsWithSubmitter = (closings ?? []).map((closing: any) => ({
+    ...closing,
+    submitter_name: closing.submitted_by ? (submitterNames[closing.submitted_by] ?? null) : null,
+  }))
   const receiptsByStore: Record<string, any[]> = {}
   for (const receipt of (receipts ?? []) as any[]) {
     if (!receiptsByStore[receipt.store_id]) receiptsByStore[receipt.store_id] = []
     receiptsByStore[receipt.store_id].push(receipt)
   }
   const initialDetailByStore = Object.fromEntries(
-    (closings ?? []).map((closing: any) => [closing.store_id, {
+    closingsWithSubmitter.map((closing: any) => [closing.store_id, {
       closing,
       receipts: receiptsByStore[closing.store_id] ?? [],
     }]),
@@ -87,7 +104,7 @@ export default async function AccountingPage({
       initialStoreId={initialStoreId}
       initialCkStoreId={initialCkStoreId}
       initialTab={(params.tab as 'store' | 'ck') ?? 'store'}
-      closings={(closings ?? []) as any[]}
+      closings={closingsWithSubmitter as any[]}
       ckRecords={(ckRecords ?? []) as any[]}
       holidayStoreIds={[...holidayIds]}
       initialDetailByStore={initialDetailByStore}
