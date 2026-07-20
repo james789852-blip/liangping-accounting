@@ -745,14 +745,21 @@ export async function addCKSheet(
     const label = displayHeader(c.header ?? '')
     const headerLen = label.length
     const isRevenue = c.kind === 'stat' && c.statKey === 'revenue'
+    // 成員店家欄的月合計用 16pt 粗體顯示；14 字元寬在 Excel 中
+    // 仍可能把「748,462」這類金額顯示成 ####，所以金額欄需保留較寬空間。
     const base =
       c.kind === 'date' ? 11 :
       c.kind === 'weekday' ? 10 :
-      isRevenue ? 16 :
-      c.kind === 'stat' ? 12 :
-      c.kind === 'expense' ? 11 :
+      c.kind === 'member' || c.kind === 'external' ? 18 :
+      isRevenue ? 18 :
+      c.kind === 'stat' ? 16 :
+      c.kind === 'expense' ? 13 :
       14
-    const maxWidth = isRevenue ? 22 : c.kind === 'expense' ? 24 : c.kind === 'member' || c.kind === 'external' ? 22 : 16
+    const maxWidth = isRevenue || c.kind === 'stat'
+      ? 24
+      : c.kind === 'expense' ? 26
+      : c.kind === 'member' || c.kind === 'external' ? 24
+      : 16
     const w = Math.min(maxWidth, Math.max(base, headerLen * 2.2 + 4))
     ws.getColumn(c.index).width = w
     ws.getColumn(c.index).alignment = { shrinkToFit: false, wrapText: false, vertical: 'middle' }

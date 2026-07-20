@@ -81,6 +81,7 @@ interface Vendor { name: string; cur: number; prev: number; items: VendorItem[] 
 interface ActualVendor { name: string; cur: number; prev: number; count: number }
 interface VendorGroupAnalysis { name: string; cur: number; prev: number; count: number; vendors: ActualVendor[] }
 interface BookkeepingDay { date: string; status: string; revenue: number; cost: number }
+interface DeliveryStoreStat { name: string; cur: number; prev: number; count: number }
 
 const ZERO: RevData = { total: 0, pos: 0, uber: 0, panda: 0, twpay: 0, online: 0, onlineCash: 0, handwrite: 0 }
 
@@ -190,11 +191,12 @@ function DailyTrendChart({ data }: { data: DayRev[] }) {
 
 // ── Main Component ──────────────────────────────────────────────────────────────
 
-export default function AnalyticsClient({ storeId, storeName, storeType, ichefUberLinked = false }: {
+export default function AnalyticsClient({ storeId, storeName, storeType, ichefUberLinked = false, memberStoreNames = {} }: {
   storeId: string
   storeName: string
   storeType?: string | null
   ichefUberLinked?: boolean
+  memberStoreNames?: Record<string, string>
 }) {
   const today = getTodayTW()
 
@@ -210,7 +212,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
   const [dailyRevs, setDailyRevs] = useState<DayRev[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [vendorGroups, setVendorGroups] = useState<VendorGroupAnalysis[]>([])
-  const [selectedVendorGroup, setSelectedVendorGroup] = useState('')
+  const [deliveryStores, setDeliveryStores] = useState<DeliveryStoreStat[]>([])
   const [bookkeepingDays, setBookkeepingDays] = useState<BookkeepingDay[]>([])
 
   // Excel 匯出狀態
@@ -319,6 +321,32 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
         revenue: ckRevenueByDate.get(date) ?? 0,
         cost: ckCostByDate.get(date) ?? 0,
       })))
+
+      function deliveryStoreTotals(data: Awaited<ReturnType<typeof loadCKRange>>) {
+        const byStore = new Map<string, { total: number; count: number }>()
+        for (const order of data.orders as any[]) {
+          const name = order.store_id
+            ? (memberStoreNames[order.store_id] ?? '未命名店家')
+            : String(order.external_store_name ?? '').trim() || '未命名店家'
+          const amount = order.store_id
+            ? Number(order.ck_confirmed_amount ?? order.amount ?? 0)
+            : Number(order.amount ?? 0)
+          if (!byStore.has(name)) byStore.set(name, { total: 0, count: 0 })
+          const row = byStore.get(name)!
+          row.total += amount
+          if (amount !== 0) row.count += 1
+        }
+        return byStore
+      }
+      const currentDeliveryStores = deliveryStoreTotals(cur)
+      const previousDeliveryStores = deliveryStoreTotals(prevData)
+      const deliveryStoreNames = new Set([...currentDeliveryStores.keys(), ...previousDeliveryStores.keys()])
+      setDeliveryStores(Array.from(deliveryStoreNames).map(name => ({
+        name,
+        cur: currentDeliveryStores.get(name)?.total ?? 0,
+        prev: previousDeliveryStores.get(name)?.total ?? 0,
+        count: currentDeliveryStores.get(name)?.count ?? 0,
+      })).filter(row => row.cur !== 0 || row.prev !== 0).sort((a, b) => b.cur - a.cur))
 
       function groupCK(data: Awaited<ReturnType<typeof loadCKRange>>) {
         const map: Record<string, { total: number; items: Record<string, { sum: number; cnt: number }> }> = {}
@@ -553,20 +581,11 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
     }).sort((a, b) => b.cur - a.cur)
     setVendors(vList)
     setVendorGroups(receiptVendorGroups(curRec.data ?? [], prevRec.data ?? []))
+    setDeliveryStores([])
     setLoading(false)
-  }, [storeId, storeType, start, end, ichefUberLinked])
+  }, [storeId, storeType, start, end, ichefUberLinked, memberStoreNames])
 
   useEffect(() => { fetchData() }, [fetchData])
-  useEffect(() => {
-    if (vendorGroups.length === 0) {
-      if (selectedVendorGroup) setSelectedVendorGroup('')
-      return
-    }
-    if (!selectedVendorGroup || !vendorGroups.some(group => group.name === selectedVendorGroup)) {
-      setSelectedVendorGroup(vendorGroups[0].name)
-    }
-  }, [selectedVendorGroup, vendorGroups])
-
   function applyPreset(p: PresetKey) {
     setPreset(p)
     if (p !== 'custom') {
@@ -587,8 +606,9 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
   const storeCur = ichefUberLinked ? Math.max(totalRevenueCur - platformCur, 0) : curRev.pos + curRev.handwrite
   const storePrev = ichefUberLinked ? Math.max(totalRevenuePrev - platformPrev, 0) : prevRev.pos + prevRev.handwrite
   const totalCost = vendors.reduce((s, v) => s + v.cur, 0)
-  const selectedGroup = vendorGroups.find(group => group.name === selectedVendorGroup) ?? vendorGroups[0]
-  const groupMaxVendor = Math.max(...(selectedGroup?.vendors.map(v => v.cur) ?? [0]), 1)
+  const visibleVendorGroups = vendorGroups.filter(group => group.cur > 0)
+  const vendorReceiptCount = visibleVendorGroups.reduce((sum, group) => sum + group.count, 0)
+  const deliveryTotal = deliveryStores.reduce((sum, row) => sum + row.cur, 0)
   const statusCounts = bookkeepingDays.reduce((acc, day) => {
     acc[day.status] = (acc[day.status] ?? 0) + 1
     return acc
@@ -788,74 +808,113 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
                 <div>
                   <h3 className="text-sm font-semibold flex items-center gap-2">
                     <span className="h-8 w-8 rounded-[9px] flex items-center justify-center text-base" style={{ background: '#ffedd5' }}>🏪</span>
-                    廠商類別叫貨金額
+                    廠商叫貨明細
                   </h3>
-                  <p className="text-xs mt-1" style={{ color: '#a1a1aa' }}>先選菜商、免洗、雜貨等類別，再看各實際廠商金額</p>
+                  <p className="text-xs mt-1" style={{ color: '#a1a1aa' }}>依廠商分類整理，直接顯示實際廠商、單據筆數與本期金額</p>
                 </div>
                 <span className="text-xs" style={{ color: '#a1a1aa' }}>總支出 ${fmt(totalCost)}</span>
               </div>
 
-              {vendorGroups.filter(group => group.cur > 0).length === 0 ? (
+              {visibleVendorGroups.length === 0 ? (
                 <p className="text-sm text-center py-10" style={{ color: '#a1a1aa' }}>這個區間沒有收據或叫貨資料</p>
               ) : (
                 <>
-                  <div className="flex gap-2 overflow-x-auto pb-2 mb-4">
-                    {vendorGroups.filter(group => group.cur > 0).map(group => (
-                      <button key={group.name} type="button" onClick={() => setSelectedVendorGroup(group.name)}
-                        className="shrink-0 rounded-full px-3 py-2 text-xs font-bold"
-                        style={selectedGroup?.name === group.name
-                          ? { background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white', border: '1.5px solid transparent' }
-                          : { background: '#f8fafc', color: '#52525b', border: '1.5px solid #e4e4e7' }}>
-                        {group.name} · ${fmt(group.cur)}
-                      </button>
-                    ))}
+                  <div className="grid grid-cols-2 gap-2 mb-4 sm:grid-cols-3">
+                    <div className="rounded-xl p-3" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                      <p className="text-[11px]" style={{ color: '#9a3412' }}>廠商分類</p>
+                      <p className="text-lg font-extrabold tabular-nums" style={{ color: '#c2410c' }}>{visibleVendorGroups.length}</p>
+                    </div>
+                    <div className="rounded-xl p-3" style={{ background: '#f8fafc', border: '1px solid #e4e4e7' }}>
+                      <p className="text-[11px]" style={{ color: '#71717a' }}>單據筆數</p>
+                      <p className="text-lg font-extrabold tabular-nums">{vendorReceiptCount}</p>
+                    </div>
+                    <div className="rounded-xl p-3 col-span-2 sm:col-span-1" style={{ background: '#f8fafc', border: '1px solid #e4e4e7' }}>
+                      <p className="text-[11px]" style={{ color: '#71717a' }}>本期叫貨金額</p>
+                      <p className="text-lg font-extrabold tabular-nums">${fmt(totalCost)}</p>
+                    </div>
                   </div>
 
-                  {selectedGroup && (
-                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1.4fr]">
-                      <div className="rounded-2xl p-4" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
-                        <p className="text-xs font-semibold mb-1" style={{ color: '#9a3412' }}>{selectedGroup.name}</p>
-                        <p className="text-3xl font-extrabold tabular-nums" style={{ color: '#c2410c' }}>${fmt(selectedGroup.cur)}</p>
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          <div className="rounded-xl bg-white p-3">
-                            <p className="text-[11px]" style={{ color: '#a1a1aa' }}>實際廠商</p>
-                            <p className="text-lg font-bold">{selectedGroup.vendors.filter(v => v.cur > 0).length}</p>
-                          </div>
-                          <div className="rounded-xl bg-white p-3">
-                            <p className="text-[11px]" style={{ color: '#a1a1aa' }}>單據筆數</p>
-                            <p className="text-lg font-bold">{selectedGroup.count}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        {selectedGroup.vendors.filter(v => v.cur > 0).map((vendor, idx) => {
-                          const share = selectedGroup.cur > 0 ? Math.round(vendor.cur / selectedGroup.cur * 1000) / 10 : 0
-                          const change = vendor.prev > 0 ? pct(vendor.cur, vendor.prev) : null
-                          const barW = Math.max(Math.round(vendor.cur / groupMaxVendor * 100), 4)
-                          return (
-                            <div key={vendor.name} className="rounded-xl p-3" style={{ background: '#f8fafc' }}>
-                              <div className="flex items-center justify-between gap-3 mb-2">
-                                <div className="min-w-0">
-                                  <p className="text-sm font-bold truncate">{vendor.name}</p>
-                                  <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
-                                    {vendor.count} 筆 · 佔 {share}%{change === null ? ' · 本期新增' : ` · 較前期 ${change > 0 ? '+' : ''}${change}%`}
-                                  </p>
-                                </div>
-                                <p className="text-base font-extrabold tabular-nums">${fmt(vendor.cur)}</p>
-                              </div>
-                              <div className="h-2 rounded-full overflow-hidden" style={{ background: '#e4e4e7' }}>
-                                <div className="h-full rounded-full" style={{ width: `${barW}%`, background: AVATAR_GRADS[idx % AVATAR_GRADS.length] }} />
-                              </div>
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                    {visibleVendorGroups.map((group, groupIndex) => {
+                      const groupVendors = group.vendors.filter(vendor => vendor.cur > 0)
+                      const maxVendor = Math.max(...groupVendors.map(vendor => vendor.cur), 1)
+                      return (
+                        <section key={group.name} className="rounded-2xl overflow-hidden" style={{ border: '1px solid #e4e4e7' }}>
+                          <div className="flex items-center justify-between gap-3 px-4 py-3" style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa' }}>
+                            <div>
+                              <p className="text-sm font-extrabold" style={{ color: '#9a3412' }}>{group.name}</p>
+                              <p className="text-[11px]" style={{ color: '#c2410c' }}>{groupVendors.length} 家實際廠商 · {group.count} 筆單據</p>
                             </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
+                            <p className="text-lg font-extrabold tabular-nums" style={{ color: '#c2410c' }}>${fmt(group.cur)}</p>
+                          </div>
+                          <div className="divide-y" style={{ borderColor: '#f4f4f5' }}>
+                            {groupVendors.map((vendor, vendorIndex) => {
+                              const share = group.cur > 0 ? Math.round(vendor.cur / group.cur * 1000) / 10 : 0
+                              const change = vendor.prev > 0 ? pct(vendor.cur, vendor.prev) : null
+                              const barW = Math.max(Math.round(vendor.cur / maxVendor * 100), 4)
+                              return (
+                                <div key={vendor.name} className="px-4 py-3">
+                                  <div className="flex items-center justify-between gap-3 mb-1.5">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-bold truncate">{vendor.name}</p>
+                                      <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
+                                        {vendor.count} 筆 · 佔分類 {share}%{change === null ? ' · 本期新增' : ` · 較前期 ${change > 0 ? '+' : ''}${change}%`}
+                                      </p>
+                                    </div>
+                                    <p className="text-base font-extrabold tabular-nums shrink-0">${fmt(vendor.cur)}</p>
+                                  </div>
+                                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#f4f4f5' }}>
+                                    <div className="h-full rounded-full" style={{ width: `${barW}%`, background: AVATAR_GRADS[(groupIndex + vendorIndex) % AVATAR_GRADS.length] }} />
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </section>
+                      )
+                    })}
+                  </div>
                 </>
               )}
             </div>
+
+            {storeType === '央廚' && (
+              <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5' }}>
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <div>
+                    <h3 className="text-sm font-semibold flex items-center gap-2">
+                      <span className="h-8 w-8 rounded-[9px] flex items-center justify-center text-base" style={{ background: '#ffedd5' }}>📦</span>
+                      配送店家金額統計
+                    </h3>
+                    <p className="text-xs mt-1" style={{ color: '#a1a1aa' }}>依央廚每日輸入／確認的配送金額，彙整各店本期叫貨紀錄</p>
+                  </div>
+                  <span className="text-xs font-bold tabular-nums" style={{ color: '#c2410c' }}>配送合計 ${fmt(deliveryTotal)}</span>
+                </div>
+
+                {deliveryStores.length === 0 ? (
+                  <p className="text-sm text-center py-10" style={{ color: '#a1a1aa' }}>這個區間尚無店家配送金額</p>
+                ) : (
+                  <div className="overflow-hidden rounded-xl" style={{ border: '1px solid #e4e4e7' }}>
+                    <div className="grid grid-cols-[1fr_74px_100px] gap-2 px-4 py-2 text-[11px] font-bold" style={{ background: '#fafafa', color: '#71717a', borderBottom: '1px solid #e4e4e7' }}>
+                      <span>配送店家</span><span className="text-right">筆數</span><span className="text-right">本期金額</span>
+                    </div>
+                    {deliveryStores.map(store => {
+                      const change = store.prev > 0 ? pct(store.cur, store.prev) : null
+                      return (
+                        <div key={store.name} className="grid grid-cols-[1fr_74px_100px] gap-2 px-4 py-3 items-center" style={{ borderBottom: '1px solid #f4f4f5' }}>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold truncate">{store.name}</p>
+                            <p className="text-[11px]" style={{ color: '#a1a1aa' }}>{change === null ? '本期新增' : `較前期 ${change > 0 ? '+' : ''}${change}%`}</p>
+                          </div>
+                          <span className="text-sm text-right tabular-nums" style={{ color: '#71717a' }}>{store.count}</span>
+                          <span className="text-base text-right font-extrabold tabular-nums" style={{ color: '#c2410c' }}>${fmt(store.cur)}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Excel 匯出 */}
             <div className="bg-white rounded-2xl p-5 space-y-4" style={{ border: '1px solid #f4f4f5' }}>
