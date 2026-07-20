@@ -28,23 +28,12 @@ export default async function ManagerAnalyticsPage() {
     .eq('id', storeId)
     .single()
 
-  // 央廚的配送統計要能直接標示店家名稱；名稱由伺服器端讀取，
-  // 不受店長端資料讀取權限影響。
+  // 央廚的配送統計要能直接標示店家名稱。歷史配送紀錄可能早於
+  // 「指派店家」設定，因此要以全店家名稱表對照，不能只讀目前指派名單。
   let memberStoreNames: Record<string, string> = {}
   if (store?.type === '央廚') {
-    const { data: ckStore } = await admin
-      .from('ck_stores')
-      .select('assigned_store_ids')
-      .eq('id', storeId)
-      .maybeSingle()
-    const assignedIds = ((ckStore?.assigned_store_ids ?? []) as string[]).filter(Boolean)
-    if (assignedIds.length > 0) {
-      const { data: members } = await admin
-        .from('stores')
-        .select('id, name')
-        .in('id', assignedIds)
-      memberStoreNames = Object.fromEntries((members ?? []).map((member: any) => [member.id, member.name]))
-    }
+    const { data: members } = await admin.from('stores').select('id, name')
+    memberStoreNames = Object.fromEntries((members ?? []).map((member: any) => [member.id, member.name]))
   }
 
   return (

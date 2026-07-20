@@ -139,66 +139,21 @@ function DeltaChip({ cur, prev, white = false }: { cur: number; prev: number; wh
   )
 }
 
-function DailyTrendChart({ data }: { data: DayRev[] }) {
+function DailyRevenueList({ data }: { data: DayRev[] }) {
   if (data.length === 0) return null
-  const maxVal = Math.max(...data.map(d => d.total), 1)
-  const filledData = data.filter(d => d.total > 0)
-  const sorted = [...filledData].sort((a, b) => a.total - b.total)
-  const q75 = sorted[Math.floor(sorted.length * 0.75)]?.total ?? 0
-  const avg = filledData.length > 0 ? filledData.reduce((s, d) => s + d.total, 0) / filledData.length : 0
-  const showValues = data.length <= 10
-
   return (
-    <div>
-      <div className="flex items-end gap-1" style={{ height: showValues ? '190px' : '150px', paddingTop: showValues ? '28px' : '8px', paddingBottom: '32px' }}>
-        {data.map((d, i) => {
-          const isMissing = d.total <= 0
-          const hp = isMissing ? 4 : Math.max((d.total / maxVal) * 100, 8)
-          const isHigh = d.total >= q75
-          const isLow = !isMissing && d.total < avg * 0.65
-          const grad = isMissing
-            ? 'linear-gradient(to top,#d4d4d8,#e4e4e7)'
-            : isHigh
-            ? 'linear-gradient(to top,#10b981,#a7f3d0)'
-            : isLow
-            ? 'linear-gradient(to top,#f43f5e,#fda4af)'
-            : 'linear-gradient(to top,#F59E0B,#FDE68A)'
-          const label = d.date.slice(5).replace(/^0/, '').replace('-', '/')
-          const showLabel = data.length <= 14 ? true : i % Math.ceil(data.length / 10) === 0
-          return (
-            <div key={d.date} title={`${label}：${isMissing ? '尚未填寫營業額' : `$${fmt(d.total)}`}`}
-              className="flex-1 min-w-0 relative flex flex-col justify-end cursor-pointer hover:opacity-80 transition-opacity"
-              style={{ height: '100%' }}>
-              {showValues && (
-                <span className="absolute w-full text-center font-bold tabular-nums truncate px-0.5"
-                  style={{ bottom: `calc(${hp}% + 5px)`, fontSize: '10px', color: isMissing ? '#a1a1aa' : '#52525b' }}>
-                  {isMissing ? '未填' : `$${fmt(d.total)}`}
-                </span>
-              )}
-              <div style={{ height: `${hp}%`, background: grad, borderRadius: '3px 3px 0 0' }} />
-              {showLabel && (
-                <span className="absolute text-center w-full" style={{ bottom: '-20px', fontSize: '9px', color: '#a1a1aa', lineHeight: 1 }}>
-                  {label}
-                </span>
-              )}
-            </div>
-          )
-        })}
-      </div>
-      <div className="flex flex-wrap gap-3 mt-5" style={{ fontSize: '11px', color: '#71717a' }}>
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: 'linear-gradient(135deg,#F59E0B,#FDE68A)' }} />一般
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: 'linear-gradient(135deg,#10b981,#a7f3d0)' }} />表現好（前 25%）
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: 'linear-gradient(135deg,#f43f5e,#fda4af)' }} />異常低
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: '#d4d4d8' }} />尚未填寫
-        </span>
-      </div>
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {data.map(day => {
+        const isMissing = day.total <= 0
+        return (
+          <div key={day.date} className="rounded-xl px-3 py-2.5" style={{ background: isMissing ? '#fafafa' : '#fff7ed', border: `1px solid ${isMissing ? '#e4e4e7' : '#fed7aa'}` }}>
+            <p className="text-[11px] font-semibold" style={{ color: '#71717a' }}>{day.date.slice(5).replace('-', '/')}</p>
+            <p className="mt-0.5 text-base font-extrabold tabular-nums" style={{ color: isMissing ? '#a1a1aa' : '#c2410c' }}>
+              {isMissing ? '未填寫' : `$${fmt(day.total)}`}
+            </p>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -339,9 +294,10 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
       function deliveryStoreTotals(data: Awaited<ReturnType<typeof loadCKRange>>) {
         const byStore = new Map<string, { total: number; count: number }>()
         for (const order of data.orders as any[]) {
+          const externalName = String(order.external_store_name ?? '').trim()
           const name = order.store_id
-            ? (memberStoreNames[order.store_id] ?? '未命名店家')
-            : String(order.external_store_name ?? '').trim() || '未命名店家'
+            ? (memberStoreNames[order.store_id] || externalName || '已移除店家')
+            : externalName || '未指定店家'
           const amount = order.store_id
             ? Number(order.ck_confirmed_amount ?? order.amount ?? 0)
             : Number(order.amount ?? 0)
@@ -758,8 +714,8 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 items-start lg:grid-cols-[1.2fr_0.8fr]">
-              <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5' }}>
+            <div className={`grid grid-cols-1 gap-4 items-start ${storeType === '央廚' ? '' : 'lg:grid-cols-[1.2fr_0.8fr]'}`}>
+              {storeType !== '央廚' && <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5' }}>
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
                     <span className="h-8 w-8 rounded-[9px] flex items-center justify-center text-base" style={{ background: '#d1fae5' }}>📈</span>
@@ -767,10 +723,10 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
                   </h3>
                   <span className="text-xs" style={{ color: '#a1a1aa' }}>{dailyRevs.length} 天有營業額資料</span>
                 </div>
-                {dailyRevs.length > 1 ? <DailyTrendChart data={dailyRevs} /> : (
+                {dailyRevs.length > 0 ? <DailyRevenueList data={dailyRevs} /> : (
                   <p className="text-sm text-center py-10" style={{ color: '#a1a1aa' }}>這個區間還沒有足夠的營業額資料</p>
                 )}
-              </div>
+              </div>}
 
               <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5' }}>
                 <div className="flex items-center justify-between gap-3 mb-4">
