@@ -524,6 +524,42 @@ export async function markCKHQPaid(
   return { success: true }
 }
 
+// 總公司上傳補款信封照片時立即保存草稿，避免在按下「送出補款」前
+// 因審核通過、重新整理或切換頁面而遺失照片。
+export async function saveCKHQReimbursementPhotoDraft(
+  ckStoreId: string,
+  date: string,
+  photoUrls: string[],
+) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  const profile = await getUserPermissionProfile(ctx.userId)
+  if (!canReviewClosings(profile)) return { error: '權限不足，請先開啟帳目審核權限' }
+
+  const admin = createAdminClient()
+  const { data: existing, error: findError } = await admin
+    .from('ck_daily_records')
+    .select('id')
+    .eq('ck_store_id', ckStoreId)
+    .eq('business_date', date)
+    .maybeSingle()
+  if (findError) return { error: findError.message }
+  if (!existing) return { error: '找不到央廚帳目，請先完成央廚做帳' }
+
+  const { error } = await admin
+    .from('ck_daily_records')
+    .update({
+      hq_reimbursement_photo_urls: photoUrls,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', existing.id)
+  if (error) return { error: error.message }
+
+  revalidatePath('/hq/ck')
+  revalidatePath('/hq/accounting')
+  return { success: true }
+}
+
 // 央廚確認已點交補款
 export async function confirmCKReimbursementHandoff(ckStoreId: string, date: string) {
   const ctx = await getAuthContext()

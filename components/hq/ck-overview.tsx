@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Loader2, Banknote, Camera, X, Upload, RotateCcw, Trash2 } from 'lucide-react'
-import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord } from '@/app/actions/ck'
+import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord, saveCKHQReimbursementPhotoDraft } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
 import { toast } from 'sonner'
 import { centralKitchenPhotoPath } from '@/lib/storage-paths'
@@ -249,7 +249,10 @@ function PayButton({
         if ('error' in r) throw new Error(r.error)
         uploaded.push(r.publicUrl)
       }
-      setPhotoUrls(prev => [...prev, ...uploaded])
+      const nextPhotoUrls = [...photoUrls, ...uploaded]
+      const saved = await saveCKHQReimbursementPhotoDraft(ckStoreId, date, nextPhotoUrls)
+      if ('error' in saved) throw new Error(saved.error)
+      setPhotoUrls(nextPhotoUrls)
       toast.success(`已上傳 ${uploaded.length} 張補款照片`)
     } catch (err: any) {
       toast.error('上傳失敗：' + (err?.message ?? '未知錯誤'))
@@ -287,6 +290,15 @@ function PayButton({
         setPhotoUrls([])
         toast.success('已取消補款記錄')
       }
+    })
+  }
+
+  function removeDraftPhoto(index: number) {
+    const nextPhotoUrls = photoUrls.filter((_, photoIndex) => photoIndex !== index)
+    setPhotoUrls(nextPhotoUrls)
+    startTransition(async () => {
+      const saved = await saveCKHQReimbursementPhotoDraft(ckStoreId, date, nextPhotoUrls)
+      if (saved.error) toast.error('刪除照片保存失敗：' + saved.error)
     })
   }
 
@@ -363,7 +375,7 @@ function PayButton({
               <button type="button" onClick={() => onPreview(url)} className="block h-full w-full">
                 <SafePhotoImage src={url} alt={`補款照片 ${i + 1}`} thumb width={180} height={180} className="h-full w-full rounded-lg object-cover" style={{ border: '1px solid #FDE68A' }} />
               </button>
-              <button type="button" onClick={() => setPhotoUrls(prev => prev.filter((_, idx) => idx !== i))}
+              <button type="button" onClick={() => removeDraftPhoto(i)} disabled={isPending}
                 className="absolute -right-1 -top-1 h-5 w-5 rounded-full flex items-center justify-center"
                 style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca' }}>
                 <X className="h-3 w-3" />
