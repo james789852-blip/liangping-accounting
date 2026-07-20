@@ -14,6 +14,7 @@ function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
 type VendorDetail = { name: string; total: number; count: number }
 type VendorStat = { storeId: string; storeName: string; group: string; total: number; count: number; vendors: VendorDetail[] }
+type DeliveryStoreStat = { name: string; total: number; count: number }
 type StoreSummary = {
   id: string
   name: string
@@ -22,6 +23,7 @@ type StoreSummary = {
   cost: number
   costRate: number
   vendors: VendorStat[]
+  deliveryStores: DeliveryStoreStat[]
 }
 
 export default async function HQDashboard({
@@ -77,6 +79,7 @@ export default async function HQDashboard({
   // 央廚營業額不是 daily_closings，而是本月各成員店的叫貨收入。
   const ckIds = stores.filter(store => store.type === '央廚').map(store => store.id)
   const ckRevenueByStore: Record<string, number> = {}
+  const ckDeliveryStoresByKitchen = new Map<string, Map<string, DeliveryStoreStat>>()
   if (ckIds.length > 0) {
     const { data: ckRecords } = await admin.from('ck_daily_records')
       .select('id, ck_store_id')
@@ -85,16 +88,25 @@ export default async function HQDashboard({
     const recordIds = (ckRecords ?? []).map(record => record.id)
     if (recordIds.length > 0) {
       const { data: ckOrders } = await admin.from('ck_store_orders')
-        .select('ck_daily_record_id, store_id, amount, ck_confirmed_amount')
+        .select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount')
         .in('ck_daily_record_id', recordIds)
-        .not('store_id', 'is', null)
       const ckIdByRecord = new Map((ckRecords ?? []).map(record => [record.id as string, record.ck_store_id as string]))
       for (const order of ckOrders ?? []) {
         const ckId = ckIdByRecord.get(order.ck_daily_record_id as string)
         if (!ckId) continue
-        // 已確認時採央廚確認金額；尚未確認則先採店家叫貨金額，避免統計顯示為 0。
-        const amount = Number(order.ck_confirmed_amount ?? order.amount ?? 0)
+        const externalStoreName = String(order.external_store_name ?? '').trim()
+        const storeName = order.store_id
+          ? (storeMap[order.store_id as string] || externalStoreName || '已移除店家')
+          : (externalStoreName || '未指定店家')
+        // 體系內店家已確認時採央廚確認金額；體系外店家則採央廚輸入金額。
+        const amount = Number(order.store_id ? (order.ck_confirmed_amount ?? order.amount ?? 0) : (order.amount ?? 0))
         ckRevenueByStore[ckId] = (ckRevenueByStore[ckId] || 0) + amount
+        const deliveries = ckDeliveryStoresByKitchen.get(ckId) ?? new Map<string, DeliveryStoreStat>()
+        const row = deliveries.get(storeName) ?? { name: storeName, total: 0, count: 0 }
+        row.total += amount
+        if (amount !== 0) row.count += 1
+        deliveries.set(storeName, row)
+        ckDeliveryStoresByKitchen.set(ckId, deliveries)
       }
     }
   }
@@ -149,6 +161,9 @@ export default async function HQDashboard({
       cost,
       costRate: revenue > 0 ? (cost / revenue) * 100 : 0,
       vendors: vendorsByStore.get(store.id) ?? [],
+      deliveryStores: Array.from(ckDeliveryStoresByKitchen.get(store.id)?.values() ?? [])
+        .filter(row => row.total !== 0)
+        .sort((a, b) => b.total - a.total),
     }
   }).sort((a, b) => b.revenue - a.revenue)
 
@@ -282,10 +297,37 @@ function StoreStatsCard({ store, isKitchen }: { store: StoreSummary; isKitchen: 
         <div className="grid grid-cols-3 gap-px" style={{ background: '#e4e4e7' }}>
           <SmallStat label={isKitchen ? '叫貨收入' : '營業額'} value={`$${fmt(store.revenue)}`} />
           <SmallStat label="叫貨支出" value={`$${fmt(store.cost)}`} tone="orange" />
-          <SmallStat label="單據／支出率" value={`${store.vendors.reduce((sum, v) => sum + v.count, 0)} 筆 · ${store.revenue ? store.costRate.toFixed(1) : '—'}%`} />
+          <SmallStat
+            label={isKitchen ? '叫貨店數／支出率' : '單據／支出率'}
+            value={isKitchen
+              ? `${store.deliveryStores.length} 家 · ${store.revenue ? store.costRate.toFixed(1) : '—'}%`
+              : `${store.vendors.reduce((sum, v) => sum + v.count, 0)} 筆 · ${store.revenue ? store.costRate.toFixed(1) : '—'}%`}
+          />
         </div>
         <div className="p-3">
-          {store.vendors.length === 0 ? <p className="text-xs text-center py-3" style={{ color: '#a1a1aa' }}>本月尚無廠商叫貨</p> : <div className="space-y-1.5">
+          {isKitchen && (
+            <div className="mb-3 rounded-xl overflow-hidden" style={{ border: '1px solid #ddd6fe', background: '#fafaff' }}>
+              <div className="flex items-center justify-between gap-3 px-3 py-2" style={{ borderBottom: '1px solid #e9e5ff' }}>
+                <p className="text-xs font-bold" style={{ color: '#5b21b6' }}>各店叫貨統計</p>
+                <p className="text-[11px] tabular-nums" style={{ color: '#7c3aed' }}>{store.deliveryStores.length} 家 · 合計 ${fmt(store.revenue)}</p>
+              </div>
+              {store.deliveryStores.length === 0 ? (
+                <p className="px-3 py-3 text-xs text-center" style={{ color: '#a1a1aa' }}>本月尚無店家叫貨紀錄</p>
+              ) : (
+                <div className="divide-y" style={{ borderColor: '#ede9fe' }}>
+                  {store.deliveryStores.map(delivery => (
+                    <div key={delivery.name} className="grid grid-cols-[1fr_56px_95px] gap-2 items-center px-3 py-2" style={{ background: 'white' }}>
+                      <span className="text-sm font-semibold truncate" style={{ color: '#3f3f46' }}>{delivery.name}</span>
+                      <span className="text-[11px] text-center tabular-nums" style={{ color: '#a1a1aa' }}>{delivery.count} 筆</span>
+                      <span className="text-sm text-right font-bold tabular-nums" style={{ color: '#6d28d9' }}>${fmt(delivery.total)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {store.vendors.length === 0 ? <p className="text-xs text-center py-3" style={{ color: '#a1a1aa' }}>{isKitchen ? '本月尚無央廚採購支出' : '本月尚無廠商叫貨'}</p> : <div className="space-y-1.5">
+            {isKitchen && <p className="px-1 pb-0.5 text-xs font-semibold" style={{ color: '#71717a' }}>央廚採購／支出明細</p>}
             {store.vendors.map(group => <div key={`${group.storeId}-${group.group}`} className="rounded-lg overflow-hidden" style={{ background: '#f8fafc' }}>
               <div className="grid grid-cols-[1fr_55px_95px] gap-2 items-center px-2.5 py-2">
                 <span className="text-sm font-semibold truncate" style={{ color: '#52525b' }}>{group.group}</span>
