@@ -1099,14 +1099,14 @@ function InlineItemNameEditor({ mappingId, currentName, fullName, excelColumn }:
   }
   if (editing) {
     return (
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex min-w-0 max-w-full items-center gap-1">
         <input autoFocus value={value} onChange={e => setValue(e.target.value)}
           onKeyDown={e => {
             // 不用 Enter 儲存，避免 IME 選字時誤觸；只保留 Esc 取消
             if (e.key === 'Escape') { setValue(fullName); setEditing(false) }
           }}
           disabled={saving}
-          style={{ minWidth: 100, padding: '2px 6px', border: '1.5px solid #F59E0B', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', color: '#18181b' }} />
+          style={{ width: 'clamp(120px, 30vw, 280px)', minWidth: 0, padding: '2px 6px', border: '1.5px solid #F59E0B', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', color: '#18181b' }} />
         <button onClick={save} disabled={saving || !value.trim()}
           className="rounded transition-opacity hover:opacity-70"
           style={{ background: '#22c55e', color: 'white', border: 'none', padding: '3px 6px', cursor: 'pointer', fontSize: 12, fontWeight: 700, opacity: (saving || !value.trim()) ? 0.5 : 1 }}
@@ -1390,7 +1390,7 @@ function ItemDocOverrideSelector({ itemName, storeId, currentOverride, extraOpti
         height: 22, padding: '0 4px', fontSize: 10, borderRadius: 4,
         border: `1px solid ${docColor(doc).bd}`,
         background: docColor(doc).bg, color: docColor(doc).fg,
-        fontFamily: 'inherit', outline: 'none', fontWeight: doc ? 600 : 400,
+        fontFamily: 'inherit', outline: 'none', fontWeight: doc ? 600 : 400, flexShrink: 0,
       }}>
       <option value="">單據 (預設)</option>
       {allOptions.map(o => <option key={o} value={o}>{o}</option>)}

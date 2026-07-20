@@ -60,6 +60,33 @@ async function requireCanManageItems(storeId?: string | null) {
   return { user, profile, error: null }
 }
 
+function normalizedVendorGroup(vendorGroup?: string | null) {
+  return (vendorGroup ?? '').trim()
+}
+
+/**
+ * system_items 本來就以「品項名稱＋廠商分類」為唯一值。
+ * 不能只用名稱找，否則不同分類的同名品項會錯連到同一筆資料。
+ */
+async function findActiveSystemItem(
+  admin: ReturnType<typeof createAdminClient>,
+  itemName: string,
+  vendorGroup?: string | null,
+) {
+  const groupName = normalizedVendorGroup(vendorGroup)
+  let groupId: string | null = null
+  if (groupName) {
+    const { data: group } = await admin.from('system_vendor_groups')
+      .select('id').eq('name', groupName).eq('active', true).maybeSingle()
+    groupId = group?.id ?? null
+  }
+
+  let query = admin.from('system_items').select('id').eq('name', itemName).eq('active', true)
+  query = groupId ? query.eq('vendor_group_id', groupId) : query.is('vendor_group_id', null)
+  const { data } = await query.maybeSingle()
+  return data
+}
+
 export async function saveItemMapping(
   itemName: string, excelColumn: string, itemCategory: string, storeId?: string, vendorGroup?: string
 ) {
@@ -71,10 +98,11 @@ export async function saveItemMapping(
   let query = admin.from('item_column_mappings').select('id, vendor_group').eq('item_name', itemName)
   if (storeId) query = query.eq('store_id', storeId)
   else query = query.is('store_id', null)
-  const { data: existing } = await query.maybeSingle()
+  const { data: candidates } = await query
+  const requestedGroup = normalizedVendorGroup(vendorGroup)
+  const existing = (candidates ?? []).find(item => normalizedVendorGroup(item.vendor_group) === requestedGroup)
   if (existing) {
-    const existingGroup = (existing.vendor_group ?? '').trim()
-    const requestedGroup = (vendorGroup ?? '').trim()
+    const existingGroup = normalizedVendorGroup(existing.vendor_group)
     if (existingGroup === requestedGroup) {
       return { success: true as const, alreadyExists: true as const }
     }
@@ -154,8 +182,7 @@ async function ensureSystemItemAndEnable(
 
   // 找/建 system_item
   let systemItemId: string | null = null
-  const { data: existingSys } = await admin.from('system_items')
-    .select('id').eq('name', itemName).eq('active', true).maybeSingle()
+  const existingSys = await findActiveSystemItem(admin, itemName, vendorGroup)
   if (existingSys) {
     systemItemId = existingSys.id
   } else {
@@ -214,8 +241,7 @@ export async function deleteItemMapping(id: string) {
 
   // 若 mapping 綁定特定店家 → 同步 disable 該店的 store_item（否則 xlsx 匯出還會有這欄）
   if (mapping?.store_id && mapping?.item_name) {
-    const { data: sys } = await admin.from('system_items')
-      .select('id').eq('name', mapping.item_name).eq('active', true).maybeSingle()
+    const sys = await findActiveSystemItem(admin, mapping.item_name, mapping.vendor_group)
     if (sys) {
       await admin.from('store_items')
         .update({ enabled: false })
@@ -259,8 +285,7 @@ export async function updateItemMapping(id: string, excelColumn: string, itemCat
         .select('id').eq('name', vendorGroup.trim()).eq('active', true).maybeSingle()
       vgId = vg?.id ?? null
     }
-    const { data: sys } = await admin.from('system_items')
-      .select('id').eq('name', mapping.item_name).eq('active', true).maybeSingle()
+    const sys = await findActiveSystemItem(admin, mapping.item_name, oldVg)
     if (sys) {
       await admin.from('store_items')
         .update({ custom_vendor_group_id: vgId })
@@ -314,8 +339,7 @@ export async function batchDeleteItemMappings(ids: string[]) {
   // 同步 disable 店家專屬 store_items
   for (const m of mappings ?? []) {
     if (!m.store_id || !m.item_name) continue
-    const { data: sys } = await admin.from('system_items')
-      .select('id').eq('name', m.item_name).eq('active', true).maybeSingle()
+    const sys = await findActiveSystemItem(admin, m.item_name, m.vendor_group)
     if (sys) {
       await admin.from('store_items')
         .update({ enabled: false })
@@ -350,12 +374,15 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
   const nextExcelColumn = (mapping.excel_column === oldName || syncExcelColumn) ? trimmedName : mapping.excel_column
   if (trimmedName === oldName && nextExcelColumn === mapping.excel_column) return { success: true as const }
 
-  // 檢查同 store 是否已有同名
+  // 同店同名可存在於不同廠商分類；只擋同一分類的重複名稱。
   if (trimmedName !== oldName) {
     let dupQuery = admin.from('item_column_mappings')
-      .select('id').eq('item_name', trimmedName)
+      .select('id, vendor_group').eq('item_name', trimmedName)
     dupQuery = mapping.store_id ? dupQuery.eq('store_id', mapping.store_id) : dupQuery.is('store_id', null)
-    const { data: dup } = await dupQuery.maybeSingle()
+    const { data: duplicateCandidates } = await dupQuery
+    const dup = (duplicateCandidates ?? []).find(candidate =>
+      normalizedVendorGroup(candidate.vendor_group) === normalizedVendorGroup(mapping.vendor_group)
+    )
     if (dup) return { error: `已有同名品項「${trimmedName}」` }
   }
 
@@ -369,8 +396,7 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
 
   // 只有全域 mapping 才同步 system_items；店家專屬改名不可牽動其他店。
   if (!mapping.store_id && trimmedName !== oldName) {
-    const { data: sys } = await admin.from('system_items')
-      .select('id').eq('name', oldName).eq('active', true).maybeSingle()
+    const sys = await findActiveSystemItem(admin, oldName, mapping.vendor_group)
     if (sys) {
       await admin.from('system_items').update({
         name: trimmedName,
@@ -454,16 +480,12 @@ export async function reorderItemMappings(ids: string[]) {
   // 2. 同步 system_items / store_items 的 sort_order（xlsx 匯出依這個排）
   if (mappings?.length) {
     // 撈所有涉及的 system_items
-    const names = mappings.map(m => m.item_name)
-    const { data: sys } = await admin.from('system_items')
-      .select('id, name').in('name', names).eq('active', true)
-    const sysIdByName = new Map((sys ?? []).map((s: any) => [s.name, s.id]))
-
     await Promise.all(ids.map(async (id, i) => {
       const m = mappings.find(x => x.id === id)
       if (!m) return
       const order = (i + 1) * 10
-      const sysId = sysIdByName.get(m.item_name)
+      const systemItem = await findActiveSystemItem(admin, m.item_name, m.vendor_group)
+      const sysId = systemItem?.id
       if (!sysId) return
       if (m.store_id) {
         // 該店 store_item.sort_order（優先）
@@ -650,7 +672,7 @@ export async function deleteVendorGroupWithItems(vgName: string, storeId?: strin
   const admin = createAdminClient()
 
   // 1. 找 vg 底下的 mappings
-  let mapQuery = admin.from('item_column_mappings').select('id, item_name, store_id').eq('vendor_group', vgName)
+  let mapQuery = admin.from('item_column_mappings').select('id, item_name, store_id, vendor_group').eq('vendor_group', vgName)
   if (storeId) mapQuery = mapQuery.eq('store_id', storeId)
   const { data: mappings } = await mapQuery
   const itemNames = [...new Set((mappings ?? []).map((m: any) => m.item_name as string))]
@@ -662,8 +684,10 @@ export async function deleteVendorGroupWithItems(vgName: string, storeId?: strin
 
   // 3. Disable 對應 store_items
   if (itemNames.length > 0) {
-    const { data: sys } = await admin.from('system_items').select('id, name').in('name', itemNames).eq('active', true)
-    const sysIds = (sys ?? []).map((s: any) => s.id)
+    const systemItems = await Promise.all(
+      itemNames.map(itemName => findActiveSystemItem(admin, itemName, vgName))
+    )
+    const sysIds = systemItems.flatMap(item => item?.id ? [item.id] : [])
     if (sysIds.length > 0) {
       let siQuery = admin.from('store_items').update({ enabled: false }).in('system_item_id', sysIds)
       if (storeId) siQuery = siQuery.eq('store_id', storeId)
