@@ -1431,7 +1431,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                         : activeCategoryName === '加油或停車'
                                           ? '— 選擇加油或停車 —'
                                           : activeCategoryName === '退稅'
-                                            ? '— 選擇總發票-稅金 —'
+                                            ? '— 選擇 —'
                                             : '— 選擇品項 —'}
                                   </option>
                                   {directItemOptions.map(item => (
