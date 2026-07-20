@@ -240,26 +240,40 @@ export default function ItemMappingsClient({
     startTransition(async () => {
       const targets = Array.from(new Set(batchStoreIds))
       // 逐店建立，避免第一次新增自訂品項時多個請求同時建立 system_items 造成競態。
-      const results: any[] = []
+      const results: { storeId: string; storeName: string; result: any }[] = []
       for (const sid of targets) {
-        results.push(await saveItemMapping(newName.trim(), excelCol, newCat, sid, newVendorGroup.trim() || undefined))
+        const storeName = stores.find(store => store.id === sid)?.name ?? '未知店家'
+        const result = await saveItemMapping(newName.trim(), excelCol, newCat, sid, newVendorGroup.trim() || undefined)
+        results.push({ storeId: sid, storeName, result })
       }
-      const errors = results.filter((r): r is { error: string } => !!(r as any)?.error)
-      if (errors.length > 0) {
-        toast.error(`新增失敗：${errors.map(e => e.error).join('；')}`)
-        return
-      }
+
+      const errors = results.filter(entry => !!entry.result?.error)
+      const alreadyExists = results.filter(entry => !!entry.result?.alreadyExists)
+      const added = results.filter(entry => !entry.result?.error && !entry.result?.alreadyExists)
+
+      // 單據類型只寫入確實新增完成或原本已存在的店，避免失敗店留下孤立設定。
       if (newDocType.trim()) {
-        for (const sid of targets) await setItemDocOverride(newName.trim(), sid, newDocType.trim())
+        for (const entry of results.filter(entry => !entry.result?.error)) {
+          await setItemDocOverride(newName.trim(), entry.storeId, newDocType.trim())
+        }
       }
       // Optimistic：若 auto-create 了新 vg，立即加入 vgsState
-      for (const r of results) {
-        const newVg = (r as any)?.newVg as { id: string; name: string; sort_order: number } | null | undefined
+      for (const { result } of results) {
+        const newVg = result?.newVg as { id: string; name: string; sort_order: number } | null | undefined
         if (newVg) {
           setVgsState(prev => prev.some(v => v.id === newVg.id) ? prev : [...prev, { ...newVg, doc_type: null }])
         }
       }
-      toast.success(`已新增到 ${targets.length} 個位置`)
+
+      if (errors.length > 0) {
+        toast.error(`未新增 ${errors.length} 間：${errors.map(entry => `${entry.storeName}（${entry.result.error}）`).join('；')}`)
+      }
+      const summary = [
+        added.length > 0 ? `新增 ${added.length} 間` : '',
+        alreadyExists.length > 0 ? `原本已有 ${alreadyExists.length} 間` : '',
+      ].filter(Boolean).join('，')
+      if (summary) toast.success(summary)
+
       setShowAdd(false); setNewName(''); setNewCol(''); setNewCat('食材'); setNewVendorGroup(''); setNewDocType(''); setBatchStoreIds([])
       router.refresh()
     })
