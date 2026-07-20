@@ -1515,7 +1515,13 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                             : line.category ?? form.category
                                           updatePhotoItem(form.id, line.id, { item_name: itemName, category })
                                         }}>
-                                        <option value="">{!activeCategoryName ? '（先選類別）' : form.vendor_group ? `— 選擇品項 ${lineIndex + 1} —` : '（先選廠商）'}</option>
+                                        <option value="">{!activeCategoryName
+                                          ? '（先選類別）'
+                                          : form.vendor_group
+                                            ? activeCategoryName === '廠商'
+                                              ? `— 選擇廠商名稱 ${lineIndex + 1} —`
+                                              : `— 選擇品項 ${lineIndex + 1} —`
+                                            : '（先選廠商）'}</option>
                                         {form.vendor_group && hasItemOptions
                                           ? itemOptions.map(item => <option key={item.item_name} value={item.item_name}>{item.item_name}</option>)
                                           : form.vendor_group && !requiresPhotoItem && <option value={form.vendor_group}>{form.vendor_group}</option>
