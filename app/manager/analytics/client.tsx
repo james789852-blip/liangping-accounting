@@ -142,18 +142,23 @@ function DeltaChip({ cur, prev, white = false }: { cur: number; prev: number; wh
 function DailyTrendChart({ data }: { data: DayRev[] }) {
   if (data.length === 0) return null
   const maxVal = Math.max(...data.map(d => d.total), 1)
-  const sorted = [...data].sort((a, b) => a.total - b.total)
+  const filledData = data.filter(d => d.total > 0)
+  const sorted = [...filledData].sort((a, b) => a.total - b.total)
   const q75 = sorted[Math.floor(sorted.length * 0.75)]?.total ?? 0
-  const avg = data.reduce((s, d) => s + d.total, 0) / data.length
+  const avg = filledData.length > 0 ? filledData.reduce((s, d) => s + d.total, 0) / filledData.length : 0
+  const showValues = data.length <= 10
 
   return (
     <div>
-      <div className="flex items-end gap-0.5" style={{ height: '130px', paddingBottom: '22px' }}>
+      <div className="flex items-end gap-1" style={{ height: showValues ? '190px' : '150px', paddingTop: showValues ? '28px' : '8px', paddingBottom: '32px' }}>
         {data.map((d, i) => {
-          const hp = Math.max((d.total / maxVal) * 100, 3)
+          const isMissing = d.total <= 0
+          const hp = isMissing ? 4 : Math.max((d.total / maxVal) * 100, 8)
           const isHigh = d.total >= q75
-          const isLow = d.total < avg * 0.65
-          const grad = isHigh
+          const isLow = !isMissing && d.total < avg * 0.65
+          const grad = isMissing
+            ? 'linear-gradient(to top,#d4d4d8,#e4e4e7)'
+            : isHigh
             ? 'linear-gradient(to top,#10b981,#a7f3d0)'
             : isLow
             ? 'linear-gradient(to top,#f43f5e,#fda4af)'
@@ -161,9 +166,15 @@ function DailyTrendChart({ data }: { data: DayRev[] }) {
           const label = d.date.slice(5).replace(/^0/, '').replace('-', '/')
           const showLabel = data.length <= 14 ? true : i % Math.ceil(data.length / 10) === 0
           return (
-            <div key={d.date} title={`${label} $${fmt(d.total)}`}
-              className="flex-1 relative flex flex-col justify-end cursor-pointer hover:opacity-80 transition-opacity"
+            <div key={d.date} title={`${label}：${isMissing ? '尚未填寫營業額' : `$${fmt(d.total)}`}`}
+              className="flex-1 min-w-0 relative flex flex-col justify-end cursor-pointer hover:opacity-80 transition-opacity"
               style={{ height: '100%' }}>
+              {showValues && (
+                <span className="absolute w-full text-center font-bold tabular-nums truncate px-0.5"
+                  style={{ bottom: `calc(${hp}% + 5px)`, fontSize: '10px', color: isMissing ? '#a1a1aa' : '#52525b' }}>
+                  {isMissing ? '未填' : `$${fmt(d.total)}`}
+                </span>
+              )}
               <div style={{ height: `${hp}%`, background: grad, borderRadius: '3px 3px 0 0' }} />
               {showLabel && (
                 <span className="absolute text-center w-full" style={{ bottom: '-20px', fontSize: '9px', color: '#a1a1aa', lineHeight: 1 }}>
@@ -183,6 +194,9 @@ function DailyTrendChart({ data }: { data: DayRev[] }) {
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: 'linear-gradient(135deg,#f43f5e,#fda4af)' }} />異常低
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: '#d4d4d8' }} />尚未填寫
         </span>
       </div>
     </div>
@@ -368,7 +382,9 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
         const previous = new Map<string, Map<string, number>>()
         for (const expense of data.expenses as any[]) {
           const group = expense.vendor_group?.trim() || '未分類'
-          const actual = expense.payer_name?.trim() || '未指定'
+          // 央廚帳目的 payer_name 是「誰付款」，不是廠商或採購內容。
+          // 營運統計應由廠商分類往下顯示實際買了什麼。
+          const actual = expense.item_name?.trim() || '未指定品項'
           if (!current.has(group)) current.set(group, new Map())
           const row = current.get(group)!.get(actual) ?? { total: 0, count: 0 }
           row.total += Number(expense.amount ?? 0)
@@ -377,7 +393,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
         }
         for (const expense of prevRows.expenses as any[]) {
           const group = expense.vendor_group?.trim() || '未分類'
-          const actual = expense.payer_name?.trim() || '未指定'
+          const actual = expense.item_name?.trim() || '未指定品項'
           if (!previous.has(group)) previous.set(group, new Map())
           previous.get(group)!.set(actual, (previous.get(group)!.get(actual) ?? 0) + Number(expense.amount ?? 0))
         }
@@ -742,7 +758,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+            <div className="grid grid-cols-1 gap-4 items-start lg:grid-cols-[1.2fr_0.8fr]">
               <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #f4f4f5' }}>
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
@@ -808,11 +824,15 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
                 <div>
                   <h3 className="text-sm font-semibold flex items-center gap-2">
                     <span className="h-8 w-8 rounded-[9px] flex items-center justify-center text-base" style={{ background: '#ffedd5' }}>🏪</span>
-                    廠商叫貨明細
+                    {storeType === '央廚' ? '採購明細' : '廠商叫貨明細'}
                   </h3>
-                  <p className="text-xs mt-1" style={{ color: '#a1a1aa' }}>依廠商分類整理，直接顯示實際廠商、單據筆數與本期金額</p>
+                  <p className="text-xs mt-1" style={{ color: '#a1a1aa' }}>
+                    {storeType === '央廚'
+                      ? '依廠商分類整理，直接顯示採購品項、單據筆數與本期金額'
+                      : '依廠商分類整理，直接顯示實際廠商、單據筆數與本期金額'}
+                  </p>
                 </div>
-                <span className="text-xs" style={{ color: '#a1a1aa' }}>總支出 ${fmt(totalCost)}</span>
+                <span className="text-xs" style={{ color: '#a1a1aa' }}>{storeType === '央廚' ? '總採購' : '總支出'} ${fmt(totalCost)}</span>
               </div>
 
               {visibleVendorGroups.length === 0 ? (
@@ -821,7 +841,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
                 <>
                   <div className="grid grid-cols-2 gap-2 mb-4 sm:grid-cols-3">
                     <div className="rounded-xl p-3" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
-                      <p className="text-[11px]" style={{ color: '#9a3412' }}>廠商分類</p>
+                      <p className="text-[11px]" style={{ color: '#9a3412' }}>{storeType === '央廚' ? '採購分類' : '廠商分類'}</p>
                       <p className="text-lg font-extrabold tabular-nums" style={{ color: '#c2410c' }}>{visibleVendorGroups.length}</p>
                     </div>
                     <div className="rounded-xl p-3" style={{ background: '#f8fafc', border: '1px solid #e4e4e7' }}>
@@ -829,7 +849,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
                       <p className="text-lg font-extrabold tabular-nums">{vendorReceiptCount}</p>
                     </div>
                     <div className="rounded-xl p-3 col-span-2 sm:col-span-1" style={{ background: '#f8fafc', border: '1px solid #e4e4e7' }}>
-                      <p className="text-[11px]" style={{ color: '#71717a' }}>本期叫貨金額</p>
+                      <p className="text-[11px]" style={{ color: '#71717a' }}>{storeType === '央廚' ? '本期採購金額' : '本期叫貨金額'}</p>
                       <p className="text-lg font-extrabold tabular-nums">${fmt(totalCost)}</p>
                     </div>
                   </div>
@@ -843,7 +863,9 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
                           <div className="flex items-center justify-between gap-3 px-4 py-3" style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa' }}>
                             <div>
                               <p className="text-sm font-extrabold" style={{ color: '#9a3412' }}>{group.name}</p>
-                              <p className="text-[11px]" style={{ color: '#c2410c' }}>{groupVendors.length} 家實際廠商 · {group.count} 筆單據</p>
+                              <p className="text-[11px]" style={{ color: '#c2410c' }}>
+                                {groupVendors.length} {storeType === '央廚' ? '項採購品項' : '家實際廠商'} · {group.count} 筆單據
+                              </p>
                             </div>
                             <p className="text-lg font-extrabold tabular-nums" style={{ color: '#c2410c' }}>${fmt(group.cur)}</p>
                           </div>
