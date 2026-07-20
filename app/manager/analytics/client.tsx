@@ -365,7 +365,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
             cur: curMap.get(actual)?.total ?? 0,
             prev: prevMap.get(actual) ?? 0,
             count: curMap.get(actual)?.count ?? 0,
-            notes: Array.from(curMap.get(actual)?.notes ?? []),
+            notes: Array.from(curMap.get(actual)?.notes ?? []).filter((note): note is string => typeof note === 'string'),
           })).sort((a, b) => b.cur - a.cur)
           return {
             name,
@@ -526,7 +526,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
           cur: curMap.get(actual)?.total ?? 0,
           prev: prevMap.get(actual) ?? 0,
           count: curMap.get(actual)?.count ?? 0,
-          notes: Array.from(curMap.get(actual)?.notes ?? []),
+          notes: Array.from(curMap.get(actual)?.notes ?? []).filter((note): note is string => typeof note === 'string'),
         })).sort((a, b) => b.cur - a.cur)
         return {
           name,
