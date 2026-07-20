@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Loader2, Banknote, Camera, X, Upload, RotateCcw, Trash2 } from 'lucide-react'
 import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord } from '@/app/actions/ck'
@@ -45,6 +45,44 @@ const CAT_COLORS: Record<string, { bg: string; text: string }> = {
 interface MemberStore { store_id: string; store_name: string; amount: number; manager_amount: number | null }
 interface ExternalOrder { name: string; amount: number }
 interface Expense { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }
+
+type ExpenseGroup = {
+  key: string
+  name: string
+  expenses: Expense[]
+  total: number
+  categories: string[]
+  payerNames: string[]
+  notes: string[]
+  photoUrls: string[]
+}
+
+/** 同一廠商的多個品項視為同一張待核對單據，不再逐品項重複顯示照片。 */
+function groupExpensesByVendor(expenses: Expense[]): ExpenseGroup[] {
+  const groups = new Map<string, ExpenseGroup>()
+  expenses.forEach(expense => {
+    const name = expense.vendor_group?.trim() || expense.item_name.trim() || '未分類支出'
+    const key = name
+    const current = groups.get(key) ?? {
+      key,
+      name,
+      expenses: [],
+      total: 0,
+      categories: [],
+      payerNames: [],
+      notes: [],
+      photoUrls: [],
+    }
+    current.expenses.push(expense)
+    current.total += Number(expense.amount) || 0
+    if (expense.category && !current.categories.includes(expense.category)) current.categories.push(expense.category)
+    if (expense.payer_name && !current.payerNames.includes(expense.payer_name)) current.payerNames.push(expense.payer_name)
+    if (expense.note && !current.notes.includes(expense.note)) current.notes.push(expense.note)
+    if (expense.receipt_photo_url && !current.photoUrls.includes(expense.receipt_photo_url)) current.photoUrls.push(expense.receipt_photo_url)
+    groups.set(key, current)
+  })
+  return Array.from(groups.values())
+}
 
 interface CKStoreData {
   ckStore: { id: string; name: string }
@@ -355,6 +393,7 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
   const hasData = displayStatus !== 'none'
   const externalRevenue = deductibleExternalRevenue(d)
   const reimbursementAmount = Math.max(0, d.expenseTotal - externalRevenue)
+  const expenseGroups = groupExpensesByVendor(d.expenses)
 
   return (
     <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
@@ -459,17 +498,25 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
               {/* 支出明細 */}
               {d.expenses.length > 0 && (
                 <Section title="支出明細">
-                  {d.expenses.map((e, i) => (
-                    <div key={i} className="flex items-center gap-2 py-2.5 px-3" style={{ borderBottom: '1px solid #f9f9f9' }}>
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0"
-                        style={{ background: CAT_COLORS[e.category]?.bg ?? '#f4f4f5', color: CAT_COLORS[e.category]?.text ?? '#52525b' }}>
-                        {e.category}
-                      </span>
-                      <span className="flex-1 text-sm" style={{ color: '#18181b' }}>
-                        {e.item_name}
-                        {e.payer_name && <span className="ml-1.5 text-xs" style={{ color: '#a1a1aa' }}>（{e.payer_name}墊付）</span>}
-                      </span>
-                      <span className="text-sm font-bold tabular-nums shrink-0" style={{ color: '#18181b' }}>${fmt(e.amount)}</span>
+                  {expenseGroups.map(group => (
+                    <div key={group.key} style={{ borderBottom: '1px solid #f4f4f5' }}>
+                      <div className="flex items-center gap-2 py-2.5 px-3" style={{ background: '#fafafa' }}>
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0"
+                          style={{ background: CAT_COLORS[group.categories[0]]?.bg ?? '#f4f4f5', color: CAT_COLORS[group.categories[0]]?.text ?? '#52525b' }}>
+                          {group.categories.join('／') || '支出'}
+                        </span>
+                        <span className="flex-1 text-sm font-bold" style={{ color: '#18181b' }}>{group.name}</span>
+                        <span className="text-sm font-bold tabular-nums shrink-0" style={{ color: '#18181b' }}>${fmt(group.total)}</span>
+                      </div>
+                      {group.expenses.map((expense, index) => (
+                        <div key={`${expense.item_name}-${index}`} className="flex items-center gap-2 py-2 pl-9 pr-3">
+                          <span className="flex-1 text-sm" style={{ color: '#52525b' }}>
+                            {expense.item_name}
+                            {expense.payer_name && <span className="ml-1.5 text-xs" style={{ color: '#a1a1aa' }}>（{expense.payer_name}墊付）</span>}
+                          </span>
+                          <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: '#52525b' }}>${fmt(expense.amount)}</span>
+                        </div>
+                      ))}
                     </div>
                   ))}
                   <TotalRow label="支出合計" value={d.expenses.reduce((s, e) => s + e.amount, 0)} color="#dc2626" />
@@ -574,7 +621,7 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
 type CKReviewStep = {
   key: string
   title: string
-  photoUrl?: string
+  photoUrls?: string[]
   rows: Array<{ label: string; amount?: number; value?: string; managerAmount?: number | null }>
   total?: number
   managerTotal?: number
@@ -587,10 +634,12 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
   const [issues, setIssues] = useState<Record<number, string>>({})
   const [editingIssue, setEditingIssue] = useState(false)
   const [draft, setDraft] = useState('')
+  const [photoIndex, setPhotoIndex] = useState(0)
   const [pending, startTransition] = useTransition()
 
   const expensePhotoSet = new Set(d.expenses.map(e => e.receipt_photo_url).filter(Boolean))
   const unassignedPhotos = (d.receiptPhotoUrls ?? []).filter(url => !expensePhotoSet.has(url))
+  const expenseGroups = groupExpensesByVendor(d.expenses)
   const steps: CKReviewStep[] = [
     ...(d.memberStores.length ? [{
       key: 'member',
@@ -600,17 +649,19 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
       managerTotal: d.memberStores.reduce((sum, item) => sum + (item.manager_amount ?? 0), 0),
     }] : []),
     ...(d.externalOrders.length ? [{ key: 'external', title: '體系外叫貨', rows: d.externalOrders.map(item => ({ label: item.name, amount: item.amount })), total: d.externalOrders.reduce((sum, item) => sum + item.amount, 0) }] : []),
-    ...d.expenses.map((item, i) => ({
-      key: `expense-${i}`, title: `支出：${item.item_name}`, photoUrl: item.receipt_photo_url,
+    ...expenseGroups.map(group => ({
+      key: `expense-${group.key}`,
+      title: `支出：${group.name}`,
+      photoUrls: group.photoUrls,
       rows: [
-        { label: '類別', value: item.category },
-        ...(item.vendor_group ? [{ label: '廠商分類', value: item.vendor_group }] : []),
-        ...(item.payer_name ? [{ label: '代墊人', value: item.payer_name }] : []),
-        { label: item.item_name, amount: item.amount },
-        ...(item.note ? [{ label: '備註', value: item.note }] : []),
-      ], total: item.amount,
+        { label: '類別', value: group.categories.join('／') || '未分類' },
+        ...(group.payerNames.length ? [{ label: '代墊人', value: group.payerNames.join('、') }] : []),
+        ...group.expenses.map(item => ({ label: item.item_name, amount: item.amount })),
+        ...group.notes.map(note => ({ label: '備註', value: note })),
+      ],
+      total: group.total,
     })),
-    ...unassignedPhotos.map((url, i) => ({ key: `photo-${i}`, title: `其他收據照片 ${i + 1}`, photoUrl: url, rows: [{ label: '照片用途', value: '央廚收據／單據' }] })),
+    ...unassignedPhotos.map((url, i) => ({ key: `photo-${i}`, title: `其他收據照片 ${i + 1}`, photoUrls: [url], rows: [{ label: '照片用途', value: '央廚收據／單據' }] })),
     { key: 'summary', title: '央廚結算結果', rows: [
       { label: '營業額', amount: d.revenueTotal },
       { label: '當日支出', amount: d.expenseTotal },
@@ -621,9 +672,13 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
     ] },
   ]
   const step = steps[index]
+  const currentPhotoUrls = step.photoUrls ?? []
+  const currentPhotoUrl = currentPhotoUrls[photoIndex] ?? currentPhotoUrls[0]
   const reviewedCount = new Set([...confirmed, ...Object.keys(issues).map(Number)]).size
   const complete = reviewedCount === steps.length
   const issueEntries = Object.entries(issues).filter(([, note]) => note.trim())
+
+  useEffect(() => setPhotoIndex(0), [index])
 
   function markOkay() {
     setConfirmed(prev => new Set(prev).add(index))
@@ -662,8 +717,21 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
           <button onClick={onClose} className="p-2 rounded-full" style={{ background: '#f4f4f5' }}><X className="h-4 w-4" /></button>
         </div>
         <div className="overflow-y-auto p-4 grid sm:grid-cols-2 gap-4">
-          <div className="min-h-64 rounded-2xl flex items-center justify-center overflow-hidden" style={{ background: step.photoUrl ? '#18181b' : '#f8fafc', border: '1px solid #e4e4e7' }}>
-            {step.photoUrl ? <SafePhotoImage src={step.photoUrl} alt={step.title} className="w-full h-full max-h-[55dvh] object-contain" /> : <div className="text-center" style={{ color: '#a1a1aa' }}><FileTextFallback /><p className="text-sm mt-2">此步驟沒有照片，請核對輸入內容與金額</p></div>}
+          <div className="min-h-64 rounded-2xl flex flex-col overflow-hidden" style={{ background: currentPhotoUrl ? '#18181b' : '#f8fafc', border: '1px solid #e4e4e7' }}>
+            <div className="flex-1 flex items-center justify-center min-h-64">
+              {currentPhotoUrl ? <SafePhotoImage src={currentPhotoUrl} alt={step.title} className="w-full h-full max-h-[48dvh] object-contain" /> : <div className="text-center" style={{ color: '#a1a1aa' }}><FileTextFallback /><p className="text-sm mt-2">此步驟沒有照片，請核對輸入內容與金額</p></div>}
+            </div>
+            {currentPhotoUrls.length > 1 && (
+              <div className="grid grid-cols-4 gap-2 p-2" style={{ background: '#18181b', borderTop: '1px solid rgba(255,255,255,.15)' }}>
+                {currentPhotoUrls.map((url, photoNumber) => (
+                  <button key={url} type="button" onClick={() => setPhotoIndex(photoNumber)}
+                    className="overflow-hidden rounded-lg"
+                    style={{ aspectRatio: '1', border: `2px solid ${photoNumber === photoIndex ? '#f59e0b' : 'transparent'}` }}>
+                    <SafePhotoImage src={url} alt={`${step.title} 照片 ${photoNumber + 1}`} thumb width={180} height={180} className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="space-y-3">
             <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fafafa', border: '1px solid #e4e4e7' }}>
