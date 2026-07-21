@@ -414,6 +414,10 @@ function isDirectReceiptCategory(categoryName: string | undefined) {
   return DIRECT_RECEIPT_CATEGORIES.includes((categoryName ?? '').trim() as typeof DIRECT_RECEIPT_CATEGORIES[number])
 }
 
+function isMiscReceiptCategory(categoryName: string | undefined) {
+  return (categoryName ?? '').trim() === '雜項'
+}
+
 function isOtherReceiptItem(itemName: string | undefined, categoryName: string | undefined, expectedName: string) {
   return (categoryName ?? '').trim() === '其他' && (itemName ?? '').trim() === expectedName
 }
@@ -868,6 +872,7 @@ function directReceiptOptions(categoryName: string, categories: CategoryWithVend
 
 function directReceiptLabel(categoryName: string) {
   if (categoryName === '日常用品') return '品項'
+  if (categoryName === '雜項') return '品項'
   if (categoryName === '買東西或維修') return '選擇單據類型'
   if (categoryName === '其他') return '請選擇'
   return '廠商'
@@ -3152,7 +3157,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             value={form.category}
                             onChange={v => {
                               const catObj = categories.find(c => c.name === v)
-                              const autoVendor = !isDirectReceiptCategory(v) && catObj && catObj.vendors.length === 0 ? v : ''
+                              const autoVendor = !isDirectReceiptCategory(v) && !isMiscReceiptCategory(v) && catObj && catObj.vendors.length === 0 ? v : ''
                               updateReceiptFormContext(form.id, v, autoVendor)
                             }}
                           />
@@ -3170,7 +3175,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   onChange={e => updateReceiptFormContext(form.id, form.category, e.target.value)}
                                   className="receipt-field"
                                   style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
-                                  <option value="">— 選擇 —</option>
+                                  <option value="">— {isMiscReceiptCategory(form.category) ? '選擇品項' : '選擇'} —</option>
                                   {options.map(option => <option key={option} value={option}>{option}</option>)}
                                 </select>
                               )
@@ -3181,13 +3186,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   onChange={e => updateReceiptFormContext(form.id, form.category, e.target.value)}
                                   className="receipt-field"
                                   style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
-                                  <option value="">— 選擇 —</option>
+                                  <option value="">— {isMiscReceiptCategory(form.category) ? '選擇品項' : '選擇'} —</option>
                                   {catObj.vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
                                 </select>
                               )
                             }
                             return (
-                              <input placeholder="廠商名稱（可空）"
+                              <input placeholder={isMiscReceiptCategory(form.category) ? '品項名稱（可空）' : '廠商名稱（可空）'}
                                 className="receipt-field"
                                 style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
                                 value={form.vendor_name}
@@ -3227,7 +3232,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         </div>}
 
                         {/* 品項 — 若廠商下沒子品項（廠商本身就是品項，例：瓦斯/水費/電費）→ 隱藏 */}
-                        {!isDirectReceiptCategory(form.category) && ((() => {
+                        {!isDirectReceiptCategory(form.category) && !isMiscReceiptCategory(form.category) && ((() => {
                           const vendorHasSubItems = !!form.vendor_name && mappingColumns.some(c => c.vendor_group === form.vendor_name)
                           const isNoItemMode = !!form.vendor_name && !vendorHasSubItems
                           return isNoItemMode
@@ -3600,7 +3605,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 value={editCategory}
                                 onChange={v => {
                                   const catObj = categories.find(c => c.name === v)
-                                  const autoVendor = !isDirectReceiptCategory(v) && catObj && catObj.vendors.length === 0 ? v : ''
+                                  const autoVendor = !isDirectReceiptCategory(v) && !isMiscReceiptCategory(v) && catObj && catObj.vendors.length === 0 ? v : ''
                                   updateEditContext(v, autoVendor)
                                 }}
                               />
@@ -3617,7 +3622,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                     <select value={editVendor} onChange={e => updateEditContext(editCategory, e.target.value)}
                                       className="receipt-field"
                                       style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
-                                      <option value="">— 選擇 —</option>
+                                      <option value="">— {isMiscReceiptCategory(editCategory) ? '選擇品項' : '選擇'} —</option>
                                       {options.map(option => <option key={option} value={option}>{option}</option>)}
                                     </select>
                                   )
@@ -3627,13 +3632,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                     <select value={editVendor} onChange={e => updateEditContext(editCategory, e.target.value)}
                                       className="receipt-field"
                                       style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
-                                      <option value="">— 選擇 —</option>
+                                      <option value="">— {isMiscReceiptCategory(editCategory) ? '選擇品項' : '選擇'} —</option>
                                       {catObj.vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
                                     </select>
                                   )
                                 }
                                 return (
-                                  <input placeholder="廠商名稱（可空）"
+                                    <input placeholder={isMiscReceiptCategory(editCategory) ? '品項名稱（可空）' : '廠商名稱（可空）'}
                                     className="receipt-field"
                                     style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}
                                     value={editVendor} onChange={e => updateEditContext(editCategory, e.target.value)} />
@@ -3674,7 +3679,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             {/* 稅外加 UI 已移除 — 稅金請直接選稅金品項輸入金額 */}
 
                             {/* 品項 — 若廠商下沒子品項（廠商本身就是品項）→ 隱藏 */}
-                            {!isDirectReceiptCategory(editCategory) && ((() => {
+                            {!isDirectReceiptCategory(editCategory) && !isMiscReceiptCategory(editCategory) && ((() => {
                               const vendorHasSubItems = !!editVendor && mappingColumns.some(c => c.vendor_group === editVendor)
                               return !!editVendor && !vendorHasSubItems
                             })() ? (
