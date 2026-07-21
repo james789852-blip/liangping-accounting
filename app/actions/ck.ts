@@ -140,6 +140,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
         payer_name: data.payerName ?? null,
         note: data.note ?? null,
         status: data.status ?? 'draft',
+        submitted_by: data.status === 'submitted' ? ctx.userId : undefined,
         review_note: data.status === 'submitted' ? null : undefined,
         reviewed_at: data.status === 'submitted' ? null : undefined,
         reviewed_by: data.status === 'submitted' ? null : undefined,

@@ -88,6 +88,8 @@ interface CKStoreData {
   ckStore: { id: string; name: string }
   status: string
   payerName?: string | null
+  submittedBy?: string | null
+  submittedByName?: string | null
   note?: string | null
   reviewNote?: string | null
   reviewedAt?: string | null
@@ -536,8 +538,9 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
               )}
 
               {/* 貨款代墊人 / 備註 */}
-              {(d.payerName || d.note) && (
+              {(d.submittedByName || d.submittedBy || d.payerName || d.note) && (
                 <div className="rounded-xl px-3 py-3 space-y-1" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
+                  {(d.submittedByName || d.submittedBy) && <p className="text-sm" style={{ color: '#18181b' }}>帳目送出者：<b>{d.submittedByName ?? '未記錄'}</b></p>}
                   {d.payerName && <p className="text-sm" style={{ color: '#18181b' }}>貨款代墊：<b>{d.payerName}</b></p>}
                   {d.note && <p className="text-sm" style={{ color: '#52525b' }}>{d.note}</p>}
                 </div>

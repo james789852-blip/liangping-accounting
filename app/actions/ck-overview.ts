@@ -32,10 +32,17 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
   const [{ data: ckStore }, { data: rec }] = await Promise.all([
     admin.from('stores').select('id, name, assigned_store_ids').eq('id', ckStoreId).maybeSingle(),
     admin.from('ck_daily_records')
-      .select('id, ck_store_id, business_date, status, payer_name, note, review_note, reviewed_at, hq_paid, hq_paid_at, receipt_photo_urls, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
+      .select('id, ck_store_id, business_date, status, payer_name, note, submitted_by, review_note, reviewed_at, hq_paid, hq_paid_at, receipt_photo_urls, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
       .eq('ck_store_id', ckStoreId).eq('business_date', date).maybeSingle(),
   ])
   if (!ckStore) return { error: '找不到央廚' as const }
+
+  let submittedByName: string | null = null
+  if (rec?.submitted_by) {
+    const { data: submitter } = await admin
+      .from('user_profiles').select('name').eq('user_id', rec.submitted_by).maybeSingle()
+    submittedByName = submitter?.name ?? null
+  }
 
   const assignedIds: string[] = (ckStore.assigned_store_ids as string[] | null) ?? []
   const [{ data: assignedStores }, { data: extStores }, orderRes, expRes, closingRes] = await Promise.all([
@@ -89,6 +96,8 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
       ckStore: { id: ckStore.id, name: ckStore.name },
       status: rec.status ?? 'none',
       payerName: rec.payer_name ?? null,
+      submittedBy: rec.submitted_by ?? null,
+      submittedByName,
       note: rec.note ?? null,
       reviewNote: (rec as any).review_note ?? null,
       reviewedAt: (rec as any).reviewed_at ?? null,
