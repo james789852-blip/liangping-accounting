@@ -153,9 +153,7 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
   const overdue: OverdueAlert[] = []
   const overdueStatus = (status: string | undefined): OverdueAlert['status'] | null => {
     if (!status) return 'not_submitted'
-    if (status === 'draft') return 'draft'
     if (status === 'submitted') return 'review'
-    if (status === 'disputed') return 'dispute'
     return null
   }
   const startTime = new Date(`${overdueStart}T12:00:00+08:00`).getTime()
