@@ -9,7 +9,7 @@ import {
   Store, Users, LogOut,
   ClipboardList, History,
   ArrowRightLeft, Package, BookOpen, Settings, FileBarChart2, ChefHat, ExternalLink,
-  Menu, X, Images,
+  Menu, X,
 } from 'lucide-react'
 
 const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
@@ -72,7 +72,6 @@ const hqSections = [
       { href: '/hq/stores',                label: '店家管理',    icon: Store },
       { href: '/hq/users',                 label: '帳號管理',    icon: Users },
       { href: '/hq/audit',                 label: '操作軌跡',    icon: History },
-      { href: '/hq/photos',                label: '照片管理',    icon: Images },
     ],
   },
 ]
@@ -175,7 +174,6 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const canSeeReceipts = canSeeStoreReceipts || canSeeCKReceipts
   const canSeeCKPrices = !!permissions.canManageCKPrices
   const canSeeReviews = !!permissions.canReviewClosings
-  const canSeePhotoLibrary = canSeeReviews || canSeeReceipts
   const canSeeExports = !!permissions.canExportReports
   const canAccessHQ = canSeeUsers || canSeeStores || canSeeItems || canSeeReceipts || canSeeCKPrices || canSeeReviews || canSeeExports
   const hqHomeHref = canSeeReviews
@@ -202,7 +200,6 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           if (it.href === '/hq/stores') return canSeeStores
           if (it.href === '/hq/users') return canSeeUsers
           if (it.href === '/hq/audit') return canSeeUsers || canSeeStores || canSeeItems || canSeeReceipts || canSeeCKPrices || canSeeReviews
-          if (it.href === '/hq/photos') return canSeePhotoLibrary
           return true
         }),
       })).filter(sec => sec.items.length > 0)
@@ -213,7 +210,6 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
     if (tab.href === '/hq/stores') return canSeeStores
     return true
   }).concat([
-    ...(canSeePhotoLibrary ? [{ href: '/hq/photos', label: '照片', icon: Images }] : []),
     ...(canSeeReceipts ? [{ href: canSeeStoreReceipts ? '/hq/receipt-settings' : '/hq/receipt-settings?type=ck', label: '收據', icon: Settings }] : []),
     ...(canSeeCKPrices ? [{ href: '/hq/ck-prices', label: '單價', icon: Package }] : []),
   ])

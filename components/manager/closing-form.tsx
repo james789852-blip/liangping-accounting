@@ -3240,8 +3240,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         ) : (() => {
                           function syncItems(newItems: ReceiptFormItem[]) {
                             const total = newItems.filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
+                            // 品項刪除或金額清空後，即使新合計是 0，也要清除舊的自動加總；
+                            // 但尚未輸入品項金額時，保留使用者手動輸入的單據金額。
+                            const previousTotal = (form.items ?? []).filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
+                            const shouldSyncTotal = total !== 0 || previousTotal !== 0
                             setReceiptForms(prev => prev.map(f =>
-                              f.id === form.id ? { ...f, items: newItems, ...(total !== 0 ? { total_amount: total } : {}) } : f
+                              f.id === form.id ? { ...f, items: newItems, ...(shouldSyncTotal ? { total_amount: total } : {}) } : f
                             ))
                           }
                           function addItem() {
@@ -3683,7 +3687,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               function syncEditItems(newItems: typeof editItems) {
                                 setEditItems(newItems)
                                 const total = newItems.filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
-                                if (total !== 0) setEditAmount(total)
+                                const previousTotal = editItems.filter(i => i.amount !== 0).reduce((s, i) => s + i.amount, 0)
+                                if (total !== 0 || previousTotal !== 0) setEditAmount(total)
                               }
                               function addEditItemFn() {
                                 syncEditItems([...editItems, { id: crypto.randomUUID(), item_name: '', unit: '', quantity: 1, unit_price: 0, amount: 0 }])
