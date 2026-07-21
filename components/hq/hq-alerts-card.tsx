@@ -45,6 +45,10 @@ function OverdueSection({ items }: { items: OverdueAlert[] }) {
     status,
     items: visibleItems.filter(item => item.status === status),
   }))
+  const entityGroups = [
+    { entity: 'store' as const, label: '店家', icon: StoreIcon, items: visibleItems.filter(item => item.entity === 'store') },
+    { entity: 'ck' as const, label: '央廚', icon: ChefHat, items: visibleItems.filter(item => item.entity === 'ck') },
+  ].filter(group => group.items.length > 0)
   if (visibleItems.length === 0) return null
 
   return (
@@ -74,42 +78,43 @@ function OverdueSection({ items }: { items: OverdueAlert[] }) {
           )
         })}
       </div>
-      <div className="max-h-[320px] overflow-y-auto rounded-xl" style={{ border: '1px solid #f4e4e7' }}>
-        <div className="divide-y" style={{ borderColor: '#f4e4e7' }}>
-          {visibleItems.map(item => {
-            const meta = overdueStatusStyle[item.status]
-            const href = item.entity === 'ck'
-              ? `/hq/accounting?tab=ck&ckStoreId=${encodeURIComponent(item.storeId)}&date=${encodeURIComponent(item.date)}`
-              : `/hq/accounting?tab=store&storeId=${encodeURIComponent(item.storeId)}&date=${encodeURIComponent(item.date)}`
-            const EntityIcon = item.entity === 'ck' ? ChefHat : StoreIcon
-            return (
-              <Link key={item.id} href={href}
-                className="group flex items-center gap-2.5 bg-white px-3 py-2.5 transition-colors hover:bg-rose-50/50">
-                <span className="flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[10px] font-bold"
-                  style={item.entity === 'ck'
-                    ? { background: '#f4f4f5', color: '#52525b' }
-                    : { background: '#fff7ed', color: '#c2410c' }}>
-                  <EntityIcon className="h-3 w-3" />
-                  {item.entity === 'ck' ? '央廚' : '店家'}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold" style={{ color: '#18181b' }}>{item.name}</p>
-                  <div className="mt-0.5 flex items-center gap-2 text-[11px] tabular-nums" style={{ color: '#71717a' }}>
-                    <span>{item.date}</span>
-                    <span aria-hidden="true" style={{ color: '#d4d4d8' }}>•</span>
-                    <span className="font-semibold" style={{ color: item.ageDays >= 3 ? '#be123c' : '#71717a' }}>
-                      逾期 {item.ageDays} 天
-                    </span>
-                  </div>
-                </div>
-                <span className="hidden shrink-0 rounded-full px-2 py-1 text-[10px] font-bold sm:inline-flex" style={{ background: meta.bg, color: meta.color }}>
-                  {overdueStatusLabel[item.status]}
-                </span>
-                <ArrowRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5" style={{ color: '#a1a1aa' }} />
-              </Link>
-            )
-          })}
-        </div>
+      <div className="grid items-start gap-3 md:grid-cols-2">
+        {entityGroups.map(group => {
+          const EntityIcon = group.icon
+          return (
+            <div key={group.entity} className="overflow-hidden rounded-xl" style={{ border: '1px solid #f4e4e7' }}>
+              <div className="flex items-center justify-between gap-2 px-3 py-2" style={group.entity === 'ck' ? { background: '#f4f4f5', color: '#52525b' } : { background: '#fff7ed', color: '#c2410c' }}>
+                <span className="flex items-center gap-1.5 text-xs font-bold"><EntityIcon className="h-3.5 w-3.5" />{group.label}</span>
+                <span className="text-[11px] font-bold tabular-nums">{group.items.length} 件</span>
+              </div>
+              <div className="max-h-[280px] overflow-y-auto divide-y" style={{ borderColor: '#f4e4e7' }}>
+                {group.items.map(item => {
+                  const meta = overdueStatusStyle[item.status]
+                  const href = item.entity === 'ck'
+                    ? `/hq/accounting?tab=ck&ckStoreId=${encodeURIComponent(item.storeId)}&date=${encodeURIComponent(item.date)}`
+                    : `/hq/accounting?tab=store&storeId=${encodeURIComponent(item.storeId)}&date=${encodeURIComponent(item.date)}`
+                  return (
+                    <Link key={item.id} href={href}
+                      className="group flex items-center gap-2.5 bg-white px-3 py-2.5 transition-colors hover:bg-rose-50/50">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-bold" style={{ color: '#18181b' }}>{item.name}</p>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] tabular-nums" style={{ color: '#71717a' }}>
+                          <span>{item.date}</span>
+                          <span aria-hidden="true" style={{ color: '#d4d4d8' }}>•</span>
+                          <span className="font-semibold" style={{ color: item.ageDays >= 3 ? '#be123c' : '#71717a' }}>逾期 {item.ageDays} 天</span>
+                        </div>
+                      </div>
+                      <span className="shrink-0 rounded-full px-2 py-1 text-[10px] font-bold" style={{ background: meta.bg, color: meta.color }}>
+                        {overdueStatusLabel[item.status]}
+                      </span>
+                      <ArrowRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5" style={{ color: '#a1a1aa' }} />
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
       </div>
     </section>
   )
