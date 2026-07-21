@@ -2397,7 +2397,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (status === 'submitted' || status === 'verified') return null
     if (savingRef.current) return closingId  // 已有 save 進行中，直接 return（防 race）
     savingRef.current = true
-    setSaving(true)
+    // 下一步的背景儲存不應阻塞頁面操作；只有使用者明確按儲存時才顯示 loading。
+    if (!silent) setSaving(true)
     const supabase = createClient()
     const d = dataRef.current
     try {
@@ -2456,6 +2457,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           pettyCounts, pettyLumps, ts: Date.now(),
         }))
       } catch {}
+      // 準備各明細資料；彼此是獨立資料表，稍後平行寫入，縮短按「繼續」後的背景儲存時間。
       // revenue_items：只有任一通路 > 0 才 wipe-insert，避免 autoSave 在使用者尚未進入該步驟時清空 DB 既有資料
       const revItems = [
         ...(store.mode !== 'handwrite' ? [{ closing_id: cid, channel: 'pos', gross_amount: d.pos_cash, is_cash: true }] : []),
@@ -2467,10 +2469,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         ...(store.mode !== 'ichef' ? [{ closing_id: cid, channel: 'handwrite', gross_amount: handwriteTotal, is_cash: true }] : []),
       ]
       const revTotal = revItems.reduce((s, r: any) => s + (r.gross_amount ?? 0), 0)
-      if (revTotal > 0) {
-        await supabase.from('revenue_items').delete().eq('closing_id', cid)
-        if (revItems.length) await supabase.from('revenue_items').insert(revItems)
-      }
       if (!cid) throw new Error('無法取得帳目 ID')
       const cashPayload = {
         bills_1000: d.bills_1000, bills_500: d.bills_500, bills_100: d.bills_100,
@@ -2484,10 +2482,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       // 只有 cash 加總 > 0 才寫入，避免 autoSave 把店長尚未輸入的現金（全 0）覆蓋既有資料
       // （HQ 退回後店長重新打開，舊現金清點仍保留，等使用者進 cash step 填寫才更新）
       const cashTotal = CASH_KEYS.reduce((s, k) => s + (cashPayload[k] as number), 0)
-      if (cashTotal > 0 || cashPayload.large_expenses.length > 0) {
-        const cashResult = await saveCashCounts(cid, cashPayload)
-        if (cashResult.error) throw new Error('現金清點儲存失敗：' + cashResult.error)
-      }
       // order_items (央廚)：只有 ckItems.length > 0 才 wipe-insert（保留店長尚未重新輸入時的既有資料）
       const ckItems = ckPrices
         .filter(p => (ckQuantitiesRef.current[p.id] || 0) > 0)
@@ -2503,18 +2497,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             total_amount: Math.round(effPrice * qty),
           }
         })
-      if (ckItems.length > 0) {
-        await supabase.from('order_items').delete().eq('closing_id', cid)
-        await supabase.from('order_items').insert(ckItems)
-      }
       // expense_items：只有 expItems.length > 0 才 wipe-insert
       const expItems = expenses
         .filter(e => e.description.trim() || e.amount !== 0)
         .map(e => ({ closing_id: cid, description: e.description.trim() || '支出', amount: e.amount }))
-      if (expItems.length > 0) {
-        await supabase.from('expense_items').delete().eq('closing_id', cid)
-        await supabase.from('expense_items').insert(expItems)
-      }
       // handwrite_orders：每次都先同步刪除，確保「全部刪除」後不會留下舊單號
       const currentHandwriteOrders = handwriteOrdersRef.current
       const hwItems = currentHandwriteOrders
@@ -2525,10 +2511,36 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           amount: o.voided ? 0 : o.amount,
           voided: o.voided, void_reason: o.void_reason || null,
         }))
-      await supabase.from('handwrite_orders').delete().eq('closing_id', cid)
-      if (hwItems.length > 0) {
-        await supabase.from('handwrite_orders').insert(hwItems)
-      }
+      await Promise.all([
+        revTotal > 0
+          ? (async () => {
+              await supabase.from('revenue_items').delete().eq('closing_id', cid)
+              if (revItems.length) await supabase.from('revenue_items').insert(revItems)
+            })()
+          : Promise.resolve(),
+        cashTotal > 0 || cashPayload.large_expenses.length > 0
+          ? (async () => {
+              const cashResult = await saveCashCounts(cid, cashPayload)
+              if (cashResult.error) throw new Error('現金清點儲存失敗：' + cashResult.error)
+            })()
+          : Promise.resolve(),
+        ckItems.length > 0
+          ? (async () => {
+              await supabase.from('order_items').delete().eq('closing_id', cid)
+              await supabase.from('order_items').insert(ckItems)
+            })()
+          : Promise.resolve(),
+        expItems.length > 0
+          ? (async () => {
+              await supabase.from('expense_items').delete().eq('closing_id', cid)
+              await supabase.from('expense_items').insert(expItems)
+            })()
+          : Promise.resolve(),
+        (async () => {
+          await supabase.from('handwrite_orders').delete().eq('closing_id', cid)
+          if (hwItems.length > 0) await supabase.from('handwrite_orders').insert(hwItems)
+        })(),
+      ])
       // 同步央廚叫貨金額到央廚每日記錄
       const ckTotal = ckItems.reduce((s, i) => s + i.total_amount, 0)
       if (ckTotal > 0) {
@@ -2546,7 +2558,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return null
     } finally {
       savingRef.current = false
-      setSaving(false)
+      if (!silent) setSaving(false)
     }
   }
 
