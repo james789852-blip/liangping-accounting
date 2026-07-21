@@ -879,6 +879,15 @@ function directReceiptLabel(categoryName: string) {
   return '廠商'
 }
 
+function mappedMiscReceiptItems(mappingColumns: MappingColumn[]) {
+  return Array.from(new Set(
+    mappingColumns
+      .filter(column => column.category.trim() === '雜項' && !column.is_tax_addon)
+      .map(column => column.name.trim())
+      .filter(Boolean),
+  ))
+}
+
 function displayConfiguredOtherReceiptName(vendorName: string | undefined, categories: CategoryWithVendors[]) {
   const name = vendorName?.trim() ?? ''
   if (!name) return name
@@ -3181,6 +3190,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 </select>
                               )
                             }
+                            if (form.category === '雜項') {
+                              const options = mappedMiscReceiptItems(mappingColumns)
+                              return (
+                                <select value={form.vendor_name}
+                                  onChange={e => updateReceiptFormContext(form.id, form.category, e.target.value)}
+                                  className="receipt-field"
+                                  style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
+                                  <option value="">— 選擇品項 —</option>
+                                  {options.map(option => <option key={option} value={option}>{option}</option>)}
+                                </select>
+                              )
+                            }
                             if (catObj && catObj.vendors.length > 0) {
                               return (
                                 <select value={form.vendor_name}
@@ -3624,6 +3645,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                       className="receipt-field"
                                       style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
                                       <option value="">— {isItemOnlyReceiptCategory(editCategory) ? '選擇品項' : '選擇'} —</option>
+                                      {options.map(option => <option key={option} value={option}>{option}</option>)}
+                                    </select>
+                                  )
+                                }
+                                if (editCategory === '雜項') {
+                                  const options = mappedMiscReceiptItems(mappingColumns)
+                                  return (
+                                    <select value={editVendor} onChange={e => updateEditContext(editCategory, e.target.value)}
+                                      className="receipt-field"
+                                      style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
+                                      <option value="">— 選擇品項 —</option>
                                       {options.map(option => <option key={option} value={option}>{option}</option>)}
                                     </select>
                                   )
