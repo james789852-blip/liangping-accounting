@@ -155,6 +155,28 @@ export default function AccountingClient({
     setStoreDetailCache(buildInitialStoreCache())
   }, [buildInitialStoreCache, date])
 
+  // 央廚明細比店家需要更多關聯查詢；進入央廚頁籤後在背景預載，切換時直接使用快取。
+  useEffect(() => {
+    if (tab !== 'ck') return
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      for (const store of ckStores) {
+        const key = `${store.id}:${date}`
+        if (ckDetailCacheRef.current.has(key)) continue
+        fetchCKDailyDetail(store.id, date)
+          .then(result => {
+            if (cancelled || !('success' in result)) return
+            ckDetailCacheRef.current.set(key, { detail: result.detail })
+          })
+          .catch(() => {})
+      }
+    }, 150)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [ckStores, date, tab])
+
   const rememberStoreDetail = useCallback((storeId: string, detail: StoreDetailState) => {
     setStoreDetailCache(prev => ({ ...prev, [storeId]: detail }))
   }, [])
@@ -1033,7 +1055,6 @@ function CKDetail({
 }) {
   const [loading, setLoading] = useState(true)
   const [detail, setDetail] = useState<any | null>(null)
-  const hasLoadedRef = useRef(false)
   const requestIdRef = useRef(0)
   const stats = detail ? {
     revenue: Number(detail.revenueTotal ?? 0),
@@ -1051,10 +1072,9 @@ function CKDetail({
     if (cached) {
       setDetail(cached.detail)
       setLoading(false)
-    } else if (hasLoadedRef.current) {
-      setDetail(null)
-      setLoading(false)
+      return
     } else {
+      setDetail(null)
       setLoading(true)
     }
     fetchCKDailyDetail(ckStoreId, date)
@@ -1065,7 +1085,6 @@ function CKDetail({
         }
         cacheRef.current.set(key, next)
         setDetail(next.detail)
-        hasLoadedRef.current = true
       })
       .catch(e => {
         if (requestId === requestIdRef.current) toast.error('載入失敗：' + (e instanceof Error ? e.message : String(e)))
