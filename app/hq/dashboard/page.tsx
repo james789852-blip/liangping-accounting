@@ -204,7 +204,6 @@ export default async function HQDashboard({
   const kitchenStatsOnly = storeStats.filter(store => store.type === '央廚')
   const storeRevenue = storeStatsOnly.reduce((sum, store) => sum + store.revenue, 0)
   const kitchenRevenue = kitchenStatsOnly.reduce((sum, store) => sum + store.revenue, 0)
-  const averageStoreRevenue = storeStatsOnly.length > 0 ? storeRevenue / storeStatsOnly.length : 0
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -256,10 +255,9 @@ export default async function HQDashboard({
         <div className="space-y-4">
           <div>
             <p className="text-xs font-bold mb-2 px-1" style={{ color: '#71717a' }}>營業額概覽</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <MetricCard label="店面營業額" value={`$${fmt(storeRevenue)}`} sub={`${storeStatsOnly.length} 家店`} color="#d97706" />
               <MetricCard label="央廚叫貨收入" value={`$${fmt(kitchenRevenue)}`} sub={`${kitchenStatsOnly.length} 家央廚`} color="#7c3aed" />
-              <MetricCard label="平均店營業額" value={`$${fmt(averageStoreRevenue)}`} sub="店面本月平均" color="#818cf8" />
             </div>
           </div>
         </div>
