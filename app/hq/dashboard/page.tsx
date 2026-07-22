@@ -291,7 +291,6 @@ function StoreStatsCard({ store, rank, isKitchen }: { store: StoreSummary; rank:
             <span className="h-8 min-w-8 px-1.5 rounded-lg flex items-center justify-center shrink-0 text-xs font-extrabold tabular-nums"
               style={{ background: rankStyle.background, color: rankStyle.color, border: `1px solid ${rankStyle.border}` }}
               aria-label={`第 ${rank} 名`}>第{rank}名</span>
-            <span className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 font-bold" style={{ background: isKitchen ? '#EDE9FE' : '#FEF3C7', color: isKitchen ? '#6D28D9' : '#92400E' }}>{isKitchen ? '央' : '店'}</span>
             <div className="min-w-0">
               <p className="font-bold truncate" style={{ color: '#18181b' }}>{store.name}</p>
               <p className="text-[10px]" style={{ color: '#a1a1aa' }}>{isKitchen ? '央廚' : '店面'} · 點擊展開明細</p>
