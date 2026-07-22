@@ -73,6 +73,32 @@ function itemValueForExport(items: Record<string, number>, key: string): { value
   return compatible ? { value: items[compatible] ?? 0, sourceKey: compatible } : { value: 0, sourceKey: key }
 }
 
+/**
+ * 讀取匯出品項金額時優先使用「廠商分類|品項」鍵。
+ * 央廚配送的「滷肉」與上逸的「滷肉」是兩個不同欄位，
+ * 即使舊資料只有 item_name 聚合，也不能把央廚金額灌進一般廠商欄。
+ */
+function scopedItemValueForExport(
+  dd: DailyStats,
+  key: string,
+  vendorGroup?: string,
+): { value: number; sourceKey: string } {
+  const scoped = dd.itemAmountsByVendorGroup ?? {}
+  if (vendorGroup) {
+    const exactKey = `${vendorGroup}|${key}`
+    if (exactKey in scoped) return { value: scoped[exactKey] ?? 0, sourceKey: key }
+
+    // 若同名品項已有央廚配送的明細，但沒有一般廠商的分類明細，
+    // 只把合併總額扣掉央廚部分，避免 CK 金額出現在其他廠商欄位。
+    const ckKey = `央廚配送|${key}`
+    if (vendorGroup !== '央廚配送' && ckKey in scoped) {
+      const merged = itemValueForExport(dd.items, key).value
+      return { value: Math.max(0, merged - (scoped[ckKey] ?? 0)), sourceKey: key }
+    }
+  }
+  return itemValueForExport(dd.items, key)
+}
+
 /** Build the column layout for a store */
 function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAccounts: string[] = []): ColumnDef[] {
   const cols: ColumnDef[] = []
@@ -749,7 +775,7 @@ export async function addFoodCostSheet(
         // 先精確比對，再以相容鍵比對（處理「小雲-稅金」↔「小雲稅金」、
         // 「（賣）給分店食材」↔「賣給分店食材」等舊名稱差異）
         const key = c.nameKey ?? c.header
-        const { value: v, sourceKey } = itemValueForExport(dd.items, key)
+        const { value: v, sourceKey } = scopedItemValueForExport(dd, key, c.vendorGroup)
         cell.value = v
         const note = dd.notes[sourceKey]
         if (note?.trim()) cell.note = note

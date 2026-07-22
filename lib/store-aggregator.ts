@@ -78,6 +78,9 @@ export interface DailyStats {
   taxRefund: number      // 梁平退稅：doc_type=發票 且 vendor_group 含「退稅」
   // ── 品項明細 (item_name → amount) 對應到啟用品項 ──
   items: Record<string, number>
+  // ── 匯出用品項明細（vendor_group + item_name） ──
+  // 同名品項可能同時存在於央廚配送與一般廠商，不能只用品項名稱合併。
+  itemAmountsByVendorGroup: Record<string, number>
   // ── 品項備註 (item_name → note text)；同日同品項多筆備註以換行合併 ──
   notes: Record<string, string>
   // ── 廠商群組小計 (vg_name → doc_type → amount) ──
@@ -134,7 +137,7 @@ function newEmptyDay(date: string): DailyStats {
     revenue: 0, totalRevenue: 0,
     food: 0, pack: 0, misc: 0, totalCost: 0,
     invoiceTotal: 0, receiptTotal: 0, estimateTotal: 0, taxRefund: 0,
-    items: {}, notes: {}, vendorGroupBreakdown: {}, receipts: [],
+    items: {}, itemAmountsByVendorGroup: {}, notes: {}, vendorGroupBreakdown: {}, receipts: [],
     closingStatus: 'none', isHoliday: false, holidayNote: null,
   }
 }
@@ -178,6 +181,27 @@ export async function getRangeStats(
   const store = (storeRow ?? { id: storeId, name: '' }) as StoreInfo
   const items = resolved
   const itemMeta = new Map(items.map(i => [i.name, i] as const))
+  const itemCandidates = new Map<string, ResolvedStoreItem[]>()
+  for (const item of items) {
+    const list = itemCandidates.get(item.name) ?? []
+    list.push(item)
+    itemCandidates.set(item.name, list)
+  }
+  const scopedKey = (vendorGroup: string, itemName: string) => `${vendorGroup}|${itemName}`
+  const addItemAmount = (dd: DailyStats, itemName: string, amount: number, vendorGroup?: string) => {
+    if (!amount) return
+    dd.items[itemName] = (dd.items[itemName] ?? 0) + amount
+    if (vendorGroup) {
+      const key = scopedKey(vendorGroup, itemName)
+      dd.itemAmountsByVendorGroup[key] = (dd.itemAmountsByVendorGroup[key] ?? 0) + amount
+    }
+  }
+  const resolveReceiptItem = (itemName: string, vendorName?: string | null, actualVendorName?: string | null) => {
+    const candidates = itemCandidates.get(itemName) ?? []
+    if (candidates.length <= 1) return candidates[0]
+    const vendorText = `${vendorName ?? ''} ${actualVendorName ?? ''}`
+    return candidates.find(candidate => candidate.vendor_group && vendorText.includes(candidate.vendor_group)) ?? candidates[0]
+  }
 
   // 建 date map，同日多筆 closings 取 status 優先高
   const closingsByDate: Record<string, any[]> = {}
@@ -216,7 +240,8 @@ export async function getRangeStats(
       if (oi.item_name === '央廚配送') continue
       const amt = oi.total_amount ?? 0
       if (!amt) continue
-      dd.items[oi.item_name] = (dd.items[oi.item_name] ?? 0) + amt
+      // order_items 全部來自央廚配送流程；保留廠商分類，避免同名一般廠商品項被誤填。
+      addItemAmount(dd, oi.item_name, amt, '央廚配送')
     }
     byDate[date] = dd
   }
@@ -238,7 +263,8 @@ export async function getRangeStats(
     for (const it of (r.receipt_items ?? []) as any[]) {
       if (!it.amount) continue
       const itemKey = it.item_name
-      dd.items[itemKey] = (dd.items[itemKey] ?? 0) + it.amount
+      const receiptMeta = resolveReceiptItem(itemKey, r.vendor_name, r.actual_vendor_name)
+      addItemAmount(dd, itemKey, it.amount, receiptMeta?.vendor_group)
       if (noteText && !notedItemNames.has(itemKey)) {
         dd.notes[itemKey] = dd.notes[itemKey]
           ? `${dd.notes[itemKey]}\n${noteText}`
@@ -262,7 +288,8 @@ export async function getRangeStats(
     if (remainder !== 0 && nonTaxItems.length > 0) {
       const target = nonTaxItems.find(item => (item.item_name ?? '').trim())
       if (target?.item_name) {
-        dd.items[target.item_name] = (dd.items[target.item_name] ?? 0) + remainder
+        const targetMeta = resolveReceiptItem(target.item_name, r.vendor_name, r.actual_vendor_name)
+        addItemAmount(dd, target.item_name, remainder, targetMeta?.vendor_group)
       }
     }
 
@@ -279,7 +306,7 @@ export async function getRangeStats(
         return m?.category === '耗材'
       })
       if (hasPack) {
-        dd.items['免洗稅金'] = (dd.items['免洗稅金'] ?? 0) + tax
+        addItemAmount(dd, '免洗稅金', tax, '免洗')
       } else {
         // 抓第一個品項的 vendor_group，用該 vg 的稅金欄
         // 命名 convention：「{vg}稅金」（例：「小雲稅金」「翁師傅稅金」）
@@ -287,7 +314,7 @@ export async function getRangeStats(
         const firstItem = (r.receipt_items ?? [])[0]
         const m = firstItem ? itemMeta.get(firstItem.item_name) : null
         const vgTaxKey = m?.vendor_group ? `${m.vendor_group}稅金` : '雜項稅金'
-        dd.items[vgTaxKey] = (dd.items[vgTaxKey] ?? 0) + tax
+        addItemAmount(dd, vgTaxKey, tax, m?.vendor_group)
       }
     }
   }
