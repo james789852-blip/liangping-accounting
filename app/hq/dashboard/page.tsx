@@ -168,9 +168,13 @@ export default async function HQDashboard({
   }).sort((a, b) => b.revenue - a.revenue)
 
   const monthRevenue = storeStats.reduce((sum, store) => sum + store.revenue, 0)
-  const monthCost = vendorStats.reduce((sum, vendor) => sum + vendor.total, 0)
-  const averageRevenue = stores.length > 0 ? monthRevenue / stores.length : 0
-  const vendorCount = new Set(vendorStats.map(vendor => vendor.group)).size
+  const storeStatsOnly = storeStats.filter(store => store.type !== '央廚')
+  const kitchenStatsOnly = storeStats.filter(store => store.type === '央廚')
+  const storeRevenue = storeStatsOnly.reduce((sum, store) => sum + store.revenue, 0)
+  const kitchenRevenue = kitchenStatsOnly.reduce((sum, store) => sum + store.revenue, 0)
+  const storeCost = storeStatsOnly.reduce((sum, store) => sum + store.cost, 0)
+  const kitchenCost = kitchenStatsOnly.reduce((sum, store) => sum + store.cost, 0)
+  const averageStoreRevenue = storeStatsOnly.length > 0 ? storeRevenue / storeStatsOnly.length : 0
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -212,26 +216,29 @@ export default async function HQDashboard({
           <div className="font-extrabold tabular-nums leading-none mb-2 relative" style={{ fontSize: 'clamp(40px,6vw,56px)', letterSpacing: '-0.03em' }}>
             $ {fmt(monthRevenue)}
           </div>
-          <div className="text-sm mb-6 relative" style={{ opacity: 0.72 }}>本月各店已送出／已核准帳目的營業額</div>
+          <div className="text-sm mb-6 relative" style={{ opacity: 0.72 }}>店面營業額與央廚叫貨收入分開統計</div>
           <div className="flex gap-8 flex-wrap relative">
-            <SummaryValue label="廠商叫貨" value={`$ ${fmt(monthCost)}`} />
+            <SummaryValue label="店面營業額" value={`$ ${fmt(storeRevenue)}`} />
+            <SummaryValue label="央廚叫貨收入" value={`$ ${fmt(kitchenRevenue)}`} />
             <SummaryValue label="單據筆數" value={`${monthReceipts?.length ?? 0} 筆`} />
-            <SummaryValue label="店家／廠商分類" value={`${stores.length} / ${vendorCount}`} />
+            <SummaryValue label="店面／央廚" value={`${storeStatsOnly.length} / ${kitchenStatsOnly.length} 家`} />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCard label="本月營業額" value={`$${fmt(monthRevenue)}`} sub="所有營運據點" color="#F59E0B" />
-          <MetricCard label="本月廠商叫貨" value={`$${fmt(monthCost)}`} sub={`${monthReceipts?.length ?? 0} 筆單據`} color="#10b981" />
-          <MetricCard label="平均店營業額" value={`$${fmt(averageRevenue)}`} sub="本月平均" color="#818cf8" />
-          <MetricCard label="叫貨占營業額" value={monthRevenue > 0 ? `${(monthCost / monthRevenue * 100).toFixed(1)}%` : '—'} sub="支出結構參考" color="#f97316" />
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          <MetricCard label="合計營業額" value={`$${fmt(monthRevenue)}`} sub="店面＋央廚" color="#F59E0B" />
+          <MetricCard label="店面營業額" value={`$${fmt(storeRevenue)}`} sub={`${storeStatsOnly.length} 家店`} color="#d97706" />
+          <MetricCard label="央廚叫貨收入" value={`$${fmt(kitchenRevenue)}`} sub={`${kitchenStatsOnly.length} 家央廚`} color="#7c3aed" />
+          <MetricCard label="平均店營業額" value={`$${fmt(averageStoreRevenue)}`} sub="店面本月平均" color="#818cf8" />
+          <MetricCard label="店面叫貨支出" value={`$${fmt(storeCost)}`} sub="店面單據" color="#10b981" />
+          <MetricCard label="央廚採購支出" value={`$${fmt(kitchenCost)}`} sub="央廚單據" color="#f97316" />
         </div>
 
         <StoreStatsSection
           icon={<Store className="h-4 w-4" />}
           title={`${parseInt(month)} 月店面營業額排名`}
           description="依本月營業額由高至低，從左至右、由上而下排列；點擊店家可展開明細"
-          stores={storeStats.filter(store => store.type !== '央廚')}
+          stores={storeStatsOnly}
           variant="store"
         />
 
@@ -239,7 +246,7 @@ export default async function HQDashboard({
           icon={<ChefHat className="h-4 w-4" />}
           title={`${parseInt(month)} 月央廚營業額排名`}
           description="依本月叫貨收入由高至低，從左至右、由上而下排列；點擊央廚可展開明細"
-          stores={storeStats.filter(store => store.type === '央廚')}
+          stores={kitchenStatsOnly}
           variant="kitchen"
         />
       </div>
