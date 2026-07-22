@@ -79,7 +79,9 @@ export default async function HQDashboard({
   // 央廚營業額不是 daily_closings，而是本月各成員店的叫貨收入。
   const ckIds = stores.filter(store => store.type === '央廚').map(store => store.id)
   const ckRevenueByStore: Record<string, number> = {}
+  const ckCostByStore: Record<string, number> = {}
   const ckDeliveryStoresByKitchen = new Map<string, Map<string, DeliveryStoreStat>>()
+  const ckExpenseRows: { storeId: string; group: string; amount: number }[] = []
   if (ckIds.length > 0) {
     const { data: ckRecords } = await admin.from('ck_daily_records')
       .select('id, ck_store_id')
@@ -87,9 +89,14 @@ export default async function HQDashboard({
       .gte('business_date', firstOfMonth).lte('business_date', selectedEnd)
     const recordIds = (ckRecords ?? []).map(record => record.id)
     if (recordIds.length > 0) {
-      const { data: ckOrders } = await admin.from('ck_store_orders')
-        .select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount')
-        .in('ck_daily_record_id', recordIds)
+      const [{ data: ckOrders }, { data: ckExpenses }] = await Promise.all([
+        admin.from('ck_store_orders')
+          .select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount')
+          .in('ck_daily_record_id', recordIds),
+        admin.from('ck_expense_items')
+          .select('ck_daily_record_id, vendor_group, amount')
+          .in('ck_daily_record_id', recordIds),
+      ])
       const ckIdByRecord = new Map((ckRecords ?? []).map(record => [record.id as string, record.ck_store_id as string]))
       for (const order of ckOrders ?? []) {
         const ckId = ckIdByRecord.get(order.ck_daily_record_id as string)
@@ -107,6 +114,14 @@ export default async function HQDashboard({
         if (amount !== 0) row.count += 1
         deliveries.set(storeName, row)
         ckDeliveryStoresByKitchen.set(ckId, deliveries)
+      }
+      for (const expense of ckExpenses ?? []) {
+        const ckId = ckIdByRecord.get(expense.ck_daily_record_id as string)
+        const amount = Number(expense.amount ?? 0)
+        if (!ckId || amount <= 0) continue
+        const group = String(expense.vendor_group ?? '').trim() || '未分類'
+        ckCostByStore[ckId] = (ckCostByStore[ckId] || 0) + amount
+        ckExpenseRows.push({ storeId: ckId, group, amount })
       }
     }
   }
@@ -140,6 +155,22 @@ export default async function HQDashboard({
     vendorMap.set(key, row)
     costByStore[receipt.store_id] = (costByStore[receipt.store_id] || 0) + amount
   }
+  // 央廚採購支出記在 ck_expense_items，不在店面收據表；補入同一份廠商明細。
+  for (const expense of ckExpenseRows) {
+    const key = `${expense.storeId}|${expense.group}`
+    const row = vendorMap.get(key) ?? {
+      storeId: expense.storeId,
+      storeName: storeMap[expense.storeId] ?? '未知央廚',
+      group: expense.group,
+      total: 0,
+      count: 0,
+      vendors: [],
+      vendorMap: new Map<string, VendorDetail>(),
+    }
+    row.total += expense.amount
+    row.count += 1
+    vendorMap.set(key, row)
+  }
 
   const vendorStats: VendorStat[] = [...vendorMap.values()]
     .map(({ vendorMap: _vendorMap, ...row }) => ({ ...row, vendors: [..._vendorMap.values()].sort((a, b) => b.total - a.total) }))
@@ -154,7 +185,9 @@ export default async function HQDashboard({
     const revenue = store.type === '央廚'
       ? (ckRevenueByStore[store.id] || 0)
       : (revenueByStore[store.id] || 0)
-    const cost = costByStore[store.id] || 0
+    const cost = store.type === '央廚'
+      ? (ckCostByStore[store.id] || 0)
+      : (costByStore[store.id] || 0)
     return {
       ...store,
       revenue,
@@ -167,14 +200,12 @@ export default async function HQDashboard({
     }
   }).sort((a, b) => b.revenue - a.revenue)
 
-  const monthRevenue = storeStats.reduce((sum, store) => sum + store.revenue, 0)
   const storeStatsOnly = storeStats.filter(store => store.type !== '央廚')
   const kitchenStatsOnly = storeStats.filter(store => store.type === '央廚')
   const storeRevenue = storeStatsOnly.reduce((sum, store) => sum + store.revenue, 0)
   const kitchenRevenue = kitchenStatsOnly.reduce((sum, store) => sum + store.revenue, 0)
   const storeCost = storeStatsOnly.reduce((sum, store) => sum + store.cost, 0)
   const kitchenCost = kitchenStatsOnly.reduce((sum, store) => sum + store.cost, 0)
-  const monthCost = storeCost + kitchenCost
   const averageStoreRevenue = storeStatsOnly.length > 0 ? storeRevenue / storeStatsOnly.length : 0
 
   return (
@@ -214,23 +245,22 @@ export default async function HQDashboard({
           <div className="flex items-center gap-2 text-sm mb-3 relative" style={{ opacity: 0.85 }}>
             <BarChart3 className="h-4 w-4" />{year} 年 {parseInt(month)} 月營運統計（統計至 {selectedEnd}）
           </div>
-          <div className="font-extrabold tabular-nums leading-none mb-2 relative" style={{ fontSize: 'clamp(40px,6vw,56px)', letterSpacing: '-0.03em' }}>
-            $ {fmt(monthRevenue)}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6 relative">
+            <HeroMetric label="店面營業額" value={`$ ${fmt(storeRevenue)}`} />
+            <HeroMetric label="央廚叫貨收入" value={`$ ${fmt(kitchenRevenue)}`} />
           </div>
-          <div className="text-sm mb-6 relative" style={{ opacity: 0.72 }}>店面營業額與央廚叫貨收入分開統計</div>
           <div className="flex gap-8 flex-wrap relative">
-            <SummaryValue label="店面營業額" value={`$ ${fmt(storeRevenue)}`} />
-            <SummaryValue label="央廚叫貨收入" value={`$ ${fmt(kitchenRevenue)}`} />
             <SummaryValue label="單據筆數" value={`${monthReceipts?.length ?? 0} 筆`} />
             <SummaryValue label="店面／央廚" value={`${storeStatsOnly.length} / ${kitchenStatsOnly.length} 家`} />
+            <SummaryValue label="店面叫貨支出" value={`$ ${fmt(storeCost)}`} />
+            <SummaryValue label="央廚採購支出" value={`$ ${fmt(kitchenCost)}`} />
           </div>
         </div>
 
         <div className="space-y-4">
           <div>
             <p className="text-xs font-bold mb-2 px-1" style={{ color: '#71717a' }}>營業額概覽</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-              <MetricCard label="合計營業額" value={`$${fmt(monthRevenue)}`} sub="店面＋央廚" color="#F59E0B" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
               <MetricCard label="店面營業額" value={`$${fmt(storeRevenue)}`} sub={`${storeStatsOnly.length} 家店`} color="#d97706" />
               <MetricCard label="央廚叫貨收入" value={`$${fmt(kitchenRevenue)}`} sub={`${kitchenStatsOnly.length} 家央廚`} color="#7c3aed" />
               <MetricCard label="平均店營業額" value={`$${fmt(averageStoreRevenue)}`} sub="店面本月平均" color="#818cf8" />
@@ -238,8 +268,7 @@ export default async function HQDashboard({
           </div>
           <div>
             <p className="text-xs font-bold mb-2 px-1" style={{ color: '#71717a' }}>支出概覽</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <MetricCard label="合計叫貨支出" value={`$${fmt(monthCost)}`} sub={`${monthReceipts?.length ?? 0} 筆單據`} color="#059669" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <MetricCard label="店面叫貨支出" value={`$${fmt(storeCost)}`} sub="店面單據" color="#10b981" />
               <MetricCard label="央廚採購支出" value={`$${fmt(kitchenCost)}`} sub="央廚單據" color="#f97316" />
             </div>
@@ -280,14 +309,22 @@ function StoreStatsSection({
   variant: 'store' | 'kitchen'
 }) {
   const isKitchen = variant === 'kitchen'
+  const rankingColumns = [stores.slice(0, 5), stores.slice(5)]
   return (
     <div className="bg-white rounded-2xl p-5 md:p-6" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
       <SectionTitle icon={icon} title={title} description={description} />
       {stores.length === 0 ? (
         <p className="text-sm text-center py-8" style={{ color: '#a1a1aa' }}>目前沒有可顯示的{isKitchen ? '央廚' : '店面'}資料</p>
       ) : (
-        <div className="grid grid-flow-row grid-cols-1 xl:grid-cols-2 gap-4 mt-5">
-          {stores.map((store, index) => <StoreStatsCard key={store.id} store={store} rank={index + 1} isKitchen={isKitchen} />)}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-5">
+          {rankingColumns.map((column, columnIndex) => (
+            <div key={columnIndex} className="space-y-4">
+              {column.map((store, index) => {
+                const rank = columnIndex === 0 ? index + 1 : index + 6
+                return <StoreStatsCard key={store.id} store={store} rank={rank} isKitchen={isKitchen} />
+              })}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -375,6 +412,13 @@ function StoreStatsCard({ store, rank, isKitchen }: { store: StoreSummary; rank:
       </div>
     </details>
   )
+}
+
+function HeroMetric({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-2xl px-4 py-3 relative" style={{ background: 'rgba(0,0,0,0.16)', border: '1px solid rgba(255,255,255,0.16)' }}>
+    <p className="text-sm mb-1" style={{ opacity: 0.78 }}>{label}</p>
+    <p className="font-extrabold tabular-nums leading-none" style={{ fontSize: 'clamp(30px,4vw,46px)', letterSpacing: '-0.03em' }}>{value}</p>
+  </div>
 }
 
 function SummaryValue({ label, value }: { label: string; value: string }) {
