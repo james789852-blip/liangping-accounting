@@ -174,6 +174,7 @@ export default async function HQDashboard({
   const kitchenRevenue = kitchenStatsOnly.reduce((sum, store) => sum + store.revenue, 0)
   const storeCost = storeStatsOnly.reduce((sum, store) => sum + store.cost, 0)
   const kitchenCost = kitchenStatsOnly.reduce((sum, store) => sum + store.cost, 0)
+  const monthCost = storeCost + kitchenCost
   const averageStoreRevenue = storeStatsOnly.length > 0 ? storeRevenue / storeStatsOnly.length : 0
 
   return (
@@ -225,13 +226,24 @@ export default async function HQDashboard({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-          <MetricCard label="合計營業額" value={`$${fmt(monthRevenue)}`} sub="店面＋央廚" color="#F59E0B" />
-          <MetricCard label="店面營業額" value={`$${fmt(storeRevenue)}`} sub={`${storeStatsOnly.length} 家店`} color="#d97706" />
-          <MetricCard label="央廚叫貨收入" value={`$${fmt(kitchenRevenue)}`} sub={`${kitchenStatsOnly.length} 家央廚`} color="#7c3aed" />
-          <MetricCard label="平均店營業額" value={`$${fmt(averageStoreRevenue)}`} sub="店面本月平均" color="#818cf8" />
-          <MetricCard label="店面叫貨支出" value={`$${fmt(storeCost)}`} sub="店面單據" color="#10b981" />
-          <MetricCard label="央廚採購支出" value={`$${fmt(kitchenCost)}`} sub="央廚單據" color="#f97316" />
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs font-bold mb-2 px-1" style={{ color: '#71717a' }}>營業額概覽</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <MetricCard label="合計營業額" value={`$${fmt(monthRevenue)}`} sub="店面＋央廚" color="#F59E0B" />
+              <MetricCard label="店面營業額" value={`$${fmt(storeRevenue)}`} sub={`${storeStatsOnly.length} 家店`} color="#d97706" />
+              <MetricCard label="央廚叫貨收入" value={`$${fmt(kitchenRevenue)}`} sub={`${kitchenStatsOnly.length} 家央廚`} color="#7c3aed" />
+              <MetricCard label="平均店營業額" value={`$${fmt(averageStoreRevenue)}`} sub="店面本月平均" color="#818cf8" />
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-bold mb-2 px-1" style={{ color: '#71717a' }}>支出概覽</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <MetricCard label="合計叫貨支出" value={`$${fmt(monthCost)}`} sub={`${monthReceipts?.length ?? 0} 筆單據`} color="#059669" />
+              <MetricCard label="店面叫貨支出" value={`$${fmt(storeCost)}`} sub="店面單據" color="#10b981" />
+              <MetricCard label="央廚採購支出" value={`$${fmt(kitchenCost)}`} sub="央廚單據" color="#f97316" />
+            </div>
+          </div>
         </div>
 
         <StoreStatsSection
