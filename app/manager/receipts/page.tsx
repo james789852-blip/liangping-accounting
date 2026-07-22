@@ -51,18 +51,18 @@ export default async function ReceiptsPage() {
       ])
 
   // 優先用 mapping-based（跟 xlsx 匯出同源）→ newItems → 舊 mapping
+  // 保留同名但不同廠商分類的品項（例如「免洗｜酒精」與「日常用品｜酒精」），
+  // 不再用 item_name 當 object key 造成其中一筆被覆蓋。
   const mappings = mappingBasedItems.length > 0
-    ? Object.fromEntries(mappingBasedItems.map(i => [i.name, { excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group }]))
+    ? mappingBasedItems.map(i => ({ item_name: i.name, excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group }))
     : newItems.length > 0
-    ? Object.fromEntries(newItems.map(i => [i.name, { excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group }]))
-    : Object.fromEntries(
-        (mappingRows ?? []).map(r => [r.item_name, { excel_column: r.excel_column, item_category: r.item_category, vendor_group: (r as any).vendor_group ?? null }])
-      )
+    ? newItems.map(i => ({ item_name: i.name, excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group }))
+    : (mappingRows ?? []).map(r => ({ item_name: r.item_name, excel_column: r.excel_column, item_category: r.item_category, vendor_group: r.vendor_group ?? null }))
 
   return (
     <ReceiptsClient
       storeId={storeId}
-      storeName={(store as any)?.name ?? ''}
+      storeName={store?.name ?? ''}
       today={today}
       receipts={receipts ?? []}
       mappings={mappings}

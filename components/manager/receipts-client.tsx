@@ -15,9 +15,9 @@ interface ReceiptData {
   total_amount: number; tax_amount: number; photo_url: string; status: string
   notes: string; created_at: string; receipt_items: ReceiptItem[]
 }
-interface MappingMap { [k: string]: { excel_column: string; item_category: string; vendor_group?: string | null } }
+interface MappingOption { item_name: string; excel_column: string; item_category: string; vendor_group?: string | null }
 interface Props {
-  storeId: string; storeName: string; today: string; receipts: ReceiptData[]; mappings: MappingMap
+  storeId: string; storeName: string; today: string; receipts: ReceiptData[]; mappings: MappingOption[]
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -46,7 +46,12 @@ function formatDate(d: string) {
   return `${dt.getMonth() + 1}/${dt.getDate()}（${['日','一','二','三','四','五','六'][dt.getDay()]}）`
 }
 
-interface EditItem { item_name: string; amount: number; excel_column: string; item_category: string }
+interface EditItem { item_name: string; amount: number; excel_column: string; item_category: string; vendor_group?: string | null }
+
+function mappingKey(item: MappingOption) { return `${item.vendor_group ?? ''}::${item.item_name}` }
+function findMapping(mappings: MappingOption[], itemName: string, vendorGroup?: string | null) {
+  return mappings.find(item => item.item_name === itemName && (!vendorGroup || item.vendor_group === vendorGroup))
+}
 
 function inputStyle(extra?: object) {
   return {
@@ -58,7 +63,7 @@ function inputStyle(extra?: object) {
 
 function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
   receipt: ReceiptData; onDelete: (id: string) => void; onUpdated: (updated: ReceiptData) => void
-  mappings: MappingMap
+  mappings: MappingOption[]
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPhoto, setShowPhoto] = useState(false)
@@ -67,13 +72,16 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
   const [saving, setSaving] = useState(false)
   const [openItemIdx, setOpenItemIdx] = useState<number | null>(null)
 
-  function selectMappedItem(idx: number, name: string) {
-    const m = mappings[name]
+  function selectMappedItem(idx: number, key: string) {
+    const m = mappings.find(item => mappingKey(item) === key)
     setEditItems(prev => prev.map((it, i) => i !== idx ? it : {
-      ...it, item_name: name,
+      ...it, item_name: m?.item_name ?? key,
       excel_column: m?.excel_column ?? '',
       item_category: m?.item_category ?? '食材',
+      vendor_group: m?.vendor_group ?? null,
     }))
+    // 廠商分類就是品項歸屬的來源；選定分類品項時同步帶入，避免同名品項失去分類。
+    if (m?.vendor_group) setEditVendor(m.vendor_group)
     setOpenItemIdx(null)
   }
 
@@ -88,6 +96,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
     receipt.receipt_items.map(i => ({
       item_name: i.item_name, amount: i.amount,
       excel_column: i.excel_column ?? '', item_category: i.item_category ?? '食材',
+      vendor_group: findMapping(mappings, i.item_name, receipt.vendor_name)?.vendor_group ?? null,
     }))
   )
 
@@ -99,6 +108,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
     setEditItems(receipt.receipt_items.map(i => ({
       item_name: i.item_name, amount: i.amount,
       excel_column: i.excel_column ?? '', item_category: i.item_category ?? '食材',
+      vendor_group: findMapping(mappings, i.item_name, receipt.vendor_name)?.vendor_group ?? null,
     })))
     setEditing(true); setExpanded(true)
   }
@@ -226,7 +236,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
                     borderBottom: idx !== receipt.receipt_items.length - 1 ? '1px solid #f4f4f5' : 'none'
                   }}>
                     <span className="text-xs font-medium" style={{ color: '#18181b' }}>
-                      {displayItemName(item.item_name, mappings[item.item_name]?.vendor_group)}
+                      {displayItemName(item.item_name, findMapping(mappings, item.item_name, receipt.vendor_name)?.vendor_group)}
                     </span>
                     <span className="text-xs text-right tabular-nums" style={{ color: '#52525b' }}>{(item.quantity ?? 0) > 0 ? item.quantity : '—'}</span>
                     <span className="text-xs text-right" style={{ color: '#71717a' }}>{item.unit || '—'}</span>
@@ -296,7 +306,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
           <div>
             <div className="flex items-center justify-between mb-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>品項明細</p>
-              <button onClick={() => setEditItems(prev => [...prev, { item_name: '', amount: 0, excel_column: '', item_category: '食材' }])}
+              <button onClick={() => setEditItems(prev => [...prev, { item_name: '', amount: 0, excel_column: '', item_category: '食材', vendor_group: null }])}
                 className="text-xs font-semibold flex items-center gap-1" style={{ color: '#92400E' }}>
                 <Plus className="h-3 w-3" /> 新增品項
               </button>
@@ -317,21 +327,24 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
                     {openItemIdx === idx && (() => {
                       const q = item.item_name.trim()
                       // 央廚配送不在收據錄入下拉內；選擇退稅廠商時才顯示退稅品項。
-                      const allNames = Object.keys(mappings).filter(n =>
-                        mappings[n]?.vendor_group !== '央廚配送' && (mappings[n]?.vendor_group !== '退稅' || editVendor.trim() === '退稅')
+                      const selectedVendor = editVendor.trim()
+                      const vendorMatches = selectedVendor
+                        ? mappings.filter(m => m.vendor_group === selectedVendor)
+                        : []
+                      const allItems = (vendorMatches.length > 0 ? vendorMatches : mappings).filter(m =>
+                        m.vendor_group !== '央廚配送' && (m.vendor_group !== '退稅' || editVendor.trim() === '退稅')
                       )
-                      // 顯示時剝離直接相連的 vendor_group 前綴；有分隔符的名稱保留完整（例：免洗-稅金）
-                      const stripVg = (n: string) => {
-                        return displayItemName(n, mappings[n]?.vendor_group)
-                      }
-                      const filtered = q ? allNames.filter(n => n.includes(q) || stripVg(n).includes(q)) : allNames
+                      // 以「廠商分類｜品項」作為選項 key，同名品項也能各自選取。
+                      const filtered = q
+                        ? allItems.filter(m => m.item_name.includes(q) || displayItemName(m.item_name, m.vendor_group).includes(q))
+                        : allItems
                       if (filtered.length === 0) return null
-                      const groups: { group: string; cols: string[] }[] = []
-                      for (const name of filtered) {
-                        const g = mappings[name]?.vendor_group || mappings[name]?.item_category || '未分類'
+                      const groups: { group: string; cols: MappingOption[] }[] = []
+                      for (const m of filtered) {
+                        const g = m.vendor_group || m.item_category || '未分類'
                         const existing = groups.find(x => x.group === g)
-                        if (existing) existing.cols.push(name)
-                        else groups.push({ group: g, cols: [name] })
+                        if (existing) existing.cols.push(m)
+                        else groups.push({ group: g, cols: [m] })
                       }
                       // 依分類優先級排序：叫貨廠商→日用品→文件類型→退稅→未分類
                       const ORDER_VENDOR_KEYWORDS = ['菜商', '豬肉商', '雞蛋', '滷蛋', '油豆腐', '豆腐商', '雜貨', '免洗', '麵', '振源', '小雲', '海鮮', '冷凍', '飲料']
@@ -350,11 +363,11 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
                           {groups.map(({ group, cols }) => (
                             <div key={group}>
                               <p style={{ fontSize: '10px', fontWeight: 700, color: '#a1a1aa', padding: '6px 12px 2px', letterSpacing: '0.05em' }}>{group}</p>
-                              {cols.map(name => (
-                                <button key={name}
-                                  onMouseDown={e => { e.preventDefault(); selectMappedItem(idx, name) }}
+                              {cols.map(option => (
+                                <button key={mappingKey(option)}
+                                  onMouseDown={e => { e.preventDefault(); selectMappedItem(idx, mappingKey(option)) }}
                                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: '13px', background: 'none', border: 'none', borderBottom: '1px solid #f9f9f9', cursor: 'pointer', color: '#18181b', fontFamily: 'inherit' }}>
-                                  {stripVg(name)}
+                                  {displayItemName(option.item_name, option.vendor_group)}
                                 </button>
                               ))}
                             </div>

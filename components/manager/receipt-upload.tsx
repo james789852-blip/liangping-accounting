@@ -11,8 +11,8 @@ import { Camera, Loader2, CheckCircle2, Plus, Trash2, X, Sparkles } from 'lucide
 import { Separator } from '@/components/ui/separator'
 import { storePhotoPath } from '@/lib/storage-paths'
 
-interface MappingMap {
-  [itemName: string]: { excel_column: string; item_category: string }
+interface MappingOption {
+  item_name: string; excel_column: string; item_category: string; vendor_group?: string | null
 }
 
 interface NewReceiptData {
@@ -25,7 +25,7 @@ interface NewReceiptData {
 interface Props {
   storeId: string
   today: string
-  mappings: MappingMap
+  mappings: MappingOption[]
   onSaved: (receipt: NewReceiptData) => void
   onCancel: () => void
 }
@@ -35,8 +35,10 @@ interface FormItem {
   amount: number
   excel_column: string
   item_category: string
+  vendor_group?: string | null
 }
 
+function mappingKey(item: MappingOption) { return `${item.vendor_group ?? ''}::${item.item_name}` }
 export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCancel }: Props) {
   const [step, setStep] = useState<'upload' | 'recognizing' | 'review' | 'saving'>('upload')
   const [photoUrl, setPhotoUrl] = useState('')
@@ -59,6 +61,8 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
     onCancel()
   }
 
+  /* The draft is restored from localStorage on mount; these state updates are intentional. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     try {
       const raw = localStorage.getItem(draftKey)
@@ -80,6 +84,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -107,24 +112,28 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
     return () => clearTimeout(timer)
   }, [actualVendorName, draftKey, items, notes, photoUrl, receiptType, step, storeId, taxAmount, today, totalAmount, vendorName])
 
-  function selectMappedItem(i: number, name: string) {
-    const m = mappings[name]
+  function selectMappedItem(i: number, key: string) {
+    const m = mappings.find(item => mappingKey(item) === key)
     setItems(prev => prev.map((item, idx) => idx !== i ? item : {
-      ...item, name,
+      ...item, name: m?.item_name ?? key,
       excel_column: m?.excel_column ?? '',
       item_category: m?.item_category ?? '食材',
+      vendor_group: m?.vendor_group ?? null,
     }))
+    if (m?.vendor_group) setVendorName(m.vendor_group)
     setOpenItemIdx(null)
   }
 
-  function applyMappings(rawItems: { name: string; amount: number }[]): FormItem[] {
+  function applyMappings(rawItems: { name: string; amount: number }[], vendorGroup = ''): FormItem[] {
     return rawItems.map(item => {
-      const m = mappings[item.name]
+      const m = mappings.find(option => option.item_name === item.name && (!vendorGroup || option.vendor_group === vendorGroup))
+        ?? mappings.find(option => option.item_name === item.name)
       return {
         name: item.name,
         amount: item.amount,
         excel_column: m?.excel_column ?? '',
         item_category: m?.item_category ?? '食材',
+        vendor_group: m?.vendor_group ?? null,
       }
     })
   }
@@ -162,9 +171,10 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
       setReceiptType(data.receipt_type ?? 'receipt')
       setTotalAmount(data.total_amount ?? 0)
       setTaxAmount(data.tax_amount ?? 0)
-      setItems(applyMappings(data.items ?? []))
-    } catch (err: any) {
-      setError('AI 辨識失敗，請手動輸入：' + err.message)
+      setItems(applyMappings(data.items ?? [], data.vendor_name ?? ''))
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '未知錯誤'
+      setError('AI 辨識失敗，請手動輸入：' + message)
       setItems([])
     }
     setStep('review')
@@ -192,7 +202,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
 
       // Save new mappings for items that now have a column assigned
       const newMappings = validItems
-        .filter(it => it.excel_column && !mappings[it.name])
+        .filter(it => it.excel_column && !mappings.some(m => m.item_name === it.name))
         .map(it => ({ item_name: it.name, excel_column: it.excel_column, item_category: it.item_category }))
       if (newMappings.length) await saveItemMappingsBatch(newMappings)
 
@@ -315,7 +325,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-slate-600">品項明細</span>
-          <button onClick={() => setItems(p => [...p, { name: '', amount: 0, excel_column: '', item_category: '食材' }])}
+          <button onClick={() => setItems(p => [...p, { name: '', amount: 0, excel_column: '', item_category: '食材', vendor_group: null }])}
             className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
             <Plus className="h-3.5 w-3.5" /> 新增品項
           </button>
@@ -342,22 +352,28 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
                 )}
                 {openItemIdx === i && (() => {
                   const q = item.name.trim()
-                  const allNames = Object.keys(mappings)
-                  const filtered = q ? allNames.filter(n => n.includes(q)) : allNames
+                  const selectedVendor = vendorName.trim()
+                  const vendorMatches = selectedVendor
+                    ? mappings.filter(m => m.vendor_group === selectedVendor)
+                    : []
+                  const source = vendorMatches.length > 0 ? vendorMatches : mappings
+                  const filtered = q
+                    ? source.filter(m => m.item_name.includes(q) || m.vendor_group?.includes(q))
+                    : source
                   if (filtered.length === 0) return null
                   const grouped = (['食材', '耗材', '雜項'] as const)
-                    .map(cat => ({ cat, cols: filtered.filter(n => mappings[n]?.item_category === cat) }))
+                    .map(cat => ({ cat, cols: filtered.filter(m => m.item_category === cat) }))
                     .filter(g => g.cols.length > 0)
                   return (
                     <div style={{ position: 'absolute', top: '38px', left: 0, right: 0, zIndex: 50, background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 4px 16px rgba(0,0,0,0.1)', maxHeight: '220px', overflowY: 'auto' }}>
                       {grouped.map(({ cat, cols }) => (
                         <div key={cat}>
                           <p style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', padding: '6px 12px 2px', letterSpacing: '0.05em' }}>{cat}</p>
-                          {cols.map(name => (
-                            <button key={name}
-                              onMouseDown={e => { e.preventDefault(); selectMappedItem(i, name) }}
+                          {cols.map(option => (
+                            <button key={mappingKey(option)}
+                              onMouseDown={e => { e.preventDefault(); selectMappedItem(i, mappingKey(option)) }}
                               style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: '13px', background: 'none', border: 'none', borderBottom: '1px solid #f8fafc', cursor: 'pointer', color: '#1e293b', fontFamily: 'inherit' }}>
-                              {name}
+                              {option.vendor_group ? `${option.vendor_group}｜${option.item_name}` : option.item_name}
                             </button>
                           ))}
                         </div>
