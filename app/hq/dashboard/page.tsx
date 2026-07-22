@@ -229,16 +229,16 @@ export default async function HQDashboard({
 
         <StoreStatsSection
           icon={<Store className="h-4 w-4" />}
-          title={`${parseInt(month)} 月店面統計`}
-          description="每間店獨立查看營業額、廠商叫貨與單據明細；點擊店家可展開"
+          title={`${parseInt(month)} 月店面營業額排名`}
+          description="依本月營業額由高至低排列；點擊店家可展開廠商叫貨與單據明細"
           stores={storeStats.filter(store => store.type !== '央廚')}
           variant="store"
         />
 
         <StoreStatsSection
           icon={<ChefHat className="h-4 w-4" />}
-          title={`${parseInt(month)} 月央廚統計`}
-          description="央廚營業額為各店叫貨收入；點擊央廚可展開查看支出與廠商明細"
+          title={`${parseInt(month)} 月央廚營業額排名`}
+          description="依本月叫貨收入由高至低排列；點擊央廚可展開查看支出與廠商明細"
           stores={storeStats.filter(store => store.type === '央廚')}
           variant="kitchen"
         />
@@ -268,19 +268,29 @@ function StoreStatsSection({
         <p className="text-sm text-center py-8" style={{ color: '#a1a1aa' }}>目前沒有可顯示的{isKitchen ? '央廚' : '店面'}資料</p>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-5">
-          {stores.map(store => <StoreStatsCard key={store.id} store={store} isKitchen={isKitchen} />)}
+          {stores.map((store, index) => <StoreStatsCard key={store.id} store={store} rank={index + 1} isKitchen={isKitchen} />)}
         </div>
       )}
     </div>
   )
 }
 
-function StoreStatsCard({ store, isKitchen }: { store: StoreSummary; isKitchen: boolean }) {
+function StoreStatsCard({ store, rank, isKitchen }: { store: StoreSummary; rank: number; isKitchen: boolean }) {
+  const rankStyle = rank === 1
+    ? { background: '#FEF3C7', color: '#92400E', border: '#F59E0B' }
+    : rank === 2
+    ? { background: '#F1F5F9', color: '#475569', border: '#CBD5E1' }
+    : rank === 3
+    ? { background: '#FFF7ED', color: '#9A3412', border: '#FDBA74' }
+    : { background: '#FAFAFA', color: '#71717A', border: '#E4E4E7' }
   return (
     <details className="group rounded-2xl overflow-hidden" style={{ border: '1px solid #e4e4e7' }}>
       <summary className="list-none cursor-pointer select-none" style={{ background: isKitchen ? '#f5f3ff' : '#fffbeb' }}>
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-2 min-w-0">
+            <span className="h-8 min-w-8 px-1.5 rounded-lg flex items-center justify-center shrink-0 text-xs font-extrabold tabular-nums"
+              style={{ background: rankStyle.background, color: rankStyle.color, border: `1px solid ${rankStyle.border}` }}
+              aria-label={`第 ${rank} 名`}>第{rank}名</span>
             <span className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 font-bold" style={{ background: isKitchen ? '#EDE9FE' : '#FEF3C7', color: isKitchen ? '#6D28D9' : '#92400E' }}>{isKitchen ? '央' : '店'}</span>
             <div className="min-w-0">
               <p className="font-bold truncate" style={{ color: '#18181b' }}>{store.name}</p>
