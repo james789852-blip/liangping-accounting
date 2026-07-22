@@ -204,8 +204,6 @@ export default async function HQDashboard({
   const kitchenStatsOnly = storeStats.filter(store => store.type === '央廚')
   const storeRevenue = storeStatsOnly.reduce((sum, store) => sum + store.revenue, 0)
   const kitchenRevenue = kitchenStatsOnly.reduce((sum, store) => sum + store.revenue, 0)
-  const storeCost = storeStatsOnly.reduce((sum, store) => sum + store.cost, 0)
-  const kitchenCost = kitchenStatsOnly.reduce((sum, store) => sum + store.cost, 0)
   const averageStoreRevenue = storeStatsOnly.length > 0 ? storeRevenue / storeStatsOnly.length : 0
 
   return (
@@ -252,8 +250,6 @@ export default async function HQDashboard({
           <div className="flex gap-8 flex-wrap relative">
             <SummaryValue label="單據筆數" value={`${monthReceipts?.length ?? 0} 筆`} />
             <SummaryValue label="店面／央廚" value={`${storeStatsOnly.length} / ${kitchenStatsOnly.length} 家`} />
-            <SummaryValue label="店面叫貨支出" value={`$ ${fmt(storeCost)}`} />
-            <SummaryValue label="央廚採購支出" value={`$ ${fmt(kitchenCost)}`} />
           </div>
         </div>
 
@@ -264,13 +260,6 @@ export default async function HQDashboard({
               <MetricCard label="店面營業額" value={`$${fmt(storeRevenue)}`} sub={`${storeStatsOnly.length} 家店`} color="#d97706" />
               <MetricCard label="央廚叫貨收入" value={`$${fmt(kitchenRevenue)}`} sub={`${kitchenStatsOnly.length} 家央廚`} color="#7c3aed" />
               <MetricCard label="平均店營業額" value={`$${fmt(averageStoreRevenue)}`} sub="店面本月平均" color="#818cf8" />
-            </div>
-          </div>
-          <div>
-            <p className="text-xs font-bold mb-2 px-1" style={{ color: '#71717a' }}>支出概覽</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <MetricCard label="店面叫貨支出" value={`$${fmt(storeCost)}`} sub="店面單據" color="#10b981" />
-              <MetricCard label="央廚採購支出" value={`$${fmt(kitchenCost)}`} sub="央廚單據" color="#f97316" />
             </div>
           </div>
         </div>
