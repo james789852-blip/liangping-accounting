@@ -230,7 +230,7 @@ export default async function HQDashboard({
         <StoreStatsSection
           icon={<Store className="h-4 w-4" />}
           title={`${parseInt(month)} 月店面營業額排名`}
-          description="依本月營業額由高至低排列；點擊店家可展開廠商叫貨與單據明細"
+          description="依本月營業額由高至低，從左至右、由上而下排列；點擊店家可展開明細"
           stores={storeStats.filter(store => store.type !== '央廚')}
           variant="store"
         />
@@ -238,7 +238,7 @@ export default async function HQDashboard({
         <StoreStatsSection
           icon={<ChefHat className="h-4 w-4" />}
           title={`${parseInt(month)} 月央廚營業額排名`}
-          description="依本月叫貨收入由高至低排列；點擊央廚可展開查看支出與廠商明細"
+          description="依本月叫貨收入由高至低，從左至右、由上而下排列；點擊央廚可展開明細"
           stores={storeStats.filter(store => store.type === '央廚')}
           variant="kitchen"
         />
@@ -267,7 +267,7 @@ function StoreStatsSection({
       {stores.length === 0 ? (
         <p className="text-sm text-center py-8" style={{ color: '#a1a1aa' }}>目前沒有可顯示的{isKitchen ? '央廚' : '店面'}資料</p>
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-5">
+        <div className="grid grid-flow-row grid-cols-1 xl:grid-cols-2 gap-4 mt-5">
           {stores.map((store, index) => <StoreStatsCard key={store.id} store={store} rank={index + 1} isKitchen={isKitchen} />)}
         </div>
       )}
