@@ -433,14 +433,44 @@ export async function getMonthlyStats(storeId: string, year: number, monthNum: n
     totals.estimateTotal += dd.estimateTotal
     totals.taxRefund += dd.taxRefund
     for (const [k, v] of Object.entries(dd.items)) totals.items[k] = (totals.items[k] ?? 0) + v
+    for (const [k, v] of Object.entries(dd.itemAmountsByVendorGroup)) {
+      totals.itemAmountsByVendorGroup[k] = (totals.itemAmountsByVendorGroup[k] ?? 0) + v
+    }
   }
 
   // 品項月合計（含 vendor_group / doc_type / category）
   const itemMonthlyTotals: MonthlyStats['itemMonthlyTotals'] = []
+  const scopedNames = new Set<string>()
+  const scopedItemNames = new Set<string>()
+  const metaForScopedKey = new Map(items.map(item => [scopedKey(item.vendor_group, item.name), item] as const))
+  // 先輸出有廠商分類的明細，確保同名品項不會被合併成一列。
+  for (const [key, total] of Object.entries(totals.itemAmountsByVendorGroup)) {
+    if (!total) continue
+    const separator = key.indexOf('|')
+    if (separator < 0) continue
+    const vendorGroup = key.slice(0, separator)
+    const itemName = key.slice(separator + 1)
+    const meta = metaForScopedKey.get(key)
+      ?? items.find(item => item.name === itemName && item.vendor_group === vendorGroup)
+      ?? itemMeta.get(itemName)
+    if (!meta) continue
+    scopedNames.add(`${vendorGroup}|${itemName}`)
+    scopedItemNames.add(itemName)
+    itemMonthlyTotals.push({
+      vendor_group: vendorGroup,
+      vendor_group_sort_order: meta.vendor_group_sort_order,
+      doc_type: meta.doc_type ?? '',
+      item_name: itemName,
+      category: meta.category,
+      sort_order: meta.sort_order,
+      total,
+    })
+  }
+  // 舊資料或未能解析廠商的項目仍保留，但若已有 scoped 明細就不再重複列出。
   for (const [itemName, total] of Object.entries(totals.items)) {
     if (!total) continue
     const meta = itemMeta.get(itemName)
-    if (!meta) continue
+    if (!meta || scopedItemNames.has(itemName) || scopedNames.has(`${meta.vendor_group}|${itemName}`)) continue
     itemMonthlyTotals.push({
       vendor_group: meta.vendor_group,
       vendor_group_sort_order: meta.vendor_group_sort_order,

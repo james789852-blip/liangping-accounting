@@ -313,6 +313,18 @@ interface VendorAnalysisRow {
 
 function buildVendorAnalysisRows(monthlies: MonthlyStats[], items: ResolvedStoreItem[], includeMonth: boolean): VendorAnalysisRow[] {
   const itemMeta = new Map(items.map(item => [item.name, item] as const))
+  const itemCandidates = new Map<string, ResolvedStoreItem[]>()
+  for (const item of items) {
+    const list = itemCandidates.get(item.name) ?? []
+    list.push(item)
+    itemCandidates.set(item.name, list)
+  }
+  const resolveItemMeta = (itemName: string, vendorName?: string | null, actualVendorName?: string | null) => {
+    const candidates = itemCandidates.get(itemName) ?? []
+    if (candidates.length <= 1) return candidates[0]
+    const vendorText = `${vendorName ?? ''} ${actualVendorName ?? ''}`
+    return candidates.find(candidate => candidate.vendor_group && vendorText.includes(candidate.vendor_group)) ?? candidates[0]
+  }
   const groupSort = new Map<string, number>()
   for (const item of items) {
     if (!groupSort.has(item.vendor_group)) groupSort.set(item.vendor_group, item.vendor_group_sort_order ?? 9999)
@@ -344,12 +356,14 @@ function buildVendorAnalysisRows(monthlies: MonthlyStats[], items: ResolvedStore
       for (const receipt of day.receipts) {
         const actualVendor = receipt.actual_vendor_name?.trim() || '未指定'
         const receiptItems = receipt.items.filter(item => item.item_name?.trim())
-        const firstMeta = receiptItems[0] ? itemMeta.get(receiptItems[0].item_name) : null
+        const firstMeta = receiptItems[0]
+          ? resolveItemMeta(receiptItems[0].item_name, receipt.vendor_name, receipt.actual_vendor_name)
+          : null
         const taxRow = rowFor(monthly.monthNum, firstMeta?.vendor_group || receipt.vendor_name || '未分類', actualVendor)
         taxRow.taxRefund += receipt.tax_amount || 0
 
         for (const item of receiptItems) {
-          const meta = itemMeta.get(item.item_name)
+          const meta = resolveItemMeta(item.item_name, receipt.vendor_name, receipt.actual_vendor_name)
           const vendorGroup = meta?.vendor_group || receipt.vendor_name || '未分類'
           const row = rowFor(monthly.monthNum, vendorGroup, actualVendor)
           const amount = Number(item.amount) || 0
