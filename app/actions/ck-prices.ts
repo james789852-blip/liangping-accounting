@@ -1,13 +1,14 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { canManageCKPrices } from '@/lib/user-permissions'
 
 async function requireCKPriceManager() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' as const }
   const { data: profile } = await supabase.from('user_profiles').select('*').eq('user_id', user.id).single()
   if (!profile || !canManageCKPrices(profile)) return { error: '權限不足，請先開啟「可管理央廚單價」權限' as const }
@@ -62,7 +63,7 @@ export async function createCKPrice(itemName: string, unit: string, unitPrice: n
 
 export async function updateCKPrice(id: string, newPrice: number, reason: string, unit?: string) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' }
 
   const { data: profile } = await supabase

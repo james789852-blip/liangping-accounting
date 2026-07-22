@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { after } from 'next/server'
@@ -47,7 +48,7 @@ async function canManageStoreIds(profile: any, storeIds: (string | null | undefi
 
 async function requireCanManageItems(storeId?: string | null) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' as const }
   const { data: profile } = await supabase
     .from('user_profiles')

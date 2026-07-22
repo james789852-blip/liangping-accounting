@@ -1,12 +1,13 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getBusinessDate } from '@/lib/business-date'
 
 async function checkHqAuth() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' as const }
   const { data: profile } = await supabase
     .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()

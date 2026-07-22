@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { canManageCKReceipts, canManageStoreReceipts } from '@/lib/user-permissions'
@@ -21,7 +22,7 @@ export interface CategoryWithVendors {
 
 async function requireAuth(storeId: string) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) throw new Error('未登入')
   const { data: profile } = await supabase
     .from('user_profiles')

@@ -1,12 +1,13 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /** 回傳「當前待審核」的店家數與央廚數（給 sidebar badge 用） */
 export async function getPendingReviewCount(): Promise<{ stores: number; ck: number; total: number }> {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { stores: 0, ck: 0, total: 0 }
   const { data: profile } = await supabase
     .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()

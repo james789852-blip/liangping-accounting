@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getVerifiedUser } from '@/lib/authed-user'
 import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
@@ -222,7 +223,7 @@ async function fillTemplate(
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return NextResponse.json({ error: '未登入' }, { status: 401 })
 
   const { searchParams } = new URL(req.url)

@@ -4,6 +4,7 @@
  *   年度：GET /api/export/food-cost-native?storeId=...&year=YYYY&type=year
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildFoodCostNativeWorkbook, buildAnnualFoodCostWorkbook } from '@/lib/food-cost-native-workbook'
@@ -13,7 +14,7 @@ export const revalidate = 0
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return new NextResponse('未登入', { status: 401 })
 
   const { data: profile } = await supabase

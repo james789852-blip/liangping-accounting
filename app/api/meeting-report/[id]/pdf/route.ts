@@ -9,6 +9,7 @@
  *   4) 回傳 PDF blob
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import puppeteer from 'puppeteer'
@@ -18,7 +19,7 @@ export const maxDuration = 60
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return new NextResponse('未登入', { status: 401 })
 
   const { id } = await params

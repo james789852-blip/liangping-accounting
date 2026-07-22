@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -113,7 +114,7 @@ function revalidateClosingDeletePaths() {
 
 export async function saveCashCounts(closingId: string, counts: CashCountsPayload) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' }
 
   // 確認此 closing 屬於該使用者可存取的店家
@@ -139,7 +140,7 @@ export async function saveCashCounts(closingId: string, counts: CashCountsPayloa
 
 export async function verifyClosing(closingId: string) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' }
 
   const { data: profile } = await supabase
@@ -180,7 +181,7 @@ export async function verifyClosing(closingId: string) {
 
 export async function verifyClosingsBatch(closingIds: string[]) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' }
 
   const { data: profile } = await supabase
@@ -223,7 +224,7 @@ export async function verifyClosingsBatch(closingIds: string[]) {
 
 export async function deleteClosingDraft(closingId: string) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' }
 
   // RLS 確保只能讀取自己店的資料；再驗證狀態為草稿
@@ -249,7 +250,7 @@ export async function deleteClosingDraft(closingId: string) {
 
 export async function deleteClosing(closingId: string) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' }
 
   const { data: profile } = await supabase
@@ -277,7 +278,7 @@ export async function deleteClosing(closingId: string) {
 
 export async function disputeClosing(closingId: string, note: string) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' }
 
   const { data: profile } = await supabase
@@ -370,7 +371,7 @@ export async function submitClosing(closingId: string) {
 
 export async function logClosingSubmit(closingId: string) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' }
 
   const { data: profile } = await supabase
@@ -393,7 +394,7 @@ export async function logClosingSubmit(closingId: string) {
 
 export async function logClosingEdit(closingId: string) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' }
 
   const { data: profile } = await supabase

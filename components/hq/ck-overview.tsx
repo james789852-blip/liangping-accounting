@@ -129,8 +129,6 @@ function ReviewActions({ ckStoreId, date, status }: { ckStoreId: string; date: s
         setLocalDecision('verified')
         toast.success('央廚帳目已審核通過')
         router.refresh()
-        // `/hq/accounting` 會保留央廚明細快取，重新載入確保審核後按鈕不會因舊狀態復原。
-        window.setTimeout(() => window.location.reload(), 250)
       }
     })
   }
@@ -154,7 +152,6 @@ function ReviewActions({ ckStoreId, date, status }: { ckStoreId: string; date: s
         setLocalDecision('deleted')
         toast.success('央廚帳目已刪除')
         router.refresh()
-        window.setTimeout(() => window.location.reload(), 250)
       }
     })
   }
@@ -719,7 +716,6 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
         toast.success(decision === 'verified' ? '央廚帳目已審核通過' : `已退回並回報 ${issueEntries.length} 個問題`)
         onClose()
         router.refresh()
-        window.setTimeout(() => window.location.reload(), 250)
       }
     })
   }

@@ -3,6 +3,7 @@
  *   GET /api/export/ck-native?storeId=...&year=YYYY&month=M
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildCKNativeWorkbook, buildAnnualCKWorkbook } from '@/lib/ck-native-workbook'
@@ -12,7 +13,7 @@ export const revalidate = 0
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return new NextResponse('未登入', { status: 401 })
 
   const { data: profile } = await supabase

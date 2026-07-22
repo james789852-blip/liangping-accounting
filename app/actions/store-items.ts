@@ -1,13 +1,14 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { canManageStoreItems } from '@/lib/user-permissions'
 
 async function checkStoreAccess(storeId: string) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入', user: null }
   const { data: profile } = await supabase
     .from('user_profiles').select('*').eq('user_id', user.id).single()

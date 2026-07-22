@@ -1,13 +1,14 @@
 'use server'
 
 import { cookies } from 'next/headers'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 
 export async function setManagerStore(storeId: string, _surface: 'hq' | 'manager' = 'hq') {
   void _surface
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' }
   const { data: profile } = await supabase
     .from('user_profiles')
@@ -57,7 +58,7 @@ async function clearViewingStoreCookies(userId: string) {
 
 export async function resetStoreSelectionForLogin() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return
   const { data: profile } = await supabase
     .from('user_profiles')
@@ -70,6 +71,6 @@ export async function resetStoreSelectionForLogin() {
 
 export async function clearStoreSelectionOnLogout() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (user) await clearViewingStoreCookies(user.id)
 }

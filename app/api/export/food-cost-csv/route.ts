@@ -3,6 +3,7 @@
  *   GET /api/export/food-cost-csv?storeId=...&year=YYYY&month=M
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMonthlyStats } from '@/lib/store-aggregator'
@@ -19,7 +20,7 @@ function csvEscape(v: string | number | null | undefined): string {
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return new NextResponse('未登入', { status: 401 })
 
   const { data: profile } = await supabase

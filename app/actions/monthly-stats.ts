@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMonthLastDay } from '@/lib/business-date'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
@@ -27,7 +28,7 @@ export interface MonthlyStats {
  */
 export async function getMonthlyStats(storeId: string, year: number, monthNum: number) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { error: '未登入' as const }
   if (!storeId || !year || !monthNum) return { error: '缺少參數' as const }
 

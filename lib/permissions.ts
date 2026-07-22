@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getVerifiedUser } from '@/lib/authed-user'
 
 export interface AuthContext {
   userId: string
@@ -15,10 +16,10 @@ export interface AuthContext {
  * 所有寫入類 server action 應該先呼叫這個，再判斷是否有權對特定 store 操作。
  */
 export async function getAuthContext(): Promise<AuthContext | null> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return null
 
+  const supabase = await createClient()
   const { data: profile } = await supabase
     .from('user_profiles')
     .select('role, is_hq, store_ids, name')

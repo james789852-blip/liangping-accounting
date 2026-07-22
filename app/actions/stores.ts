@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { canManageCKSettings, canManageStoreSettings } from '@/lib/user-permissions'
@@ -22,7 +23,7 @@ interface StoreSettings {
 
 async function requireManager() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return { user: null, profile: null, error: '未登入' as string }
   const { data: profile } = await supabase
     .from('user_profiles').select('*').eq('user_id', user.id).single()

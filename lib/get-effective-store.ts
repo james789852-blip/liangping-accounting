@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers'
 import { getCachedAllStores } from '@/lib/cached-queries'
-import { createClient } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/authed-user'
 
 export async function getEffectiveStoreId(profile: {
   user_id?: string
@@ -19,8 +19,7 @@ export async function getEffectiveStoreId(profile: {
   const accountStoreId = profile.user_id
     ? cookieStore.get(`last_viewing_store_${profile.user_id}`)?.value
     : undefined
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAuthedUser()
   const savedStoreId = user?.user_metadata?.last_viewing_store_id as string | undefined
   const isBoss = profile.role === '老闆'
   const belongsToHQ = isBoss || profile.is_hq === true

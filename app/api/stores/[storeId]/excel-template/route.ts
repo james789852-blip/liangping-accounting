@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getVerifiedUser } from '@/lib/authed-user'
 import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
@@ -219,7 +220,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ sto
 export async function POST(req: NextRequest, { params }: { params: Promise<{ storeId: string }> }) {
   const { storeId } = await params
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return NextResponse.json({ error: '未登入' }, { status: 401 })
 
   const formData = await req.formData()
@@ -409,7 +410,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ storeId: string }> }) {
   const { storeId } = await params
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return NextResponse.json({ error: '未登入' }, { status: 401 })
 
   const admin = createAdminClient()

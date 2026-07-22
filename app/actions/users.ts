@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { getVerifiedUser } from '@/lib/authed-user'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { canManageUsers } from '@/lib/user-permissions'
@@ -16,7 +17,7 @@ function getAdminClient() {
 
 async function getCallerProfile() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getVerifiedUser()
   if (!user) return null
   const { data } = await supabase
     .from('user_profiles').select('*').eq('user_id', user.id).single()
@@ -257,7 +258,7 @@ export async function deleteUser(userId: string) {
 
 export async function updateUserHQ(userId: string, isHQ: boolean) {
   const supabase = await createClient()
-  const { data: { user: caller } } = await supabase.auth.getUser()
+  const caller = await getVerifiedUser()
   if (!caller) return { error: '未登入' }
 
   const { data: callerProfile } = await supabase
