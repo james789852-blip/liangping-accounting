@@ -51,7 +51,7 @@ function emptyAccountingDay(date: string): DailyStats {
     revenue: 0, totalRevenue: 0,
     food: 0, pack: 0, misc: 0, totalCost: 0,
     invoiceTotal: 0, receiptTotal: 0, estimateTotal: 0, taxRefund: 0,
-    items: {}, notes: {}, vendorGroupBreakdown: {}, receipts: [],
+    items: {}, itemAmountsByVendorGroup: {}, notes: {}, vendorGroupBreakdown: {}, receipts: [],
     closingStatus: 'none', isHoliday: false, holidayNote: null,
   }
 }
