@@ -404,6 +404,7 @@ export async function getMonthlyStats(storeId: string, year: number, monthNum: n
   const lastDay = getMonthLastDay(year, monthNum)
   const { store, items, days } = await getRangeStats(storeId, firstDay, lastDay)
   const itemMeta = new Map(items.map(i => [i.name, i] as const))
+  const scopedKey = (vendorGroup: string, itemName: string) => `${vendorGroup}|${itemName}`
 
   // 月合計
   const totals = newEmptyDay('')
