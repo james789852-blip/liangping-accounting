@@ -1293,6 +1293,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                         : []
                     const useVendorAsPhotoItem = shouldUseVendorAsItem(activeCategoryName, form.vendor_group)
                     const requiresPhotoItem = shouldRequireExplicitItem(activeCategoryName, form.vendor_group)
+                    // 「雞肉商」仍需要再選廠商名稱；其他廠商群組（菜商、嘉楠等）直接選實際品項。
+                    const usesVendorNameSelector = activeCategoryName === '廠商' && form.vendor_group === '雞肉商'
                     const formItems = getPhotoExpenseItems(form)
                     const taxMapping = shouldShowPhotoTaxAddon(activeCategoryName, form.doc_type)
                       ? mappingItems.find(mapping => mapping.is_tax_addon && mapping.vendor_group === form.vendor_group)
@@ -1518,7 +1520,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                         <option value="">{!activeCategoryName
                                           ? '（先選類別）'
                                           : form.vendor_group
-                                            ? activeCategoryName === '廠商'
+                                            ? usesVendorNameSelector
                                               ? `— 選擇廠商名稱 ${lineIndex + 1} —`
                                               : `— 選擇品項 ${lineIndex + 1} —`
                                             : '（先選廠商）'}</option>

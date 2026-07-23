@@ -229,6 +229,18 @@ input[type="number"] {
   box-sizing: border-box;
   text-overflow: ellipsis;
 }
+.receipt-card-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+}
+.receipt-card-layout.is-collapsed {
+  grid-template-columns: 80px minmax(0, 1fr);
+}
+.receipt-card-layout > * {
+  min-width: 0;
+}
 .receipt-item-row {
   display: flex;
   gap: 6px;
@@ -252,6 +264,13 @@ input[type="number"] {
   display: none;
 }
 @media (max-width: 768px) {
+  .receipt-card-layout.is-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .receipt-card-layout.is-collapsed > .receipt-card-thumbnail {
+    width: 100% !important;
+    height: 160px !important;
+  }
   .receipt-form-fields {
     grid-template-columns: 1fr;
   }

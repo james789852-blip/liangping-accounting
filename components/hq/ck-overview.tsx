@@ -428,6 +428,11 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                 </span>
               ))}
             </div>
+            {(d.submittedByName || d.submittedBy) && (
+              <p className="text-[11px] mt-1" style={{ color: '#71717a' }}>
+                帳目送出者：{d.submittedByName ?? '未記錄'}
+              </p>
+            )}
           </div>
         </div>
 

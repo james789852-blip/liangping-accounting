@@ -3142,14 +3142,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         )
                       })()}
 
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: isExpanded ? '1fr' : '80px 1fr',
-                        gap: '14px',
-                      }}>
+                      <div className={`receipt-card-layout ${isExpanded ? 'is-expanded' : 'is-collapsed'}`}>
                         {/* 縮圖（展開後隱藏，讓表單佔滿寬度） */}
                         {!isExpanded && (
                           <button type="button" onClick={() => photoSrc && toggleExpand()}
+                            className="receipt-card-thumbnail"
                             style={{
                               width: '80px', height: '100px', borderRadius: '10px', overflow: 'hidden',
                               background: 'linear-gradient(135deg,#f3f4f6,#e5e7eb)',
