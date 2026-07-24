@@ -10,6 +10,7 @@ import { saveCKDailyRecord, confirmCKReimbursementHandoff } from '@/app/actions/
 import CKHelp from './ck-help'
 import { uploadToStorage } from '@/app/actions/upload'
 import { compressImage } from '@/lib/compress-image'
+import { findTaxAddonMapping as findTaxAddonByContext } from '@/lib/tax-addon'
 import SafePhotoImage from '@/components/shared/safe-photo-image'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -491,7 +492,16 @@ function CKDoneCard({
   )
 }
 
-interface MappingItem { item_name: string; vendor_group: string | null; item_category: string; excel_column: string; sort_order: number | null; is_tax_addon?: boolean }
+interface MappingItem {
+  item_name: string
+  vendor_group: string | null
+  item_category: string
+  excel_column: string
+  sort_order: number | null
+  is_tax_addon?: boolean
+  tax_scope?: 'category' | 'item' | null
+  tax_target_item?: string | null
+}
 interface ReceiptCat { id: string; name: string; vendors: { id: string; name: string }[] }
 interface Props {
   ckStoreId: string
@@ -702,7 +712,11 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
           } as Expense
         }).filter(Boolean) as Expense[]
         const taxMapping = shouldShowPhotoTaxAddon(categoryName, form.doc_type)
-          ? mappingItems.find(mapping => mapping.is_tax_addon && mapping.vendor_group === form.vendor_group)
+          ? findTaxAddonByContext(
+              mappingItems.map(mapping => ({ ...mapping, name: mapping.item_name })),
+              [form.vendor_group],
+              regularExpenses.map(expense => expense.item_name),
+            )
           : undefined
         const taxAmount = form.has_tax ? Number(form.tax_amount) || 0 : 0
         if (taxMapping && taxAmount > 0) {
@@ -859,7 +873,11 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       return
     }
     const taxMapping = shouldShowPhotoTaxAddon(categoryName, form.doc_type)
-      ? mappingItems.find(mapping => mapping.is_tax_addon && mapping.vendor_group === form.vendor_group)
+      ? findTaxAddonByContext(
+          mappingItems.map(mapping => ({ ...mapping, name: mapping.item_name })),
+          [form.vendor_group],
+          nextExpenses.map(expense => expense.item_name),
+        )
       : undefined
     const taxAmount = form.has_tax ? Number(form.tax_amount) || 0 : 0
     if (form.has_tax && taxMapping && taxAmount <= 0) {
@@ -1297,7 +1315,11 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                     const usesVendorNameSelector = activeCategoryName === '廠商' && form.vendor_group === '雞肉商'
                     const formItems = getPhotoExpenseItems(form)
                     const taxMapping = shouldShowPhotoTaxAddon(activeCategoryName, form.doc_type)
-                      ? mappingItems.find(mapping => mapping.is_tax_addon && mapping.vendor_group === form.vendor_group)
+                      ? findTaxAddonByContext(
+                          mappingItems.map(mapping => ({ ...mapping, name: mapping.item_name })),
+                          [form.vendor_group],
+                          formItems.map(item => item.item_name),
+                        )
                       : undefined
                     const taxAmount = form.has_tax && taxMapping ? Number(form.tax_amount) || 0 : 0
                     const saved = !!form.savedExpenseId || formItems.some(item => !!item.savedExpenseId)

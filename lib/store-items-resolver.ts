@@ -29,6 +29,9 @@ export interface ResolvedStoreItem {
   is_refund?: boolean
   /** 店長輸入稅外加時由系統自動寫入的隱藏稅金品項 */
   is_tax_addon?: boolean
+  /** 稅外加套用範圍：整個廠商分類或指定原始品項 */
+  tax_scope?: 'category' | 'item'
+  tax_target_item?: string | null
 }
 
 /** 撈出某店家「實際啟用的品項列表」(含系統 + 自訂) */
@@ -130,5 +133,7 @@ export function toMappingColumns(items: ResolvedStoreItem[]) {
     // excel_column 在新系統由匯出邏輯動態決定，這裡先填 name 作為過渡
     excel_column: i.name,
     is_tax_addon: !!i.is_tax_addon,
+    tax_scope: i.tax_scope ?? 'category',
+    tax_target_item: i.tax_target_item ?? null,
   }))
 }

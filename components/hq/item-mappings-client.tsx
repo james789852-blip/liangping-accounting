@@ -20,7 +20,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 
 interface Mapping {
-  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_tax_addon?: boolean; vg_sort_order?: number
+  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; vg_sort_order?: number
 }
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
@@ -907,6 +907,7 @@ export default function ItemMappingsClient({
                         })}
                         storesUsingIds={storesUsingIds}
                         allStores={stores}
+                        allMappings={mappings}
                         editId={editId}
                         editCol={editCol}
                         editCat={editCat}
@@ -970,12 +971,13 @@ function VgDragHandle() {
 
 /** 可拖曳的品項 row（同 vg 內拖曳排序） */
 function SortableItemRow({
-  m, vg, isLast, isStorePage, activeStoreId, sortMode, selectMode, isSelected, onToggleSelect, storesUsingIds, allStores, editId, editCol, editCat, editVendorGroup,
+  m, vg, isLast, isStorePage, activeStoreId, sortMode, selectMode, isSelected, onToggleSelect, storesUsingIds, allStores, allMappings, editId, editCol, editCat, editVendorGroup,
   setEditCol, setEditCat, setEditVendorGroup, startEdit, handleUpdate, setEditId, handleDelete, displayName,
 }: {
   m: Mapping; vg: string; isLast: boolean; isStorePage: boolean; activeStoreId: string; sortMode: boolean
   selectMode: boolean; isSelected: boolean; onToggleSelect: () => void
   storesUsingIds: string[]; allStores: { id: string; name: string }[]
+  allMappings: Mapping[]
   editId: string | null; editCol: string; editCat: string; editVendorGroup: string
   setEditCol: (v: string) => void; setEditCat: (v: string) => void; setEditVendorGroup: (v: string) => void
   startEdit: (m: Mapping) => void; handleUpdate: (id: string) => void; setEditId: (v: string | null) => void
@@ -1056,7 +1058,15 @@ function SortableItemRow({
           <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
             style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
           <RefundToggle mappingId={m.id} isRefund={!!m.is_refund} />
-          <TaxAddonToggle mappingId={m.id} enabled={!!m.is_tax_addon} />
+          <TaxAddonToggle
+            mappingId={m.id}
+            enabled={!!m.is_tax_addon}
+            scope={m.tax_scope ?? 'category'}
+            targetItem={m.tax_target_item ?? null}
+            itemOptions={allMappings
+              .filter(item => !item.is_tax_addon && item.vendor_group === m.vendor_group && (item.store_id ?? null) === (m.store_id ?? null))
+              .map(item => item.item_name)}
+          />
           <span className="hidden md:inline text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
           <button onClick={() => startEdit(m)} className="min-h-10 min-w-10 flex items-center justify-center rounded-lg" style={{ color: '#d4d4d8' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#F59E0B')}
@@ -1251,11 +1261,29 @@ function RefundToggle({ mappingId, isRefund }: { mappingId: string; isRefund: bo
 }
 
 /** 標記為稅外加自動品項；啟用後不再出現在店長端品項下拉。 */
-function TaxAddonToggle({ mappingId, enabled }: { mappingId: string; enabled: boolean }) {
+function TaxAddonToggle({
+  mappingId,
+  enabled,
+  scope: initialScope,
+  targetItem: initialTargetItem,
+  itemOptions,
+}: {
+  mappingId: string
+  enabled: boolean
+  scope: 'category' | 'item'
+  targetItem: string | null
+  itemOptions: string[]
+}) {
   const [checked, setChecked] = useState(enabled)
+  const [scope, setScope] = useState<'category' | 'item'>(initialScope)
+  const [targetItem, setTargetItem] = useState(initialTargetItem ?? '')
   const [pending, startTransition] = useTransition()
   const router = useRouter()
   useEffect(() => setChecked(enabled), [enabled])
+  useEffect(() => {
+    setScope(initialScope)
+    setTargetItem(initialTargetItem ?? '')
+  }, [initialScope, initialTargetItem])
 
   function toggle() {
     const next = !checked
@@ -1267,24 +1295,86 @@ function TaxAddonToggle({ mappingId, enabled }: { mappingId: string; enabled: bo
         setChecked(!next)
         toast.error(result.error)
       } else {
-        toast.success(next ? '已設為稅外加品項，店長端將自動隱藏' : '已取消稅外加品項')
+        toast.success(next
+          ? '已設為稅外加品項：名稱含「-稅金」時依原品項套用，否則依整個分類套用'
+          : '已取消稅外加品項')
         router.refresh()
       }
     })
   }
 
+  function updateScope(nextScope: 'category' | 'item') {
+    const nextTarget = nextScope === 'item' ? (targetItem || itemOptions[0] || '') : ''
+    if (nextScope === 'item' && !nextTarget) {
+      toast.error('此分類沒有可指定的原始品項')
+      return
+    }
+    setScope(nextScope)
+    setTargetItem(nextTarget)
+    startTransition(async () => {
+      const { setItemTaxAddonScope } = await import('@/app/actions/item-mappings')
+      const result = await setItemTaxAddonScope(mappingId, nextScope, nextTarget || null)
+      if (result.error) {
+        toast.error(result.error)
+        return
+      }
+      toast.success(nextScope === 'item' ? `稅金只套用「${nextTarget}」` : '稅金套用整個分類')
+      router.refresh()
+    })
+  }
+
+  function updateTarget(nextTarget: string) {
+    if (!nextTarget) return
+    setTargetItem(nextTarget)
+    startTransition(async () => {
+      const { setItemTaxAddonScope } = await import('@/app/actions/item-mappings')
+      const result = await setItemTaxAddonScope(mappingId, 'item', nextTarget)
+      if (result.error) {
+        toast.error(result.error)
+        return
+      }
+      toast.success(`稅金只套用「${nextTarget}」`)
+      router.refresh()
+    })
+  }
+
   return (
-    <button type="button" onClick={toggle} disabled={pending}
-      className="text-xs px-2 py-1 rounded-full shrink-0 font-semibold"
-      style={{
-        background: checked ? '#fff7ed' : 'white',
-        color: checked ? '#c2410c' : '#a1a1aa',
-        border: `1.5px solid ${checked ? '#fb923c' : '#e4e4e7'}`,
-        opacity: pending ? 0.6 : 1,
-      }}
-      title={checked ? '此品項由店長端稅外加欄位自動寫入' : '設為此廠商分類的稅外加品項'}>
-      {checked ? '✓ 稅外加' : '稅外加'}
-    </button>
+    <span className="inline-flex flex-wrap items-center gap-1.5 shrink-0">
+      <button type="button" onClick={toggle} disabled={pending}
+        className="text-xs px-2 py-1 rounded-full shrink-0 font-semibold"
+        style={{
+          background: checked ? '#fff7ed' : 'white',
+          color: checked ? '#c2410c' : '#a1a1aa',
+          border: `1.5px solid ${checked ? '#fb923c' : '#e4e4e7'}`,
+          opacity: pending ? 0.6 : 1,
+        }}
+        title={checked ? '此品項由店長端稅外加欄位自動寫入' : '啟用後可選擇套用整個分類或指定品項'}>
+        {checked ? '✓ 稅外加' : '稅外加'}
+      </button>
+      {checked && (
+        <select
+          value={scope}
+          onChange={e => updateScope(e.target.value as 'category' | 'item')}
+          disabled={pending}
+          className="text-[11px] rounded-md px-1.5 py-1"
+          style={{ border: '1px solid #fed7aa', color: '#9a3412', background: '#fff7ed', maxWidth: 112 }}
+          title="選擇稅金套用範圍">
+          <option value="category">整個分類</option>
+          <option value="item">指定品項</option>
+        </select>
+      )}
+      {checked && scope === 'item' && (
+        <select
+          value={targetItem}
+          onChange={e => updateTarget(e.target.value)}
+          disabled={pending || itemOptions.length === 0}
+          className="text-[11px] rounded-md px-1.5 py-1"
+          style={{ border: '1px solid #fed7aa', color: '#9a3412', background: '#fff7ed', maxWidth: 120 }}
+          title="指定稅金對應的原始品項">
+          {itemOptions.map(item => <option key={item} value={item}>{item}</option>)}
+        </select>
+      )}
+    </span>
   )
 }
 

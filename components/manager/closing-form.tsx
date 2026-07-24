@@ -13,6 +13,7 @@ import { createSignedUploadUrl, uploadToStorage } from '@/app/actions/upload'
 import { compressImage } from '@/lib/compress-image'
 import { normalizeItemAmount } from '@/lib/negative-items'
 import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
+import { findTaxAddonMapping as findTaxAddonByContext, taxAddonBaseName } from '@/lib/tax-addon'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
 import SharedSafePhotoImage from '@/components/shared/safe-photo-image'
 import { storePhotoPath } from '@/lib/storage-paths'
@@ -567,15 +568,29 @@ function findTaxAddonMapping(
   items: ReceiptFormItem[],
 ) {
   const groups = new Set<string>([vendorName.trim(), categoryName.trim()].filter(Boolean))
+  const selectedItemNames = new Set<string>()
+  // 日常用品等「廠商本身就是品項」的模式，品項會直接放在 vendorName，
+  // 沒有額外的 items 列；這裡也要把它視為已選品項，才能套用指定品項稅金。
+  const directItemMapping = mappingColumns.find(column =>
+    !column.is_tax_addon && column.name.trim() === vendorName.trim(),
+  )
+  if (directItemMapping) {
+    selectedItemNames.add(directItemMapping.name.trim())
+    if (directItemMapping.vendor_group) groups.add(directItemMapping.vendor_group)
+  }
   for (const item of items) {
     if (item.vendor_group_hint) groups.add(item.vendor_group_hint)
     const mapping = mappingColumns.find(column =>
       !column.is_tax_addon && column.name === item.item_name
       && (!item.vendor_group_hint || column.vendor_group === item.vendor_group_hint),
     )
-    if (mapping?.vendor_group) groups.add(mapping.vendor_group)
+    if (mapping) {
+      selectedItemNames.add(mapping.name.trim())
+      if (mapping.vendor_group) groups.add(mapping.vendor_group)
+    }
   }
-  return mappingColumns.find(column => column.is_tax_addon && !!column.vendor_group && groups.has(column.vendor_group))
+
+  return findTaxAddonByContext(mappingColumns, groups, selectedItemNames)
 }
 
 function resetReceiptItemsForContext(
@@ -835,7 +850,15 @@ function dropdownGroupRank(name: string): number {
   return 2 // 日用品/維護廠商
 }
 
-type MappingColumn = { name: string; category: string; vendor_group?: string; excel_column?: string; is_tax_addon?: boolean }
+type MappingColumn = {
+  name: string
+  category: string
+  vendor_group?: string
+  excel_column?: string
+  is_tax_addon?: boolean
+  tax_scope?: 'category' | 'item' | null
+  tax_target_item?: string | null
+}
 
 function directReceiptOptions(categoryName: string, categories: CategoryWithVendors[], mappingColumns: MappingColumn[]) {
   if (categoryName === '其他') {

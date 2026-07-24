@@ -591,7 +591,12 @@ export async function setItemRefundFlag(id: string, isRefund: boolean) {
   return { success: true as const }
 }
 
-/** 將品項設為該廠商分類唯一的「稅外加」自動入帳品項。 */
+/**
+ * 將品項設為稅外加自動入帳品項。
+ *
+ * 同一廠商分類可以同時存在「水-稅金」（指定品項）與「免洗-稅金」（整個分類）;
+ * 店長端會先比對收據已選的原始品項，找不到指定品項時才套用分類稅金。
+ */
 export async function setItemTaxAddonFlag(id: string, enabled: boolean) {
   const admin = createAdminClient()
   const { data: mapping } = await admin.from('item_column_mappings')
@@ -601,14 +606,43 @@ export async function setItemTaxAddonFlag(id: string, enabled: boolean) {
   if (auth.error) return { error: auth.error }
   if (!mapping.store_id || !mapping.vendor_group) return { error: '稅外加品項必須屬於指定店家與廠商分類' }
 
-  if (enabled) {
-    const { error: clearError } = await admin.from('item_column_mappings')
-      .update({ is_tax_addon: false, updated_at: new Date().toISOString() })
-      .eq('store_id', mapping.store_id).eq('vendor_group', mapping.vendor_group)
-    if (clearError) return { error: clearError.message }
-  }
   const { error } = await admin.from('item_column_mappings')
     .update({ is_tax_addon: enabled, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) return { error: error.message }
+  revalidate()
+  return { success: true as const }
+}
+
+/** 設定稅外加套用範圍：整個分類，或指定單一原始品項。 */
+export async function setItemTaxAddonScope(
+  id: string,
+  scope: 'category' | 'item',
+  targetItem?: string | null,
+) {
+  const admin = createAdminClient()
+  const { data: mapping } = await admin.from('item_column_mappings')
+    .select('id, store_id, vendor_group, is_tax_addon').eq('id', id).maybeSingle()
+  if (!mapping) return { error: '找不到品項' }
+  const auth = await requireCanManageItems(mapping.store_id ?? null)
+  if (auth.error) return { error: auth.error }
+  if (!mapping.is_tax_addon) return { error: '請先啟用稅外加' }
+  const target = targetItem?.trim() || null
+  if (scope === 'item' && !target) return { error: '單一品項模式需要指定原始品項' }
+  if (scope === 'item') {
+    const { data: targetMapping } = await admin.from('item_column_mappings')
+      .select('id')
+      .eq('store_id', mapping.store_id)
+      .eq('vendor_group', mapping.vendor_group)
+      .eq('item_name', target)
+      .eq('is_tax_addon', false)
+      .limit(1)
+      .maybeSingle()
+    if (!targetMapping) return { error: '指定品項必須是同一分類下的原始品項' }
+  }
+
+  const { error } = await admin.from('item_column_mappings')
+    .update({ tax_scope: scope, tax_target_item: scope === 'item' ? target : null, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) return { error: error.message }
   revalidate()

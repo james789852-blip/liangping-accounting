@@ -15,6 +15,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getMonthLastDay } from '@/lib/business-date'
 import { type ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { compareResolvedItemsByMappingOrder, getStoreItemsFromMappings } from '@/lib/mapping-based-items'
+import { taxAddonBaseName } from '@/lib/tax-addon'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -196,11 +197,43 @@ export async function getRangeStats(
       dd.itemAmountsByVendorGroup[key] = (dd.itemAmountsByVendorGroup[key] ?? 0) + amount
     }
   }
-  const resolveReceiptItem = (itemName: string, vendorName?: string | null, actualVendorName?: string | null) => {
+  const resolveReceiptItem = (
+    itemName: string,
+    vendorName?: string | null,
+    actualVendorName?: string | null,
+    relatedItems?: any[],
+  ) => {
     const candidates = itemCandidates.get(itemName) ?? []
     if (candidates.length <= 1) return candidates[0]
     const vendorText = `${vendorName ?? ''} ${actualVendorName ?? ''}`
-    return candidates.find(candidate => candidate.vendor_group && vendorText.includes(candidate.vendor_group)) ?? candidates[0]
+    const byVendor = candidates.find(candidate => candidate.vendor_group && vendorText.includes(candidate.vendor_group))
+    if (byVendor) return byVendor
+
+    // 稅金品項可能同名但分屬不同分類；指定品項稅金要跟著它的原始品項走，
+    // 不能因 vendor_name 是「水」而被 candidates[0] 帶到別的分類。
+    const taxCandidate = candidates.find(candidate => candidate.is_tax_addon)
+    if (taxCandidate) {
+      const targetName = taxCandidate.tax_target_item?.trim() || taxAddonBaseName(itemName)
+      const targetCandidates = itemCandidates.get(targetName) ?? []
+      const target = targetCandidates.find(candidate => candidate.vendor_group && vendorText.includes(candidate.vendor_group))
+        ?? targetCandidates[0]
+      if (target?.vendor_group) {
+        const sameGroup = candidates.find(candidate => candidate.vendor_group === target.vendor_group)
+        if (sameGroup) return sameGroup
+      }
+    }
+
+    // 分類稅金沒有指定原始品項時，使用本張收據其他品項推導分類。
+    for (const related of relatedItems ?? []) {
+      const relatedCandidates = itemCandidates.get(String(related.item_name ?? '')) ?? []
+      const relatedMatch = relatedCandidates.find(candidate => candidate.vendor_group && vendorText.includes(candidate.vendor_group))
+        ?? relatedCandidates[0]
+      if (relatedMatch?.vendor_group) {
+        const sameGroup = candidates.find(candidate => candidate.vendor_group === relatedMatch.vendor_group)
+        if (sameGroup) return sameGroup
+      }
+    }
+    return candidates[0]
   }
 
   // 建 date map，同日多筆 closings 取 status 優先高
@@ -251,6 +284,7 @@ export async function getRangeStats(
     const dd = byDate[r.business_date] ?? (byDate[r.business_date] = newEmptyDay(r.business_date))
     const noteText = (r.notes as string | null | undefined)?.trim() ?? ''
     const notedItemNames = new Set<string>()
+    const receiptItems = (r.receipt_items ?? []) as any[]
     dd.receipts.push({
       vendor_name: r.vendor_name ?? '',
       actual_vendor_name: r.actual_vendor_name ?? null,
@@ -260,10 +294,10 @@ export async function getRangeStats(
       receipt_type: r.receipt_type ?? null,
       items: (r.receipt_items ?? []).map((it: any) => ({ item_name: it.item_name, amount: it.amount ?? 0 })),
     })
-    for (const it of (r.receipt_items ?? []) as any[]) {
+    for (const it of receiptItems) {
       if (!it.amount) continue
       const itemKey = it.item_name
-      const receiptMeta = resolveReceiptItem(itemKey, r.vendor_name, r.actual_vendor_name)
+      const receiptMeta = resolveReceiptItem(itemKey, r.vendor_name, r.actual_vendor_name, receiptItems)
       addItemAmount(dd, itemKey, it.amount, receiptMeta?.vendor_group)
       if (noteText && !notedItemNames.has(itemKey)) {
         dd.notes[itemKey] = dd.notes[itemKey]
@@ -273,7 +307,6 @@ export async function getRangeStats(
       }
     }
 
-    const receiptItems = (r.receipt_items ?? []) as any[]
     const taxAmount = Number(r.tax_amount) || 0
     // 稅外加會另存一筆「X-稅金」品項；這筆已包含在 item sum 中，
     // 不能再拿含稅品項總和去和未稅 total 比較，否則會從第一個品項重複扣稅。
@@ -288,7 +321,7 @@ export async function getRangeStats(
     if (remainder !== 0 && nonTaxItems.length > 0) {
       const target = nonTaxItems.find(item => (item.item_name ?? '').trim())
       if (target?.item_name) {
-        const targetMeta = resolveReceiptItem(target.item_name, r.vendor_name, r.actual_vendor_name)
+        const targetMeta = resolveReceiptItem(target.item_name, r.vendor_name, r.actual_vendor_name, receiptItems)
         addItemAmount(dd, target.item_name, remainder, targetMeta?.vendor_group)
       }
     }
