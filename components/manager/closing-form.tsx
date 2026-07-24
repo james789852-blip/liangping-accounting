@@ -159,12 +159,11 @@ function getVerifySignature(item: VerifyItem): string {
   })
 }
 
-function isCKReceipt(receipt: TodayReceipt, ckPrices: CKPrice[]): boolean {
-  if (!receipt.receipt_items || receipt.receipt_items.length === 0) return false
-  const ckNames = ckPrices.map(p => p.item_name)
-  return receipt.receipt_items.some(item =>
-    ckNames.some(ck => item.item_name === ck || item.item_name.includes(ck) || ck.includes(item.item_name))
-  )
+function isCKReceipt(receipt: TodayReceipt, _ckPrices: CKPrice[]): boolean {
+  // 一般收據與央廚配送是兩個不同流程，不能用品項名稱判斷：
+  // 「滷肉／酒精／水」等同名品項可能同時存在於不同廠商，
+  // 否則菜商收據會被誤算成央廚配送。保留明確標記的舊資料相容性。
+  return receipt.vendor_name.trim() === '央廚配送' || receipt.receipt_type === 'ck'
 }
 
 interface PrevDayReserve {
@@ -1785,10 +1784,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       const typed = receipts as TodayReceipt[]
       setLocalReceipts(typed)
       setExpenses(receiptsToExpenses(typed, ckPrices))
-      const ckReceipts = typed.filter(r => isCKReceipt(r, ckPrices))
-      const ckTotal = ckReceipts.reduce((s, r) => s + r.total_amount, 0)
-      set('ck_total', ckTotal)
-      const ckCount = ckReceipts.length
+      // 央廚配送金額由央廚配送步驟的品項數量計算；同步一般收據時不可覆蓋它。
+      const ckCount = typed.filter(r => isCKReceipt(r, ckPrices)).length
       const nonCKCount = typed.length - ckCount
       const parts: string[] = []
       if (nonCKCount > 0) parts.push(`${nonCKCount} 筆現金支出`)
@@ -1857,8 +1854,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     )
     setLocalReceipts(updatedReceipts)
     setExpenses(receiptsToExpenses(updatedReceipts, ckPrices))
-    const ckTotal = updatedReceipts.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
-    set('ck_total', ckTotal)
 
     await supabase.from('receipts').update({
       vendor_name: editVendor,
@@ -2178,8 +2173,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
     const updated = [...localReceipts, newR]
     setLocalReceipts(updated)
-    const ckTotal = updated.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
-    set('ck_total', ckTotal)
     setExpenses(receiptsToExpenses(updated, ckPrices))
     if (form.previewUrl) URL.revokeObjectURL(form.previewUrl)
     setReceiptForms(prev => prev.filter(f => f.id !== form.id))
@@ -2192,8 +2185,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const updated = localReceipts.filter(r => r.id !== receiptId)
     setLocalReceipts(updated)
     setExpenses(receiptsToExpenses(updated, ckPrices))
-    const ckTotal = updated.filter(r => isCKReceipt(r, ckPrices)).reduce((s, r) => s + r.total_amount, 0)
-    set('ck_total', ckTotal)
     toast.success('已刪除')
   }
 
@@ -3615,7 +3606,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {/* 已儲存收據清單 */}
             {localReceipts.length > 0 && (
               <SectionCard icon={<Camera className="h-4 w-4" />}
-                title={`今日收據（${localReceipts.filter(r => !isCKReceipt(r, ckPrices)).length} 筆支出${localReceipts.some(r => isCKReceipt(r, ckPrices)) ? ' + 央廚' : ''}）`}
+                title={`今日收據（${localReceipts.filter(r => !isCKReceipt(r, ckPrices)).length} 筆支出${(data.ck_total > 0 || !!ckPhotoUrl || !!ckPhotoPreview || localReceipts.some(r => isCKReceipt(r, ckPrices))) ? ' + 央廚' : ''}）`}
                 iconColor="#F59E0B">
                 <div className="space-y-2">
                   {localReceipts.map(r => {
