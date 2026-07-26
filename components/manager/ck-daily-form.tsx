@@ -845,6 +845,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   function savePhotoExpense(form: PhotoExpenseForm) {
     const categoryName = resolveReceiptCategoryName(form, receiptCategories)
     const fallbackItemName = form.vendor_group.trim()
+    const buyOrRepairItemName = isBuyOrRepairCategory(categoryName) ? form.doc_type.trim() : ''
     const useVendorItem = shouldUseVendorAsItem(categoryName, form.vendor_group)
     const requiresItem = shouldRequireExplicitItem(categoryName, form.vendor_group)
     const lines = getPhotoExpenseItems(form)
@@ -853,7 +854,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         ? fallbackItemName
         : requiresItem
           ? line.item_name.trim()
-          : line.item_name.trim() || fallbackItemName
+          : line.item_name.trim() || buyOrRepairItemName || fallbackItemName
       if (!itemName || !line.amount) return null
       const expenseId = line.savedExpenseId || line.id || `${form.id}-${index}`
       return {
@@ -1416,6 +1417,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                     item_name: '',
                                     amount: '',
                                     items: [blankPhotoExpenseItem()],
+                                    doc_type: isBuyOrRepairCategory(categoryName) ? '' : form.doc_type,
                                     has_tax: false,
                                     tax_amount: '',
                                   })
@@ -1427,7 +1429,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                               </select>
                               {usesDirectPhotoItem ? (
                                 <select className={INPUT} style={{ ...INPUT_STYLE, minWidth: 0, fontSize: 16 }}
-                                  value={isBuyOrRepair ? form.doc_type : (formItems[0]?.item_name ?? '')}
+                                  value={formItems[0]?.item_name ?? ''}
                                   disabled={!activeCategoryName}
                                   aria-label={isBuyOrRepair ? '選擇單據類型' : '選擇品項'}
                                   onChange={e => {
