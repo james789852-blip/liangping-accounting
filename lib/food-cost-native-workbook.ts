@@ -88,12 +88,17 @@ function scopedItemValueForExport(
     const exactKey = `${vendorGroup}|${key}`
     if (exactKey in scoped) return { value: scoped[exactKey] ?? 0, sourceKey: key }
 
-    // 若同名品項已有央廚配送的明細，但沒有一般廠商的分類明細，
-    // 只把合併總額扣掉央廚部分，避免 CK 金額出現在其他廠商欄位。
-    const ckKey = `央廚配送|${key}`
-    if (vendorGroup !== '央廚配送' && ckKey in scoped) {
-      const merged = itemValueForExport(dd.items, key).value
-      return { value: Math.max(0, merged - (scoped[ckKey] ?? 0)), sourceKey: key }
+    // 只要這個品項已有任何廠商分類明細，就不能再 fallback 到品名總額。
+    // 否則「菜商|油豆腐」90 會同時被寫入「豆腐商|油豆腐」欄位。
+    // 舊名稱可能有空白、括號或連字號差異，因此分類明細也使用相容鍵比對。
+    const hasScopedItem = Object.keys(scoped).some(scopedKey => {
+      const separator = scopedKey.indexOf('|')
+      if (separator < 0) return false
+      const scopedItemName = scopedKey.slice(separator + 1)
+      return normalizeItemLookupKey(scopedItemName) === normalizeItemLookupKey(key)
+    })
+    if (hasScopedItem) {
+      return { value: 0, sourceKey: key }
     }
   }
   return itemValueForExport(dd.items, key)
