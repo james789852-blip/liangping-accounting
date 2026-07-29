@@ -42,7 +42,12 @@ const CAT_COLORS: Record<string, { bg: string; text: string }> = {
   '雜項': { bg: '#f4f4f5', text: '#52525b' },
 }
 
-interface MemberStore { store_id: string; store_name: string; amount: number; manager_amount: number | null }
+interface MemberStore {
+  store_id: string
+  store_name: string
+  store_amount: number | null
+  ck_amount: number | null
+}
 interface ExternalOrder { name: string; amount: number }
 interface Expense { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }
 
@@ -395,7 +400,11 @@ function PayButton({
 
 
 function CKCard({ d, date }: { d: CKStoreData; date: string }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(() => d.memberStores.some(
+    store => store.store_amount != null
+      && store.ck_amount != null
+      && store.store_amount !== store.ck_amount,
+  ))
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [reviewDecision, setReviewDecision] = useState<'verified' | 'disputed' | null>(null)
@@ -405,6 +414,11 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
   const externalRevenue = deductibleExternalRevenue(d)
   const reimbursementAmount = Math.max(0, d.expenseTotal - externalRevenue)
   const expenseGroups = groupExpensesByVendor(d.expenses)
+  const reconciliationMismatches = d.memberStores.filter(
+    store => store.store_amount != null
+      && store.ck_amount != null
+      && store.store_amount !== store.ck_amount,
+  )
 
   return (
     <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
@@ -427,6 +441,13 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                   {badge.label}
                 </span>
               ))}
+              {reconciliationMismatches.length > 0 && (
+                <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1"
+                  style={{ background: '#fee2e2', color: '#b91c1c' }}>
+                  <AlertTriangle className="h-2.5 w-2.5" />
+                  配送金額異常 {reconciliationMismatches.length} 筆
+                </span>
+              )}
             </div>
             {(d.submittedByName || d.submittedBy) && (
               <p className="text-[11px] mt-1" style={{ color: '#71717a' }}>
@@ -473,6 +494,18 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
 
           {hasData ? (
             <>
+              {reconciliationMismatches.length > 0 && (
+                <div className="rounded-xl px-3 py-3" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
+                  <p className="text-sm font-bold flex items-center gap-1.5" style={{ color: '#991b1b' }}>
+                    <AlertTriangle className="h-4 w-4" />
+                    配送金額對帳異常
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: '#b91c1c' }}>
+                    店面與央廚輸入金額不同，請先確認差異再核准帳目。
+                  </p>
+                </div>
+              )}
+
               {/* 摘要 */}
               <div className="grid grid-cols-3 gap-3">
                 {[
@@ -490,14 +523,48 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
               {/* 體系內叫貨 */}
               {d.memberStores.length > 0 && (
                 <Section title="體系內叫貨">
-                  {d.memberStores.map(s => (
-                    <Row key={s.store_id}
-                      left={s.store_name}
-                      right={s.amount > 0 ? `$${fmt(s.amount)}` : '—'}
-                      dim={s.amount === 0}
-                    />
-                  ))}
-                  <TotalRow label="體系內合計" value={d.memberStores.reduce((s, o) => s + o.amount, 0)} />
+                  <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-3 py-2 text-[10px] font-bold"
+                    style={{ color: '#a1a1aa', borderBottom: '1px solid #f4f4f5' }}>
+                    <span>店家</span>
+                    <span className="text-right">店面輸入</span>
+                    <span className="text-right">央廚輸入</span>
+                    <span className="text-right">差額</span>
+                  </div>
+                  {d.memberStores.map(s => {
+                    const comparable = s.store_amount != null && s.ck_amount != null
+                    const diff = comparable ? s.ck_amount! - s.store_amount! : null
+                    const mismatched = diff != null && diff !== 0
+                    return (
+                      <div key={s.store_id}
+                        className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 px-3 py-2.5 text-sm"
+                        style={{ background: mismatched ? '#fef2f2' : undefined, borderBottom: '1px solid #f4f4f5' }}>
+                        <span className="font-medium flex items-center gap-1.5" style={{ color: '#18181b' }}>
+                          {mismatched && <AlertTriangle className="h-3.5 w-3.5 shrink-0" style={{ color: '#dc2626' }} />}
+                          {s.store_name}
+                        </span>
+                        <span className="font-semibold tabular-nums text-right" style={{ color: s.store_amount == null ? '#a1a1aa' : '#18181b' }}>
+                          {s.store_amount == null ? '未輸入' : `$${fmt(s.store_amount)}`}
+                        </span>
+                        <span className="font-semibold tabular-nums text-right" style={{ color: s.ck_amount == null ? '#a1a1aa' : '#18181b' }}>
+                          {s.ck_amount == null ? '未輸入' : `$${fmt(s.ck_amount)}`}
+                        </span>
+                        <span className="font-bold tabular-nums text-right" style={{ color: mismatched ? '#dc2626' : comparable ? '#059669' : '#a1a1aa' }}>
+                          {diff == null ? '待核對' : diff === 0 ? '相符' : `${diff > 0 ? '+' : ''}${fmt(diff)}`}
+                        </span>
+                      </div>
+                    )
+                  })}
+                  <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 px-3 py-2.5"
+                    style={{ background: '#fff7ed', borderTop: '1px solid #fed7aa' }}>
+                    <span className="text-xs font-bold" style={{ color: '#9a3412' }}>體系內合計</span>
+                    <span className="text-sm font-bold tabular-nums text-right">
+                      ${fmt(d.memberStores.reduce((sum, store) => sum + (store.store_amount ?? 0), 0))}
+                    </span>
+                    <span className="text-sm font-bold tabular-nums text-right">
+                      ${fmt(d.memberStores.reduce((sum, store) => sum + (store.ck_amount ?? 0), 0))}
+                    </span>
+                    <span />
+                  </div>
                 </Section>
               )}
 
@@ -639,7 +706,7 @@ type CKReviewStep = {
   key: string
   title: string
   photoUrls?: string[]
-  rows: Array<{ label: string; amount?: number; value?: string; managerAmount?: number | null }>
+  rows: Array<{ label: string; amount?: number; value?: string; storeAmount?: number | null }>
   total?: number
   managerTotal?: number
 }
@@ -661,9 +728,9 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
     ...(d.memberStores.length ? [{
       key: 'member',
       title: '體系內叫貨',
-      rows: d.memberStores.map(item => ({ label: item.store_name, amount: item.amount, managerAmount: item.manager_amount })),
-      total: d.memberStores.reduce((sum, item) => sum + item.amount, 0),
-      managerTotal: d.memberStores.reduce((sum, item) => sum + (item.manager_amount ?? 0), 0),
+      rows: d.memberStores.map(item => ({ label: item.store_name, amount: item.ck_amount ?? undefined, storeAmount: item.store_amount })),
+      total: d.memberStores.reduce((sum, item) => sum + (item.ck_amount ?? 0), 0),
+      managerTotal: d.memberStores.reduce((sum, item) => sum + (item.store_amount ?? 0), 0),
     }] : []),
     ...(d.externalOrders.length ? [{ key: 'external', title: '體系外叫貨', rows: d.externalOrders.map(item => ({ label: item.name, amount: item.amount })), total: d.externalOrders.reduce((sum, item) => sum + item.amount, 0) }] : []),
     ...expenseGroups.map(group => ({
@@ -753,24 +820,37 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
             <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fafafa', border: '1px solid #e4e4e7' }}>
               <p className="text-xs font-bold" style={{ color: '#52525b' }}>央廚輸入內容</p>
               {step.key === 'member' && (
-                <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 text-[10px] font-bold" style={{ color: '#a1a1aa' }}>
-                  <span>店家</span><span>央廚輸入</span><span>店長輸入</span>
+                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 text-[10px] font-bold" style={{ color: '#a1a1aa' }}>
+                  <span>店家</span><span>店面輸入</span><span>央廚輸入</span><span>差額</span>
                 </div>
               )}
               {step.rows.map((row, i) => step.key === 'member' ? (
-                <div key={i} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 py-2.5 px-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
+                <div key={i} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 py-2.5 px-3"
+                  style={{ background: row.storeAmount != null && row.amount != null && row.storeAmount !== row.amount ? '#fef2f2' : undefined, borderBottom: '1px solid #f4f4f5' }}>
                   <span className="text-sm font-medium">{row.label}</span>
-                  <span className="text-sm font-bold tabular-nums">${fmt(row.amount ?? 0)}</span>
-                  <span className="text-sm font-bold tabular-nums" style={{ color: row.managerAmount == null ? '#a1a1aa' : row.managerAmount === row.amount ? '#059669' : '#dc2626' }}>
-                    {row.managerAmount == null ? '尚未送出' : `$${fmt(row.managerAmount)}`}
+                  <span className="text-sm font-bold tabular-nums" style={{ color: row.storeAmount == null ? '#a1a1aa' : '#18181b' }}>
+                    {row.storeAmount == null ? '未輸入' : `$${fmt(row.storeAmount)}`}
+                  </span>
+                  <span className="text-sm font-bold tabular-nums" style={{ color: row.amount == null ? '#a1a1aa' : '#18181b' }}>
+                    {row.amount == null ? '未輸入' : `$${fmt(row.amount)}`}
+                  </span>
+                  <span className="text-sm font-bold tabular-nums" style={{ color: row.storeAmount == null || row.amount == null ? '#a1a1aa' : row.storeAmount === row.amount ? '#059669' : '#dc2626' }}>
+                    {row.storeAmount == null || row.amount == null
+                      ? '待核對'
+                      : row.storeAmount === row.amount
+                        ? '相符'
+                        : `${row.amount - row.storeAmount > 0 ? '+' : ''}${fmt(row.amount - row.storeAmount)}`}
                   </span>
                 </div>
               ) : <Row key={i} left={row.label} right={row.amount !== undefined ? `$${fmt(row.amount)}` : row.value || '—'} />)}
               {step.total !== undefined && (step.key === 'member' ? (
-                <div className="grid grid-cols-[1fr_auto_auto] items-center gap-3 py-2.5 px-3" style={{ background: '#fff7ed', borderTop: '1px solid #fed7aa' }}>
+                <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 py-2.5 px-3" style={{ background: '#fff7ed', borderTop: '1px solid #fed7aa' }}>
                   <span className="text-xs font-bold" style={{ color: '#9a3412' }}>步驟合計</span>
+                  <span className="text-sm font-bold tabular-nums">${fmt(step.managerTotal ?? 0)}</span>
                   <span className="text-sm font-bold tabular-nums" style={{ color: '#92400e' }}>${fmt(step.total)}</span>
-                  <span className="text-sm font-bold tabular-nums" style={{ color: step.managerTotal === step.total ? '#059669' : '#dc2626' }}>${fmt(step.managerTotal ?? 0)}</span>
+                  <span className="text-sm font-bold tabular-nums" style={{ color: step.managerTotal === step.total ? '#059669' : '#dc2626' }}>
+                    {step.managerTotal === step.total ? '相符' : `${step.total - (step.managerTotal ?? 0) > 0 ? '+' : ''}${fmt(step.total - (step.managerTotal ?? 0))}`}
+                  </span>
                 </div>
               ) : <TotalRow label="步驟合計" value={step.total} color="#92400e" />)}
             </div>

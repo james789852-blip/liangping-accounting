@@ -84,7 +84,6 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
   const [
     { data: storeOrders },
     { data: expenseItems },
-    { data: managerClosings },
     { data: submitterProfiles },
   ] = await Promise.all([
     recordIds.length > 0
@@ -93,13 +92,6 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     recordIds.length > 0
       ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type, note, receipt_photo_url').in('ck_daily_record_id', recordIds).order('sort_order')
       : Promise.resolve({ data: [] }),
-    uniqueAssignedIds.length > 0
-      ? admin.from('daily_closings')
-          .select('store_id, total_cost')
-          .in('store_id', uniqueAssignedIds)
-          .eq('business_date', date)
-          .in('status', ['submitted', 'verified', 'disputed'])
-      : Promise.resolve({ data: [] }),
     submitterIds.length > 0
       ? admin.from('user_profiles').select('user_id, name').in('user_id', submitterIds)
       : Promise.resolve({ data: [] }),
@@ -107,17 +99,12 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
 
   const assignedStoreMap = Object.fromEntries((assignedStores ?? []).map((s: any) => [s.id, s.name as string]))
   const submitterNameMap = Object.fromEntries((submitterProfiles ?? []).map((p: any) => [p.user_id, p.name as string]))
-  const managerAmountByStore = (managerClosings ?? []).reduce<Record<string, number>>((amounts, closing: any) => {
-    amounts[closing.store_id] = (amounts[closing.store_id] ?? 0) + Number(closing.total_cost ?? 0)
-    return amounts
-  }, {})
-
   const ckData = ckStores.map(ckStore => {
     const record = (ckRecords ?? []).find(r => r.ck_store_id === ckStore.id) ?? null
     const assignedIds: string[] = (ckStore.assigned_store_ids as string[] | null) ?? []
     const extStores = (externalStores ?? []).filter((s: any) => s.ck_store_id === ckStore.id)
 
-    let memberOrders: { store_id: string; store_name: string; amount: number }[] = []
+    let memberOrders: { store_id: string; store_name: string; store_amount: number; ck_amount: number | null }[] = []
     let externalOrders: { name: string; amount: number }[] = []
     let expenses: { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }[] = []
 
@@ -125,7 +112,12 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       const orders = (storeOrders ?? []).filter((o: any) => o.ck_daily_record_id === record.id)
       memberOrders = orders
         .filter((o: any) => o.store_id !== null)
-        .map((o: any) => ({ store_id: o.store_id, store_name: assignedStoreMap[o.store_id] ?? o.store_id, amount: Number(o.ck_confirmed_amount ?? 0) }))
+        .map((o: any) => ({
+          store_id: o.store_id,
+          store_name: assignedStoreMap[o.store_id] ?? o.store_id,
+          store_amount: Number(o.amount ?? 0),
+          ck_amount: o.ck_confirmed_amount == null ? null : Number(o.ck_confirmed_amount),
+        }))
       externalOrders = orders
         .filter((o: any) => o.store_id === null)
         .map((o: any) => ({ name: o.external_store_name, amount: Number(o.amount ?? 0) }))
@@ -134,7 +126,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
         .map((e: any) => ({ category: e.category, item_name: e.item_name, amount: Number(e.amount ?? 0), payer_name: e.payer_name ?? undefined, vendor_group: e.vendor_group ?? undefined, doc_type: e.doc_type ?? undefined, note: e.note ?? undefined, receipt_photo_url: e.receipt_photo_url ?? undefined }))
     }
 
-    const memberTotalFromOrders = memberOrders.reduce((s, o) => s + o.amount, 0)
+    const memberTotalFromOrders = memberOrders.reduce((s, o) => s + (o.ck_amount ?? 0), 0)
     const extTotal = externalOrders.reduce((s, o) => s + o.amount, 0)
     const revenueTotal = memberTotalFromOrders + extTotal
     const expenseTotal = expenses.reduce((s, e) => s + e.amount, 0)
@@ -144,8 +136,8 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       return {
         store_id: id,
         store_name: assignedStoreMap[id] ?? id,
-        amount: existing?.amount ?? 0,
-        manager_amount: managerAmountByStore[id] ?? null,
+        store_amount: existing?.store_amount ?? null,
+        ck_amount: existing?.ck_amount ?? null,
       }
     })
 
