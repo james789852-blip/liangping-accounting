@@ -65,7 +65,11 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
   const nameMap = Object.fromEntries((assignedStores ?? []).map((s: any) => [s.id, s.name as string]))
   const memberOrders = ((orderRes.data ?? []) as any[])
     .filter(o => o.store_id !== null)
-    .map(o => ({ store_id: o.store_id, store_name: nameMap[o.store_id] ?? o.store_id, amount: Number(o.ck_confirmed_amount ?? 0) }))
+    .map(o => ({
+      store_id: o.store_id,
+      store_name: nameMap[o.store_id] ?? o.store_id,
+      ck_amount: o.ck_confirmed_amount == null ? null : Number(o.ck_confirmed_amount),
+    }))
   const externalOrders = ((orderRes.data ?? []) as any[])
     .filter(o => o.store_id === null)
     .map(o => ({ name: o.external_store_name, amount: Number(o.amount ?? 0) }))
@@ -84,11 +88,12 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
     return {
       store_id: id,
       store_name: nameMap[id] ?? id,
-      amount: existing?.amount ?? 0,
-      manager_amount: managerAmountByStore[id] ?? null,
+      store_amount: managerAmountByStore[id] ?? null,
+      ck_amount: existing?.ck_amount ?? null,
     }
   })
-  const revenueTotal = [...memberOrders, ...externalOrders].reduce((s, o) => s + o.amount, 0)
+  const revenueTotal = memberOrders.reduce((sum, order) => sum + (order.ck_amount ?? 0), 0)
+    + externalOrders.reduce((sum, order) => sum + order.amount, 0)
   const expenseTotal = expenses.reduce((s, e) => s + e.amount, 0)
 
   return {
