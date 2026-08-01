@@ -135,6 +135,29 @@ export default function AccountingClient({
   useEffect(() => { setSelectedStoreId(initialStoreId) }, [initialStoreId])
   useEffect(() => { setSelectedCkStoreId(initialCkStoreId) }, [initialCkStoreId])
 
+  // 帳目中心常會長時間停留在手機分頁；定時與重新回到頁面時更新狀態卡和明細。
+  useEffect(() => {
+    let lastRefreshAt = Date.now()
+    const refresh = () => {
+      const now = Date.now()
+      if (now - lastRefreshAt < 3_000) return
+      lastRefreshAt = now
+      router.refresh()
+    }
+    const intervalId = window.setInterval(refresh, 15_000)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refresh()
+    }
+
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [router, date])
+
   const closingByStore = useMemo(
     () => Object.fromEntries(closings.map(c => [c.store_id, c])),
     [closings],
@@ -1065,15 +1088,16 @@ function CKDetail({
     misc: (detail.expenses ?? []).filter((e: any) => e.category !== '食材' && e.category !== '耗材').reduce((sum: number, e: any) => sum + Number(e.amount ?? 0), 0),
   } : null
 
-  useEffect(() => {
+  const loadDetail = useCallback((force = false) => {
     const key = `${ckStoreId}:${date}`
     const requestId = ++requestIdRef.current
     const cached = cacheRef.current.get(key)
-    if (cached) {
+    if (cached && !force) {
       setDetail(cached.detail)
       setLoading(false)
       return
-    } else {
+    }
+    if (!cached) {
       setDetail(null)
       setLoading(true)
     }
@@ -1094,6 +1118,14 @@ function CKDetail({
         setLoading(false)
       })
   }, [cacheRef, ckStoreId, date])
+
+  useEffect(() => {
+    loadDetail()
+  }, [loadDetail])
+
+  const refreshDetail = useCallback(() => {
+    loadDetail(true)
+  }, [loadDetail])
 
   return (
     <div className="space-y-4">
@@ -1133,7 +1165,7 @@ function CKDetail({
       {detail && (
         <div>
           <h3 className="text-sm font-bold mb-2 px-1" style={{ color: '#18181b' }}>📋 當日詳細 / 審核 / 補款</h3>
-          <CKOverview data={[detail]} date={date} />
+          <CKOverview data={[detail]} date={date} onRefresh={refreshDetail} />
         </div>
       )}
       {!detail && (

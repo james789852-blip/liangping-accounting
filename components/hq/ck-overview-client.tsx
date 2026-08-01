@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { Loader2, ChevronLeft, ChevronRight, Download, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { fetchCKDailyStats, fetchCKMonthlyStats, fetchCKDailyDetail } from '@/app/actions/ck-overview'
@@ -233,12 +233,21 @@ function CKDailyPanel({ data, storeName, ckStoreId }: { data: CKDailyStats; stor
   const reimbursementAmount = Math.max(0, data.totalExpense - data.deductibleExternalRevenue)
   const [detail, setDetail] = useState<any | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
-  useEffect(() => {
-    setDetail(null); setDetailLoading(true)
+  const loadDetail = useCallback((showLoading = false) => {
+    if (showLoading) {
+      setDetail(null)
+      setDetailLoading(true)
+    }
     fetchCKDailyDetail(ckStoreId, data.date)
       .then(r => { if ('success' in r) setDetail(r.detail) })
       .finally(() => setDetailLoading(false))
   }, [ckStoreId, data.date])
+  useEffect(() => {
+    loadDetail(true)
+  }, [loadDetail])
+  const refreshDetail = useCallback(() => {
+    loadDetail(false)
+  }, [loadDetail])
   return (
     <>
       <div className="bg-white rounded-2xl p-4 space-y-3" style={{ border: '1px solid #f4f4f5' }}>
@@ -347,7 +356,7 @@ function CKDailyPanel({ data, storeName, ckStoreId }: { data: CKDailyStats; stor
       {!detailLoading && detail && (
         <div>
           <h3 className="text-sm font-bold mb-2 px-1" style={{ color: '#18181b' }}>📋 當日詳細 / 審核</h3>
-          <CKOverview data={[detail]} date={data.date} />
+          <CKOverview data={[detail]} date={data.date} onRefresh={refreshDetail} />
         </div>
       )}
       {!detailLoading && !detail && (

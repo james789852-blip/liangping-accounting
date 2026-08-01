@@ -75,15 +75,39 @@ export async function syncStoreCKOrder(storeId: string, date: string, amount: nu
   const admin = createAdminClient()
 
   // 找這間店屬於哪間央廚
-  const { data: ckStores } = await admin
+  const { data: ckStores, error: ckStoreErr } = await admin
     .from('stores')
     .select('id')
     .eq('type', '央廚')
     .eq('active', true)
     .contains('assigned_store_ids', [storeId])
 
+  if (ckStoreErr) return { error: ckStoreErr.message }
   if (!ckStores?.length) return { success: true }
   const ckStoreId = ckStores[0].id
+
+  // 金額清空時只移除既有同步資料，不建立空白央廚日報。
+  if (amount <= 0) {
+    const { data: existingRecord, error: existingRecordErr } = await admin
+      .from('ck_daily_records')
+      .select('id')
+      .eq('ck_store_id', ckStoreId)
+      .eq('business_date', date)
+      .maybeSingle()
+    if (existingRecordErr) return { error: existingRecordErr.message }
+
+    if (existingRecord) {
+      const { error: deleteErr } = await admin.from('ck_store_orders')
+        .delete()
+        .eq('ck_daily_record_id', existingRecord.id)
+        .eq('store_id', storeId)
+      if (deleteErr) return { error: deleteErr.message }
+    }
+
+    revalidatePath('/manager/ck')
+    revalidatePath('/hq/ck')
+    return { success: true }
+  }
 
   // upsert 央廚每日主記錄
   const { data: record, error: recErr } = await admin
@@ -94,21 +118,15 @@ export async function syncStoreCKOrder(storeId: string, date: string, amount: nu
     )
     .select('id')
     .single()
-  if (recErr || !record) return { success: true }
+  if (recErr || !record) return { error: recErr?.message ?? '無法建立央廚每日記錄' }
 
   // upsert 店家叫貨
-  if (amount > 0) {
-    await admin.from('ck_store_orders')
-      .upsert(
-        { ck_daily_record_id: record.id, store_id: storeId, amount },
-        { onConflict: 'ck_daily_record_id,store_id' }
-      )
-  } else {
-    await admin.from('ck_store_orders')
-      .delete()
-      .eq('ck_daily_record_id', record.id)
-      .eq('store_id', storeId)
-  }
+  const { error: orderErr } = await admin.from('ck_store_orders')
+    .upsert(
+      { ck_daily_record_id: record.id, store_id: storeId, amount },
+      { onConflict: 'ck_daily_record_id,store_id' }
+    )
+  if (orderErr) return { error: orderErr.message }
 
   revalidatePath('/manager/ck')
   revalidatePath('/hq/ck')

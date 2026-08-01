@@ -84,6 +84,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
   const [
     { data: storeOrders },
     { data: expenseItems },
+    { data: managerClosings },
     { data: submitterProfiles },
   ] = await Promise.all([
     recordIds.length > 0
@@ -92,6 +93,13 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     recordIds.length > 0
       ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type, note, receipt_photo_url').in('ck_daily_record_id', recordIds).order('sort_order')
       : Promise.resolve({ data: [] }),
+    uniqueAssignedIds.length > 0
+      ? admin.from('daily_closings')
+          .select('store_id, total_cost')
+          .in('store_id', uniqueAssignedIds)
+          .eq('business_date', date)
+          .in('status', ['submitted', 'verified', 'disputed'])
+      : Promise.resolve({ data: [] }),
     submitterIds.length > 0
       ? admin.from('user_profiles').select('user_id, name').in('user_id', submitterIds)
       : Promise.resolve({ data: [] }),
@@ -99,12 +107,18 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
 
   const assignedStoreMap = Object.fromEntries((assignedStores ?? []).map((s: any) => [s.id, s.name as string]))
   const submitterNameMap = Object.fromEntries((submitterProfiles ?? []).map((p: any) => [p.user_id, p.name as string]))
+  // 店面輸入以 daily_closings 為唯一真實來源，避免 ck_store_orders 同步稍晚時誤顯示「未輸入」。
+  const managerAmountByStore = (managerClosings ?? []).reduce<Record<string, number>>((amounts, closing) => {
+    amounts[closing.store_id] = (amounts[closing.store_id] ?? 0) + Number(closing.total_cost ?? 0)
+    return amounts
+  }, {})
+
   const ckData = ckStores.map(ckStore => {
     const record = (ckRecords ?? []).find(r => r.ck_store_id === ckStore.id) ?? null
     const assignedIds: string[] = (ckStore.assigned_store_ids as string[] | null) ?? []
     const extStores = (externalStores ?? []).filter((s: any) => s.ck_store_id === ckStore.id)
 
-    let memberOrders: { store_id: string; store_name: string; store_amount: number; ck_amount: number | null }[] = []
+    let memberOrders: { store_id: string; store_name: string; ck_amount: number | null }[] = []
     let externalOrders: { name: string; amount: number }[] = []
     let expenses: { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }[] = []
 
@@ -115,7 +129,6 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
         .map((o: any) => ({
           store_id: o.store_id,
           store_name: assignedStoreMap[o.store_id] ?? o.store_id,
-          store_amount: Number(o.amount ?? 0),
           ck_amount: o.ck_confirmed_amount == null ? null : Number(o.ck_confirmed_amount),
         }))
       externalOrders = orders
@@ -136,7 +149,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       return {
         store_id: id,
         store_name: assignedStoreMap[id] ?? id,
-        store_amount: existing?.store_amount ?? null,
+        store_amount: managerAmountByStore[id] ?? null,
         ck_amount: existing?.ck_amount ?? null,
       }
     })
@@ -183,31 +196,37 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
   const [{ data: weekMismatchRows }, { data: weekValidClosings }] = await Promise.all([
     admin
       .from('ck_store_orders')
-      .select('amount, ck_confirmed_amount, store_id, ck_daily_records!inner(business_date, ck_store_id)')
+      .select('ck_confirmed_amount, store_id, ck_daily_records!inner(business_date, ck_store_id)')
       .not('ck_confirmed_amount', 'is', null)
       .gte('ck_daily_records.business_date', sevenDaysAgoStr)
       .in('ck_daily_records.ck_store_id', ckStoreIds),
     uniqueAssignedIds.length > 0
       ? admin.from('daily_closings')
-          .select('store_id, business_date')
+          .select('store_id, business_date, total_cost')
           .in('store_id', uniqueAssignedIds)
           .gte('business_date', sevenDaysAgoStr)
           .lte('business_date', date)
           .in('status', ['submitted', 'verified'])
       : Promise.resolve({ data: [] }),
   ])
-  const weekValidClosingKeys = new Set(
-    (weekValidClosings ?? []).map((c: any) => `${c.business_date}||${c.store_id}`)
+  const weekClosingAmountByKey = new Map<string, number>(
+    (weekValidClosings ?? []).map(c => [
+      `${c.business_date}||${c.store_id}`,
+      Number(c.total_cost ?? 0),
+    ] as const)
   )
   const ckNameMap = Object.fromEntries(ckStores.map(s => [s.id, s.name]))
   const weekMismatches = (weekMismatchRows ?? [])
-    .filter((o: any) => weekValidClosingKeys.has(`${(o.ck_daily_records as any)?.business_date}||${o.store_id}`))
-    .filter((o: any) => Number(o.ck_confirmed_amount) !== Number(o.amount))
+    .filter((o: any) => weekClosingAmountByKey.has(`${(o.ck_daily_records as any)?.business_date}||${o.store_id}`))
+    .filter((o: any) => {
+      const key = `${(o.ck_daily_records as any)?.business_date}||${o.store_id}`
+      return Number(o.ck_confirmed_amount) !== weekClosingAmountByKey.get(key)
+    })
     .map((o: any) => ({
       business_date: (o.ck_daily_records as any)?.business_date as string,
       ck_store_name: ckNameMap[(o.ck_daily_records as any)?.ck_store_id as string] ?? '',
       store_name: assignedStoreMap[o.store_id as string] ?? '',
-      amount: Number(o.amount),
+      amount: weekClosingAmountByKey.get(`${(o.ck_daily_records as any)?.business_date}||${o.store_id}`) ?? 0,
       ck_confirmed_amount: Number(o.ck_confirmed_amount),
     }))
     .sort((a, b) => b.business_date.localeCompare(a.business_date))

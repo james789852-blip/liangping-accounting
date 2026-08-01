@@ -1456,6 +1456,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [saving, setSaving] = useState(false)
   const [savingPetty, setSavingPetty] = useState(false)
   const savingRef = useRef(false)  // mutex 防止並發 handleSave 衝突（自動存 + 手動下一步）
+  const saveWaitersRef = useRef<Array<() => void>>([])
   const backgroundSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => {
     if (backgroundSaveTimerRef.current) clearTimeout(backgroundSaveTimerRef.current)
@@ -1473,6 +1474,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(pettyCounts), JSON.stringify(pettyLumps), closingId])
   const [status, setStatus] = useState(existingClosing?.status ?? 'draft')
+  // 非同步儲存 callback 可能持有舊 render 的 status；ref 永遠提供最新鎖定狀態。
+  const statusRef = useRef(status)
+  statusRef.current = status
   const [rangeStart, setRangeStart] = useState(0)
   const [rangeEnd, setRangeEnd] = useState(0)
   const [replaceRangeStart, setReplaceRangeStart] = useState(0)
@@ -2408,8 +2412,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }
 
   async function handleSave(silent = false) {
-    if (status === 'submitted' || status === 'verified') return null
-    if (savingRef.current) return closingId  // 已有 save 進行中，直接 return（防 race）
+    if (statusRef.current === 'submitted' || statusRef.current === 'verified') return null
+    if (savingRef.current) {
+      // 送出前必須等正在執行的自動儲存完成，再用最新表單狀態重存一次。
+      await new Promise<void>(resolve => saveWaitersRef.current.push(resolve))
+      return handleSave(silent)
+    }
     savingRef.current = true
     // 下一步的背景儲存不應阻塞頁面操作；只有使用者明確按儲存時才顯示 loading。
     if (!silent) setSaving(true)
@@ -2422,7 +2430,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         (sum, p) => sum + (ckQuantitiesRef.current[p.id] || 0) * (ckPriceOverridesRef.current[p.id] ?? p.unit_price), 0
       )
       const payload = {
-        store_id: store.id, manager_id: userId, business_date: today, status: isDisputed ? 'disputed' : 'draft',
+        store_id: store.id, manager_id: userId, business_date: today,
         total_revenue: s.totalRevenue, total_cost: ckTotalLive > 0 ? ckTotalLive : s.deliveryFee, total_expenses: totalExpenses,
         expected_remit: s.netToHQ, actual_remit: s.actualRemit,
         should_include_delivery: s.shouldEnvelope, variance: s.variance, note: d.note,
@@ -2454,13 +2462,35 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         }
       }
       if (!cid) {
-        const { data: nc, error } = await supabase.from('daily_closings').insert(payload).select('id').single()
+        const { data: nc, error } = await supabase.from('daily_closings')
+          .insert({ ...payload, status: isDisputed ? 'disputed' : 'draft' })
+          .select('id')
+          .single()
         if (error) throw error
         cid = nc.id
         setClosingId(cid)
       } else {
-        const { error } = await supabase.from('daily_closings').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', cid)
+        // 一般儲存只更新內容，不負責狀態轉換；且只能寫入草稿／退回修改中的帳目。
+        // 即使舊分頁的延遲 autosave 在送出後才抵達，也無法把 submitted 降回 draft。
+        const { data: updated, error } = await supabase.from('daily_closings')
+          .update({ ...payload, updated_at: new Date().toISOString() })
+          .eq('id', cid)
+          .in('status', ['draft', 'disputed'])
+          .select('id')
+          .maybeSingle()
         if (error) throw error
+        if (!updated) {
+          const { data: current } = await supabase.from('daily_closings')
+            .select('status')
+            .eq('id', cid)
+            .maybeSingle()
+          if (current?.status === 'submitted' || current?.status === 'verified') {
+            statusRef.current = current.status
+            setStatus(current.status)
+            return null
+          }
+          throw new Error('帳目狀態已變更，請重新整理頁面')
+        }
       }
       // Backup full form state before destructive delete-then-insert operations
       try {
@@ -2555,11 +2585,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           if (hwItems.length > 0) await supabase.from('handwrite_orders').insert(hwItems)
         })(),
       ])
-      // 同步央廚叫貨金額到央廚每日記錄
-      const ckTotal = ckItems.reduce((s, i) => s + i.total_amount, 0)
-      if (ckTotal > 0) {
-        syncStoreCKOrder(store.id, today, ckTotal).catch(() => {})
-      }
+      // 同步央廚叫貨金額到央廚每日記錄；必須等待完成，不能讓總公司讀到舊副本。
+      // 使用 closing 實際保存的 total_cost，兼容舊資料仍由 deliveryFee 帶入的情況。
+      const ckSyncResult = await syncStoreCKOrder(store.id, today, Number(payload.total_cost) || 0)
+      if (ckSyncResult.error) throw new Error(`央廚叫貨同步失敗：${ckSyncResult.error}`)
       try {
         if (hwItems.length > 0) localStorage.setItem(handwriteOrdersLsKey, JSON.stringify(currentHandwriteOrders))
         else localStorage.removeItem(handwriteOrdersLsKey)
@@ -2572,6 +2601,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return null
     } finally {
       savingRef.current = false
+      const waiters = saveWaitersRef.current.splice(0)
+      waiters.forEach(resolve => resolve())
       if (!silent) setSaving(false)
     }
   }
@@ -2602,6 +2633,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       goToStep(STEPS.findIndex(s => s.id === 'ck_delivery'))
       return
     }
+    if (backgroundSaveTimerRef.current) {
+      clearTimeout(backgroundSaveTimerRef.current)
+      backgroundSaveTimerRef.current = null
+    }
     setSubmitting(true)
     try {
       const cid = await handleSave(true)
@@ -2613,6 +2648,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         return
       }
       // 先把 UI 狀態一次性批次更新，避免中間 render 出現 isLocked 閃跳
+      statusRef.current = 'submitted'
       setStatus('submitted')
       setSubmitDone(true)
       try { localStorage.setItem(submitDoneSsKey, '1') } catch {}

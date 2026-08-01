@@ -117,6 +117,7 @@ interface CKStoreData {
 interface Props {
   data: CKStoreData[]
   date: string
+  onRefresh?: () => void
 }
 
 function ReviewActions({ ckStoreId, date, status }: { ckStoreId: string; date: string; status: string }) {
@@ -898,14 +899,39 @@ function TotalRow({ label, value, color = '#18181b' }: { label: string; value: n
   )
 }
 
-export default function CKOverview({ data, date }: Props) {
+export default function CKOverview({ data, date, onRefresh }: Props) {
+  const router = useRouter()
   const totalRevenue = data.reduce((s, d) => s + d.revenueTotal, 0)
   const totalExpense = data.reduce((s, d) => s + d.expenseTotal, 0)
   const submittedCount = data.filter(d => d.status === 'submitted' || d.status === 'verified').length
-  const paidCount = data.filter(d => d.hqPaid).length
   const unpaidExpense = data
     .filter(d => !d.hqPaid)
     .reduce((s, d) => s + hqReimbursementAmount(d), 0)
+
+  // HQ 常會長時間停留在此頁；定時與回到頁面時刷新 Server Component 資料，
+  // 避免店家／央廚已送出，但畫面仍停在先前的「未輸入」快照。
+  useEffect(() => {
+    let lastRefreshAt = Date.now()
+    const refresh = () => {
+      const now = Date.now()
+      if (now - lastRefreshAt < 3_000) return
+      lastRefreshAt = now
+      if (onRefresh) onRefresh()
+      else router.refresh()
+    }
+    const intervalId = window.setInterval(refresh, 15_000)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refresh()
+    }
+
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [router, date, onRefresh])
 
   return (
     <div className="space-y-4">

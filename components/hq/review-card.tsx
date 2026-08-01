@@ -62,6 +62,7 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
   submitted: { bg: '#FFFBEB', color: '#92400E', label: '待審核' },
   disputed:  { bg: '#fff7ed', color: '#c2410c', label: '已退回' },
   verified:  { bg: '#d1fae5', color: '#047857', label: '已核准' },
+  draft:     { bg: '#fef3c7', color: '#92400e', label: '草稿' },
 }
 
 type PhotoInfo = {
@@ -272,7 +273,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const hasRemittanceChange = adjustmentTotal !== 0 || totalReserved > 0 || preReservedExpenseTotal > 0
   const remitToHQ = closing.actual_remit + adjustmentTotal - totalReserved + preReservedExpenseTotal
 
-  const st = STATUS_STYLE[closing.status] ?? STATUS_STYLE.submitted
+  const st = STATUS_STYLE[closing.status] ?? STATUS_STYLE.draft
 
   useEffect(() => {
     setExpanded(defaultExpanded ?? (closing.variance !== 0 || closing.status === 'disputed'))
