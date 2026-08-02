@@ -59,6 +59,7 @@ type ExpenseGroup = {
   total: number
   categories: string[]
   payerNames: string[]
+  docTypes: string[]
   notes: string[]
   photoUrls: string[]
 }
@@ -76,6 +77,7 @@ function groupExpensesByVendor(expenses: Expense[]): ExpenseGroup[] {
       total: 0,
       categories: [],
       payerNames: [],
+      docTypes: [],
       notes: [],
       photoUrls: [],
     }
@@ -83,6 +85,7 @@ function groupExpensesByVendor(expenses: Expense[]): ExpenseGroup[] {
     current.total += Number(expense.amount) || 0
     if (expense.category && !current.categories.includes(expense.category)) current.categories.push(expense.category)
     if (expense.payer_name && !current.payerNames.includes(expense.payer_name)) current.payerNames.push(expense.payer_name)
+    if (expense.doc_type && !current.docTypes.includes(expense.doc_type)) current.docTypes.push(expense.doc_type)
     if (expense.note && !current.notes.includes(expense.note)) current.notes.push(expense.note)
     if (expense.receipt_photo_url && !current.photoUrls.includes(expense.receipt_photo_url)) current.photoUrls.push(expense.receipt_photo_url)
     groups.set(key, current)
@@ -498,6 +501,17 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
   const reimbursementBaseAmount = Math.max(0, d.expenseTotal - externalRevenue)
   const reimbursementAmount = Math.max(0, reimbursementBaseAmount + Number(d.hqReimbursementAdjustment ?? 0))
   const expenseGroups = groupExpensesByVendor(d.expenses)
+  const assignedExpensePhotos = new Set(expenseGroups.flatMap(group => group.photoUrls))
+  const unassignedReceiptPhotos = (d.receiptPhotoUrls ?? []).filter(url => !assignedExpensePhotos.has(url))
+  const expenseCategoryOrder = ['食材', '耗材', '雜項', '未分類']
+  const expenseSections = expenseCategoryOrder.map(category => {
+    const groups = expenseGroups.filter(group => {
+      const primaryCategory = group.categories[0]
+      const normalizedCategory = expenseCategoryOrder.slice(0, 3).includes(primaryCategory) ? primaryCategory : '未分類'
+      return normalizedCategory === category
+    })
+    return { category, groups, total: groups.reduce((sum, group) => sum + group.total, 0) }
+  }).filter(section => section.groups.length > 0)
   const reconciliationMismatches = d.memberStores.filter(
     store => store.store_amount != null
       && store.ck_amount != null
@@ -663,29 +677,77 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
               )}
 
               {/* 支出明細 */}
-              {d.expenses.length > 0 && (
+              {(d.expenses.length > 0 || unassignedReceiptPhotos.length > 0) && (
                 <Section title="支出明細">
-                  {expenseGroups.map(group => (
-                    <div key={group.key} style={{ borderBottom: '1px solid #f4f4f5' }}>
-                      <div className="flex items-center gap-2 py-2.5 px-3" style={{ background: '#fafafa' }}>
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0"
-                          style={{ background: CAT_COLORS[group.categories[0]]?.bg ?? '#f4f4f5', color: CAT_COLORS[group.categories[0]]?.text ?? '#52525b' }}>
-                          {group.categories.join('／') || '支出'}
-                        </span>
-                        <span className="flex-1 text-sm font-bold" style={{ color: '#18181b' }}>{group.name}</span>
-                        <span className="text-sm font-bold tabular-nums shrink-0" style={{ color: '#18181b' }}>${fmt(group.total)}</span>
-                      </div>
-                      {group.expenses.map((expense, index) => (
-                        <div key={`${expense.item_name}-${index}`} className="flex items-center gap-2 py-2 pl-9 pr-3">
-                          <span className="flex-1 text-sm" style={{ color: '#52525b' }}>
-                            {expense.item_name}
-                            {expense.payer_name && <span className="ml-1.5 text-xs" style={{ color: '#a1a1aa' }}>（{expense.payer_name}墊付）</span>}
-                          </span>
-                          <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: '#52525b' }}>${fmt(expense.amount)}</span>
+                  <div className="p-3 space-y-4">
+                    {expenseSections.map(section => (
+                      <div key={section.category} className="rounded-2xl overflow-hidden" style={{ border: '1px solid #e4e4e7', background: '#fafafa' }}>
+                        <div className="flex items-center justify-between gap-3 px-3 py-2.5"
+                          style={{ background: CAT_COLORS[section.category]?.bg ?? '#f4f4f5' }}>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-extrabold" style={{ color: CAT_COLORS[section.category]?.text ?? '#52525b' }}>{section.category}</span>
+                            <span className="text-[11px] font-semibold" style={{ color: '#71717a' }}>{section.groups.length} 組單據</span>
+                          </div>
+                          <span className="text-sm font-extrabold tabular-nums" style={{ color: '#dc2626' }}>${fmt(section.total)}</span>
                         </div>
-                      ))}
-                    </div>
-                  ))}
+                        <div className="p-2.5 space-y-2.5">
+                          {section.groups.map(group => (
+                            <div key={group.key} className="rounded-xl overflow-hidden" style={{ background: 'white', border: '1px solid #e4e4e7' }}>
+                              <div className="flex items-center justify-between gap-3 px-3 py-2.5" style={{ borderBottom: '1px solid #f4f4f5' }}>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold" style={{ color: '#18181b' }}>{group.name}</p>
+                                  <p className="text-[11px]" style={{ color: '#a1a1aa' }}>
+                                    {[group.docTypes.join('／'), group.payerNames.length ? `${group.payerNames.join('、')}墊付` : ''].filter(Boolean).join(' · ') || (group.photoUrls.length ? '單據照片' : '手動輸入')}
+                                  </p>
+                                </div>
+                                <span className="text-sm font-extrabold tabular-nums shrink-0" style={{ color: '#dc2626' }}>${fmt(group.total)}</span>
+                              </div>
+                              <div className={`p-3 grid gap-3 ${group.photoUrls.length ? 'grid-cols-[88px_minmax(0,1fr)] sm:grid-cols-[112px_minmax(0,1fr)]' : 'grid-cols-1'}`}>
+                                {group.photoUrls.length > 0 && (
+                                  <div className="grid grid-cols-1 gap-2 content-start">
+                                    {group.photoUrls.map((url, photoIndex) => (
+                                      <button key={url} type="button" onClick={() => setLightboxUrl(url)} className="relative aspect-square overflow-hidden rounded-xl"
+                                        style={{ border: '1px solid #e4e4e7', background: '#f4f4f5' }}>
+                                        <SafePhotoImage src={url} alt={`${group.name} 單據 ${photoIndex + 1}`} thumb width={240} height={240} className="h-full w-full object-cover" />
+                                        <span className="absolute bottom-1 right-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{ background: 'rgba(0,0,0,0.6)', color: 'white' }}>
+                                          放大
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  {group.expenses.map((expense, index) => (
+                                    <div key={`${expense.item_name}-${index}`} className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0"
+                                      style={{ borderBottom: index < group.expenses.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
+                                      <div className="min-w-0">
+                                        <p className="text-sm font-semibold break-words" style={{ color: '#18181b' }}>{expense.item_name}</p>
+                                        {group.categories.length > 1 && <p className="text-[10px] mt-0.5" style={{ color: '#a1a1aa' }}>{expense.category}</p>}
+                                      </div>
+                                      <span className="text-sm font-bold tabular-nums shrink-0" style={{ color: '#52525b' }}>${fmt(expense.amount)}</span>
+                                    </div>
+                                  ))}
+                                  {group.notes.map(note => <p key={note} className="text-xs mt-2 break-words" style={{ color: '#71717a' }}>備註：{note}</p>)}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    {unassignedReceiptPhotos.length > 0 && (
+                      <div className="rounded-2xl p-3" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                        <p className="text-xs font-bold mb-2" style={{ color: '#92400E' }}>未分類照片（{unassignedReceiptPhotos.length} 張，尚未連結支出內容）</p>
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                          {unassignedReceiptPhotos.map((url, index) => (
+                            <button key={url} type="button" onClick={() => setLightboxUrl(url)} className="relative aspect-square overflow-hidden rounded-xl">
+                              <SafePhotoImage src={url} alt={`未分類單據 ${index + 1}`} thumb width={240} height={240} className="h-full w-full object-cover" style={{ border: '1px solid #FDE68A' }} />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <TotalRow label="支出合計" value={d.expenses.reduce((s, e) => s + e.amount, 0)} color="#dc2626" />
                 </Section>
               )}
@@ -703,26 +765,6 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                 <div className="rounded-xl px-3 py-3 space-y-1" style={{ background: '#fff1f2', border: '1px solid #fecdd3' }}>
                   <p className="text-xs font-semibold" style={{ color: '#be123c' }}>退回原因</p>
                   <p className="text-sm" style={{ color: '#881337' }}>{d.reviewNote}</p>
-                </div>
-              )}
-
-              {/* 收據照片 */}
-              {(d.receiptPhotoUrls?.length ?? 0) > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Camera className="h-3.5 w-3.5" style={{ color: '#a1a1aa' }} />
-                    <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>收據照片（{d.receiptPhotoUrls!.length} 張）</p>
-                  </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {d.receiptPhotoUrls!.map((url, i) => (
-                      <button key={url} type="button" onClick={() => setLightboxUrl(url)}
-                        className="relative group" style={{ aspectRatio: '1' }}>
-                        <SafePhotoImage src={url} alt={`收據 ${i + 1}`} thumb width={240} height={240}
-                          className="w-full h-full object-cover rounded-xl"
-                          style={{ border: '1px solid #e4e4e7' }} />
-                      </button>
-                    ))}
-                  </div>
                 </div>
               )}
 

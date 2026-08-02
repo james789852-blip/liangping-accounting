@@ -314,39 +314,6 @@ function CKDailyPanel({ data, storeName, ckStoreId }: { data: CKDailyStats; stor
         </div>
       )}
 
-      {/* 支出明細 */}
-      {data.expenses.length > 0 && (
-        <div className="bg-white rounded-2xl p-4" style={{ border: '1px solid #f4f4f5' }}>
-          <h3 className="text-sm font-bold mb-3" style={{ color: '#18181b' }}>支出明細（{data.expenses.length} 筆）</h3>
-          <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
-            <table className="text-xs" style={{ minWidth: 'max-content' }}>
-              <thead style={{ background: '#fafafa' }}>
-                <tr>
-                  <th className="px-2 py-1.5 text-left sticky left-0" style={{ color: '#71717a', background: '#fafafa', minWidth: 80, zIndex: 2 }}>品項</th>
-                  <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>廠商</th>
-                  <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>單據</th>
-                  <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>類別</th>
-                  <th className="px-2 py-1.5 text-left" style={{ color: '#71717a' }}>付款人</th>
-                  <th className="px-2 py-1.5 text-right" style={{ color: '#71717a' }}>金額</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.expenses.map((e, i) => (
-                  <tr key={i} style={{ borderTop: '1px solid #f4f4f5' }}>
-                    <td className="px-2 py-1.5 sticky left-0 font-medium" style={{ background: 'white', zIndex: 1 }}>{e.item_name}</td>
-                    <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{e.vendor_group || '—'}</td>
-                    <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{e.doc_type || '—'}</td>
-                    <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{e.category}</td>
-                    <td className="px-2 py-1.5" style={{ color: '#52525b' }}>{e.payer_name || '—'}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums font-semibold">${fmt(e.amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
       {/* 當日詳細（含照片、支出、成員訂單、審核/補款按鈕） */}
       {detailLoading && (
         <div className="bg-white rounded-2xl p-4 text-center text-sm" style={{ color: '#a1a1aa', border: '1px solid #f4f4f5' }}>
