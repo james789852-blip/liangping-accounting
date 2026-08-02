@@ -7,6 +7,7 @@ import { getBusinessDate } from '@/lib/business-date'
 import CKDailyForm from '@/components/manager/ck-daily-form'
 import { sortStores } from '@/lib/store-order'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
+import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,6 +63,7 @@ export default async function CKPage({
     { data: todayClosings },
     { data: ckVendorGroups },
     { data: rawMappings },
+    reimbursementAdjustments,
   ] = await Promise.all([
     assignedStoreIds.length > 0
       ? admin.from('stores').select('id, name').in('id', assignedStoreIds)
@@ -86,6 +88,7 @@ export default async function CKPage({
       .select('store_id, item_name, vendor_group, item_category, excel_column, sort_order, is_tax_addon, tax_scope, tax_target_item')
       .eq('store_id', storeId)
       .order('sort_order'),
+    getCKReimbursementAdjustments([storeId], today),
   ])
 
   const mappingMap = new Map<string, any>()
@@ -120,6 +123,8 @@ export default async function CKPage({
     hq_paid_at?: string | null
     hq_reimbursement_photo_urls?: string[]
     hq_reimbursement_sent_at?: string | null
+    hq_reimbursement_adjustment?: number
+    hq_reimbursement_adjustment_note?: string
     ck_reimbursement_confirmed?: boolean
     ck_reimbursement_confirmed_at?: string | null
     externalOrders: { name: string; amount: number }[]
@@ -160,6 +165,8 @@ export default async function CKPage({
       hq_paid_at: (ckRecord as any).hq_paid_at ?? null,
       hq_reimbursement_photo_urls: ((ckRecord as any).hq_reimbursement_photo_urls as string[] | null) ?? [],
       hq_reimbursement_sent_at: (ckRecord as any).hq_reimbursement_sent_at ?? null,
+      hq_reimbursement_adjustment: reimbursementAdjustments[storeId]?.amount ?? 0,
+      hq_reimbursement_adjustment_note: reimbursementAdjustments[storeId]?.note ?? '',
       ck_reimbursement_confirmed: (ckRecord as any).ck_reimbursement_confirmed ?? false,
       ck_reimbursement_confirmed_at: (ckRecord as any).ck_reimbursement_confirmed_at ?? null,
       externalOrders: (extOrders ?? []).map((o: any) => ({

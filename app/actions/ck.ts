@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { getAuthContext, canAccessStore } from '@/lib/permissions'
 import { logAudit } from '@/lib/audit'
+import { recordCKReimbursementAdjustment } from '@/lib/ck-reimbursement-adjustment'
 import {
   canManageCKSettings as canManageCKSettingsPermission,
   canReviewClosings,
@@ -576,6 +577,37 @@ export async function saveCKHQReimbursementPhotoDraft(
 
   revalidatePath('/hq/ck')
   revalidatePath('/hq/accounting')
+  return { success: true }
+}
+
+// 保存總公司補款加減調整。使用 audit_logs 留下每次修改歷程，最新一筆為目前金額。
+export async function saveCKHQReimbursementAdjustment(
+  ckStoreId: string,
+  date: string,
+  amount: number,
+  note = '',
+) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  const profile = await getUserPermissionProfile(ctx.userId)
+  if (!canReviewClosings(profile)) return { error: '權限不足，請先開啟帳目審核權限' }
+  if (!Number.isFinite(amount) || Math.abs(amount) > 100_000_000) return { error: '補款調整金額不正確' }
+
+  const { error } = await recordCKReimbursementAdjustment({
+    ckStoreId,
+    date,
+    userId: ctx.userId,
+    userName: ctx.userName,
+    userEmail: ctx.userEmail,
+    amount,
+    note,
+  })
+  if (error) return { error: error.message }
+
+  revalidatePath('/hq/ck')
+  revalidatePath('/hq/accounting')
+  revalidatePath('/manager/ck')
+  revalidatePath('/manager/dashboard')
   return { success: true }
 }
 

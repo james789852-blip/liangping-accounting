@@ -117,6 +117,8 @@ interface ExistingRecord {
   hq_paid_at?: string | null
   hq_reimbursement_photo_urls?: string[]
   hq_reimbursement_sent_at?: string | null
+  hq_reimbursement_adjustment?: number
+  hq_reimbursement_adjustment_note?: string
   ck_reimbursement_confirmed?: boolean
   ck_reimbursement_confirmed_at?: string | null
   externalOrders: ExternalOrder[]
@@ -326,6 +328,8 @@ function CKDoneCard({
   hqPaid,
   hqReimbursementPhotoUrls,
   hqReimbursementSentAt,
+  hqReimbursementAdjustment,
+  hqReimbursementAdjustmentNote,
   ckReimbursementConfirmed,
   ckReimbursementConfirmedAt,
 }: {
@@ -339,6 +343,8 @@ function CKDoneCard({
   hqPaid: boolean
   hqReimbursementPhotoUrls: string[]
   hqReimbursementSentAt?: string | null
+  hqReimbursementAdjustment: number
+  hqReimbursementAdjustmentNote?: string
   ckReimbursementConfirmed: boolean
   ckReimbursementConfirmedAt?: string | null
 }) {
@@ -407,6 +413,12 @@ function CKDoneCard({
                 <p className="text-xs mt-0.5" style={{ color: confirmed ? '#16a34a' : '#a16207' }}>
                   {hqReimbursementSentAt ? `送出時間：${new Date(hqReimbursementSentAt).toLocaleString('zh-TW')}` : '請確認信封金額與照片內容'}
                 </p>
+                {hqReimbursementAdjustment !== 0 && (
+                  <p className="text-xs mt-0.5 font-semibold" style={{ color: confirmed ? '#15803d' : '#9a3412' }}>
+                    補款調整 {hqReimbursementAdjustment > 0 ? '+' : '−'}${fmt(Math.abs(hqReimbursementAdjustment))}
+                    {hqReimbursementAdjustmentNote ? ` · ${hqReimbursementAdjustmentNote}` : ''}
+                  </p>
+                )}
                 {confirmed && ckReimbursementConfirmedAt && (
                   <p className="text-xs mt-0.5" style={{ color: '#16a34a' }}>
                     點交時間：{new Date(ckReimbursementConfirmedAt).toLocaleString('zh-TW')}
@@ -1026,6 +1038,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         hqPaid={existing?.hq_paid ?? false}
         hqReimbursementPhotoUrls={existing?.hq_reimbursement_photo_urls ?? []}
         hqReimbursementSentAt={existing?.hq_reimbursement_sent_at ?? null}
+        hqReimbursementAdjustment={existing?.hq_reimbursement_adjustment ?? 0}
+        hqReimbursementAdjustmentNote={existing?.hq_reimbursement_adjustment_note ?? ''}
         ckReimbursementConfirmed={existing?.ck_reimbursement_confirmed ?? false}
         ckReimbursementConfirmedAt={existing?.ck_reimbursement_confirmed_at ?? null}
       />

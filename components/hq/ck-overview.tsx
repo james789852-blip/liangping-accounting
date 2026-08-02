@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Loader2, Banknote, Camera, X, Upload, RotateCcw, Trash2 } from 'lucide-react'
-import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord, saveCKHQReimbursementPhotoDraft } from '@/app/actions/ck'
+import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord, saveCKHQReimbursementAdjustment, saveCKHQReimbursementPhotoDraft } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
 import { toast } from 'sonner'
 import { centralKitchenPhotoPath } from '@/lib/storage-paths'
@@ -24,8 +24,9 @@ function deductibleExternalRevenue(d: Pick<CKStoreData, 'externalStores' | 'exte
     .reduce((sum, order) => sum + Number(order.amount || 0), 0)
 }
 
-function hqReimbursementAmount(d: Pick<CKStoreData, 'expenseTotal' | 'externalStores' | 'externalOrders'>) {
-  return Math.max(0, d.expenseTotal - deductibleExternalRevenue(d))
+function hqReimbursementAmount(d: Pick<CKStoreData, 'expenseTotal' | 'externalStores' | 'externalOrders' | 'hqReimbursementAdjustment'>) {
+  const adjustment = Number(d.hqReimbursementAdjustment ?? 0)
+  return Math.max(0, d.expenseTotal - deductibleExternalRevenue(d) + adjustment)
 }
 
 const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
@@ -102,6 +103,8 @@ interface CKStoreData {
   hqPaidAt?: string | null
   hqReimbursementPhotoUrls?: string[]
   hqReimbursementSentAt?: string | null
+  hqReimbursementAdjustment?: number
+  hqReimbursementAdjustmentNote?: string
   ckReimbursementConfirmed?: boolean
   ckReimbursementConfirmedAt?: string | null
   revenueTotal: number
@@ -213,7 +216,9 @@ function PayButton({
   ckStoreId,
   date,
   paid,
-  expenseTotal,
+  baseAmount,
+  initialAdjustment,
+  initialAdjustmentNote,
   originalExpenseTotal,
   externalRevenue,
   photoUrls: initialPhotoUrls,
@@ -225,7 +230,9 @@ function PayButton({
   ckStoreId: string
   date: string
   paid: boolean
-  expenseTotal: number
+  baseAmount: number
+  initialAdjustment: number
+  initialAdjustmentNote?: string
   originalExpenseTotal?: number
   externalRevenue?: number
   photoUrls: string[]
@@ -238,7 +245,21 @@ function PayButton({
   const [optimistic, setOptimistic] = useState(paid)
   const [photoUrls, setPhotoUrls] = useState(initialPhotoUrls)
   const [uploading, setUploading] = useState(false)
+  const [adjustmentSign, setAdjustmentSign] = useState<'add' | 'subtract'>(initialAdjustment < 0 ? 'subtract' : 'add')
+  const [adjustmentAmount, setAdjustmentAmount] = useState(Math.abs(initialAdjustment))
+  const [adjustmentNote, setAdjustmentNote] = useState(initialAdjustmentNote ?? '')
   const inputRef = useRef<HTMLInputElement>(null)
+  const signedAdjustment = adjustmentSign === 'subtract' ? -adjustmentAmount : adjustmentAmount
+  const finalAmount = Math.max(0, baseAmount + signedAdjustment)
+
+  function persistAdjustment(sign = adjustmentSign, amount = adjustmentAmount, note = adjustmentNote, showToast = false) {
+    const signedAmount = sign === 'subtract' ? -amount : amount
+    startTransition(async () => {
+      const result = await saveCKHQReimbursementAdjustment(ckStoreId, date, signedAmount, note)
+      if (result.error) toast.error('補款調整保存失敗：' + result.error)
+      else if (showToast) toast.success('補款調整已保存')
+    })
+  }
 
   async function handleFiles(files: FileList | null) {
     if (!files?.length) return
@@ -272,8 +293,23 @@ function PayButton({
       toast.error('請先上傳補款信封照片')
       return
     }
+    if (baseAmount + signedAdjustment < 0) {
+      toast.error('減款金額不能超過原應包金額')
+      return
+    }
     setOptimistic(true)
     startTransition(async () => {
+      const adjustmentResult = await saveCKHQReimbursementAdjustment(
+        ckStoreId,
+        date,
+        signedAdjustment,
+        adjustmentNote,
+      )
+      if (adjustmentResult.error) {
+        setOptimistic(false)
+        toast.error('補款調整保存失敗：' + adjustmentResult.error)
+        return
+      }
       const r = await markCKHQPaid(ckStoreId, date, true, photoUrls)
       if (r.error) {
         setOptimistic(false)
@@ -319,11 +355,16 @@ function PayButton({
                 {confirmed ? '央廚已點交' : '待央廚點交'}
               </p>
               <p className="text-xs" style={{ color: '#16a34a' }}>
-                已包 ${fmt(expenseTotal)} 給央廚{sentAt ? ` · ${new Date(sentAt).toLocaleString('zh-TW')}` : ''}
+                已包 ${fmt(finalAmount)} 給央廚{sentAt ? ` · ${new Date(sentAt).toLocaleString('zh-TW')}` : ''}
               </p>
-              {(externalRevenue ?? 0) > 0 && (originalExpenseTotal ?? expenseTotal) !== expenseTotal && (
+              {(externalRevenue ?? 0) > 0 && (originalExpenseTotal ?? baseAmount) !== baseAmount && (
                 <p className="text-xs" style={{ color: '#15803d' }}>
-                  原支出 ${fmt(originalExpenseTotal ?? expenseTotal)} − 體系外 ${fmt(externalRevenue ?? 0)}
+                  原支出 ${fmt(originalExpenseTotal ?? baseAmount)} − 體系外 ${fmt(externalRevenue ?? 0)}
+                </p>
+              )}
+              {signedAdjustment !== 0 && (
+                <p className="text-xs" style={{ color: '#15803d' }}>
+                  補款調整 {signedAdjustment > 0 ? '+' : '−'}${fmt(Math.abs(signedAdjustment))}{adjustmentNote ? ` · ${adjustmentNote}` : ''}
                 </p>
               )}
               {confirmedAt && (
@@ -358,20 +399,59 @@ function PayButton({
           <Banknote className="h-4 w-4 shrink-0" style={{ color: '#92400e' }} />
           <div className="text-left">
             <p className="text-sm font-semibold" style={{ color: '#92400e' }}>補款信封照片</p>
-            <p className="text-xs" style={{ color: '#a16207' }}>應包 ${fmt(expenseTotal)}</p>
-            {(externalRevenue ?? 0) > 0 && (originalExpenseTotal ?? expenseTotal) !== expenseTotal && (
+            <p className="text-xs" style={{ color: '#a16207' }}>原應包 ${fmt(baseAmount)}</p>
+            {(externalRevenue ?? 0) > 0 && (originalExpenseTotal ?? baseAmount) !== baseAmount && (
               <p className="text-xs" style={{ color: '#a16207' }}>
-                ${fmt(originalExpenseTotal ?? expenseTotal)} − 體系外 ${fmt(externalRevenue ?? 0)}
+                ${fmt(originalExpenseTotal ?? baseAmount)} − 體系外 ${fmt(externalRevenue ?? 0)}
               </p>
             )}
           </div>
         </div>
         <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading || isPending}
-          className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
-          style={{ background: 'white', color: '#92400e', border: '1px solid #FDE68A' }}>
-          {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />}
-          上傳
+          className="flex min-w-[116px] items-center justify-center gap-2 px-5 py-3 text-sm font-bold rounded-xl"
+          style={{ background: 'white', color: '#92400e', border: '1.5px solid #F59E0B', boxShadow: '0 2px 8px rgba(245,158,11,0.12)' }}>
+          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+          上傳照片
         </button>
+      </div>
+      <div className="rounded-xl p-3 space-y-2" style={{ background: 'white', border: '1px solid #FDE68A' }}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-bold" style={{ color: '#92400e' }}>補款加減調整</p>
+            <p className="text-[11px]" style={{ color: '#a16207' }}>包多選減款，包少選加款</p>
+          </div>
+          <p className="text-sm font-black tabular-nums" style={{ color: '#9a3412' }}>調整後 ${fmt(finalAmount)}</p>
+        </div>
+        <div className="grid grid-cols-[auto_1fr] gap-2">
+          <div className="grid grid-cols-2 overflow-hidden rounded-lg" style={{ border: '1px solid #FDE68A' }}>
+            {(['add', 'subtract'] as const).map(sign => (
+              <button key={sign} type="button" disabled={isPending}
+                onClick={() => {
+                  setAdjustmentSign(sign)
+                  persistAdjustment(sign, adjustmentAmount, adjustmentNote)
+                }}
+                className="px-3 py-2 text-xs font-bold"
+                style={{
+                  background: adjustmentSign === sign ? (sign === 'add' ? '#dcfce7' : '#fee2e2') : 'white',
+                  color: adjustmentSign === sign ? (sign === 'add' ? '#15803d' : '#be123c') : '#71717a',
+                }}>
+                {sign === 'add' ? '＋ 加款' : '− 減款'}
+              </button>
+            ))}
+          </div>
+          <input type="number" min="0" step="1" inputMode="numeric" value={adjustmentAmount || ''}
+            onChange={event => setAdjustmentAmount(Math.max(0, Math.round(Number(event.target.value) || 0)))}
+            onBlur={() => persistAdjustment(adjustmentSign, adjustmentAmount, adjustmentNote, true)}
+            placeholder="輸入金額"
+            className="w-full rounded-lg px-3 py-2 text-right text-sm font-bold tabular-nums outline-none"
+            style={{ border: '1px solid #FDE68A', color: '#18181b' }} />
+        </div>
+        <input type="text" value={adjustmentNote} maxLength={200}
+          onChange={event => setAdjustmentNote(event.target.value)}
+          onBlur={() => persistAdjustment(adjustmentSign, adjustmentAmount, adjustmentNote)}
+          placeholder="調整原因（選填，例如：昨日包款多 $500）"
+          className="w-full rounded-lg px-3 py-2 text-xs outline-none"
+          style={{ border: '1px solid #FDE68A', color: '#52525b' }} />
       </div>
       {photoUrls.length > 0 && (
         <div className="grid grid-cols-4 gap-2">
@@ -389,12 +469,14 @@ function PayButton({
           ))}
         </div>
       )}
-      <button type="button" onClick={handleSubmit} disabled={isPending || uploading}
-        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60"
-        style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.2)' }}>
-        {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-        送出補款，通知央廚點交
-      </button>
+      <div className="flex justify-end">
+        <button type="button" onClick={handleSubmit} disabled={isPending || uploading}
+          className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60"
+          style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 2px 8px rgba(245,158,11,0.18)' }}>
+          {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+          送出補款並通知點交
+        </button>
+      </div>
     </div>
   )
 }
@@ -413,7 +495,8 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
   const badges = ckRecordBadges(displayStatus, d.hqPaid, d.ckReimbursementConfirmed ?? false)
   const hasData = displayStatus !== 'none'
   const externalRevenue = deductibleExternalRevenue(d)
-  const reimbursementAmount = Math.max(0, d.expenseTotal - externalRevenue)
+  const reimbursementBaseAmount = Math.max(0, d.expenseTotal - externalRevenue)
+  const reimbursementAmount = Math.max(0, reimbursementBaseAmount + Number(d.hqReimbursementAdjustment ?? 0))
   const expenseGroups = groupExpensesByVendor(d.expenses)
   const reconciliationMismatches = d.memberStores.filter(
     store => store.store_amount != null
@@ -644,14 +727,16 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
               )}
 
               {/* 補款管理 */}
-              {reimbursementAmount > 0 && (
+              {(reimbursementBaseAmount > 0 || reimbursementAmount > 0 || d.hqPaid) && (
                 <div>
                   <p className="text-xs font-semibold mb-2" style={{ color: '#a1a1aa' }}>補款管理</p>
                   <PayButton
                     ckStoreId={d.ckStore.id}
                     date={date}
                     paid={d.hqPaid}
-                    expenseTotal={reimbursementAmount}
+                    baseAmount={reimbursementBaseAmount}
+                    initialAdjustment={Number(d.hqReimbursementAdjustment ?? 0)}
+                    initialAdjustmentNote={d.hqReimbursementAdjustmentNote ?? ''}
                     originalExpenseTotal={d.expenseTotal}
                     externalRevenue={externalRevenue}
                     photoUrls={d.hqReimbursementPhotoUrls ?? []}

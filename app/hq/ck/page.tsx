@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { getBusinessDate } from '@/lib/business-date'
 import CKOverview from '@/components/hq/ck-overview'
 import { canReviewClosings } from '@/lib/user-permissions'
+import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,6 +60,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
   }
 
   const ckStoreIds = ckStores.map(s => s.id)
+  const reimbursementAdjustments = await getCKReimbursementAdjustments(ckStoreIds, date)
   const allAssignedIds = ckStores.flatMap(s => (s.assigned_store_ids as string[] | null) ?? [])
   const uniqueAssignedIds = [...new Set(allAssignedIds)]
 
@@ -169,6 +171,8 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       hqPaidAt: (record as any)?.hq_paid_at ?? null,
       hqReimbursementPhotoUrls: ((record as any)?.hq_reimbursement_photo_urls as string[] | null) ?? [],
       hqReimbursementSentAt: (record as any)?.hq_reimbursement_sent_at ?? null,
+      hqReimbursementAdjustment: reimbursementAdjustments[ckStore.id]?.amount ?? 0,
+      hqReimbursementAdjustmentNote: reimbursementAdjustments[ckStore.id]?.note ?? '',
       ckReimbursementConfirmed: (record as any)?.ck_reimbursement_confirmed ?? false,
       ckReimbursementConfirmedAt: (record as any)?.ck_reimbursement_confirmed_at ?? null,
       revenueTotal,
