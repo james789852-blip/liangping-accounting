@@ -21,6 +21,7 @@ interface ColumnDef {
   category?: '食材' | '耗材' | '雜項'
   vendorGroup?: string
   docType?: string
+  isRefund?: boolean
   itemKey?: string
   statKey?: 'memberRevenue' | 'externalRevenue' | 'revenue' | 'invoice' | 'receipt' | 'refund' | 'food' | 'pack' | 'misc' | 'totalExpense'
 }
@@ -87,6 +88,7 @@ type ExpenseLayoutItem = {
   category: string
   vendor_group: string
   doc_type: string
+  is_refund: boolean
   total: number
   vendor_group_sort_order: number
   sort_order: number
@@ -225,7 +227,7 @@ function buildCKVendorAnalysisRows(monthlies: CKMonthlyStats[], includeMonth: bo
         if (expense.doc_type === '發票') row.invoice += amount
         else if (expense.doc_type === '收據') row.receipt += amount
         else if (expense.doc_type === '估價單') row.estimate += amount
-        if ((expense.doc_type === '發票' && vendorGroup.includes('退稅')) || expense.item_name.includes('稅')) {
+        if (expense.is_refund ?? ((expense.doc_type === '發票' && vendorGroup.includes('退稅')) || expense.item_name.includes('稅'))) {
           row.taxRefund += amount
         }
         row.total += amount
@@ -352,7 +354,13 @@ function statFormula(
     return receiptCells.length > 0 ? receiptCells.join('+') : '0'
   }
   if (key === 'refund' && expenseStart && expenseEnd) {
-    const refundCells = expenseCols.filter(c => c.docType === '發票' && c.vendorGroup === '退稅').map(c => `${colLetter(c.index)}${rowRef}`)
+    // 跟店面 Excel 相同：優先依品項對應管理的「屬於退稅」勾選計算，
+    // 尚未設定任何勾選時才沿用舊版「發票＋退稅分類」規則。
+    const explicitlyRefundable = expenseCols.filter(c => c.isRefund)
+    const refundCols = explicitlyRefundable.length > 0
+      ? explicitlyRefundable
+      : expenseCols.filter(c => c.docType === '發票' && c.vendorGroup === '退稅')
+    const refundCells = refundCols.map(c => `${colLetter(c.index)}${rowRef}`)
     return refundCells.length > 0 ? refundCells.join('+') : '0'
   }
   if (key === 'food' && foodExpCols.length > 0) {
@@ -485,6 +493,7 @@ export async function addCKSheet(
         category: m.category,
         vendor_group: m.vendor_group,
         doc_type: m.doc_type ?? '',
+        is_refund: !!m.is_refund,
         total: rec?.total ?? 0,
         vendor_group_sort_order: m.vendor_group_sort_order ?? 9999,
         sort_order: m.sort_order ?? 9999,
@@ -495,6 +504,7 @@ export async function addCKSheet(
       return {
         ...e,
         vendor_group: canonicalVendorGroup(e.vendor_group),
+        is_refund: !!mapped?.is_refund,
         vendor_group_sort_order: vendorGroupSortOrder(e.vendor_group),
         sort_order: (mapped?.sort_order ?? 999000) + index / 1000,
       }
@@ -543,6 +553,7 @@ export async function addCKSheet(
       category: e.category as any,
       vendorGroup: e.vendor_group || '',
       docType: e.doc_type || '',
+      isRefund: e.is_refund,
       itemKey: expenseKey(e.category, e.vendor_group, e.doc_type, e.item_name),
     })
   }

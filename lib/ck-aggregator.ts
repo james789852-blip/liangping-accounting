@@ -9,6 +9,7 @@
  */
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMonthLastDay } from '@/lib/business-date'
+import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -33,7 +34,7 @@ export interface CKDailyStats {
   externalRevenue: number
   revenue: number
   // Expense
-  expenses: Array<{ category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }>
+  expenses: Array<{ category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string; is_refund?: boolean }>
   food: number
   pack: number
   misc: number
@@ -42,7 +43,7 @@ export interface CKDailyStats {
   invoiceTotal: number    // doc_type=發票
   receiptTotal: number    // doc_type=收據
   estimateTotal: number   // doc_type=估價單
-  taxRefund: number       // doc_type=發票 且 vg 含「退稅」
+  taxRefund: number       // 依品項對應管理 is_refund 計算；未設定時才回退舊規則
   // Balance
   balance: number
   receiptPhotoUrls: string[]
@@ -99,12 +100,13 @@ export async function getCKRangeStats(
   lastDay: string,
 ): Promise<{ ckStore: CKStoreInfo; days: CKDailyStats[] }> {
   const admin = createAdminClient()
-  const [{ data: storeRow }, { data: records }] = await Promise.all([
+  const [{ data: storeRow }, { data: records }, mappingItems] = await Promise.all([
     admin.from('stores').select('id, name, assigned_store_ids').eq('id', ckStoreId).single(),
     admin.from('ck_daily_records')
       .select('id, business_date, status, payer_name, hq_paid, ck_reimbursement_confirmed, receipt_photo_urls')
       .eq('ck_store_id', ckStoreId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
+    getStoreItemsFromMappings(ckStoreId),
   ])
   const ckStore = (storeRow ?? { id: ckStoreId, name: '' }) as CKStoreInfo
   const assignedIds = (ckStore.assigned_store_ids ?? []) as string[]
@@ -140,6 +142,21 @@ export async function getCKRangeStats(
   ])
 
   const recordByDate = new Map((records ?? []).map(r => [r.business_date as string, r] as const))
+  const compact = (value?: string | null) => String(value ?? '').replace(/[\s　]/g, '')
+  const hasExplicitRefundMappings = mappingItems.some(item => item.is_refund)
+  const findMappedItem = (vendorGroup: string, docType: string, itemName: string) => {
+    const vendor = compact(vendorGroup)
+    const doc = compact(docType)
+    const item = compact(itemName)
+    return mappingItems.find(mapping =>
+      compact(mapping.vendor_group) === vendor
+      && compact(mapping.doc_type) === doc
+      && compact(mapping.name) === item
+    ) ?? mappingItems.find(mapping =>
+      compact(mapping.vendor_group) === vendor
+      && compact(mapping.name) === item
+    ) ?? mappingItems.find(mapping => compact(mapping.name) === item)
+  }
 
   // 補齊日曆
   const startDate = new Date(firstDay + 'T12:00:00+08:00')
@@ -179,6 +196,10 @@ export async function getCKRangeStats(
       for (const e of exps) {
         const vg = (e.vendor_group ?? '') as string
         const doc = (e.doc_type ?? '') as string
+        const mappedItem = findMappedItem(vg, doc, String(e.item_name ?? ''))
+        const isRefund = hasExplicitRefundMappings
+          ? !!mappedItem?.is_refund
+          : doc === '發票' && vg.includes('退稅')
         const note = typeof e.note === 'string' ? e.note.trim() : ''
         dd.expenses.push({
           category: e.category, item_name: e.item_name, amount: e.amount ?? 0,
@@ -186,6 +207,7 @@ export async function getCKRangeStats(
           vendor_group: vg || undefined, doc_type: doc || undefined,
           note: note || undefined,
           receipt_photo_url: e.receipt_photo_url ?? undefined,
+          is_refund: isRefund,
         })
         const amt = e.amount ?? 0
         if (e.category === '食材') dd.food += amt
@@ -194,12 +216,12 @@ export async function getCKRangeStats(
         // 依單據類型加總
         if (doc === '發票') {
           dd.invoiceTotal += amt
-          if (vg.includes('退稅')) dd.taxRefund += amt
         } else if (doc === '收據') {
           dd.receiptTotal += amt
         } else if (doc === '估價單') {
           dd.estimateTotal += amt
         }
+        if (isRefund) dd.taxRefund += amt
       }
       dd.totalExpense = dd.food + dd.pack + dd.misc
       dd.balance = dd.revenue - dd.totalExpense
