@@ -1173,8 +1173,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // 初始化時先讀取本機草稿，再允許寫回。否則首次 render 的空陣列會先覆蓋
   // 使用者剛輸入的手寫菜單金額，造成重新整理後資料消失。
   const [handwriteOrdersHydrated, setHandwriteOrdersHydrated] = useState(false)
-  const handwriteOrdersRef = useRef(handwriteOrders)
-  handwriteOrdersRef.current = handwriteOrders
   const handwriteOrdersLsKey = `handwrite_orders_${store.id}_${today}`
   useEffect(() => {
     if ((existingClosing?.handwrite_orders ?? []).length === 0) {
@@ -1499,6 +1497,36 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     () => calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, largeCashExpenses),
     [data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, largeCashExpenses],
   )
+  // debounce timer / in-flight save 會持有舊 render 的 closure；所有真正寫入 DB 的資料
+  // 必須在執行當下從 ref 取得，否則剛上傳的照片或最後一次輸入可能被前一版狀態覆蓋。
+  const saveSnapshotRef = useRef({
+    data,
+    expenses,
+    handwriteOrders,
+    adjustments,
+    reserves,
+    largeCashExpenses,
+    channelPhotos,
+    ckPhotoUrl,
+    envelopePhotoUrl,
+    extraPhotos,
+    voidInvoicePhotos,
+    notePhotoUrl,
+  })
+  saveSnapshotRef.current = {
+    data,
+    expenses,
+    handwriteOrders,
+    adjustments,
+    reserves,
+    largeCashExpenses,
+    channelPhotos,
+    ckPhotoUrl,
+    envelopePhotoUrl,
+    extraPhotos,
+    voidInvoicePhotos,
+    notePhotoUrl,
+  }
   const hasRemittanceChange = s.totalReserved > 0 || s.adjustmentTotal !== 0 || s.preReservedExpenseTotal > 0
   // 信封袋實際裝的是完成匯款調整、扣除預留款後要交回 HQ 的金額。
   // 例如整筆現金預留營業稅時 remitToHQ = 0，當天不會有信封，也不應要求照片。
@@ -2422,30 +2450,51 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     // 下一步的背景儲存不應阻塞頁面操作；只有使用者明確按儲存時才顯示 loading。
     if (!silent) setSaving(true)
     const supabase = createClient()
-    const d = dataRef.current
+    const snapshot = saveSnapshotRef.current
+    const d = snapshot.data
     try {
       let cid = closingId
       // 直接從 ref 計算最新 CK 金額，避免 useEffect 延遲造成 data.ck_total stale
       const ckTotalLive = ckPrices.reduce(
         (sum, p) => sum + (ckQuantitiesRef.current[p.id] || 0) * (ckPriceOverridesRef.current[p.id] ?? p.unit_price), 0
       )
+      const latestExpenseTotal = snapshot.expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0)
+      const latestHandwriteTotal = snapshot.handwriteOrders.reduce(
+        (sum, order) => sum + (order.voided ? 0 : (order.amount || 0)),
+        0,
+      )
+      const latestSummary = calcSummary(
+        d,
+        store,
+        ckPrices,
+        latestExpenseTotal,
+        latestHandwriteTotal,
+        snapshot.adjustments,
+        snapshot.reserves,
+        snapshot.largeCashExpenses,
+      )
       const payload = {
         store_id: store.id, manager_id: userId, business_date: today,
-        total_revenue: s.totalRevenue, total_cost: ckTotalLive > 0 ? ckTotalLive : s.deliveryFee, total_expenses: totalExpenses,
-        expected_remit: s.netToHQ, actual_remit: s.actualRemit,
-        should_include_delivery: s.shouldEnvelope, variance: s.variance, note: d.note,
-        remittance_adjustments: adjustments,
-        reserve_items: reserves,
-        ck_delivery_photo_url: ckPhotoUrl ?? null,
+        total_revenue: latestSummary.totalRevenue,
+        total_cost: ckTotalLive > 0 ? ckTotalLive : latestSummary.deliveryFee,
+        total_expenses: latestExpenseTotal,
+        expected_remit: latestSummary.netToHQ,
+        actual_remit: latestSummary.actualRemit,
+        should_include_delivery: latestSummary.shouldEnvelope,
+        variance: latestSummary.variance,
+        note: d.note,
+        remittance_adjustments: snapshot.adjustments,
+        reserve_items: snapshot.reserves,
+        ck_delivery_photo_url: snapshot.ckPhotoUrl ?? null,
         channel_photo_urls: Object.fromEntries(
-          Object.entries(channelPhotos)
+          Object.entries(snapshot.channelPhotos)
             .filter(([, v]) => v.publicUrl)
             .map(([k, v]) => [k, v.publicUrl])
         ),
-        envelope_photo_url: envelopePhotoUrl ?? null,
-        void_invoice_photo_urls: voidInvoicePhotos,
-        note_photo_url: notePhotoUrl ?? null,
-        extra_photo_urls: extraPhotos,
+        envelope_photo_url: snapshot.envelopePhotoUrl ?? null,
+        void_invoice_photo_urls: snapshot.voidInvoicePhotos,
+        note_photo_url: snapshot.notePhotoUrl ?? null,
+        extra_photo_urls: snapshot.extraPhotos,
       }
       if (!cid) {
         // 防呆：當日可能已有 closing 但 state 沒同步（page race / refresh / multi-tab），
@@ -2496,7 +2545,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
           storeId: store.id, date: today, status, submitted: false,
-          data: d, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses,
+          data: d,
+          expenses: snapshot.expenses,
+          handwriteOrders: snapshot.handwriteOrders,
+          adjustments: snapshot.adjustments,
+          reserves: snapshot.reserves,
+          largeCashExpenses: snapshot.largeCashExpenses,
           ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
           pettyCounts, pettyLumps, ts: Date.now(),
         }))
@@ -2510,7 +2564,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         ...(store.twpay_enabled ? [{ closing_id: cid, channel: 'twpay', gross_amount: d.twpay_amount, is_cash: false }] : []),
         ...(store.online_enabled ? [{ closing_id: cid, channel: 'online', gross_amount: d.online_amount, is_cash: false }] : []),
         ...(store.online_cash_enabled ? [{ closing_id: cid, channel: 'online_cash', gross_amount: d.online_cash_amount, is_cash: false }] : []),
-        ...(store.mode !== 'ichef' ? [{ closing_id: cid, channel: 'handwrite', gross_amount: handwriteTotal, is_cash: true }] : []),
+        ...(store.mode !== 'ichef' ? [{ closing_id: cid, channel: 'handwrite', gross_amount: latestHandwriteTotal, is_cash: true }] : []),
       ]
       const revTotal = revItems.reduce((s, r: any) => s + (r.gross_amount ?? 0), 0)
       if (!cid) throw new Error('無法取得帳目 ID')
@@ -2519,7 +2573,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         coins_50: d.coins_50, coins_10: d.coins_10, coins_5: d.coins_5, coins_1: d.coins_1,
         lump_1000: d.lump_1000, lump_500: d.lump_500, lump_100: d.lump_100,
         lump_50: d.lump_50, lump_10: d.lump_10, lump_5: d.lump_5, lump_1: d.lump_1,
-        large_expenses: largeCashExpenses
+        large_expenses: snapshot.largeCashExpenses
           .map(item => ({ ...item, description: item.description.trim(), amount: Math.abs(item.amount || 0) }))
           .filter(item => item.amount > 0 || item.description),
       }
@@ -2542,11 +2596,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           }
         })
       // expense_items：只有 expItems.length > 0 才 wipe-insert
-      const expItems = expenses
+      const expItems = snapshot.expenses
         .filter(e => e.description.trim() || e.amount !== 0)
         .map(e => ({ closing_id: cid, description: e.description.trim() || '支出', amount: e.amount }))
       // handwrite_orders：每次都先同步刪除，確保「全部刪除」後不會留下舊單號
-      const currentHandwriteOrders = handwriteOrdersRef.current
+      const currentHandwriteOrders = snapshot.handwriteOrders
       const hwItems = currentHandwriteOrders
         .filter(o => o.order_number.trim())
         .map(o => ({
