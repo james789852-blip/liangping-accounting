@@ -16,6 +16,7 @@ import { getMonthLastDay } from '@/lib/business-date'
 import { type ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { compareResolvedItemsByMappingOrder, getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 import { taxAddonBaseName } from '@/lib/tax-addon'
+import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -184,9 +185,10 @@ export async function getRangeStats(
   const itemMeta = new Map(items.map(i => [i.name, i] as const))
   const itemCandidates = new Map<string, ResolvedStoreItem[]>()
   for (const item of items) {
-    const list = itemCandidates.get(item.name) ?? []
+    const lookupKey = itemNameCompatibilityKey(item.name)
+    const list = itemCandidates.get(lookupKey) ?? []
     list.push(item)
-    itemCandidates.set(item.name, list)
+    itemCandidates.set(lookupKey, list)
   }
   const scopedKey = (vendorGroup: string, itemName: string) => `${vendorGroup}|${itemName}`
   const addItemAmount = (dd: DailyStats, itemName: string, amount: number, vendorGroup?: string) => {
@@ -203,7 +205,7 @@ export async function getRangeStats(
     actualVendorName?: string | null,
     relatedItems?: any[],
   ) => {
-    const candidates = itemCandidates.get(itemName) ?? []
+    const candidates = itemCandidates.get(itemNameCompatibilityKey(itemName)) ?? []
     if (candidates.length <= 1) return candidates[0]
     const vendorText = `${vendorName ?? ''} ${actualVendorName ?? ''}`
     const byVendor = candidates.find(candidate => candidate.vendor_group && vendorText.includes(candidate.vendor_group))
@@ -214,7 +216,7 @@ export async function getRangeStats(
     const taxCandidate = candidates.find(candidate => candidate.is_tax_addon)
     if (taxCandidate) {
       const targetName = taxCandidate.tax_target_item?.trim() || taxAddonBaseName(itemName)
-      const targetCandidates = itemCandidates.get(targetName) ?? []
+      const targetCandidates = itemCandidates.get(itemNameCompatibilityKey(targetName)) ?? []
       const target = targetCandidates.find(candidate => candidate.vendor_group && vendorText.includes(candidate.vendor_group))
         ?? targetCandidates[0]
       if (target?.vendor_group) {
@@ -225,7 +227,7 @@ export async function getRangeStats(
 
     // 分類稅金沒有指定原始品項時，使用本張收據其他品項推導分類。
     for (const related of relatedItems ?? []) {
-      const relatedCandidates = itemCandidates.get(String(related.item_name ?? '')) ?? []
+      const relatedCandidates = itemCandidates.get(itemNameCompatibilityKey(String(related.item_name ?? ''))) ?? []
       const relatedMatch = relatedCandidates.find(candidate => candidate.vendor_group && vendorText.includes(candidate.vendor_group))
         ?? relatedCandidates[0]
       if (relatedMatch?.vendor_group) {
@@ -296,8 +298,10 @@ export async function getRangeStats(
     })
     for (const it of receiptItems) {
       if (!it.amount) continue
-      const itemKey = it.item_name
-      const receiptMeta = resolveReceiptItem(itemKey, r.vendor_name, r.actual_vendor_name, receiptItems)
+      const rawItemName = String(it.item_name ?? '')
+      const receiptMeta = resolveReceiptItem(rawItemName, r.vendor_name, r.actual_vendor_name, receiptItems)
+      // 歷史別名聚合到目前 mapping 名稱，讓 Excel 欄位、分類及月合計使用同一份資料。
+      const itemKey = receiptMeta?.name ?? rawItemName
       addItemAmount(dd, itemKey, it.amount, receiptMeta?.vendor_group)
       if (noteText && !notedItemNames.has(itemKey)) {
         dd.notes[itemKey] = dd.notes[itemKey]
@@ -322,7 +326,7 @@ export async function getRangeStats(
       const target = nonTaxItems.find(item => (item.item_name ?? '').trim())
       if (target?.item_name) {
         const targetMeta = resolveReceiptItem(target.item_name, r.vendor_name, r.actual_vendor_name, receiptItems)
-        addItemAmount(dd, target.item_name, remainder, targetMeta?.vendor_group)
+        addItemAmount(dd, targetMeta?.name ?? target.item_name, remainder, targetMeta?.vendor_group)
       }
     }
 
@@ -335,7 +339,7 @@ export async function getRangeStats(
     if (tax > 0 && !hasExplicitTaxItem) {
       const hasPack = (r.receipt_items ?? []).some((it: any) => {
         if (it.item_category === '耗材') return true
-        const m = itemMeta.get(it.item_name)
+        const m = resolveReceiptItem(it.item_name, r.vendor_name, r.actual_vendor_name, receiptItems)
         return m?.category === '耗材'
       })
       if (hasPack) {
@@ -345,7 +349,9 @@ export async function getRangeStats(
         // 命名 convention：「{vg}稅金」（例：「小雲稅金」「翁師傅稅金」）
         //   → 需在品項對應管理新增此品項，收據稅外加金額才會匯進來
         const firstItem = (r.receipt_items ?? [])[0]
-        const m = firstItem ? itemMeta.get(firstItem.item_name) : null
+        const m = firstItem
+          ? resolveReceiptItem(firstItem.item_name, r.vendor_name, r.actual_vendor_name, receiptItems)
+          : null
         const vgTaxKey = m?.vendor_group ? `${m.vendor_group}稅金` : '雜項稅金'
         addItemAmount(dd, vgTaxKey, tax, m?.vendor_group)
       }

@@ -17,6 +17,7 @@ import { findTaxAddonMapping as findTaxAddonByContext, taxAddonBaseName } from '
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
 import SharedSafePhotoImage from '@/components/shared/safe-photo-image'
 import { storePhotoPath } from '@/lib/storage-paths'
+import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
 
 interface RemittanceAdjustment {
   id: string
@@ -463,7 +464,7 @@ function isOtherReceiptItem(itemName: string | undefined, categoryName: string |
 }
 
 function normalizeOtherReceiptItemName(value: string | undefined) {
-  return (value ?? '').replace(/[\s　()（）]/g, '').trim()
+  return itemNameCompatibilityKey(value)
 }
 
 function isAutoNegativeOtherReceiptItem(itemName: string | undefined, categoryName: string | undefined) {
@@ -548,18 +549,19 @@ function findReceiptItemMapping(
   const name = itemName.trim()
   const vendor = vendorName.trim()
   const category = categoryName.trim()
+  const compatibleName = itemNameCompatibilityKey(name)
+  const compatibleMappings = mappingColumns.filter(c => itemNameCompatibilityKey(c.name) === compatibleName)
   return (
     mappingColumns.find(c => c.name === name && c.vendor_group === vendor)
     ?? mappingColumns.find(c => c.name === name && c.vendor_group === category)
     ?? mappingColumns.find(c => c.name === name && c.category === category)
     ?? mappingColumns.find(c => c.name === name)
-    // 兼容舊資料曾將「（賣）」括號省略的情況；新資料仍完整儲存設定名稱。
-    ?? (category === '其他'
-      ? mappingColumns.find(c =>
-        normalizeOtherReceiptItemName(c.name) === normalizeOtherReceiptItemName(name)
-        && (c.category === category || c.vendor_group === category),
-      )
-      : undefined)
+    // 相容舊資料的括號、連字號及「與／跟、購買／買」差異；
+    // 新增或編輯後仍會完整儲存目前 mapping 名稱。
+    ?? compatibleMappings.find(c => c.vendor_group === vendor)
+    ?? compatibleMappings.find(c => c.vendor_group === category)
+    ?? compatibleMappings.find(c => c.category === category)
+    ?? compatibleMappings[0]
   )
 }
 
@@ -1936,8 +1938,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       validItems.push({ id: crypto.randomUUID(), item_name: taxMapping.name, unit: '', quantity: 1, unit_price: 0, amount: taxAmount, vendor_group_hint: taxMapping.vendor_group })
     }
     const resolveEditItemMapping = (item: ReceiptFormItem) => item.vendor_group_hint
-      ? mappingColumns.find(c => c.name === item.item_name && c.vendor_group === item.vendor_group_hint)
+      ? mappingColumns.find(c =>
+        itemNameCompatibilityKey(c.name) === itemNameCompatibilityKey(item.item_name)
+        && c.vendor_group === item.vendor_group_hint,
+      )
       : findReceiptItemMapping(item.item_name, editVendor, editCategory, mappingColumns)
+    const canonicalItems = validItems.map(item => {
+      const match = resolveEditItemMapping(item)
+      return { ...item, item_name: match?.name ?? item.item_name.trim() }
+    })
 
     const updatedReceipts = localReceipts.map(r =>
       r.id === editingReceiptId ? {
@@ -1946,7 +1955,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         receipt_type: r.receipt_type,
         photo_url: newPhotoUrl,
         notes: editNotes.trim() || undefined,
-        receipt_items: validItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: normalizeItemAmount(i.item_name, i.amount) })),
+        receipt_items: canonicalItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: normalizeItemAmount(i.item_name, i.amount) })),
       } : r
     )
     setLocalReceipts(updatedReceipts)
@@ -1962,9 +1971,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }).eq('id', editingReceiptId)
     await rememberActualVendor(supabase, editVendor, editActualVendor)
     await supabase.from('receipt_items').delete().eq('receipt_id', editingReceiptId)
-    if (validItems.length > 0) {
+    if (canonicalItems.length > 0) {
       await supabase.from('receipt_items').insert(
-        validItems.map(i => {
+        canonicalItems.map(i => {
           const match = resolveEditItemMapping(i)
           return {
             receipt_id: editingReceiptId,
@@ -2237,11 +2246,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       validItems.push({ id: crypto.randomUUID(), item_name: taxMapping.name, unit: '', quantity: 1, unit_price: 0, amount: taxAmount, vendor_group_hint: taxMapping.vendor_group })
     }
     const resolveFormItemMapping = (item: ReceiptFormItem) => item.vendor_group_hint
-      ? mappingColumns.find(c => c.name === item.item_name && c.vendor_group === item.vendor_group_hint)
+      ? mappingColumns.find(c =>
+        itemNameCompatibilityKey(c.name) === itemNameCompatibilityKey(item.item_name)
+        && c.vendor_group === item.vendor_group_hint,
+      )
       : findReceiptItemMapping(item.item_name, form.vendor_name, form.category, mappingColumns)
-    if (validItems.length > 0) {
+    const canonicalItems = validItems.map(item => {
+      const match = resolveFormItemMapping(item)
+      return { ...item, item_name: match?.name ?? item.item_name.trim() }
+    })
+    if (canonicalItems.length > 0) {
       await supabase.from('receipt_items').insert(
-        validItems.map(i => {
+        canonicalItems.map(i => {
           const match = resolveFormItemMapping(i)
           return {
             receipt_id: saved.id,
@@ -2266,7 +2282,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       receipt_type: 'receipt',
       photo_url,
       notes: form.notes.trim() || undefined,
-      receipt_items: validItems,
+      receipt_items: canonicalItems,
     }
     const updated = [...localReceipts, newR]
     setLocalReceipts(updated)

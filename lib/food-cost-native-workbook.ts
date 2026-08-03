@@ -15,6 +15,7 @@ import { getDisplayPosTotal, getMonthlyStats, type DailyStats, type MonthlyStats
 import { type ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { compareResolvedItemsByMappingOrder, getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -59,16 +60,12 @@ function displayHeader(name: string, vg?: string): string {
  * 舊收據曾把「（賣）給分店食材」存成「賣給分店食材」，
  * 匯出時應仍能落到目前設定的完整名稱欄位。
  */
-function normalizeItemLookupKey(value: string): string {
-  return value.replace(/[\s　()（）-]/g, '').trim()
-}
-
 function itemValueForExport(items: Record<string, number>, key: string): { value: number; sourceKey: string } {
   const directKey = key in items ? key : key.replace(/-/g, '')
   if (directKey in items) return { value: items[directKey] ?? 0, sourceKey: directKey }
 
   const compatible = Object.keys(items).find(itemName =>
-    normalizeItemLookupKey(itemName) === normalizeItemLookupKey(key),
+    itemNameCompatibilityKey(itemName) === itemNameCompatibilityKey(key),
   )
   return compatible ? { value: items[compatible] ?? 0, sourceKey: compatible } : { value: 0, sourceKey: key }
 }
@@ -95,7 +92,7 @@ function scopedItemValueForExport(
       const separator = scopedKey.indexOf('|')
       if (separator < 0) return false
       const scopedItemName = scopedKey.slice(separator + 1)
-      return normalizeItemLookupKey(scopedItemName) === normalizeItemLookupKey(key)
+      return itemNameCompatibilityKey(scopedItemName) === itemNameCompatibilityKey(key)
     })
     if (hasScopedItem) {
       return { value: 0, sourceKey: key }
