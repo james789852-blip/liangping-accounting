@@ -26,6 +26,48 @@ interface RemittanceAdjustment {
   person?: string
 }
 
+type RemittanceAdjustmentDraft = {
+  items: RemittanceAdjustment[]
+  savedAt: number
+}
+
+function normalizeRemittanceAdjustments(value: unknown): RemittanceAdjustment[] {
+  if (!Array.isArray(value)) return []
+  const validTypes = new Set<RemittanceAdjustment['type']>(['advance', 'reimburse', 'customer_transfer', 'carryover', 'other'])
+  return value
+    .filter(item => !!item && typeof item === 'object')
+    .map((item, index) => {
+      const row = item as Partial<RemittanceAdjustment>
+      const type = validTypes.has(row.type as RemittanceAdjustment['type']) ? row.type as RemittanceAdjustment['type'] : 'other'
+      return {
+        id: typeof row.id === 'string' && row.id ? row.id : `legacy-adjustment-${index}`,
+        type,
+        label: typeof row.label === 'string' ? row.label : '',
+        amount: type === 'customer_transfer'
+          ? -Math.abs(Number(row.amount) || 0)
+          : Number(row.amount) || 0,
+        person: typeof row.person === 'string' ? row.person : '',
+      }
+    })
+}
+
+function parseRemittanceAdjustmentDraft(raw: string | null): RemittanceAdjustmentDraft | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (Array.isArray(parsed)) {
+      return { items: normalizeRemittanceAdjustments(parsed), savedAt: 0 }
+    }
+    if (parsed && typeof parsed === 'object' && Array.isArray((parsed as Partial<RemittanceAdjustmentDraft>).items)) {
+      return {
+        items: normalizeRemittanceAdjustments((parsed as Partial<RemittanceAdjustmentDraft>).items),
+        savedAt: Number((parsed as Partial<RemittanceAdjustmentDraft>).savedAt) || 0,
+      }
+    }
+  } catch {}
+  return null
+}
+
 interface ReserveItem {
   id: string
   reason: string
@@ -377,12 +419,9 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
   // 「前幾日已預留」只在最後包回 HQ 的金額加回，不改動上述原始帳務數字。
   const preReservedExpenseTotal = getPreReservedExpenseTotal(largeCashExpenses)
   const cashExpenseTotal = largeExpenseTotal
-  // 顧客已完成轉帳但不在現金鈔箱；現金清點的總額仍要呈現這筆收入，
-  // 下一步再透過負的匯款調整扣回，得到實際要包回公司的金額。
-  const customerTransferTotal = adjustments
-    .filter(item => item.type === 'customer_transfer')
-    .reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0)
-  const cashTotal = cashSubtotal - cashExpenseTotal + customerTransferTotal
+  // 顧客匯款不是收銀台裡的實體現金，不能先加進現金清點再於下一步扣除，
+  // 否則兩邊會互相抵消，造成「實際包進信封」完全沒有變動。
+  const cashTotal = cashSubtotal - cashExpenseTotal
 
   const actualRemit = cashTotal - store.petty_cash
   const variance = actualRemit - shouldEnvelope
@@ -1184,16 +1223,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setHandwriteOrdersHydrated(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const [adjustments, setAdjustments] = useState<RemittanceAdjustment[]>(() => {
-    const saved = existingClosing?.remittance_adjustments
-    if (Array.isArray(saved) && saved.length > 0) {
-      // 顧客匯款在現金清點是「正的收入」；進入匯款調整後才以負數扣除非現金。
-      return saved.map(item => item.type === 'customer_transfer'
-        ? { ...item, amount: -Math.abs(Number(item.amount) || 0) }
-        : item)
-    }
-    return []
-  })
+  const [adjustments, setAdjustments] = useState<RemittanceAdjustment[]>(() =>
+    normalizeRemittanceAdjustments(existingClosing?.remittance_adjustments)
+  )
+  // 必須先完成 DB／本機草稿還原，才能把 state 寫回 localStorage。
+  // 否則首次 render 的空陣列會先覆蓋使用者剛新增的匯款調整。
+  const [adjustmentsHydrated, setAdjustmentsHydrated] = useState(false)
   const [showAdjForm, setShowAdjForm] = useState(false)
   const [adjForm, setAdjForm] = useState<Omit<RemittanceAdjustment, 'id'>>({ type: 'advance', label: '', amount: 0, person: '' })
   const customerTransferAmount = useMemo(
@@ -1222,15 +1257,41 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }
   const adjLsKey = `remit_adj_${store.id}_${today}`
   useEffect(() => {
-    if (existingClosing?.remittance_adjustments && (existingClosing.remittance_adjustments as any[]).length > 0) return
     try {
-      const stored = JSON.parse(localStorage.getItem(adjLsKey) ?? '[]')
-      if (Array.isArray(stored) && stored.length > 0) setAdjustments(stored)
+      const dbItems = normalizeRemittanceAdjustments(existingClosing?.remittance_adjustments)
+      const localDraft = parseRemittanceAdjustmentDraft(localStorage.getItem(adjLsKey))
+
+      // 專用匯款調整草稿最接近使用者最後一次輸入，優先於背景 DB 儲存。
+      // 舊版可能曾寫入空陣列；若 DB 已有資料，舊的空陣列不可反過來清空 DB 內容。
+      if (localDraft && (localDraft.savedAt > 0 || localDraft.items.length > 0 || dbItems.length === 0)) {
+        setAdjustments(localDraft.items)
+      } else if (dbItems.length === 0) {
+        const backup = JSON.parse(localStorage.getItem(`save_bk_${store.id}_${today}`) ?? 'null')
+        const maxBackupAge = existingClosing?.status === 'disputed' ? 7 * 86400000 : 86400000
+        const backupIsCurrent = backup?.storeId === store.id
+          && backup?.date === today
+          && Number(backup?.ts) > 0
+          && Date.now() - Number(backup.ts) <= maxBackupAge
+          && !backup?.submitted
+          && !['submitted', 'verified'].includes(backup?.status)
+        if (backupIsCurrent && Array.isArray(backup.adjustments)) {
+          setAdjustments(normalizeRemittanceAdjustments(backup.adjustments))
+        }
+      }
     } catch {}
+    setAdjustmentsHydrated(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => {
-    try { localStorage.setItem(adjLsKey, JSON.stringify(adjustments)) } catch {}
-  }, [adjustments])
+    if (!adjustmentsHydrated || ['submitted', 'verified'].includes(existingClosing?.status ?? '')) return
+    try {
+      localStorage.setItem(adjLsKey, JSON.stringify({ items: adjustments, savedAt: Date.now() } satisfies RemittanceAdjustmentDraft))
+    } catch {}
+    // render 完成後才排程，saveSnapshotRef 此時已是最新 adjustments，避免舊快照寫回空陣列。
+    const timer = window.setTimeout(() => scheduleBackgroundSave(), 350)
+    return () => window.clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adjustments, adjustmentsHydrated, existingClosing?.status])
   const [reserves, setReserves] = useState<ReserveItem[]>(() => {
     const saved = existingClosing?.reserve_items
     if (Array.isArray(saved) && saved.length > 0) return saved
@@ -1411,7 +1472,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (bk.data) setData(bk.data)
       if (Array.isArray(bk.expenses)) setExpenses(bk.expenses)
       if (Array.isArray(bk.handwriteOrders)) setHandwriteOrders(bk.handwriteOrders)
-      if (Array.isArray(bk.adjustments)) setAdjustments(bk.adjustments)
+      // 匯款調整有獨立、即時更新的草稿；只有沒有專用草稿時才使用通用備份，
+      // 避免較舊的 save_bk 把剛輸入的顧客匯款覆蓋掉。
+      if (!localStorage.getItem(adjLsKey) && Array.isArray(bk.adjustments)) {
+        setAdjustments(normalizeRemittanceAdjustments(bk.adjustments))
+      }
       if (Array.isArray(bk.reserves)) setReserves(bk.reserves)
       if (Array.isArray(bk.largeCashExpenses)) setLargeCashExpenses(bk.largeCashExpenses)
       if (bk.ckQuantities && typeof bk.ckQuantities === 'object') setCkQuantities(bk.ckQuantities)
@@ -4814,9 +4879,37 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 </div>
                 <div className="flex justify-between items-center px-4 py-3 rounded-2xl mt-2"
                   style={{ background: 'linear-gradient(135deg,#1e1b4b,#312e81)', border: '2px solid #92400E' }}>
-                  <span className="text-sm font-bold" style={{ color: '#FDE68A' }}>今日實際匯入（調整／預留後）</span>
+                  <span className="text-sm font-bold" style={{ color: '#FDE68A' }}>今日實際包進信封（調整／預留後）</span>
                   <span className="text-2xl font-extrabold tabular-nums" style={{ color: '#fff', letterSpacing: '-0.02em' }}>${fmt(s.remitToHQ)}</span>
                 </div>
+                {hasRemittanceChange && (
+                  <div className="mt-2 px-3 py-2 rounded-xl space-y-1 text-[11px]" style={{ background: '#f8fafc', color: '#64748b' }}>
+                    <div className="flex justify-between gap-3">
+                      <span>現金清點扣零用金</span>
+                      <span className="tabular-nums">${fmt(s.actualRemit)}</span>
+                    </div>
+                    {s.adjustmentTotal !== 0 && (
+                      <div className="flex justify-between gap-3">
+                        <span>匯款調整</span>
+                        <span className="tabular-nums" style={{ color: s.adjustmentTotal < 0 ? '#dc2626' : '#059669' }}>
+                          {s.adjustmentTotal >= 0 ? '+' : '−'}${fmt(Math.abs(s.adjustmentTotal))}
+                        </span>
+                      </div>
+                    )}
+                    {s.totalReserved > 0 && (
+                      <div className="flex justify-between gap-3">
+                        <span>預留款</span>
+                        <span className="tabular-nums" style={{ color: '#dc2626' }}>−${fmt(s.totalReserved)}</span>
+                      </div>
+                    )}
+                    {s.preReservedExpenseTotal > 0 && (
+                      <div className="flex justify-between gap-3">
+                        <span>前幾日已預留支出加回</span>
+                        <span className="tabular-nums" style={{ color: '#059669' }}>+${fmt(s.preReservedExpenseTotal)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {/* Envelope bag photo */}
                 <div className="mt-3">
                   {(envelopePhotoPreview || envelopePhotoUrl) ? (
