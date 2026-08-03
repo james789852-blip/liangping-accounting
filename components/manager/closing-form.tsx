@@ -12,7 +12,11 @@ import { syncStoreCKOrder } from '@/app/actions/ck'
 import { createSignedUploadUrl, uploadToStorage } from '@/app/actions/upload'
 import { compressImage } from '@/lib/compress-image'
 import { normalizeItemAmount } from '@/lib/negative-items'
-import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
+import {
+  applyPreReservedExpenseHints,
+  getPreReservedExpenseTotal,
+  type PreReservedExpenseHint,
+} from '@/lib/pre-reserved-expenses'
 import { findTaxAddonMapping as findTaxAddonByContext, taxAddonBaseName } from '@/lib/tax-addon'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
 import SharedSafePhotoImage from '@/components/shared/safe-photo-image'
@@ -218,12 +222,6 @@ interface PrevDayReserve {
     started_date?: string
     remaining_amount?: number
   }[]
-}
-
-interface PreReservedExpenseHint {
-  reason: string
-  amount: number
-  total_bill?: number
 }
 
 interface Props {
@@ -1560,9 +1558,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   const totalExpenses = useMemo(() => expenses.reduce((sum, e) => sum + (e.amount || 0), 0), [expenses])
   const handwriteTotal = useMemo(() => handwriteOrders.reduce((sum, o) => sum + (o.voided ? 0 : (o.amount || 0)), 0), [handwriteOrders])
+  // 預留款必須在 render 當下就參與包款計算，不能等待 useEffect 才補標。
+  // 否則店長快速進入確認頁時，會先看到尚未加回預留款的錯誤金額。
+  const effectiveLargeCashExpenses = useMemo(
+    () => applyPreReservedExpenseHints(largeCashExpenses, preReservedExpenseHints),
+    [largeCashExpenses, preReservedExpenseHints],
+  )
   const s = useMemo(
-    () => calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, largeCashExpenses),
-    [data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, largeCashExpenses],
+    () => calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, effectiveLargeCashExpenses),
+    [data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, effectiveLargeCashExpenses],
   )
   // debounce timer / in-flight save 會持有舊 render 的 closure；所有真正寫入 DB 的資料
   // 必須在執行當下從 ref 取得，否則剛上傳的照片或最後一次輸入可能被前一版狀態覆蓋。
@@ -1572,7 +1576,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     handwriteOrders,
     adjustments,
     reserves,
-    largeCashExpenses,
+    largeCashExpenses: effectiveLargeCashExpenses,
     channelPhotos,
     ckPhotoUrl,
     envelopePhotoUrl,
@@ -1586,7 +1590,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     handwriteOrders,
     adjustments,
     reserves,
-    largeCashExpenses,
+    largeCashExpenses: effectiveLargeCashExpenses,
     channelPhotos,
     ckPhotoUrl,
     envelopePhotoUrl,
@@ -1615,17 +1619,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   useEffect(() => {
     if (isLocked || submitDone || preReservedExpenseHints.length === 0) return
     setLargeCashExpenses(prev => {
-      let changed = false
-      const next = prev.map(item => {
-        if (item.preReserved === true || item.amount <= 0 || !item.description.trim()) return item
-        const reason = normalizeReserveReason(item.description)
-        const hint = preReservedExpenseHints.find(candidate => normalizeReserveReason(candidate.reason) === reason)
-        if (!hint) return item
-        // 有帳單總額時只自動套用到同額支出；沒有總額的舊預留資料則以同名為準。
-        if (hint.total_bill && Math.abs(Math.abs(item.amount) - hint.total_bill) > 1) return item
-        changed = true
-        return { ...item, preReserved: true }
-      })
+      const next = applyPreReservedExpenseHints(prev, preReservedExpenseHints)
+      const changed = next.some((item, index) => item !== prev[index])
       return changed ? next : prev
     })
   }, [isLocked, submitDone, preReservedExpenseHints, largeCashExpenses])
@@ -4821,6 +4816,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   <div className="flex justify-between text-sm font-semibold tabular-nums pt-2" style={{ borderTop: '1px solid #fed7aa', color: '#dc2626' }}>
                     <span>大額支出小計</span>
                     <span>-${fmt(s.largeExpenseTotal)}</span>
+                  </div>
+                )}
+                {s.preReservedExpenseTotal > 0 && (
+                  <div className="rounded-xl px-3 py-2 text-xs font-semibold flex items-center justify-between gap-3"
+                    style={{ background: '#ecfdf5', border: '1px solid #86efac', color: '#047857' }}>
+                    <span>已使用前幾日預留款支付，今日包款自動加回</span>
+                    <span className="tabular-nums shrink-0">+${fmt(s.preReservedExpenseTotal)}</span>
                   </div>
                 )}
               </div>
