@@ -87,7 +87,9 @@ export async function syncStoreCKOrder(storeId: string, date: string, amount: nu
   if (!ckStores?.length) return { success: true }
   const ckStoreId = ckStores[0].id
 
-  // 金額清空時只移除既有同步資料，不建立空白央廚日報。
+  // 金額清空時只清除店面自報金額，不可刪掉央廚已完成的確認。
+  // 店面可能先自動儲存 $0，稍後才輸入叫貨；若整列刪除，
+  // 會連 ck_confirmed_amount 一起消失，造成總公司誤顯示「央廚未輸入」。
   if (amount <= 0) {
     const { data: existingRecord, error: existingRecordErr } = await admin
       .from('ck_daily_records')
@@ -98,11 +100,24 @@ export async function syncStoreCKOrder(storeId: string, date: string, amount: nu
     if (existingRecordErr) return { error: existingRecordErr.message }
 
     if (existingRecord) {
-      const { error: deleteErr } = await admin.from('ck_store_orders')
-        .delete()
+      const { data: existingOrder, error: orderLookupErr } = await admin.from('ck_store_orders')
+        .select('id, ck_confirmed_amount')
         .eq('ck_daily_record_id', existingRecord.id)
         .eq('store_id', storeId)
-      if (deleteErr) return { error: deleteErr.message }
+        .maybeSingle()
+      if (orderLookupErr) return { error: orderLookupErr.message }
+
+      if (existingOrder?.ck_confirmed_amount != null) {
+        const { error: clearAmountErr } = await admin.from('ck_store_orders')
+          .update({ amount: 0 })
+          .eq('id', existingOrder.id)
+        if (clearAmountErr) return { error: clearAmountErr.message }
+      } else if (existingOrder) {
+        const { error: deleteErr } = await admin.from('ck_store_orders')
+          .delete()
+          .eq('id', existingOrder.id)
+        if (deleteErr) return { error: deleteErr.message }
+      }
     }
 
     revalidatePath('/manager/ck')
@@ -264,7 +279,17 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
     eventType: 'ck_record_update',
     storeId: ckStoreId, userId: ctx.userId,
     description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 更新央廚 ${date} 記錄（${data.status ?? 'draft'}）`,
-    metadata: { business_date: date, status: data.status, has_external: !!data.externalOrders, has_expenses: !!data.expenses },
+    metadata: {
+      business_date: date,
+      status: data.status,
+      has_external: !!data.externalOrders,
+      has_expenses: !!data.expenses,
+      // 保留央廚實際送出的各店金額，日後可直接核對誰輸入了多少。
+      member_orders: data.memberOrders?.map(order => ({
+        store_id: order.storeId,
+        confirmed_amount: order.confirmedAmount,
+      })) ?? null,
+    },
   })
 
   revalidatePath('/manager/ck')

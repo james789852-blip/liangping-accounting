@@ -86,11 +86,27 @@ async function cleanupLinkedCKOrder(admin: ReturnType<typeof createAdminClient>,
   const recordIds = (ckRecords ?? []).map((r: any) => r.id as string)
   if (recordIds.length === 0) return
 
-  await admin
+  const { data: linkedOrders } = await admin
     .from('ck_store_orders')
-    .delete()
+    .select('id, ck_confirmed_amount')
     .eq('store_id', closing.store_id)
     .in('ck_daily_record_id', recordIds)
+
+  const confirmedIds = (linkedOrders ?? [])
+    .filter(order => order.ck_confirmed_amount != null)
+    .map(order => order.id as string)
+  const unconfirmedIds = (linkedOrders ?? [])
+    .filter(order => order.ck_confirmed_amount == null)
+    .map(order => order.id as string)
+
+  // 刪除／重做店面帳目時，只移除店面自報金額；央廚先前輸入的確認值是
+  // 獨立來源，必須保留，等店面重新送出後再進行交叉核對。
+  if (confirmedIds.length > 0) {
+    await admin.from('ck_store_orders').update({ amount: 0 }).in('id', confirmedIds)
+  }
+  if (unconfirmedIds.length > 0) {
+    await admin.from('ck_store_orders').delete().in('id', unconfirmedIds)
+  }
 }
 
 function revalidateClosingDeletePaths() {
