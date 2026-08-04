@@ -1434,7 +1434,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       else localStorage.removeItem(receiptFormsDraftKey)
     } catch {}
   }, [receiptForms, receiptFormsHydrated, receiptFormsDraftKey, disputeDraftToken, existingClosing?.id])
-  const stepLsKey = `closing_step_${store.id}_${today}`
+  const legacyStepLsKey = `closing_step_${store.id}_${today}`
+  // 每次退回都使用獨立的步驟紀錄。第一次開啟該次退回時沒有紀錄，會從
+  // 第一步開始；背景儲存觸發 Server Component 重繪後，則回到剛才的步驟。
+  // 這也避免上一次退回或送出前的步驟被沿用。
+  const stepLsKey = existingClosing?.status === 'disputed' && disputeDraftToken
+    ? `${legacyStepLsKey}_${disputeDraftToken}`
+    : legacyStepLsKey
   const submitDoneSsKey = `submit_done_${store.id}_${today}`
   const saveBkKey = `save_bk_${store.id}_${today}`
   const verifyDoneLsKey = `verify_done_${store.id}_${today}`
@@ -1487,8 +1493,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
 
     if (existingClosing?.status === 'disputed') {
-      localStorage.removeItem(stepLsKey)
+      // 舊版共用步驟紀錄不可信，但本次退回的專用步驟必須保留；否則第 2 步
+      // 同步央廚資料造成頁面重新掛載時，會被重設回第 1 步。
+      localStorage.removeItem(legacyStepLsKey)
       localStorage.removeItem(submitDoneSsKey)
+      const saved = parseInt(localStorage.getItem(stepLsKey) ?? '0') || 0
+      if (saved > 0) setCurrentStep(saved)
     } else if (existingClosing?.status === 'submitted' || existingClosing?.status === 'verified') {
       localStorage.removeItem(stepLsKey)
       if (pettyDone) {
