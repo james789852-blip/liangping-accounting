@@ -22,6 +22,7 @@ import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
 import SharedSafePhotoImage from '@/components/shared/safe-photo-image'
 import { storePhotoPath } from '@/lib/storage-paths'
 import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
+import { shouldRestoreRemittanceAdjustmentDraft } from '@/lib/remittance-adjustment-draft'
 
 interface RemittanceAdjustment {
   id: string
@@ -34,6 +35,8 @@ interface RemittanceAdjustment {
 type RemittanceAdjustmentDraft = {
   items: RemittanceAdjustment[]
   savedAt: number
+  closingId?: string | null
+  baseUpdatedAt?: string | null
 }
 
 function normalizeRemittanceAdjustments(value: unknown): RemittanceAdjustment[] {
@@ -67,6 +70,12 @@ function parseRemittanceAdjustmentDraft(raw: string | null): RemittanceAdjustmen
       return {
         items: normalizeRemittanceAdjustments((parsed as Partial<RemittanceAdjustmentDraft>).items),
         savedAt: Number((parsed as Partial<RemittanceAdjustmentDraft>).savedAt) || 0,
+        closingId: typeof (parsed as Partial<RemittanceAdjustmentDraft>).closingId === 'string'
+          ? (parsed as Partial<RemittanceAdjustmentDraft>).closingId
+          : null,
+        baseUpdatedAt: typeof (parsed as Partial<RemittanceAdjustmentDraft>).baseUpdatedAt === 'string'
+          ? (parsed as Partial<RemittanceAdjustmentDraft>).baseUpdatedAt
+          : null,
       }
     }
   } catch {}
@@ -1260,18 +1269,31 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     try {
       const dbItems = normalizeRemittanceAdjustments(existingClosing?.remittance_adjustments)
       const localDraft = parseRemittanceAdjustmentDraft(localStorage.getItem(adjLsKey))
+      const closingSnapshot = existingClosing ? {
+        id: existingClosing.id as string,
+        status: existingClosing.status as string,
+        updatedAt: (existingClosing as { updated_at?: string | null }).updated_at ?? null,
+      } : null
 
-      // 專用匯款調整草稿最接近使用者最後一次輸入，優先於背景 DB 儲存。
-      // 舊版可能曾寫入空陣列；若 DB 已有資料，舊的空陣列不可反過來清空 DB 內容。
-      if (localDraft && (localDraft.savedAt > 0 || localDraft.items.length > 0 || dbItems.length === 0)) {
+      // 已送出／已審核帳目一律以 DB 為準，並清掉該裝置可能殘留的舊草稿。
+      // 退回或一般草稿則只有「同一筆 closing 的較新版本」才能覆蓋 DB。
+      if (['submitted', 'verified'].includes(existingClosing?.status ?? '')) {
+        localStorage.removeItem(adjLsKey)
+        setAdjustments(dbItems)
+      } else if (localDraft && shouldRestoreRemittanceAdjustmentDraft(closingSnapshot, localDraft)) {
         setAdjustments(localDraft.items)
       } else if (dbItems.length === 0) {
         const backup = JSON.parse(localStorage.getItem(`save_bk_${store.id}_${today}`) ?? 'null')
         const maxBackupAge = existingClosing?.status === 'disputed' ? 7 * 86400000 : 86400000
+        const dbUpdatedAt = existingClosing?.updated_at
+          ? new Date(existingClosing.updated_at as string).getTime()
+          : 0
         const backupIsCurrent = backup?.storeId === store.id
           && backup?.date === today
           && Number(backup?.ts) > 0
           && Date.now() - Number(backup.ts) <= maxBackupAge
+          && (!existingClosing?.id || !backup?.closingId || backup.closingId === existingClosing.id)
+          && Number(backup.ts) > dbUpdatedAt
           && !backup?.submitted
           && !['submitted', 'verified'].includes(backup?.status)
         if (backupIsCurrent && Array.isArray(backup.adjustments)) {
@@ -1285,7 +1307,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   useEffect(() => {
     if (!adjustmentsHydrated || ['submitted', 'verified'].includes(existingClosing?.status ?? '')) return
     try {
-      localStorage.setItem(adjLsKey, JSON.stringify({ items: adjustments, savedAt: Date.now() } satisfies RemittanceAdjustmentDraft))
+      localStorage.setItem(adjLsKey, JSON.stringify({
+        items: adjustments,
+        savedAt: Date.now(),
+        closingId: existingClosing?.id ?? null,
+        baseUpdatedAt: existingClosing?.updated_at ?? null,
+      } satisfies RemittanceAdjustmentDraft))
     } catch {}
     // render 完成後才排程，saveSnapshotRef 此時已是最新 adjustments，避免舊快照寫回空陣列。
     const timer = window.setTimeout(() => scheduleBackgroundSave(), 350)
@@ -1731,7 +1758,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const t = setTimeout(() => {
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
-          storeId: store.id, date: today, status, submitted: false,
+          storeId: store.id, date: today, closingId: cid, status, submitted: false,
           data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses,
           ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
           pettyCounts, pettyLumps, ts: Date.now(),
