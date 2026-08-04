@@ -280,7 +280,7 @@ export default async function ClosingPage({
 
   return (
     <ClosingForm
-      key={`${storeId}-${today}`}
+      key={`${storeId}-${today}-${existingClosing?.id ?? 'new'}-${existingClosing?.updated_at ?? 'none'}`}
       store={store as Store}
       ckPrices={(ckPrices ?? []) as CKPrice[]}
       existingClosing={existingClosing}

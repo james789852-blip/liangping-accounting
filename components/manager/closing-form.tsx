@@ -1279,6 +1279,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       // 退回或一般草稿則只有「同一筆 closing 的較新版本」才能覆蓋 DB。
       if (['submitted', 'verified'].includes(existingClosing?.status ?? '')) {
         localStorage.removeItem(adjLsKey)
+        localStorage.removeItem(`save_bk_${store.id}_${today}`)
         setAdjustments(dbItems)
       } else if (localDraft && shouldRestoreRemittanceAdjustmentDraft(closingSnapshot, localDraft)) {
         setAdjustments(localDraft.items)
@@ -1302,8 +1303,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       }
     } catch {}
     setAdjustmentsHydrated(true)
+  // 資料庫狀態或版本改變時必須重新套用權威資料；不能讓相同店家／日期的
+  // React 元件沿用退回前的本機 state。
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [adjLsKey, existingClosing?.id, existingClosing?.status, existingClosing?.updated_at])
   useEffect(() => {
     if (!adjustmentsHydrated || ['submitted', 'verified'].includes(existingClosing?.status ?? '')) return
     try {
@@ -1630,6 +1633,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // 例如整筆現金預留營業稅時 remitToHQ = 0，當天不會有信封，也不應要求照片。
   const requiresEnvelopePhoto = s.remitToHQ > 0
   const isLocked = (status === 'submitted' || status === 'verified') && !submitDone
+  // submitDone 只代表可以前往送出後步驟，不代表匯款調整可再次編輯。
+  // 這裡獨立鎖定，避免影響少數舊帳目送出後補做零用金的既有流程。
+  const isRemittanceLocked = status === 'submitted' || status === 'verified'
   const isDisputed = status === 'disputed'
   const disputeNote = existingClosing?.dispute_note ?? ''
   const pendingRentReserve = useMemo(() => {
@@ -4862,7 +4868,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold shrink-0" style={{ color: '#2563eb' }}>＋</span>
-                  <SInput value={customerTransferAmount} onChange={updateCustomerTransferAmount} disabled={isLocked} placeholder="輸入轉帳金額" />
+                  <SInput value={customerTransferAmount} onChange={updateCustomerTransferAmount} disabled={isRemittanceLocked} placeholder="輸入轉帳金額" />
                 </div>
                 {customerTransferAmount > 0 && (
                   <p className="text-[11px]" style={{ color: '#1d4ed8' }}>
@@ -4970,7 +4976,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         </div>
                       </button>
                       <span className="flex-1 text-xs font-medium" style={{ color: '#52525b' }}>信封袋照片已上傳</span>
-                      {!isLocked && (
+                      {!isRemittanceLocked && (
                         <div className="flex items-center gap-2 shrink-0">
                           <button type="button" onClick={() => envelopePhotoInputRef.current?.click()}
                             className="text-xs px-3 py-1.5 rounded-lg font-medium"
@@ -5034,7 +5040,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         </div>
                         <p className="text-sm font-semibold" style={{ color: '#18181b' }}>匯款調整</p>
                       </div>
-                      {!isLocked && (
+                      {!isRemittanceLocked && (
                         <button type="button" onClick={() => { setShowAdjForm(v => !v); setAdjForm({ type: 'advance', label: '', amount: 0, person: '' }) }}
                           className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg"
                           style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
@@ -5062,7 +5068,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             <span className="text-base font-bold tabular-nums" style={{ color: adj.amount >= 0 ? '#059669' : '#dc2626' }}>
                               {adj.amount >= 0 ? '+' : ''}{fmt(adj.amount)}
                             </span>
-                            {!isLocked && (
+                            {!isRemittanceLocked && (
                               <button type="button" onClick={() => setAdjustments(prev => prev.filter(a => a.id !== adj.id))}
                                 style={{ color: '#d4d4d8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                                 onMouseEnter={e => (e.currentTarget.style.color = '#be123c')} onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
@@ -5073,7 +5079,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         </div>
                       )
                     })}
-                    {!isLocked && showAdjForm && (
+                    {!isRemittanceLocked && showAdjForm && (
                       <div className="rounded-xl p-3 space-y-3" style={{ background: '#f8f9ff', border: '1.5px solid #FDE68A' }}>
                         <div className="grid grid-cols-2 gap-2">
                           <div>

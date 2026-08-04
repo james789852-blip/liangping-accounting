@@ -168,6 +168,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
         </Link>
       </div>
       <ClosingForm
+        key={`${closing.id}-${closing.updated_at ?? 'none'}`}
         store={store as Store}
         ckPrices={(ckPrices ?? []) as CKPrice[]}
         existingClosing={closing}
