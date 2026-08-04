@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { getStoreItemsResolved, toMappingColumns } from '@/lib/store-items-resolver'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
+import { buildReserveHistoryContext } from '@/lib/reserve-history'
 
 export const dynamic = 'force-dynamic'
 
@@ -97,7 +98,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .order('name'),
     admin2
       .from('daily_closings')
-      .select('reserve_items, business_date')
+      .select('reserve_items, business_date, expense_items(description, amount)')
       .eq('store_id', storeId)
       .gte('business_date', reserveLookbackDate)
       .lt('business_date', closing.business_date)
@@ -106,25 +107,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .limit(45),
   ])
 
-  // 補做／退回修改頁面也要沿用一般結帳頁的歷史預留款比對，
-  // 否則大額支出會再次被當成今日現金扣除。
-  const reserveExpenseHints = new Map<string, { reason: string; amount: number; total_bill?: number }>()
-  for (const previous of prevReserveClosings ?? []) {
-    const items = Array.isArray(previous.reserve_items) ? previous.reserve_items as any[] : []
-    for (const item of items) {
-      const reason = typeof item.reason === 'string' && item.reason.trim() ? item.reason.trim() : '其他'
-      const amount = Math.max(0, Number(item.amount ?? 0))
-      if (amount <= 0) continue
-      const totalBill = Number(item.total_bill ?? 0)
-      const hint = reserveExpenseHints.get(reason)
-      if (hint) {
-        hint.amount += amount
-        if (totalBill > 0) hint.total_bill = Math.max(hint.total_bill ?? 0, totalBill)
-      } else {
-        reserveExpenseHints.set(reason, { reason, amount, ...(totalBill > 0 ? { total_bill: totalBill } : {}) })
-      }
-    }
-  }
+  const { prevDayReserves, preReservedExpenseHints } = buildReserveHistoryContext(prevReserveClosings ?? [])
 
   let itemOrder: string[] = []
   try { if (itemOrderText) itemOrder = JSON.parse(itemOrderText) } catch {}
@@ -178,7 +161,8 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
         receiptCategories={syncedReceiptCategories}
         mappingColumns={mappingColumns}
         actualVendors={actualVendors ?? []}
-        preReservedExpenseHints={Array.from(reserveExpenseHints.values())}
+        prevDayReserves={prevDayReserves}
+        preReservedExpenseHints={preReservedExpenseHints}
         isBackfill={closing.business_date !== getBusinessDate()}
         realToday={getBusinessDate()}
       />
