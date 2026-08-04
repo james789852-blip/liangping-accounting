@@ -186,6 +186,12 @@ interface ReceiptForm {
   items: ReceiptFormItem[]
 }
 
+type ReceiptFormsDraft = {
+  items: ReceiptForm[]
+  closingId?: string | null
+  disputeToken?: string | null
+}
+
 interface VerifyItem {
   key: string
   type: 'receipt' | 'channel' | 'ck' | 'envelope' | 'void_invoice' | 'note'
@@ -1390,8 +1396,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     try {
       const stored = localStorage.getItem(receiptFormsDraftKey)
       if (stored) {
-        const parsed = JSON.parse(stored) as ReceiptForm[]
-        setReceiptForms(parsed.map(f => ({ ...f, actual_vendor_name: f.actual_vendor_name ?? '', file: undefined, previewUrl: undefined, uploading: false })))
+        const parsed = JSON.parse(stored) as ReceiptForm[] | ReceiptFormsDraft
+        const isLegacyDraft = Array.isArray(parsed)
+        const draftItems = isLegacyDraft ? parsed : parsed.items
+        const matchesCurrentDispute = existingClosing?.status !== 'disputed'
+          || (!isLegacyDraft && parsed.disputeToken === disputeDraftToken)
+        const matchesClosing = isLegacyDraft
+          || !parsed.closingId
+          || !existingClosing?.id
+          || parsed.closingId === existingClosing.id
+
+        if (Array.isArray(draftItems) && matchesCurrentDispute && matchesClosing) {
+          setReceiptForms(draftItems.map(f => ({ ...f, actual_vendor_name: f.actual_vendor_name ?? '', file: undefined, previewUrl: undefined, uploading: false })))
+        } else if (existingClosing?.status === 'disputed') {
+          // 退回前留下的未儲存收據不屬於本次修改，不能阻擋「下一步」。
+          localStorage.removeItem(receiptFormsDraftKey)
+        }
       }
     } catch {}
     setReceiptFormsHydrated(true)
@@ -1404,10 +1424,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         .filter(f => !f.uploading)
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         .map(({ file, previewUrl, ...rest }) => rest)
-      if (toStore.length > 0) localStorage.setItem(receiptFormsDraftKey, JSON.stringify(toStore))
+      if (toStore.length > 0) {
+        localStorage.setItem(receiptFormsDraftKey, JSON.stringify({
+          items: toStore,
+          closingId: existingClosing?.id ?? null,
+          disputeToken: disputeDraftToken,
+        } satisfies ReceiptFormsDraft))
+      }
       else localStorage.removeItem(receiptFormsDraftKey)
     } catch {}
-  }, [receiptForms, receiptFormsHydrated, receiptFormsDraftKey])
+  }, [receiptForms, receiptFormsHydrated, receiptFormsDraftKey, disputeDraftToken, existingClosing?.id])
   const stepLsKey = `closing_step_${store.id}_${today}`
   const submitDoneSsKey = `submit_done_${store.id}_${today}`
   const saveBkKey = `save_bk_${store.id}_${today}`
