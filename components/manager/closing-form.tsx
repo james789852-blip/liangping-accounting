@@ -1758,7 +1758,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const t = setTimeout(() => {
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
-          storeId: store.id, date: today, closingId: cid, status, submitted: false,
+          storeId: store.id, date: today, closingId: existingClosing?.id ?? closingId ?? null, status, submitted: false,
           data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses,
           ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
           pettyCounts, pettyLumps, ts: Date.now(),
@@ -1767,7 +1767,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }, 500)
     return () => clearTimeout(t)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, ckPriceOverrides, pettyCounts, pettyLumps])
+  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, ckPriceOverrides, pettyCounts, pettyLumps, closingId])
 
   // 頁面切換 / 關閉前立即 flush + 離頁警告
   useEffect(() => {
@@ -1775,7 +1775,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     function flush() {
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
-          storeId: store.id, date: today, status, submitted: false,
+          storeId: store.id, date: today, closingId: existingClosing?.id ?? closingId ?? null, status, submitted: false,
           data: dataRef.current, expenses, handwriteOrders, adjustments, reserves,
           largeCashExpenses, ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
           pettyCounts, pettyLumps, ts: Date.now(),
@@ -1798,7 +1798,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       window.removeEventListener('beforeunload', onBeforeUnload)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, ckPriceOverrides, pettyCounts, pettyLumps, isLocked, submitDone])
+  }, [expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, ckPriceOverrides, pettyCounts, pettyLumps, isLocked, submitDone, closingId])
 
   useEffect(() => {
     const fromQty = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * effectiveCKPrice(p), 0)
@@ -2647,7 +2647,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       // Backup full form state before destructive delete-then-insert operations
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
-          storeId: store.id, date: today, status, submitted: false,
+          storeId: store.id, date: today, closingId: cid, status, submitted: false,
           data: d,
           expenses: snapshot.expenses,
           handwriteOrders: snapshot.handwriteOrders,
