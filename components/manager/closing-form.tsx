@@ -6022,18 +6022,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {step < submitStepIdx && stepId !== 'petty' && (
               <>
                 {step > 0 && (
-                  <button onClick={goPrev} disabled={saving}
+                  <button onClick={goPrev} disabled={saving && !isDisputed}
                     className="flex items-center justify-center gap-2 py-3 px-5 rounded-2xl text-sm font-semibold"
-                    style={{ background: '#f4f4f5', color: '#52525b', opacity: saving ? 0.6 : 1 }}>
+                    style={{ background: '#f4f4f5', color: '#52525b', opacity: saving && !isDisputed ? 0.6 : 1 }}>
                     ← 上一步
                   </button>
                 )}
-                <button onClick={goNext} disabled={saving}
+                <button onClick={goNext} disabled={saving && !isDisputed}
                   className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white"
                   style={{
                     background: 'linear-gradient(135deg,#F59E0B,#F97316)',
                     boxShadow: '0 4px 12px rgba(245,158,11,0.3)',
-                    opacity: saving ? 0.7 : 1,
+                    opacity: saving && !isDisputed ? 0.7 : 1,
                   }}>
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {stepId === 'ai_verify' ? '確認，進入零用金核對 →' : '繼續 →'}
