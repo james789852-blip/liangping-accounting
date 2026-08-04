@@ -437,9 +437,14 @@ function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExp
   // 「前幾日已預留」只在最後包回 HQ 的金額加回，不改動上述原始帳務數字。
   const preReservedExpenseTotal = getPreReservedExpenseTotal(largeCashExpenses)
   const cashExpenseTotal = largeExpenseTotal
-  // 顧客匯款不是收銀台裡的實體現金，不能先加進現金清點再於下一步扣除，
-  // 否則兩邊會互相抵消，造成「實際包進信封」完全沒有變動。
-  const cashTotal = cashSubtotal - cashExpenseTotal
+  // 顧客轉帳屬於當日營業收入，但不會出現在實體現金清點中。對帳時必須先
+  // 加回，才能和包含該筆收入的應包金額比較；最後包款再由負的匯款調整扣除。
+  // 例如實體現金 118,463、顧客轉帳 2,875、零用金 50,000：
+  // 對帳實匯入為 71,338，包款階段再扣 2,875，不能在兩個階段重複扣除。
+  const customerTransferTotal = adjustments
+    .filter(item => item.type === 'customer_transfer')
+    .reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0)
+  const cashTotal = cashSubtotal - cashExpenseTotal + customerTransferTotal
 
   const actualRemit = cashTotal - store.petty_cash
   const variance = actualRemit - shouldEnvelope
@@ -1318,10 +1323,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       }
     } catch {}
     setAdjustmentsHydrated(true)
-  // 資料庫狀態或版本改變時必須重新套用權威資料；不能讓相同店家／日期的
-  // React 元件沿用退回前的本機 state。
+  // 狀態或退回批次改變時重新套用權威資料；單純 updated_at 改變多半是
+  // 本頁自己的背景儲存，不可因此覆蓋使用者正在編輯的 client state。
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adjLsKey, disputeDraftToken, existingClosing?.id, existingClosing?.status, existingClosing?.updated_at])
+  }, [adjLsKey, disputeDraftToken, existingClosing?.id, existingClosing?.status])
   useEffect(() => {
     if (!adjustmentsHydrated || ['submitted', 'verified'].includes(existingClosing?.status ?? '')) return
     try {
@@ -1345,7 +1350,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   })
   const [showReserveForm, setShowReserveForm] = useState(false)
   const [reserveForm, setReserveForm] = useState<Omit<ReserveItem, 'id'>>({ reason: '電費', amount: 0, total_bill: 0 })
-  const reserveLsKey = `reserve_items_${store.id}_${today}`
+  const legacyReserveLsKey = `reserve_items_${store.id}_${today}`
+  // 預留款和退回批次綁定，避免送出前或上一次退回留下的空陣列，
+  // 在新一次退回時把資料庫中的房租預留覆蓋掉。
+  const reserveLsKey = existingClosing?.status === 'disputed' && disputeDraftToken
+    ? `${legacyReserveLsKey}_${disputeDraftToken}`
+    : legacyReserveLsKey
   useEffect(() => {
     if (existingClosing?.reserve_items && (existingClosing.reserve_items as any[]).length > 0) return
     try {
@@ -1449,6 +1459,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [currentStep, setCurrentStep] = useState(0)
   const [hqDeletedReset, setHqDeletedReset] = useState(false)
   const stepButtonRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const stepperScrollRef = useRef<HTMLDivElement | null>(null)
   // useLayoutEffect runs synchronously before browser paint → user never sees step-0 flash
   // On SSR it's silently skipped (no window), so no hydration mismatch
   useLayoutEffect(() => {
@@ -2927,9 +2938,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   useEffect(() => {
     if (!stepMounted) return
     const button = stepButtonRefs.current[step]
-    if (!button) return
+    const scroller = stepperScrollRef.current
+    if (!button || !scroller) return
     requestAnimationFrame(() => {
-      button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+      // 只移動步驟列本身的水平捲軸。scrollIntoView 會同時捲動整個頁面，
+      // 背景儲存重新渲染時就會把正在查看下方內容的使用者拉回頁首。
+      const left = button.offsetLeft - (scroller.clientWidth - button.offsetWidth) / 2
+      scroller.scrollTo({ left: Math.max(0, left), behavior: 'smooth' })
     })
   }, [step, stepMounted])
 
@@ -3181,7 +3196,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           </span>
         </div>
         {!isLocked && (
-          <div className="px-4 py-3 overflow-x-auto" style={{ visibility: stepMounted ? 'visible' : 'hidden' }}>
+          <div ref={stepperScrollRef} className="px-4 py-3 overflow-x-auto" style={{ visibility: stepMounted ? 'visible' : 'hidden' }}>
             <div className="flex items-center" style={{ minWidth: 'max-content' }}>
               {STEPS.map((s, i) => (
                 <div key={s.id} className="flex items-center">
