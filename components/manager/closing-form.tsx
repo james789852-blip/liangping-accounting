@@ -37,6 +37,7 @@ type RemittanceAdjustmentDraft = {
   savedAt: number
   closingId?: string | null
   baseUpdatedAt?: string | null
+  disputeToken?: string | null
 }
 
 function normalizeRemittanceAdjustments(value: unknown): RemittanceAdjustment[] {
@@ -75,6 +76,9 @@ function parseRemittanceAdjustmentDraft(raw: string | null): RemittanceAdjustmen
           : null,
         baseUpdatedAt: typeof (parsed as Partial<RemittanceAdjustmentDraft>).baseUpdatedAt === 'string'
           ? (parsed as Partial<RemittanceAdjustmentDraft>).baseUpdatedAt
+          : null,
+        disputeToken: typeof (parsed as Partial<RemittanceAdjustmentDraft>).disputeToken === 'string'
+          ? (parsed as Partial<RemittanceAdjustmentDraft>).disputeToken
           : null,
       }
     }
@@ -1265,6 +1269,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     })
   }
   const adjLsKey = `remit_adj_${store.id}_${today}`
+  const disputeDraftToken = existingClosing?.status === 'disputed'
+    ? `${existingClosing.id}:${existingClosing.disputed_at ?? 'legacy-dispute'}`
+    : null
   useEffect(() => {
     try {
       const dbItems = normalizeRemittanceAdjustments(existingClosing?.remittance_adjustments)
@@ -1273,6 +1280,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         id: existingClosing.id as string,
         status: existingClosing.status as string,
         updatedAt: (existingClosing as { updated_at?: string | null }).updated_at ?? null,
+        disputeToken: disputeDraftToken,
       } : null
 
       // 已送出／已審核帳目一律以 DB 為準，並清掉該裝置可能殘留的舊草稿。
@@ -1297,6 +1305,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           && Number(backup.ts) > dbUpdatedAt
           && !backup?.submitted
           && !['submitted', 'verified'].includes(backup?.status)
+          && (existingClosing?.status !== 'disputed' || backup?.disputeToken === disputeDraftToken)
         if (backupIsCurrent && Array.isArray(backup.adjustments)) {
           setAdjustments(normalizeRemittanceAdjustments(backup.adjustments))
         }
@@ -1306,7 +1315,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // 資料庫狀態或版本改變時必須重新套用權威資料；不能讓相同店家／日期的
   // React 元件沿用退回前的本機 state。
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adjLsKey, existingClosing?.id, existingClosing?.status, existingClosing?.updated_at])
+  }, [adjLsKey, disputeDraftToken, existingClosing?.id, existingClosing?.status, existingClosing?.updated_at])
   useEffect(() => {
     if (!adjustmentsHydrated || ['submitted', 'verified'].includes(existingClosing?.status ?? '')) return
     try {
@@ -1315,6 +1324,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         savedAt: Date.now(),
         closingId: existingClosing?.id ?? null,
         baseUpdatedAt: existingClosing?.updated_at ?? null,
+        disputeToken: disputeDraftToken,
       } satisfies RemittanceAdjustmentDraft))
     } catch {}
     // render 完成後才排程，saveSnapshotRef 此時已是最新 adjustments，避免舊快照寫回空陣列。
@@ -1488,6 +1498,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         localStorage.removeItem(saveBkKey)
         return
       }
+      // 新一次退回必須先以 DB 原始內容開啟；退回前或上一次退回的本機備份
+      // 不得自動覆蓋現金、支出、叫貨與匯款調整。
+      if (existingClosing?.status === 'disputed' && bk?.disputeToken !== disputeDraftToken) return
       // 退回帳目延長備份保留至 7 天；一般草稿 24 小時
       const maxAge = existingClosing?.status === 'disputed' ? 7 * 86400000 : 86400000
       if (!bk?.ts || Date.now() - bk.ts > maxAge) { localStorage.removeItem(saveBkKey); return }
@@ -1765,6 +1778,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
           storeId: store.id, date: today, closingId: existingClosing?.id ?? closingId ?? null, status, submitted: false,
+          disputeToken: disputeDraftToken,
           data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses,
           ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
           pettyCounts, pettyLumps, ts: Date.now(),
@@ -1782,6 +1796,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
           storeId: store.id, date: today, closingId: existingClosing?.id ?? closingId ?? null, status, submitted: false,
+          disputeToken: disputeDraftToken,
           data: dataRef.current, expenses, handwriteOrders, adjustments, reserves,
           largeCashExpenses, ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
           pettyCounts, pettyLumps, ts: Date.now(),
@@ -2654,6 +2669,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       try {
         localStorage.setItem(saveBkKey, JSON.stringify({
           storeId: store.id, date: today, closingId: cid, status, submitted: false,
+          disputeToken: disputeDraftToken,
           data: d,
           expenses: snapshot.expenses,
           handwriteOrders: snapshot.handwriteOrders,

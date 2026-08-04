@@ -2,12 +2,14 @@ type ClosingSnapshot = {
   id?: string | null
   status?: string | null
   updatedAt?: string | null
+  disputeToken?: string | null
 }
 
 type AdjustmentDraftSnapshot = {
   savedAt: number
   closingId?: string | null
   baseUpdatedAt?: string | null
+  disputeToken?: string | null
 }
 
 const LOCKED_STATUSES = new Set(['submitted', 'verified'])
@@ -34,6 +36,12 @@ export function shouldRestoreRemittanceAdjustmentDraft(
   if (LOCKED_STATUSES.has(closing?.status ?? '')) return false
   if (!closing?.id) return true
   if (draft.closingId && draft.closingId !== closing.id) return false
+
+  // 每一次退回都是獨立的編輯版本。退回前或上一次退回留下的草稿
+  // 沒有本次 token，絕不能自動套入剛退回的權威 DB 內容。
+  if (closing.status === 'disputed') {
+    if (!closing.disputeToken || draft.disputeToken !== closing.disputeToken) return false
+  }
 
   const databaseUpdatedAt = timestamp(closing.updatedAt)
   const draftBaseUpdatedAt = timestamp(draft.baseUpdatedAt)

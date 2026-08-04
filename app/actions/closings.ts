@@ -309,6 +309,20 @@ export async function disputeClosing(closingId: string, note: string) {
     return { error: `只能退回已送出/已審核/退回修改的帳目（目前狀態：${closing.status}）` }
   }
 
+  // 退回前先保留完整帳務快照。日後即使店長端裝置或網路發生異常，
+  // 也能依稽核紀錄精確還原退回當下的內容，而不是只剩彙總數字可推算。
+  const admin = createAdminClient()
+  const { data: preDisputeSnapshot } = await admin
+    .from('daily_closings')
+    .select(`
+      id, store_id, business_date, status, total_revenue, total_cost, total_expenses,
+      expected_remit, actual_remit, should_include_delivery, variance,
+      remittance_adjustments, reserve_items, note, updated_at,
+      revenue_items(*), cash_counts(*), expense_items(*), order_items(*), handwrite_orders(*)
+    `)
+    .eq('id', closingId)
+    .maybeSingle()
+
   const cleanNote = note.trim()
   const { error } = await supabase
     .from('daily_closings')
@@ -327,7 +341,11 @@ export async function disputeClosing(closingId: string, note: string) {
     eventType: 'closing_dispute', severity: 'warn',
     storeId: closing.store_id, userId: user.id, closingId,
     description: `${profile.name ?? user.email ?? '未知'} 退回 ${closing.business_date} 帳目`,
-    metadata: { note: cleanNote || null, previous_status: closing.status },
+    metadata: {
+      note: cleanNote || null,
+      previous_status: closing.status,
+      pre_dispute_snapshot: preDisputeSnapshot ?? null,
+    },
   })
 
   revalidatePath('/hq/reviews')
