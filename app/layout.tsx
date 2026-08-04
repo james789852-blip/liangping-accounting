@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
-import Script from "next/script";
+import { AppVersionGuard } from "@/components/app-version-guard";
 import "./globals.css";
 
 const inter = Inter({
@@ -27,12 +27,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const appVersion = process.env.VERCEL_DEPLOYMENT_ID
+    ?? process.env.VERCEL_GIT_COMMIT_SHA
+    ?? "development";
+
   return (
     <html lang="zh-Hant" className={`${inter.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         {children}
         <Toaster richColors position="top-right" />
-        <Script id="sw-register" strategy="afterInteractive">{`if('serviceWorker'in navigator&&location.hostname!=='localhost')navigator.serviceWorker.register('/sw.js')`}</Script>
+        <AppVersionGuard currentVersion={appVersion} />
       </body>
     </html>
   );

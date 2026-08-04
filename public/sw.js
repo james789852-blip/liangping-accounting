@@ -1,4 +1,4 @@
-const CACHE = 'lp-v2'
+const CACHE = 'lp-v3'
 
 self.addEventListener('install', () => self.skipWaiting())
 
