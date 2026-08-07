@@ -346,6 +346,7 @@ function statFormula(
   packExpCols: ColumnDef[],
   miscExpCols: ColumnDef[],
   cols: ColumnDef[],
+  revenueRefundRef?: string,
 ): string | null {
   const rowRef = rowNum === totalRow ? totalRow : rowNum
   const expenseStart = expenseCols[0]?.index
@@ -354,7 +355,7 @@ function statFormula(
     const parts: string[] = []
     if (memberColStart && memberColEnd) parts.push(`SUM(${colLetter(memberColStart)}${rowRef}:${colLetter(memberColEnd)}${rowRef})`)
     if (extColStart && extColEnd) parts.push(`SUM(${colLetter(extColStart)}${rowRef}:${colLetter(extColEnd)}${rowRef})`)
-    const refund = refundFormula(rowRef, expenseCols)
+    const refund = revenueRefundRef ?? refundFormula(rowRef, expenseCols)
     if (refund !== '0') parts.push(refund)
     return parts.length > 0 ? parts.join('+') : '0'
   }
@@ -584,6 +585,7 @@ export async function addCKSheet(
   const foodExpCols = expenseCols.filter(c => c.category === '食材')
   const packExpCols = expenseCols.filter(c => c.category === '耗材')
   const miscExpCols = expenseCols.filter(c => c.category === '雜項')
+  const refundSummaryValueCol = trailingStatCols.find(c => c.statKey === 'food')?.index
 
   for (let c = 1; c <= cols[cols.length - 1].index; c++) {
     fillHeader(ws.getRow(1).getCell(c), '', CK_PAPER, false, 'FF000000', 12)
@@ -676,7 +678,23 @@ export async function addCKSheet(
     const letter = colLetter(c.index)
     const cell = ws.getRow(TOTAL_ROW).getCell(c.index)
     const formula = c.kind === 'stat'
-      ? (statFormula(c.statKey, TOTAL_ROW, TOTAL_ROW, memberColStart, memberColEnd, extColStart, extColEnd, expenseCols, foodExpCols, packExpCols, miscExpCols, cols) ?? '0')
+      ? (statFormula(
+          c.statKey,
+          TOTAL_ROW,
+          TOTAL_ROW,
+          memberColStart,
+          memberColEnd,
+          extColStart,
+          extColEnd,
+          expenseCols,
+          foodExpCols,
+          packExpCols,
+          miscExpCols,
+          cols,
+          c.statKey === 'revenue' && refundSummaryValueCol
+            ? `${colLetter(refundSummaryValueCol)}1`
+            : undefined,
+        ) ?? '0')
       : `SUM(${letter}${DATA_START}:${letter}${DATA_START + daysInMonth - 1})`
     cell.value = { formula } as any
     cell.font = {
