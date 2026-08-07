@@ -384,8 +384,13 @@ export default function AccountingClient({
                     ? { background: 'white', border: '2px solid #F59E0B', boxShadow: '0 4px 12px rgba(245,158,11,0.15)' }
                     : { background: 'white', border: '1px solid #f4f4f5' }}>
                   <p className="text-sm font-bold truncate" style={{ color: '#18181b' }}>{s.name}</p>
-                  <span className="inline-block mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                    style={{ background: meta.bg, color: meta.color }}>{meta.label}</span>
+                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                    <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0"
+                      style={{ background: meta.bg, color: meta.color }}>{meta.label}</span>
+                    <span className="text-[11px] font-bold tabular-nums text-right truncate" style={{ color: c ? '#92400E' : '#a1a1aa' }}>
+                      營業額 {c ? `$${fmt(Number(c.total_revenue ?? 0))}` : '—'}
+                    </span>
+                  </div>
                 </button>
               )
             }) : ckStores.map(s => {
