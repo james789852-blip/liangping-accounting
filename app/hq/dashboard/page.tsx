@@ -7,6 +7,7 @@ import { getBusinessDate } from '@/lib/business-date'
 import { BarChart3, Calendar, ChefHat, ChevronDown, LayoutDashboard, Store } from 'lucide-react'
 import { getCachedAllStores } from '@/lib/cached-queries'
 import { canExportReports, canReviewClosings } from '@/lib/user-permissions'
+import { getCKRangeStats } from '@/lib/ck-aggregator'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,6 +21,7 @@ type StoreSummary = {
   name: string
   type?: string | null
   revenue: number
+  taxRefund: number
   cost: number
   costRate: number
   vendors: VendorStat[]
@@ -76,17 +78,25 @@ export default async function HQDashboard({
     revenueByStore[closing.store_id] = (revenueByStore[closing.store_id] || 0) + Number(closing.total_revenue ?? 0)
   }
 
-  // 央廚營業額不是 daily_closings，而是本月各成員店的叫貨收入。
+  // 央廚月營業額 = 本月各店叫貨收入 + 整月梁平退稅。
   const ckIds = stores.filter(store => store.type === '央廚').map(store => store.id)
   const ckRevenueByStore: Record<string, number> = {}
+  const ckRefundByStore: Record<string, number> = {}
   const ckCostByStore: Record<string, number> = {}
   const ckDeliveryStoresByKitchen = new Map<string, Map<string, DeliveryStoreStat>>()
   const ckExpenseRows: { storeId: string; group: string; amount: number }[] = []
   if (ckIds.length > 0) {
-    const { data: ckRecords } = await admin.from('ck_daily_records')
-      .select('id, ck_store_id')
-      .in('ck_store_id', ckIds)
-      .gte('business_date', firstOfMonth).lte('business_date', selectedEnd)
+    const [{ data: ckRecords }, refundEntries] = await Promise.all([
+      admin.from('ck_daily_records')
+        .select('id, ck_store_id')
+        .in('ck_store_id', ckIds)
+        .gte('business_date', firstOfMonth).lte('business_date', selectedEnd),
+      Promise.all(ckIds.map(async ckId => {
+        const { days } = await getCKRangeStats(ckId, firstOfMonth, selectedEnd)
+        return [ckId, days.reduce((sum, day) => sum + day.taxRefund, 0)] as const
+      })),
+    ])
+    for (const [ckId, refund] of refundEntries) ckRefundByStore[ckId] = refund
     const recordIds = (ckRecords ?? []).map(record => record.id)
     if (recordIds.length > 0) {
       const [{ data: ckOrders }, { data: ckExpenses }] = await Promise.all([
@@ -123,6 +133,10 @@ export default async function HQDashboard({
         ckCostByStore[ckId] = (ckCostByStore[ckId] || 0) + amount
         ckExpenseRows.push({ storeId: ckId, group, amount })
       }
+    }
+    // 退稅只在月營業額加一次，不改動各店每日叫貨明細。
+    for (const ckId of ckIds) {
+      ckRevenueByStore[ckId] = (ckRevenueByStore[ckId] || 0) + (ckRefundByStore[ckId] || 0)
     }
   }
 
@@ -191,6 +205,7 @@ export default async function HQDashboard({
     return {
       ...store,
       revenue,
+      taxRefund: store.type === '央廚' ? (ckRefundByStore[store.id] || 0) : 0,
       cost,
       costRate: revenue > 0 ? (cost / revenue) * 100 : 0,
       vendors: vendorsByStore.get(store.id) ?? [],
@@ -244,7 +259,7 @@ export default async function HQDashboard({
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6 relative">
             <HeroMetric label="店面營業額" value={`$ ${fmt(storeRevenue)}`} />
-            <HeroMetric label="央廚叫貨收入" value={`$ ${fmt(kitchenRevenue)}`} />
+            <HeroMetric label="央廚營業額" value={`$ ${fmt(kitchenRevenue)}`} />
           </div>
           <div className="flex gap-8 flex-wrap relative">
             <SummaryValue label="單據筆數" value={`${monthReceipts?.length ?? 0} 筆`} />
@@ -257,7 +272,7 @@ export default async function HQDashboard({
             <p className="text-xs font-bold mb-2 px-1" style={{ color: '#71717a' }}>營業額概覽</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <MetricCard label="店面營業額" value={`$${fmt(storeRevenue)}`} sub={`${storeStatsOnly.length} 家店`} color="#d97706" />
-              <MetricCard label="央廚叫貨收入" value={`$${fmt(kitchenRevenue)}`} sub={`${kitchenStatsOnly.length} 家央廚`} color="#7c3aed" />
+              <MetricCard label="央廚營業額" value={`$${fmt(kitchenRevenue)}`} sub={`${kitchenStatsOnly.length} 家央廚`} color="#7c3aed" />
             </div>
           </div>
         </div>
@@ -273,7 +288,7 @@ export default async function HQDashboard({
         <StoreStatsSection
           icon={<ChefHat className="h-4 w-4" />}
           title={`${parseInt(month)} 月央廚營業額排名`}
-          description="依本月叫貨收入由高至低，從左至右、由上而下排列；點擊央廚可展開明細"
+          description="依本月營業額（叫貨收入＋梁平退稅）由高至低；點擊央廚可展開明細"
           stores={kitchenStatsOnly}
           variant="kitchen"
         />
@@ -319,6 +334,7 @@ function StoreStatsSection({
 }
 
 function StoreStatsCard({ store, rank, isKitchen }: { store: StoreSummary; rank: number; isKitchen: boolean }) {
+  const deliveryRevenue = store.deliveryStores.reduce((sum, delivery) => sum + delivery.total, 0)
   const rankStyle = rank === 1
     ? { background: '#FEF3C7', color: '#92400E', border: '#F59E0B' }
     : rank === 2
@@ -347,7 +363,7 @@ function StoreStatsCard({ store, rank, isKitchen }: { store: StoreSummary; rank:
       </summary>
       <div>
         <div className="grid grid-cols-3 gap-px" style={{ background: '#e4e4e7' }}>
-          <SmallStat label={isKitchen ? '叫貨收入' : '營業額'} value={`$${fmt(store.revenue)}`} />
+          <SmallStat label={isKitchen ? '營業額（含退稅）' : '營業額'} value={`$${fmt(store.revenue)}`} />
           <SmallStat label="叫貨支出" value={`$${fmt(store.cost)}`} tone="orange" />
           <SmallStat
             label={isKitchen ? '叫貨店數／支出率' : '單據／支出率'}
@@ -361,7 +377,9 @@ function StoreStatsCard({ store, rank, isKitchen }: { store: StoreSummary; rank:
             <div className="mb-3 rounded-xl overflow-hidden" style={{ border: '1px solid #ddd6fe', background: '#fafaff' }}>
               <div className="flex items-center justify-between gap-3 px-3 py-2" style={{ borderBottom: '1px solid #e9e5ff' }}>
                 <p className="text-xs font-bold" style={{ color: '#5b21b6' }}>各店叫貨統計</p>
-                <p className="text-[11px] tabular-nums" style={{ color: '#7c3aed' }}>{store.deliveryStores.length} 家 · 合計 ${fmt(store.revenue)}</p>
+                <p className="text-[11px] tabular-nums" style={{ color: '#7c3aed' }}>
+                  {store.deliveryStores.length} 家 · 叫貨 ${fmt(deliveryRevenue)}{store.taxRefund ? ` · 退稅 +$${fmt(store.taxRefund)}` : ''}
+                </p>
               </div>
               {store.deliveryStores.length === 0 ? (
                 <p className="px-3 py-3 text-xs text-center" style={{ color: '#a1a1aa' }}>本月尚無店家叫貨紀錄</p>
