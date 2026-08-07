@@ -249,13 +249,14 @@ function PayButton({
   const [photoUrls, setPhotoUrls] = useState(initialPhotoUrls)
   const [uploading, setUploading] = useState(false)
   const [adjustmentSign, setAdjustmentSign] = useState<'add' | 'subtract'>(initialAdjustment < 0 ? 'subtract' : 'add')
+  const adjustmentSignRef = useRef<'add' | 'subtract'>(initialAdjustment < 0 ? 'subtract' : 'add')
   const [adjustmentAmount, setAdjustmentAmount] = useState(Math.abs(initialAdjustment))
   const [adjustmentNote, setAdjustmentNote] = useState(initialAdjustmentNote ?? '')
   const inputRef = useRef<HTMLInputElement>(null)
   const signedAdjustment = adjustmentSign === 'subtract' ? -adjustmentAmount : adjustmentAmount
   const finalAmount = Math.max(0, baseAmount + signedAdjustment)
 
-  function persistAdjustment(sign = adjustmentSign, amount = adjustmentAmount, note = adjustmentNote, showToast = false) {
+  function persistAdjustment(sign = adjustmentSignRef.current, amount = adjustmentAmount, note = adjustmentNote, showToast = false) {
     const signedAmount = sign === 'subtract' ? -amount : amount
     startTransition(async () => {
       const result = await saveCKHQReimbursementAdjustment(ckStoreId, date, signedAmount, note)
@@ -428,8 +429,14 @@ function PayButton({
         <div className="grid grid-cols-[auto_1fr] gap-2">
           <div className="grid grid-cols-2 overflow-hidden rounded-lg" style={{ border: '1px solid #FDE68A' }}>
             {(['add', 'subtract'] as const).map(sign => (
-              <button key={sign} type="button" disabled={isPending}
+              <button key={sign} type="button" disabled={isPending} data-adjustment-sign={sign}
+                onPointerDown={() => {
+                  // pointerdown 早於輸入框 blur；先同步記住正負號，避免 blur 用舊的加款狀態保存。
+                  adjustmentSignRef.current = sign
+                  setAdjustmentSign(sign)
+                }}
                 onClick={() => {
+                  adjustmentSignRef.current = sign
                   setAdjustmentSign(sign)
                   // 0 沒有正負號；若此時送到伺服器，subtract 的 -0 會被存成 0，
                   // 重新載入後又被判定為 add。先保留本機選擇，等輸入金額後再保存。
@@ -448,14 +455,19 @@ function PayButton({
           </div>
           <input type="number" min="0" step="1" inputMode="numeric" value={adjustmentAmount || ''}
             onChange={event => setAdjustmentAmount(Math.max(0, Math.round(Number(event.target.value) || 0)))}
-            onBlur={() => persistAdjustment(adjustmentSign, adjustmentAmount, adjustmentNote, true)}
+            onBlur={event => {
+              // 點加款／減款時由按鈕本身保存，避免 blur 與 click 先後各存一次相反符號。
+              const nextTarget = event.relatedTarget as HTMLElement | null
+              if (nextTarget?.dataset.adjustmentSign) return
+              persistAdjustment(adjustmentSignRef.current, adjustmentAmount, adjustmentNote, true)
+            }}
             placeholder="輸入金額"
             className="w-full rounded-lg px-3 py-2 text-right text-sm font-bold tabular-nums outline-none"
             style={{ border: '1px solid #FDE68A', color: '#18181b' }} />
         </div>
         <input type="text" value={adjustmentNote} maxLength={200}
           onChange={event => setAdjustmentNote(event.target.value)}
-          onBlur={() => persistAdjustment(adjustmentSign, adjustmentAmount, adjustmentNote)}
+          onBlur={() => persistAdjustment(adjustmentSignRef.current, adjustmentAmount, adjustmentNote)}
           placeholder="調整原因（選填，例如：昨日包款多 $500）"
           className="w-full rounded-lg px-3 py-2 text-xs outline-none"
           style={{ border: '1px solid #FDE68A', color: '#52525b' }} />
