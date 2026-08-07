@@ -1126,6 +1126,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // 取得每個品項的有效單價：先看覆寫、沒有就用 ckPrices 預設
   const effectiveCKPrice = useCallback((p: CKPrice) => ckPriceOverrides[p.id] ?? p.unit_price, [ckPriceOverrides])
   const [ckPhotoPreview, setCkPhotoPreview] = useState<string | undefined>(undefined)
+  const [ckPhotoUploading, setCkPhotoUploading] = useState(false)
   const ckPhotoLsKey = `ck_photo_${store.id}_${today}`
   const [ckPhotoUrl, setCkPhotoUrl] = useState<string | undefined>(
     existingClosing?.ck_delivery_photo_url ?? undefined
@@ -1145,6 +1146,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   // Envelope bag photo
   const [envelopePhotoPreview, setEnvelopePhotoPreview] = useState<string | undefined>(undefined)
+  const [envelopePhotoUploading, setEnvelopePhotoUploading] = useState(false)
   const envelopePhotoLsKey = `envelope_photo_${store.id}_${today}`
   const [envelopePhotoUrl, setEnvelopePhotoUrl] = useState<string | undefined>(
     (existingClosing as any)?.envelope_photo_url ?? undefined
@@ -1220,6 +1222,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   // Note photo
   const [notePhotoPreview, setNotePhotoPreview] = useState<string | undefined>(undefined)
+  const [notePhotoUploading, setNotePhotoUploading] = useState(false)
   const notePhotoLsKey = `note_photo_${store.id}_${today}`
   const [notePhotoUrl, setNotePhotoUrl] = useState<string | undefined>(
     (existingClosing as any)?.note_photo_url ?? undefined
@@ -1573,6 +1576,20 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (bk.ckPriceOverrides && typeof bk.ckPriceOverrides === 'object') setCkPriceOverrides(bk.ckPriceOverrides)
       if (bk.pettyCounts && typeof bk.pettyCounts === 'object') setPettyCounts(bk.pettyCounts)
       if (bk.pettyLumps && typeof bk.pettyLumps === 'object') setPettyLumps(bk.pettyLumps)
+      if (bk.channelPhotoUrls && typeof bk.channelPhotoUrls === 'object') {
+        const restored: Record<string, ChannelPhoto> = {}
+        for (const [key, value] of Object.entries(bk.channelPhotoUrls as Record<string, unknown>)) {
+          if (typeof value === 'string' && value) {
+            restored[key] = { previewUrl: value, publicUrl: value, status: 'uploaded' }
+          }
+        }
+        setChannelPhotos(restored)
+      }
+      if (typeof bk.ckPhotoUrl === 'string') setCkPhotoUrl(bk.ckPhotoUrl)
+      if (typeof bk.envelopePhotoUrl === 'string') setEnvelopePhotoUrl(bk.envelopePhotoUrl)
+      if (Array.isArray(bk.extraPhotos)) setExtraPhotos(normalizeExtraPhotoList(bk.extraPhotos))
+      if (Array.isArray(bk.voidInvoicePhotos)) setVoidInvoicePhotos(bk.voidInvoicePhotos.filter((url: unknown): url is string => typeof url === 'string' && !!url))
+      if (typeof bk.notePhotoUrl === 'string') setNotePhotoUrl(bk.notePhotoUrl)
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -1692,6 +1709,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // 信封袋實際裝的是完成匯款調整、扣除預留款後要交回 HQ 的金額。
   // 例如整筆現金預留營業稅時 remitToHQ = 0，當天不會有信封，也不應要求照片。
   const requiresEnvelopePhoto = s.remitToHQ > 0
+  const hasPendingPhotoUploads =
+    ckPhotoUploading ||
+    envelopePhotoUploading ||
+    notePhotoUploading ||
+    extraPhotoUploading ||
+    voidInvoiceUploading ||
+    editUploading ||
+    receiptForms.some(form => form.uploading) ||
+    Object.values(channelPhotos).some(photo => photo.status === 'uploading')
   const isLocked = (status === 'submitted' || status === 'verified') && !submitDone
   // submitDone 只代表可以前往送出後步驟，不代表匯款調整可再次編輯。
   // 這裡獨立鎖定，避免影響少數舊帳目送出後補做零用金的既有流程。
@@ -1828,13 +1854,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           disputeToken: disputeDraftToken,
           data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses,
           ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
+          channelPhotoUrls: Object.fromEntries(Object.entries(channelPhotos).flatMap(([key, photo]) => photo.publicUrl ? [[key, photo.publicUrl]] : [])),
+          ckPhotoUrl, envelopePhotoUrl, extraPhotos, voidInvoicePhotos, notePhotoUrl,
           pettyCounts, pettyLumps, ts: Date.now(),
         }))
       } catch {}
     }, 500)
     return () => clearTimeout(t)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, ckPriceOverrides, pettyCounts, pettyLumps, closingId])
+  }, [data, expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, channelPhotos, ckPhotoUrl, envelopePhotoUrl, extraPhotos, voidInvoicePhotos, notePhotoUrl, ckPriceOverrides, pettyCounts, pettyLumps, closingId])
 
   // 頁面切換 / 關閉前立即 flush + 離頁警告
   useEffect(() => {
@@ -1846,6 +1874,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           disputeToken: disputeDraftToken,
           data: dataRef.current, expenses, handwriteOrders, adjustments, reserves,
           largeCashExpenses, ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
+          channelPhotoUrls: Object.fromEntries(Object.entries(channelPhotos).flatMap(([key, photo]) => photo.publicUrl ? [[key, photo.publicUrl]] : [])),
+          ckPhotoUrl, envelopePhotoUrl, extraPhotos, voidInvoicePhotos, notePhotoUrl,
           pettyCounts, pettyLumps, ts: Date.now(),
         }))
       } catch {}
@@ -1866,7 +1896,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       window.removeEventListener('beforeunload', onBeforeUnload)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, ckPriceOverrides, pettyCounts, pettyLumps, isLocked, submitDone, closingId])
+  }, [expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, channelPhotos, ckPhotoUrl, envelopePhotoUrl, extraPhotos, voidInvoicePhotos, notePhotoUrl, ckPriceOverrides, pettyCounts, pettyLumps, isLocked, submitDone, closingId])
 
   useEffect(() => {
     const fromQty = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * effectiveCKPrice(p), 0)
@@ -1883,19 +1913,32 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (!file) return
     e.target.value = ''
     setCkPhotoPreview(URL.createObjectURL(file))
-    const ext = file.name.split('.').pop() || 'jpg'
-    const path = storePhotoPath(store.id, today, 'closing/ck-delivery', `ck-delivery.${ext}`)
-    const result = await uploadReceiptPhoto(path, file)
-    if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
-    setCkPhotoUrl(result.publicUrl)
-    localStorage.setItem(ckPhotoLsKey, result.publicUrl)
-    toast.success('配送單照片已上傳')
+    setCkPhotoUploading(true)
+    try {
+      const ext = file.name.split('.').pop() || 'jpg'
+      const path = storePhotoPath(store.id, today, 'closing/ck-delivery', `ck-delivery.${ext}`)
+      const result = await uploadReceiptPhoto(path, file)
+      if ('error' in result) throw new Error(result.error)
+      setCkPhotoUrl(result.publicUrl)
+      setCkPhotoPreview(undefined)
+      saveSnapshotRef.current = { ...saveSnapshotRef.current, ckPhotoUrl: result.publicUrl }
+      localStorage.setItem(ckPhotoLsKey, result.publicUrl)
+      scheduleBackgroundSave()
+      toast.success('配送單照片已上傳')
+    } catch (error) {
+      setCkPhotoPreview(undefined)
+      toast.error('照片上傳失敗：' + ((error as Error).message || '未知錯誤'))
+    } finally {
+      setCkPhotoUploading(false)
+    }
   }
 
   function handleClearCkPhoto() {
     setCkPhotoPreview(undefined)
     setCkPhotoUrl(undefined)
+    saveSnapshotRef.current = { ...saveSnapshotRef.current, ckPhotoUrl: undefined }
     try { localStorage.removeItem(ckPhotoLsKey) } catch {}
+    scheduleBackgroundSave()
     toast.success('配送單照片已刪除')
   }
 
@@ -1904,13 +1947,33 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (!file) return
     e.target.value = ''
     setEnvelopePhotoPreview(URL.createObjectURL(file))
-    const ext = file.name.split('.').pop() || 'jpg'
-    const path = storePhotoPath(store.id, today, 'closing/envelope', `envelope.${ext}`)
-    const result = await uploadReceiptPhoto(path, file)
-    if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
-    setEnvelopePhotoUrl(result.publicUrl)
-    localStorage.setItem(envelopePhotoLsKey, result.publicUrl)
-    toast.success('信封袋照片已上傳')
+    setEnvelopePhotoUploading(true)
+    try {
+      const ext = file.name.split('.').pop() || 'jpg'
+      const path = storePhotoPath(store.id, today, 'closing/envelope', `envelope.${ext}`)
+      const result = await uploadReceiptPhoto(path, file)
+      if ('error' in result) throw new Error(result.error)
+      setEnvelopePhotoUrl(result.publicUrl)
+      setEnvelopePhotoPreview(undefined)
+      saveSnapshotRef.current = { ...saveSnapshotRef.current, envelopePhotoUrl: result.publicUrl }
+      localStorage.setItem(envelopePhotoLsKey, result.publicUrl)
+      scheduleBackgroundSave()
+      toast.success('信封袋照片已上傳')
+    } catch (error) {
+      // 預覽圖不代表已上傳；失敗時回到原本已保存的照片（若有）。
+      setEnvelopePhotoPreview(undefined)
+      toast.error('照片上傳失敗：' + ((error as Error).message || '未知錯誤'))
+    } finally {
+      setEnvelopePhotoUploading(false)
+    }
+  }
+
+  function clearEnvelopePhoto() {
+    setEnvelopePhotoUrl(undefined)
+    setEnvelopePhotoPreview(undefined)
+    saveSnapshotRef.current = { ...saveSnapshotRef.current, envelopePhotoUrl: undefined }
+    try { localStorage.removeItem(envelopePhotoLsKey) } catch {}
+    scheduleBackgroundSave()
   }
 
   async function handleExtraPhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1918,17 +1981,25 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (!file) return
     e.target.value = ''
     setExtraPhotoUploading(true)
-    const ext = file.name.split('.').pop() || 'jpg'
-    // 用 UUID 確保檔名唯一，避免連續上傳時 length 取到舊值造成路徑衝突
-    const uniqueId = (typeof crypto !== 'undefined' && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const path = storePhotoPath(store.id, today, 'closing/extra', `extra-${uniqueId}.${ext}`)
-    const result = await uploadReceiptPhoto(path, file)
-    setExtraPhotoUploading(false)
-    if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
-    setExtraPhotos(prev => [...prev, { url: result.publicUrl, label: extraPhotoUploadLabel }])
-    toast.success(`${extraPhotoUploadLabel}照片已上傳`)
+    try {
+      const ext = file.name.split('.').pop() || 'jpg'
+      // 用 UUID 確保檔名唯一，避免連續上傳時 length 取到舊值造成路徑衝突
+      const uniqueId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const path = storePhotoPath(store.id, today, 'closing/extra', `extra-${uniqueId}.${ext}`)
+      const result = await uploadReceiptPhoto(path, file)
+      if ('error' in result) throw new Error(result.error)
+      const nextExtraPhotos = [...extraPhotos, { url: result.publicUrl, label: extraPhotoUploadLabel }]
+      setExtraPhotos(nextExtraPhotos)
+      saveSnapshotRef.current = { ...saveSnapshotRef.current, extraPhotos: nextExtraPhotos }
+      scheduleBackgroundSave()
+      toast.success(`${extraPhotoUploadLabel}照片已上傳`)
+    } catch (error) {
+      toast.error('照片上傳失敗：' + ((error as Error).message || '未知錯誤'))
+    } finally {
+      setExtraPhotoUploading(false)
+    }
   }
 
   async function handleVoidInvoicePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1936,14 +2007,24 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (!file) return
     e.target.value = ''
     setVoidInvoiceUploading(true)
-    const ext = file.name.split('.').pop() || 'jpg'
-    const idx = voidInvoicePhotos.length
-    const path = storePhotoPath(store.id, today, 'closing/void-invoice', `void-invoice-${idx}.${ext}`)
-    const result = await uploadReceiptPhoto(path, file)
-    setVoidInvoiceUploading(false)
-    if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
-    setVoidInvoicePhotos(prev => [...prev, result.publicUrl])
-    toast.success('作廢發票照片已上傳')
+    try {
+      const ext = file.name.split('.').pop() || 'jpg'
+      const uniqueId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const path = storePhotoPath(store.id, today, 'closing/void-invoice', `void-invoice-${uniqueId}.${ext}`)
+      const result = await uploadReceiptPhoto(path, file)
+      if ('error' in result) throw new Error(result.error)
+      const nextVoidInvoicePhotos = [...voidInvoicePhotos, result.publicUrl]
+      setVoidInvoicePhotos(nextVoidInvoicePhotos)
+      saveSnapshotRef.current = { ...saveSnapshotRef.current, voidInvoicePhotos: nextVoidInvoicePhotos }
+      scheduleBackgroundSave()
+      toast.success('作廢發票照片已上傳')
+    } catch (error) {
+      toast.error('照片上傳失敗：' + ((error as Error).message || '未知錯誤'))
+    } finally {
+      setVoidInvoiceUploading(false)
+    }
   }
 
   async function handleNotePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1951,13 +2032,46 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (!file) return
     e.target.value = ''
     setNotePhotoPreview(URL.createObjectURL(file))
-    const ext = file.name.split('.').pop() || 'jpg'
-    const path = storePhotoPath(store.id, today, 'closing/note', `note.${ext}`)
-    const result = await uploadReceiptPhoto(path, file)
-    if ('error' in result) { toast.error('照片上傳失敗：' + result.error); return }
-    setNotePhotoUrl(result.publicUrl)
-    localStorage.setItem(notePhotoLsKey, result.publicUrl)
-    toast.success('備註照片已上傳')
+    setNotePhotoUploading(true)
+    try {
+      const ext = file.name.split('.').pop() || 'jpg'
+      const path = storePhotoPath(store.id, today, 'closing/note', `note.${ext}`)
+      const result = await uploadReceiptPhoto(path, file)
+      if ('error' in result) throw new Error(result.error)
+      setNotePhotoUrl(result.publicUrl)
+      setNotePhotoPreview(undefined)
+      saveSnapshotRef.current = { ...saveSnapshotRef.current, notePhotoUrl: result.publicUrl }
+      localStorage.setItem(notePhotoLsKey, result.publicUrl)
+      scheduleBackgroundSave()
+      toast.success('備註照片已上傳')
+    } catch (error) {
+      setNotePhotoPreview(undefined)
+      toast.error('照片上傳失敗：' + ((error as Error).message || '未知錯誤'))
+    } finally {
+      setNotePhotoUploading(false)
+    }
+  }
+
+  function clearNotePhoto() {
+    setNotePhotoUrl(undefined)
+    setNotePhotoPreview(undefined)
+    saveSnapshotRef.current = { ...saveSnapshotRef.current, notePhotoUrl: undefined }
+    try { localStorage.removeItem(notePhotoLsKey) } catch {}
+    scheduleBackgroundSave()
+  }
+
+  function removeVoidInvoicePhoto(index: number) {
+    const next = voidInvoicePhotos.filter((_, itemIndex) => itemIndex !== index)
+    setVoidInvoicePhotos(next)
+    saveSnapshotRef.current = { ...saveSnapshotRef.current, voidInvoicePhotos: next }
+    scheduleBackgroundSave()
+  }
+
+  function removeExtraPhoto(index: number) {
+    const next = extraPhotos.filter((_, itemIndex) => itemIndex !== index)
+    setExtraPhotos(next)
+    saveSnapshotRef.current = { ...saveSnapshotRef.current, extraPhotos: next }
+    scheduleBackgroundSave()
   }
 
   async function syncFromReceipts() {
@@ -2396,7 +2510,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     for (const r of localReceipts.filter(r => r.photo_url)) {
       items.push({ key: r.id, type: 'receipt', label: r.vendor_name || '收據', photoUrl: r.photo_url!, inputAmount: r.total_amount, confirmed: false, notes: r.notes, items: r.receipt_items })
     }
-    const ckPhotoFinal = ckPhotoUrl || ckPhotoPreview
+    // 核對清單只能使用已取得永久網址的照片；blob 預覽在重新整理後會失效。
+    const ckPhotoFinal = ckPhotoUrl
     if (ckPhotoFinal) {
       const ckItems = ckPrices
         .filter(p => (ckQuantitiesRef.current[p.id] ?? 0) > 0)
@@ -2429,14 +2544,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         items.push({ key, type: 'channel', label: info.label, photoUrl: photo.publicUrl, inputAmount: info.amount, confirmed: false })
       }
     }
-    const envelopeFinal = envelopePhotoUrl || envelopePhotoPreview
+    const envelopeFinal = envelopePhotoUrl
     if (envelopeFinal) {
       items.push({ key: 'envelope', type: 'envelope', label: '信封袋', photoUrl: envelopeFinal, inputAmount: s.remitToHQ, confirmed: false })
     }
     voidInvoicePhotos.forEach((url, i) => {
       items.push({ key: `void_invoice_${i}`, type: 'void_invoice', label: `作廢發票 ${i + 1}`, photoUrl: url, inputAmount: 0, confirmed: false })
     })
-    const noteFinal = notePhotoUrl || notePhotoPreview
+    const noteFinal = notePhotoUrl
     if (noteFinal) {
       items.push({ key: 'note', type: 'note', label: '備註照片', photoUrl: noteFinal, inputAmount: 0, confirmed: false })
     }
@@ -2483,24 +2598,58 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     e.target.value = ''
 
     const previewUrl = URL.createObjectURL(file)
-    setChannelPhotos(prev => ({ ...prev, [key]: { previewUrl, status: 'uploading' } }))
+    const previousPhoto = channelPhotos[key]
+    setChannelPhotos(prev => ({
+      ...prev,
+      [key]: { previewUrl, publicUrl: previousPhoto?.publicUrl, status: 'uploading' },
+    }))
 
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-    const safeKey = [...key].map(c => /[\w-]/.test(c) ? c : c.codePointAt(0)!.toString()).join('')
-    const path = storePhotoPath(store.id, today, 'closing/revenue', `rev-${safeKey}.${ext}`)
-    const uploadResult = await uploadReceiptPhoto(path, file)
-    if ('error' in uploadResult) {
-      toast.error(`照片上傳失敗：${uploadResult.error}`)
-      setChannelPhotos(prev => ({ ...prev, [key]: { previewUrl, status: 'idle' } }))
-      return
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+      const safeKey = [...key].map(c => /[\w-]/.test(c) ? c : c.codePointAt(0)!.toString()).join('')
+      const path = storePhotoPath(store.id, today, 'closing/revenue', `rev-${safeKey}.${ext}`)
+      const uploadResult = await uploadReceiptPhoto(path, file)
+      if ('error' in uploadResult) throw new Error(uploadResult.error)
+      const { publicUrl } = uploadResult
+      const uploadedPhoto: ChannelPhoto = { previewUrl: publicUrl, publicUrl, status: 'uploaded' }
+      setChannelPhotos(prev => ({ ...prev, [key]: uploadedPhoto }))
+      saveSnapshotRef.current = {
+        ...saveSnapshotRef.current,
+        channelPhotos: { ...saveSnapshotRef.current.channelPhotos, [key]: uploadedPhoto },
+      }
+      try {
+        const stored = JSON.parse(localStorage.getItem(channelPhotoLsKey) ?? '{}')
+        stored[key] = publicUrl
+        localStorage.setItem(channelPhotoLsKey, JSON.stringify(stored))
+      } catch {}
+      scheduleBackgroundSave()
+    } catch (error) {
+      // 重拍失敗時保留先前已保存的照片，不能讓暫時的預覽覆蓋帳目。
+      setChannelPhotos(prev => {
+        const next = { ...prev }
+        if (previousPhoto?.publicUrl) next[key] = previousPhoto
+        else delete next[key]
+        return next
+      })
+      toast.error('照片上傳失敗：' + ((error as Error).message || '未知錯誤'))
     }
-    const { publicUrl } = uploadResult
-    setChannelPhotos(prev => ({ ...prev, [key]: { previewUrl, publicUrl, status: 'uploaded' } }))
+  }
+
+  function clearChannelPhoto(key: string) {
+    setChannelPhotos(prev => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+    const nextSnapshotPhotos = { ...saveSnapshotRef.current.channelPhotos }
+    delete nextSnapshotPhotos[key]
+    saveSnapshotRef.current = { ...saveSnapshotRef.current, channelPhotos: nextSnapshotPhotos }
     try {
       const stored = JSON.parse(localStorage.getItem(channelPhotoLsKey) ?? '{}')
-      stored[key] = publicUrl
+      delete stored[key]
       localStorage.setItem(channelPhotoLsKey, JSON.stringify(stored))
     } catch {}
+    scheduleBackgroundSave()
   }
 
   function addExpense() {
@@ -2690,12 +2839,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         cid = nc.id
         setClosingId(cid)
       } else {
-        // 一般儲存只更新內容，不負責狀態轉換；且只能寫入草稿／退回修改中的帳目。
-        // 即使舊分頁的延遲 autosave 在送出後才抵達，也無法把 submitted 降回 draft。
-        const { data: updated, error } = await supabase.from('daily_closings')
+        // 儲存必須命中目前這一個編輯版本。舊 draft 分頁不可寫入剛被 HQ 退回的
+        // disputed 版本；上一次退回留下的分頁也不可寫入下一次退回版本。
+        const expectedEditableStatus = statusRef.current === 'disputed' ? 'disputed' : 'draft'
+        let updateQuery = supabase.from('daily_closings')
           .update({ ...payload, updated_at: new Date().toISOString() })
           .eq('id', cid)
-          .in('status', ['draft', 'disputed'])
+          .eq('status', expectedEditableStatus)
+
+        if (expectedEditableStatus === 'disputed' && existingClosing?.disputed_at) {
+          updateQuery = updateQuery.eq('disputed_at', existingClosing.disputed_at as string)
+        }
+
+        const { data: updated, error } = await updateQuery
           .select('id')
           .maybeSingle()
         if (error) throw error
@@ -2709,7 +2865,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             setStatus(current.status)
             return null
           }
-          throw new Error('帳目狀態已變更，請重新整理頁面')
+          throw new Error('帳目已進入新的退回修改版本，為避免舊分頁覆蓋資料，請重新整理頁面')
         }
       }
       // Backup full form state before destructive delete-then-insert operations
@@ -2724,6 +2880,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           reserves: snapshot.reserves,
           largeCashExpenses: snapshot.largeCashExpenses,
           ckQuantities: ckQuantitiesRef.current, ckPriceOverrides: ckPriceOverridesRef.current,
+          channelPhotoUrls: Object.fromEntries(Object.entries(snapshot.channelPhotos).flatMap(([key, photo]) => photo.publicUrl ? [[key, photo.publicUrl]] : [])),
+          ckPhotoUrl: snapshot.ckPhotoUrl,
+          envelopePhotoUrl: snapshot.envelopePhotoUrl,
+          extraPhotos: snapshot.extraPhotos,
+          voidInvoicePhotos: snapshot.voidInvoicePhotos,
+          notePhotoUrl: snapshot.notePhotoUrl,
           pettyCounts, pettyLumps, ts: Date.now(),
         }))
       } catch {}
@@ -2849,6 +3011,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       toast.error('此帳目已送出，請勿重複送出')
       return
     }
+    if (hasPendingPhotoUploads) {
+      toast.error('照片仍在上傳中，請等候上傳完成後再送出')
+      return
+    }
     if (!pettyIsComplete) {
       toast.error('請先完成零用金核對，才能送出帳目')
       if (pettyStepIdx >= 0) goToStep(pettyStepIdx)
@@ -2857,6 +3023,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (hasCkDeliveryQuantity && !hasCkDeliveryPhoto) {
       toast.error('已有央廚配送數量，請先上傳當日配送單照片')
       goToStep(STEPS.findIndex(s => s.id === 'ck_delivery'))
+      return
+    }
+    if (requiresEnvelopePhoto && !envelopePhotoUrl) {
+      toast.error('信封袋有金額，請先完成信封袋照片上傳')
+      goToStep(STEPS.findIndex(step => step.id === 'summary'))
       return
     }
     if (backgroundSaveTimerRef.current) {
@@ -2884,6 +3055,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       localStorage.removeItem(adjLsKey)
       localStorage.removeItem(reserveLsKey)
       localStorage.removeItem(envelopePhotoLsKey)
+      localStorage.removeItem(extraPhotosLsKey)
       localStorage.removeItem(voidInvoiceLsKey)
       localStorage.removeItem(notePhotoLsKey)
       localStorage.removeItem(receiptFormsDraftKey)
@@ -2964,6 +3136,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [stepId])
 
   function goNext() {
+    if (!isLocked && hasPendingPhotoUploads) {
+      toast.error('照片仍在上傳中，請等候上傳完成後再繼續')
+      return
+    }
     if (stepId === 'receipts' && !isLocked) {
       if (receiptForms.length > 0) {
         toast.error(`請先儲存 ${receiptForms.length} 筆未儲存的收據`)
@@ -2987,14 +3163,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         missing.push('熊貓 foodpanda')
       if (store.twpay_enabled && data.twpay_amount > 0 && channelPhotos['twpay']?.status !== 'uploaded')
         missing.push('台灣 Pay')
+      if (store.online_enabled && data.online_amount > 0 && channelPhotos['online']?.status !== 'uploaded')
+        missing.push('線上點餐')
       if (missing.length > 0) {
         toast.error(`請上傳以下通路的照片：${missing.join('、')}`)
         return
       }
     }
     if (stepId === 'summary' && !isLocked) {
-      if (requiresEnvelopePhoto && !envelopePhotoUrl && !envelopePhotoPreview) {
-        toast.error('信封袋有金額，請先上傳信封袋照片')
+      if (requiresEnvelopePhoto && !envelopePhotoUrl) {
+        toast.error('信封袋有金額，請先完成信封袋照片上傳')
         return
       }
     }
@@ -3016,6 +3194,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
   }
   function canNavigateToStep(n: number) {
+    if (!isLocked && n > step && hasPendingPhotoUploads) {
+      toast.error('照片仍在上傳中，請等候上傳完成後再繼續')
+      return false
+    }
     if (!isLocked && n > ckDeliveryStepIdx && hasCkDeliveryQuantity && !hasCkDeliveryPhoto) {
       toast.error('已有央廚配送數量，請先上傳當日配送單照片')
       goToStep(ckDeliveryStepIdx)
@@ -4392,19 +4574,26 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 <div ref={ckPhotoSectionRef} className="ck-photo-pinned">
                   <div className="mx-auto w-full max-w-xl pointer-events-auto">
                     {(ckPhotoPreview || ckPhotoUrl) ? (
-                      <StickyPhotoCard
-                        src={(ckPhotoPreview || ckPhotoUrl)!}
-                        alt="配送單"
-                        onLightbox={() => setPhotoLightbox((ckPhotoPreview || ckPhotoUrl)!)}
-                        onReupload={() => ckPhotoInputRef.current?.click()}
-                        onDelete={handleClearCkPhoto}
-                      />
+                      <>
+                        <StickyPhotoCard
+                          src={(ckPhotoPreview || ckPhotoUrl)!}
+                          alt="配送單"
+                          onLightbox={() => setPhotoLightbox((ckPhotoPreview || ckPhotoUrl)!)}
+                          onReupload={ckPhotoUploading ? undefined : () => ckPhotoInputRef.current?.click()}
+                          onDelete={ckPhotoUploading ? undefined : handleClearCkPhoto}
+                        />
+                        {ckPhotoUploading && (
+                          <p className="mt-2 flex items-center justify-center gap-1.5 text-xs font-semibold" style={{ color: '#f97316' }}>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />照片上傳中，完成前無法繼續
+                          </p>
+                        )}
+                      </>
                     ) : (
-                      <button onClick={() => ckPhotoInputRef.current?.click()}
+                      <button onClick={() => ckPhotoInputRef.current?.click()} disabled={ckPhotoUploading}
                         className="w-full rounded-3xl flex flex-col items-center justify-center gap-2 py-10"
                         style={{ border: '2px dashed #fed7aa', background: '#fff7ed', color: '#f97316' }}>
-                        <Camera className="h-9 w-9" />
-                        <p className="text-base font-semibold">請上傳當日配送單照片</p>
+                        {ckPhotoUploading ? <Loader2 className="h-9 w-9 animate-spin" /> : <Camera className="h-9 w-9" />}
+                        <p className="text-base font-semibold">{ckPhotoUploading ? '照片上傳中…' : '請上傳當日配送單照片'}</p>
                         <p className="text-xs" style={{ color: '#fdba74' }}>
                           {hasCkDeliveryQuantity ? '已有配送數量，照片為必填' : '沒有配送數量，可不需上傳照片'}
                         </p>
@@ -4697,7 +4886,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     onPhotoClick={() => openChannelUpload(key, data.pos_cash)}
 
                     onViewPhoto={() => photo?.previewUrl && setPhotoLightbox(photo.previewUrl)}
-                    onClearPhoto={() => setChannelPhotos(prev => { const n = { ...prev }; delete n[key]; return n })}
+                    onClearPhoto={() => clearChannelPhoto(key)}
                   />
                 )
               })()}
@@ -4724,7 +4913,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     onPhotoClick={() => openChannelUpload(key, data.uber_amounts[acc] ?? 0)}
 
                     onViewPhoto={() => photo?.previewUrl && setPhotoLightbox(photo.previewUrl)}
-                    onClearPhoto={() => setChannelPhotos(prev => { const n = { ...prev }; delete n[key]; return n })}
+                    onClearPhoto={() => clearChannelPhoto(key)}
                   />
                 )
               })}
@@ -4745,7 +4934,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     onPhotoClick={() => openChannelUpload(key, data.panda_amount)}
 
                     onViewPhoto={() => photo?.previewUrl && setPhotoLightbox(photo.previewUrl)}
-                    onClearPhoto={() => setChannelPhotos(prev => { const n = { ...prev }; delete n[key]; return n })}
+                    onClearPhoto={() => clearChannelPhoto(key)}
                   />
                 )
               })()}
@@ -4766,7 +4955,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     onPhotoClick={() => openChannelUpload(key, data.twpay_amount)}
 
                     onViewPhoto={() => photo?.previewUrl && setPhotoLightbox(photo.previewUrl)}
-                    onClearPhoto={() => setChannelPhotos(prev => { const n = { ...prev }; delete n[key]; return n })}
+                    onClearPhoto={() => clearChannelPhoto(key)}
                   />
                 )
               })()}
@@ -4787,7 +4976,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     onPhotoClick={() => openChannelUpload(key, data.online_amount)}
 
                     onViewPhoto={() => photo?.previewUrl && setPhotoLightbox(photo.previewUrl)}
-                    onClearPhoto={() => setChannelPhotos(prev => { const n = { ...prev }; delete n[key]; return n })}
+                    onClearPhoto={() => clearChannelPhoto(key)}
                   />
                 )
               })()}
@@ -5042,13 +5231,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           <ZoomIn className="h-4 w-4" style={{ color: '#fff' }} />
                         </div>
                       </button>
-                      <span className="flex-1 text-xs font-medium" style={{ color: '#52525b' }}>信封袋照片已上傳</span>
+                      <span className="flex-1 text-xs font-medium" style={{ color: envelopePhotoUploading ? '#f97316' : '#52525b' }}>
+                        {envelopePhotoUploading ? '信封袋照片上傳中…' : '信封袋照片已上傳'}
+                      </span>
                       {!isRemittanceLocked && (
                         <div className="flex items-center gap-2 shrink-0">
-                          <button type="button" onClick={() => envelopePhotoInputRef.current?.click()}
+                          <button type="button" onClick={() => envelopePhotoInputRef.current?.click()} disabled={envelopePhotoUploading}
                             className="text-xs px-3 py-1.5 rounded-lg font-medium"
                             style={{ background: '#f4f4f5', color: '#71717a', border: 'none', cursor: 'pointer' }}>重拍</button>
-                          <button type="button" onClick={() => { setEnvelopePhotoUrl(undefined); setEnvelopePhotoPreview(undefined); localStorage.removeItem(envelopePhotoLsKey) }}
+                          <button type="button" disabled={envelopePhotoUploading} onClick={clearEnvelopePhoto}
                             className="rounded-full flex items-center justify-center"
                             style={{ background: '#fee2e2', width: '28px', height: '28px', border: 'none', cursor: 'pointer' }}>
                             <X className="h-3.5 w-3.5" style={{ color: '#dc2626' }} />
@@ -5057,7 +5248,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       )}
                     </div>
                   ) : (
-                    <button type="button" disabled={isLocked}
+                    <button type="button" disabled={isLocked || envelopePhotoUploading}
                       onClick={() => envelopePhotoInputRef.current?.click()}
                       className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium"
                       style={{
@@ -5066,8 +5257,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         border: `1.5px dashed ${requiresEnvelopePhoto ? '#fca5a5' : '#d4d4d8'}`,
                         cursor: isLocked ? 'default' : 'pointer',
                       }}>
-                      <Camera className="h-4 w-4" />
-                      {requiresEnvelopePhoto ? '請上傳信封袋照片（必填）' : '今日無實匯入，不需上傳信封袋照片'}
+                      {envelopePhotoUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                      {envelopePhotoUploading ? '信封袋照片上傳中…' : requiresEnvelopePhoto ? '請上傳信封袋照片（必填）' : '今日無實匯入，不需上傳信封袋照片'}
                     </button>
                   )}
                 </div>
@@ -5414,7 +5605,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         </div>
                       </button>
                       {!isLocked && (
-                        <button type="button" onClick={() => setVoidInvoicePhotos(prev => prev.filter((_, j) => j !== i))}
+                        <button type="button" onClick={() => removeVoidInvoicePhoto(i)}
                           className="absolute top-0.5 right-0.5 rounded-full flex items-center justify-center"
                           style={{ background: 'rgba(0,0,0,0.55)', width: '18px', height: '18px' }}>
                           <X className="h-2.5 w-2.5" style={{ color: '#fff' }} />
@@ -5446,13 +5637,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       <ZoomIn className="h-4 w-4" style={{ color: '#fff' }} />
                     </div>
                   </button>
-                  <span className="flex-1 text-xs font-medium" style={{ color: '#52525b' }}>備註照片已上傳</span>
+                  <span className="flex-1 text-xs font-medium" style={{ color: notePhotoUploading ? '#f97316' : '#52525b' }}>
+                    {notePhotoUploading ? '備註照片上傳中…' : '備註照片已上傳'}
+                  </span>
                   {!isLocked && (
                     <div className="flex items-center gap-2 shrink-0">
-                      <button type="button" onClick={() => notePhotoInputRef.current?.click()}
+                      <button type="button" onClick={() => notePhotoInputRef.current?.click()} disabled={notePhotoUploading}
                         className="text-xs px-3 py-1.5 rounded-lg font-medium"
                         style={{ background: '#f4f4f5', color: '#71717a', border: 'none', cursor: 'pointer' }}>重拍</button>
-                      <button type="button" onClick={() => { setNotePhotoUrl(undefined); setNotePhotoPreview(undefined); localStorage.removeItem(notePhotoLsKey) }}
+                      <button type="button" disabled={notePhotoUploading} onClick={clearNotePhoto}
                         className="rounded-full flex items-center justify-center"
                         style={{ background: '#fee2e2', width: '28px', height: '28px', border: 'none', cursor: 'pointer' }}>
                         <X className="h-3.5 w-3.5" style={{ color: '#dc2626' }} />
@@ -5461,10 +5654,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   )}
                 </div>
               ) : !isLocked && (
-                <button type="button" onClick={() => notePhotoInputRef.current?.click()}
+                <button type="button" onClick={() => notePhotoInputRef.current?.click()} disabled={notePhotoUploading}
                   className="mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium"
                   style={{ background: '#fafafa', color: '#a1a1aa', border: '1.5px dashed #d4d4d8', cursor: 'pointer' }}>
-                  <Camera className="h-3.5 w-3.5" />上傳備註照片（選填）
+                  {notePhotoUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+                  {notePhotoUploading ? '備註照片上傳中…' : '上傳備註照片（選填）'}
                 </button>
               )}
             </div>
@@ -5948,7 +6142,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               placeholder="照片標籤" />
                           </div>
                           <button type="button"
-                            onClick={() => setExtraPhotos(prev => prev.filter((_, i) => i !== idx))}
+                            onClick={() => removeExtraPhoto(idx)}
                             style={{ padding: '4px 8px', border: '1px solid #fca5a5', borderRadius: 8, background: 'white', color: '#ef4444', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
                             刪除
                           </button>

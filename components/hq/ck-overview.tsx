@@ -431,7 +431,11 @@ function PayButton({
               <button key={sign} type="button" disabled={isPending}
                 onClick={() => {
                   setAdjustmentSign(sign)
-                  persistAdjustment(sign, adjustmentAmount, adjustmentNote)
+                  // 0 沒有正負號；若此時送到伺服器，subtract 的 -0 會被存成 0，
+                  // 重新載入後又被判定為 add。先保留本機選擇，等輸入金額後再保存。
+                  if (adjustmentAmount > 0) {
+                    persistAdjustment(sign, adjustmentAmount, adjustmentNote)
+                  }
                 }}
                 className="px-3 py-2 text-xs font-bold"
                 style={{

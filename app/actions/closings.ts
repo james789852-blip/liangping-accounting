@@ -25,6 +25,11 @@ type ClosingForDelete = {
   business_date: string
 }
 
+function objectRows(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return []
+  return value.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object')
+}
+
 async function cleanupClosingRelations(admin: ReturnType<typeof createAdminClient>, closing: ClosingForDelete) {
   const [{ data: receiptsByDate }, { data: orderItems }, { data: screenshots }] = await Promise.all([
     admin.from('receipts').select('id').eq('store_id', closing.store_id).eq('business_date', closing.business_date),
@@ -312,16 +317,22 @@ export async function disputeClosing(closingId: string, note: string) {
   // 退回前先保留完整帳務快照。日後即使店長端裝置或網路發生異常，
   // 也能依稽核紀錄精確還原退回當下的內容，而不是只剩彙總數字可推算。
   const admin = createAdminClient()
-  const { data: preDisputeSnapshot } = await admin
-    .from('daily_closings')
-    .select(`
-      id, store_id, business_date, status, total_revenue, total_cost, total_expenses,
-      expected_remit, actual_remit, should_include_delivery, variance,
-      remittance_adjustments, reserve_items, note, updated_at,
-      revenue_items(*), cash_counts(*), expense_items(*), order_items(*), handwrite_orders(*)
-    `)
-    .eq('id', closingId)
-    .maybeSingle()
+  const [{ data: closingSnapshot }, { data: receiptSnapshot }] = await Promise.all([
+    admin
+      .from('daily_closings')
+      .select('*, revenue_items(*), cash_counts(*), expense_items(*), order_items(*), handwrite_orders(*), platform_screenshots(*)')
+      .eq('id', closingId)
+      .maybeSingle(),
+    admin
+      .from('receipts')
+      .select('*, receipt_items(*)')
+      .eq('store_id', closing.store_id)
+      .eq('business_date', closing.business_date)
+      .order('created_at'),
+  ])
+  const preDisputeSnapshot = closingSnapshot
+    ? { ...closingSnapshot, receipts: receiptSnapshot ?? [] }
+    : null
 
   const cleanNote = note.trim()
   const { error } = await supabase
@@ -373,6 +384,58 @@ export async function submitClosing(closingId: string) {
   }
 
   const admin = createAdminClient()
+  // 送出前再由伺服器檢查「永久照片網址」是否已寫入帳目。Client 的 blob 預覽
+  // 既不能跨裝置，也會在重新整理後失效，絕不能被視為已完成上傳。
+  const { data: submission, error: submissionError } = await admin
+    .from('daily_closings')
+    .select(`
+      actual_remit, remittance_adjustments, reserve_items,
+      envelope_photo_url, ck_delivery_photo_url, channel_photo_urls,
+      cash_counts(large_expenses), order_items(vendor, quantity),
+      revenue_items(channel, account_name, gross_amount)
+    `)
+    .eq('id', closingId)
+    .maybeSingle()
+
+  if (submissionError) return { error: submissionError.message }
+  if (!submission) return { error: '找不到此帳目' }
+
+  const adjustments = objectRows(submission.remittance_adjustments)
+  const reserves = objectRows(submission.reserve_items)
+  const cashRows = objectRows(submission.cash_counts)
+  const largeExpenses = cashRows.flatMap(row => objectRows(row.large_expenses))
+  const adjustmentTotal = adjustments.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
+  const reserveTotal = reserves.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
+  const preReservedTotal = largeExpenses.reduce((sum, row) =>
+    sum + (row.preReserved === true || row.pre_reserved === true ? Math.abs(Number(row.amount) || 0) : 0), 0)
+  const remitToHQ = (Number(submission.actual_remit) || 0) + adjustmentTotal - reserveTotal + preReservedTotal
+
+  if (remitToHQ > 0 && !submission.envelope_photo_url) {
+    return { error: '信封袋有金額，但照片尚未完成上傳，請回到確認結帳重新上傳' }
+  }
+
+  const hasCKDelivery = objectRows(submission.order_items).some(row =>
+    row.vendor === '央廚' && (Number(row.quantity) || 0) > 0)
+  if (hasCKDelivery && !submission.ck_delivery_photo_url) {
+    return { error: '已有央廚配送品項，但配送單照片尚未完成上傳' }
+  }
+
+  const channelPhotoUrls = submission.channel_photo_urls && typeof submission.channel_photo_urls === 'object'
+    ? submission.channel_photo_urls as Record<string, unknown>
+    : {}
+  const missingChannelPhotos = objectRows(submission.revenue_items).flatMap(row => {
+    if ((Number(row.gross_amount) || 0) <= 0) return []
+    const key = row.channel === 'uber'
+      ? `uber_${String(row.account_name ?? '')}`
+      : typeof row.channel === 'string' && ['pos', 'panda', 'twpay', 'online'].includes(row.channel)
+        ? row.channel as string
+        : null
+    return key && !channelPhotoUrls[key] ? [key] : []
+  })
+  if (missingChannelPhotos.length > 0) {
+    return { error: '仍有營收通路照片尚未完成上傳，請回到營業額步驟確認' }
+  }
+
   const { data: updated, error } = await admin
     .from('daily_closings')
     .update({
