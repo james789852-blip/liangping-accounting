@@ -322,6 +322,17 @@ function storeHeaderColor(index: number): string {
   return CK_STORE_COLORS[index % CK_STORE_COLORS.length]
 }
 
+function refundFormula(rowRef: number, expenseCols: ColumnDef[]): string {
+  // 跟上方「梁平退稅」摘要使用完全相同的欄位口徑，確保營業額加到的
+  // 就是使用者在 Excel 看到的退稅金額。
+  const explicitlyRefundable = expenseCols.filter(c => c.isRefund)
+  const refundCols = explicitlyRefundable.length > 0
+    ? explicitlyRefundable
+    : expenseCols.filter(c => c.docType === '發票' && c.vendorGroup === '退稅')
+  const refundCells = refundCols.map(c => `${colLetter(c.index)}${rowRef}`)
+  return refundCells.length > 0 ? refundCells.join('+') : '0'
+}
+
 function statFormula(
   key: ColumnDef['statKey'],
   rowNum: number,
@@ -343,6 +354,8 @@ function statFormula(
     const parts: string[] = []
     if (memberColStart && memberColEnd) parts.push(`SUM(${colLetter(memberColStart)}${rowRef}:${colLetter(memberColEnd)}${rowRef})`)
     if (extColStart && extColEnd) parts.push(`SUM(${colLetter(extColStart)}${rowRef}:${colLetter(extColEnd)}${rowRef})`)
+    const refund = refundFormula(rowRef, expenseCols)
+    if (refund !== '0') parts.push(refund)
     return parts.length > 0 ? parts.join('+') : '0'
   }
   if (key === 'invoice' && expenseStart && expenseEnd) {
@@ -356,12 +369,7 @@ function statFormula(
   if (key === 'refund' && expenseStart && expenseEnd) {
     // 跟店面 Excel 相同：優先依品項對應管理的「屬於退稅」勾選計算，
     // 尚未設定任何勾選時才沿用舊版「發票＋退稅分類」規則。
-    const explicitlyRefundable = expenseCols.filter(c => c.isRefund)
-    const refundCols = explicitlyRefundable.length > 0
-      ? explicitlyRefundable
-      : expenseCols.filter(c => c.docType === '發票' && c.vendorGroup === '退稅')
-    const refundCells = refundCols.map(c => `${colLetter(c.index)}${rowRef}`)
-    return refundCells.length > 0 ? refundCells.join('+') : '0'
+    return refundFormula(rowRef, expenseCols)
   }
   if (key === 'food' && foodExpCols.length > 0) {
     return foodExpCols.map(c => `${colLetter(c.index)}${rowRef}`).join('+')

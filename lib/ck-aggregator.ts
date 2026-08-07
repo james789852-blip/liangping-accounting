@@ -4,7 +4,7 @@
  * 資料來源：
  *   ck_daily_records + ck_store_orders + ck_expense_items + ck_external_stores
  *
- * Revenue = 央廚輸入的各成員店家訂單 + 外部店家訂單
+ * Revenue = 央廚輸入的各成員店家訂單 + 外部店家訂單 + 梁平退稅
  * Expense = 食耗雜品項加總
  */
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -190,7 +190,6 @@ export async function getCKRangeStats(
           if (deductibleExternalNames.has(name)) dd.deductibleExternalRevenue += amount
         }
       }
-      dd.revenue = dd.memberRevenue + dd.externalRevenue
       // 支出
       const exps = (expenses ?? []).filter((e: any) => e.ck_daily_record_id === rec.id)
       for (const e of exps) {
@@ -224,6 +223,8 @@ export async function getCKRangeStats(
         if (isRefund) dd.taxRefund += amt
       }
       dd.totalExpense = dd.food + dd.pack + dd.misc
+      // 央廚營業額需納入「梁平退稅」，與 Excel 營業額公式保持一致。
+      dd.revenue = dd.memberRevenue + dd.externalRevenue + dd.taxRefund
       dd.balance = dd.revenue - dd.totalExpense
     }
     days.push(dd)
