@@ -355,8 +355,8 @@ function statFormula(
     const parts: string[] = []
     if (memberColStart && memberColEnd) parts.push(`SUM(${colLetter(memberColStart)}${rowRef}:${colLetter(memberColEnd)}${rowRef})`)
     if (extColStart && extColEnd) parts.push(`SUM(${colLetter(extColStart)}${rowRef}:${colLetter(extColEnd)}${rowRef})`)
-    const refund = revenueRefundRef ?? refundFormula(rowRef, expenseCols)
-    if (refund !== '0') parts.push(refund)
+    // 退稅只在月合計列透過上方「梁平退稅」摘要格加一次；每日營業額只加總各店叫貨。
+    if (revenueRefundRef) parts.push(revenueRefundRef)
     return parts.length > 0 ? parts.join('+') : '0'
   }
   if (key === 'invoice' && expenseStart && expenseEnd) {

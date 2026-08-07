@@ -4,7 +4,8 @@
  * 資料來源：
  *   ck_daily_records + ck_store_orders + ck_expense_items + ck_external_stores
  *
- * Revenue = 央廚輸入的各成員店家訂單 + 外部店家訂單 + 梁平退稅
+ * Daily revenue = 央廚輸入的各成員店家訂單 + 外部店家訂單
+ * Monthly revenue = 每日營業額合計 + 梁平退稅（整月只加一次）
  * Expense = 食耗雜品項加總
  */
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -223,8 +224,8 @@ export async function getCKRangeStats(
         if (isRefund) dd.taxRefund += amt
       }
       dd.totalExpense = dd.food + dd.pack + dd.misc
-      // 央廚營業額需納入「梁平退稅」，與 Excel 營業額公式保持一致。
-      dd.revenue = dd.memberRevenue + dd.externalRevenue + dd.taxRefund
+      // 每日營業額只計各店叫貨；梁平退稅由月合計另外加一次。
+      dd.revenue = dd.memberRevenue + dd.externalRevenue
       dd.balance = dd.revenue - dd.totalExpense
     }
     days.push(dd)
@@ -296,6 +297,10 @@ export async function getCKMonthlyStats(ckStoreId: string, year: number, monthNu
       externalMap[o.name].total += o.amount
     }
   }
+
+  // 與 Excel 月合計公式一致：各日營業額合計後，再加一次整月梁平退稅。
+  totals.revenue += totals.taxRefund
+  totals.balance = totals.revenue - totals.totalExpense
 
   // memberByStore：優先照 assigned_store_ids 順序（含 total=0 的），再補未預先 assigned 但實際有訂單過的
   const orderedMembers = memberStoreOrder.map(m => ({
