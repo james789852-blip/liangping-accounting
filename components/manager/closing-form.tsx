@@ -159,6 +159,18 @@ async function uploadReceiptPhoto(path: string, rawFile: File): Promise<{ public
   return uploadToStorage(fd, 'receipts', uploadPath)
 }
 
+function uniquePhotoFilename(prefix: string, file: File) {
+  const ext = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
+  const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `${prefix}-${uniqueId}.${ext}`
+}
+
+function revokeLocalPhotoUrl(url?: string | null) {
+  if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+
 
 interface ReceiptFormItem {
   id: string
@@ -1069,6 +1081,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [editItems, setEditItems] = useState<ReceiptFormItem[]>([])
   const [photoLightbox, setPhotoLightbox] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const replaceReceiptPhotoInputRef = useRef<HTMLInputElement>(null)
+  const replacingReceiptFormIdRef = useRef<string | null>(null)
+  const pendingReceiptUploadTokensRef = useRef<Record<string, string>>({})
   const [receiptForms, setReceiptForms] = useState<ReceiptForm[]>([])
   /** 收據卡片內照片預設展開（大圖）— 此 set 紀錄「使用者主動收起」的 receipt id */
   const [collapsedReceiptPhotos, setCollapsedReceiptPhotos] = useState<Set<string>>(new Set())
@@ -1912,11 +1927,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
-    setCkPhotoPreview(URL.createObjectURL(file))
+    const previewUrl = URL.createObjectURL(file)
+    setCkPhotoPreview(previewUrl)
     setCkPhotoUploading(true)
     try {
-      const ext = file.name.split('.').pop() || 'jpg'
-      const path = storePhotoPath(store.id, today, 'closing/ck-delivery', `ck-delivery.${ext}`)
+      const path = storePhotoPath(store.id, today, 'closing/ck-delivery', uniquePhotoFilename('ck-delivery', file))
       const result = await uploadReceiptPhoto(path, file)
       if ('error' in result) throw new Error(result.error)
       setCkPhotoUrl(result.publicUrl)
@@ -1929,6 +1944,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       setCkPhotoPreview(undefined)
       toast.error('照片上傳失敗：' + ((error as Error).message || '未知錯誤'))
     } finally {
+      revokeLocalPhotoUrl(previewUrl)
       setCkPhotoUploading(false)
     }
   }
@@ -1946,11 +1962,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
-    setEnvelopePhotoPreview(URL.createObjectURL(file))
+    const previewUrl = URL.createObjectURL(file)
+    setEnvelopePhotoPreview(previewUrl)
     setEnvelopePhotoUploading(true)
     try {
-      const ext = file.name.split('.').pop() || 'jpg'
-      const path = storePhotoPath(store.id, today, 'closing/envelope', `envelope.${ext}`)
+      const path = storePhotoPath(store.id, today, 'closing/envelope', uniquePhotoFilename('envelope', file))
       const result = await uploadReceiptPhoto(path, file)
       if ('error' in result) throw new Error(result.error)
       setEnvelopePhotoUrl(result.publicUrl)
@@ -1964,6 +1980,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       setEnvelopePhotoPreview(undefined)
       toast.error('照片上傳失敗：' + ((error as Error).message || '未知錯誤'))
     } finally {
+      revokeLocalPhotoUrl(previewUrl)
       setEnvelopePhotoUploading(false)
     }
   }
@@ -2031,11 +2048,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
-    setNotePhotoPreview(URL.createObjectURL(file))
+    const previewUrl = URL.createObjectURL(file)
+    setNotePhotoPreview(previewUrl)
     setNotePhotoUploading(true)
     try {
-      const ext = file.name.split('.').pop() || 'jpg'
-      const path = storePhotoPath(store.id, today, 'closing/note', `note.${ext}`)
+      const path = storePhotoPath(store.id, today, 'closing/note', uniquePhotoFilename('note', file))
       const result = await uploadReceiptPhoto(path, file)
       if ('error' in result) throw new Error(result.error)
       setNotePhotoUrl(result.publicUrl)
@@ -2048,6 +2065,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       setNotePhotoPreview(undefined)
       toast.error('照片上傳失敗：' + ((error as Error).message || '未知錯誤'))
     } finally {
+      revokeLocalPhotoUrl(previewUrl)
       setNotePhotoUploading(false)
     }
   }
@@ -2125,10 +2143,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     // 照片上傳
     let newPhotoUrl = oldReceipt.photo_url
     if (editPhotoFile) {
-      const ext = editPhotoFile.name.split('.').pop()?.toLowerCase() || 'jpg'
-      const path = storePhotoPath(store.id, today, 'receipts', `${editingReceiptId}.${ext}`)
+      const path = storePhotoPath(store.id, today, 'receipts', uniquePhotoFilename(`receipt-${editingReceiptId}`, editPhotoFile))
       const uploadResult = await uploadReceiptPhoto(path, editPhotoFile)
-      if (!('error' in uploadResult)) newPhotoUrl = uploadResult.publicUrl
+      if ('error' in uploadResult) {
+        setEditUploading(false)
+        toast.error('照片更換失敗：' + uploadResult.error)
+        return
+      }
+      newPhotoUrl = uploadResult.publicUrl
     }
 
     const taxMapping = findTaxAddonMapping(mappingColumns, editVendor, editCategory, editItems)
@@ -2195,7 +2217,45 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setEditUploading(false)
     setEditingReceiptId(null)
     setEditPhotoFile(null)
+    revokeLocalPhotoUrl(editPhotoPreview)
+    setEditPhotoPreview(null)
     toast.success('已更新')
+  }
+
+  async function uploadPendingReceiptPhoto(formId: string, file: File) {
+    const token = crypto.randomUUID()
+    pendingReceiptUploadTokensRef.current[formId] = token
+    const path = storePhotoPath(store.id, today, 'receipts', uniquePhotoFilename(`receipt-${formId}`, file))
+    const result = await uploadReceiptPhoto(path, file)
+    if (pendingReceiptUploadTokensRef.current[formId] !== token) return
+    if ('error' in result) {
+      toast.error('照片上傳失敗：' + result.error)
+      return
+    }
+    setReceiptForms(prev => prev.map(f => f.id === formId && f.file === file
+      ? { ...f, uploadedPhotoUrl: result.publicUrl }
+      : f))
+  }
+
+  function openPendingReceiptPhotoReplace(formId: string) {
+    replacingReceiptFormIdRef.current = formId
+    if (replaceReceiptPhotoInputRef.current) replaceReceiptPhotoInputRef.current.value = ''
+    replaceReceiptPhotoInputRef.current?.click()
+  }
+
+  function handlePendingReceiptPhotoReplace(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    const formId = replacingReceiptFormIdRef.current
+    e.target.value = ''
+    replacingReceiptFormIdRef.current = null
+    if (!file || !formId) return
+    const previewUrl = URL.createObjectURL(file)
+    setReceiptForms(prev => prev.map(form => {
+      if (form.id !== formId) return form
+      revokeLocalPhotoUrl(form.previewUrl)
+      return { ...form, file, previewUrl, uploadedPhotoUrl: undefined }
+    }))
+    void uploadPendingReceiptPhoto(formId, file)
   }
 
   function handleMultiUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -2218,14 +2278,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }))
     setReceiptForms(prev => [...prev, ...newForms])
     // 立即背景上傳照片，URL 存入 uploadedPhotoUrl 以便 localStorage 保存
-    newForms.forEach(async form => {
+    newForms.forEach(form => {
       if (!form.file) return
-      const ext = form.file.name.split('.').pop()?.toLowerCase() || 'jpg'
-      const path = storePhotoPath(store.id, today, 'receipts', `${form.id}.${ext}`)
-      const result = await uploadReceiptPhoto(path, form.file)
-      if (!('error' in result)) {
-        setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploadedPhotoUrl: result.publicUrl } : f))
-      }
+      void uploadPendingReceiptPhoto(form.id, form.file)
     })
   }
 
@@ -2416,8 +2471,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const supabase = createClient()
     let photo_url = form.uploadedPhotoUrl ?? ''
     if (!photo_url && form.file) {
-      const ext = form.file.name.split('.').pop()?.toLowerCase() || 'jpg'
-      const path = storePhotoPath(store.id, today, 'receipts', `${form.id}.${ext}`)
+      const path = storePhotoPath(store.id, today, 'receipts', uniquePhotoFilename(`receipt-${form.id}`, form.file))
       const uploadResult = await uploadReceiptPhoto(path, form.file)
       if (!('error' in uploadResult)) photo_url = uploadResult.publicUrl
     }
@@ -2605,9 +2659,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }))
 
     try {
-      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
       const safeKey = [...key].map(c => /[\w-]/.test(c) ? c : c.codePointAt(0)!.toString()).join('')
-      const path = storePhotoPath(store.id, today, 'closing/revenue', `rev-${safeKey}.${ext}`)
+      const path = storePhotoPath(store.id, today, 'closing/revenue', uniquePhotoFilename(`rev-${safeKey}`, file))
       const uploadResult = await uploadReceiptPhoto(path, file)
       if ('error' in uploadResult) throw new Error(uploadResult.error)
       const { publicUrl } = uploadResult
@@ -2632,6 +2685,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         return next
       })
       toast.error('照片上傳失敗：' + ((error as Error).message || '未知錯誤'))
+    } finally {
+      revokeLocalPhotoUrl(previewUrl)
     }
   }
 
@@ -3277,6 +3332,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       <input ref={fileInputRef} type="file" accept="image/*" multiple
         style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px', opacity: 0 }}
         onChange={handleMultiUpload} />
+      <input ref={replaceReceiptPhotoInputRef} type="file" accept="image/*"
+        style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px', opacity: 0 }}
+        onChange={handlePendingReceiptPhotoReplace} />
       <input ref={ckPhotoInputRef} type="file" accept="image/*"
         style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px', opacity: 0 }}
         onChange={handleCkPhotoUpload} />
@@ -3299,7 +3357,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px', opacity: 0 }}
         onChange={e => {
           const f = e.target.files?.[0]
+          e.target.value = ''
           if (!f) return
+          revokeLocalPhotoUrl(editPhotoPreview)
           setEditPhotoFile(f)
           setEditPhotoPreview(URL.createObjectURL(f))
         }} />
@@ -3581,6 +3641,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   style={{ background: 'white', border: '1px solid #fed7aa', color: '#c2410c', cursor: 'pointer', fontFamily: 'inherit', minHeight: 28 }}>
                                   全螢幕
                                 </button>
+                                <button type="button" onClick={() => openPendingReceiptPhotoReplace(form.id)}
+                                  className="px-2.5 py-1 rounded-md text-[11px] font-semibold"
+                                  style={{ background: 'white', border: '1px solid #fed7aa', color: '#c2410c', cursor: 'pointer', fontFamily: 'inherit', minHeight: 28 }}>
+                                  更換照片
+                                </button>
                                 <button type="button" onClick={toggleExpand}
                                   className="px-2.5 py-1 rounded-md text-[11px] font-semibold"
                                   style={{ background: 'white', border: '1px solid #fed7aa', color: '#c2410c', cursor: 'pointer', fontFamily: 'inherit', minHeight: 28 }}>
@@ -3603,6 +3668,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           </div>
                         )
                       })()}
+
+                      {(!photoSrc || !isExpanded) && (
+                        <div className="flex justify-end mb-2">
+                          <button type="button" onClick={() => openPendingReceiptPhotoReplace(form.id)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5"
+                            style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#c2410c', cursor: 'pointer', fontFamily: 'inherit' }}>
+                            <Camera className="h-3.5 w-3.5" />{photoSrc ? '更換照片' : '新增照片'}
+                          </button>
+                        </div>
+                      )}
 
                       <div className={`receipt-card-layout ${isExpanded ? 'is-expanded' : 'is-collapsed'}`}>
                         {/* 縮圖（展開後隱藏，讓表單佔滿寬度） */}
