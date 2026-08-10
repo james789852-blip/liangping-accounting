@@ -1031,6 +1031,9 @@ function CategoryPicker({ categories, value, onChange }: {
         appearance: 'auto',
       }}>
       <option value="">— 選擇類別 —</option>
+      {value && !sortedAll.some(category => category.name === value) && (
+        <option value={value}>{value}（原設定）</option>
+      )}
       {sortedAll.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
     </select>
   )
@@ -4185,33 +4188,51 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               {(() => {
                                 const catObj = categories.find(c => c.name === editCategory)
                                 if (isDirectReceiptCategory(editCategory)) {
-                                  const options = directReceiptOptions(editCategory, categories, mappingColumns)
+                                  const configuredOptions = directReceiptOptions(editCategory, categories, mappingColumns)
+                                  const options = editVendor && !configuredOptions.includes(editVendor)
+                                    ? [editVendor, ...configuredOptions]
+                                    : configuredOptions
                                   return (
                                     <select value={editVendor} onChange={e => updateEditContext(editCategory, e.target.value)}
                                       className="receipt-field"
                                       style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
                                       <option value="">— {isItemOnlyReceiptCategory(editCategory) ? '選擇品項' : '選擇'} —</option>
-                                      {options.map(option => <option key={option} value={option}>{option}</option>)}
+                                      {options.map(option => (
+                                        <option key={option} value={option}>
+                                          {option}{configuredOptions.includes(option) ? '' : '（原設定）'}
+                                        </option>
+                                      ))}
                                     </select>
                                   )
                                 }
                                 if (editCategory === '雜項') {
-                                  const options = mappedMiscReceiptItems(mappingColumns)
+                                  const configuredOptions = mappedMiscReceiptItems(mappingColumns)
+                                  const options = editVendor && !configuredOptions.includes(editVendor)
+                                    ? [editVendor, ...configuredOptions]
+                                    : configuredOptions
                                   return (
                                     <select value={editVendor} onChange={e => updateEditContext(editCategory, e.target.value)}
                                       className="receipt-field"
                                       style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
                                       <option value="">— 選擇品項 —</option>
-                                      {options.map(option => <option key={option} value={option}>{option}</option>)}
+                                      {options.map(option => (
+                                        <option key={option} value={option}>
+                                          {option}{configuredOptions.includes(option) ? '' : '（原設定）'}
+                                        </option>
+                                      ))}
                                     </select>
                                   )
                                 }
                                 if (catObj && catObj.vendors.length > 0) {
+                                  const configuredVendorNames = catObj.vendors.map(vendor => vendor.name)
                                   return (
                                     <select value={editVendor} onChange={e => updateEditContext(editCategory, e.target.value)}
                                       className="receipt-field"
                                       style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
                                       <option value="">— {isItemOnlyReceiptCategory(editCategory) ? '選擇品項' : '選擇'} —</option>
+                                      {editVendor && !configuredVendorNames.includes(editVendor) && (
+                                        <option value={editVendor}>{editVendor}（原設定）</option>
+                                      )}
                                       {catObj.vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
                                     </select>
                                   )
@@ -4349,6 +4370,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             <option value="">— 選擇{item.vendor_group_hint ? item.vendor_group_hint : ''}品項 —</option>
                                             {(() => {
                                               const base = receiptItemMappingsForContext(mappingColumns, editCategory, editVendor, item.vendor_group_hint)
+                                              const selectedMapping = findReceiptItemMapping(item.item_name, editVendor, editCategory, mappingColumns)
+                                              const selectedValue = item.vendor_group_hint && item.item_name
+                                                ? `${item.vendor_group_hint}|${item.item_name}`
+                                                : selectedMapping?.vendor_group
+                                                  ? `${selectedMapping.vendor_group}|${item.item_name}`
+                                                  : item.item_name
+                                              const configuredValues = new Set(base.map(column =>
+                                                column.vendor_group ? `${column.vendor_group}|${column.name}` : column.name,
+                                              ))
                                               const groups: { group: string; items: typeof mappingColumns }[] = []
                                               for (const col of base) {
                                                 const g = col.vendor_group ?? col.category
@@ -4362,14 +4392,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                               )
                                               const stripVg = (n: string, vg?: string) =>
                                                 displayItemName(n, vg)
-                                              return groups.map(({ group, items }) => (
-                                                <optgroup key={group} label={group}>
-                                                  {items.map(c => {
-                                                    const val = c.vendor_group ? `${c.vendor_group}|${c.name}` : c.name
-                                                    return <option key={`${group}|${c.name}`} value={val}>{stripVg(c.name, c.vendor_group)}</option>
-                                                  })}
-                                                </optgroup>
-                                              ))
+                                              return (
+                                                <>
+                                                  {item.item_name && !configuredValues.has(selectedValue) && (
+                                                    <option value={selectedValue}>{item.item_name}（原設定）</option>
+                                                  )}
+                                                  {groups.map(({ group, items }) => (
+                                                    <optgroup key={group} label={group}>
+                                                      {items.map(c => {
+                                                        const val = c.vendor_group ? `${c.vendor_group}|${c.name}` : c.name
+                                                        return <option key={`${group}|${c.name}`} value={val}>{stripVg(c.name, c.vendor_group)}</option>
+                                                      })}
+                                                    </optgroup>
+                                                  ))}
+                                                </>
+                                              )
                                             })()}
                                           </select>
                                         ) : (
