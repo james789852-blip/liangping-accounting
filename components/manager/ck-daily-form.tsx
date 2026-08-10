@@ -286,7 +286,8 @@ function resolveExpenseCategory(
 }
 
 function resolveReceiptCategoryName(form: PhotoExpenseForm, receiptCategories: ReceiptCat[]) {
-  if (form.category_name && receiptCategories.some(c => c.name === form.category_name)) return form.category_name
+  // 歷史類別即使已在設定中停用或改名，也要原樣顯示，不能退回後改猜成別的類別。
+  if (form.category_name?.trim()) return form.category_name.trim()
   if (form.vendor_group) {
     const containing = receiptCategories.find(c => c.vendors.some(v => v.name === form.vendor_group))
     if (containing) return containing.name
@@ -337,7 +338,7 @@ function mergeExternalOrders(configuredStores: ExternalStore[], existingOrders?:
   return Array.from(byName.values())
 }
 
-function buildPhotoExpenseForms(photoUrls: string[], expenses: Expense[], mappingItems: MappingItem[]): PhotoExpenseForm[] {
+function buildPhotoExpenseForms(photoUrls: string[], expenses: Expense[], mappingItems: MappingItem[], receiptCategories: ReceiptCat[]): PhotoExpenseForm[] {
   const used = new Set<string>()
   const grouped = new Map<string, Expense[]>()
   for (const expense of expenses) {
@@ -352,12 +353,26 @@ function buildPhotoExpenseForms(photoUrls: string[], expenses: Expense[], mappin
       const taxExpense = group.find(expense => mappingItems.some(mapping => mapping.is_tax_addon && mapping.item_name === expense.item_name))
       const regularExpenses = group.filter(expense => expense !== taxExpense)
       const first = regularExpenses[0] ?? group[0]
+      const inferredMapping = regularExpenses
+        .map(expense => {
+          const candidates = mappingItems.filter(mapping =>
+            !mapping.is_tax_addon &&
+            (mapping.item_name === expense.item_name || mapping.excel_column === expense.item_name),
+          )
+          return candidates.find(mapping => normalizeExpenseCategory(mapping.item_category) === expense.category)
+            ?? candidates[0]
+        })
+        .find(Boolean)
+      const vendorGroup = first.vendor_group?.trim() || inferredMapping?.vendor_group?.trim() || ''
+      const inferredCategoryName = receiptCategories.find(category =>
+        category.name === vendorGroup || category.vendors.some(vendor => vendor.name === vendorGroup),
+      )?.name ?? ''
       return {
         id: first.id || `expense-${index}`,
         photoUrl: url,
         savedExpenseId: first.id,
         category: first.category,
-        category_name: undefined,
+        category_name: inferredCategoryName || undefined,
         item_name: first.item_name,
         amount: first.amount ? String(first.amount) : '',
         items: regularExpenses.map(e => ({
@@ -368,7 +383,7 @@ function buildPhotoExpenseForms(photoUrls: string[], expenses: Expense[], mappin
           category: e.category,
         })),
         payer_name: first.payer_name || '',
-        vendor_group: first.vendor_group || '',
+        vendor_group: vendorGroup,
         doc_type: first.doc_type || '發票',
         note: first.note || '',
         has_tax: !!taxExpense,
@@ -640,7 +655,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   const [photoUrls, setPhotoUrls] = useState<string[]>(existing?.receiptPhotoUrls ?? [])
   const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string>(existing?.receiptPhotoUrls?.[0] ?? '')
   const [photoForms, setPhotoForms] = useState<PhotoExpenseForm[]>(
-    () => buildPhotoExpenseForms(existing?.receiptPhotoUrls ?? [], existing?.expenses ?? [], mappingItems)
+    () => buildPhotoExpenseForms(existing?.receiptPhotoUrls ?? [], existing?.expenses ?? [], mappingItems, receiptCategories)
   )
   const [expandedPhotoFormIds, setExpandedPhotoFormIds] = useState<string[]>([])
   const [memberOrderInputs, setMemberOrderInputs] = useState<Record<string, string>>(
@@ -997,6 +1012,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     })
     setPhotoForms(prev => prev.map(f => f.id === form.id ? {
       ...f,
+      category_name: categoryName,
       savedExpenseId: regularSavedExpenses[0].id,
       item_name: regularSavedExpenses[0].item_name,
       amount: String(Number(regularSavedExpenses[0].amount) || 0),
@@ -1069,7 +1085,9 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       memberOrders: getMemberOrdersForSave(),
       externalOrders: extOrders.filter(o => o.amount > 0),
       expenses: expensesForSave.map(e => ({
-        category: e.category, item_name: e.item_name, amount: e.amount,
+        category: e.category,
+        item_name: e.item_name,
+        amount: e.amount,
         payer_name: e.payer_name || undefined,
         vendor_group: e.vendor_group || undefined,
         doc_type: e.doc_type || undefined,
@@ -1391,23 +1409,45 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                 ) : (
                   photoForms.map((form, index) => {
                     const activeCategoryName = resolveReceiptCategoryName(form, receiptCategories)
-                    const formVendors = receiptCategories.find(c => c.name === activeCategoryName)?.vendors ?? []
-                    const itemOptions = photoItemOptions(form.vendor_group)
-                    const hasItemOptions = itemOptions.length > 0
                     const usesDirectPhotoItem = isDirectPhotoItemCategory(activeCategoryName)
                     const isBuyOrRepair = isBuyOrRepairCategory(activeCategoryName)
+                    const formItems = getPhotoExpenseItems(form)
+                    const configuredCategoryVendors = receiptCategories.find(c => c.name === activeCategoryName)?.vendors ?? []
+                    const formVendors = !usesDirectPhotoItem && form.vendor_group && !configuredCategoryVendors.some(v => v.name === form.vendor_group)
+                      ? [{ id: `historical-${form.vendor_group}`, name: form.vendor_group }, ...configuredCategoryVendors]
+                      : configuredCategoryVendors
+                    const configuredItemOptions = photoItemOptions(form.vendor_group)
+                    const historicalItemOptions = formItems
+                      .filter((line, lineIndex, lines) => {
+                        const itemName = line.item_name.trim()
+                        return itemName
+                          && !configuredItemOptions.some(item => item.item_name === itemName)
+                          && lines.findIndex(candidate => candidate.item_name.trim() === itemName) === lineIndex
+                      })
+                      .map(line => ({
+                        item_name: line.item_name.trim(),
+                        vendor_group: form.vendor_group || null,
+                        item_category: line.category ?? form.category,
+                        excel_column: line.item_name.trim(),
+                        sort_order: null,
+                      }))
+                    const itemOptions = [...configuredItemOptions, ...historicalItemOptions]
+                    const hasItemOptions = itemOptions.length > 0
                     // 日常用品、加油／停車、退稅都直接讀取品項對應管理的同名群組。
                     // 買東西／維修則直接使用收據設定中的單據類型（發票、收據、估價單、其他）。
-                    const directItemOptions = isBuyOrRepair
-                      ? formVendors.map(v => ({ item_name: v.name, item_category: form.category }))
+                    const configuredDirectItemOptions = isBuyOrRepair
+                      ? configuredCategoryVendors.map(v => ({ item_name: v.name, item_category: form.category }))
                       : usesDirectPhotoItem
                         ? photoItemOptions(activeCategoryName)
                         : []
+                    const selectedDirectItem = formItems[0]?.item_name.trim() ?? ''
+                    const directItemOptions = selectedDirectItem && !configuredDirectItemOptions.some(item => item.item_name === selectedDirectItem)
+                      ? [...configuredDirectItemOptions, { item_name: selectedDirectItem, item_category: formItems[0]?.category ?? form.category }]
+                      : configuredDirectItemOptions
                     const useVendorAsPhotoItem = shouldUseVendorAsItem(activeCategoryName, form.vendor_group)
                     const requiresPhotoItem = shouldRequireExplicitItem(activeCategoryName, form.vendor_group)
                     // 「雞肉商」仍需要再選廠商名稱；其他廠商群組（菜商、嘉楠等）直接選實際品項。
                     const usesVendorNameSelector = activeCategoryName === '廠商' && form.vendor_group === '雞肉商'
-                    const formItems = getPhotoExpenseItems(form)
                     const taxMapping = shouldShowPhotoTaxAddon(activeCategoryName, form.doc_type)
                       ? findTaxAddonByContext(
                           mappingItems.map(mapping => ({ ...mapping, name: mapping.item_name })),
@@ -1516,6 +1556,9 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                   })
                                 }}>
                                 <option value="">選擇類別</option>
+                                {activeCategoryName && !receiptCategories.some(category => category.name === activeCategoryName) && (
+                                  <option value={activeCategoryName}>{activeCategoryName}（原設定）</option>
+                                )}
                                 {receiptCategories.map(c => (
                                   <option key={c.id} value={c.name}>{c.name}</option>
                                 ))}
@@ -1554,7 +1597,9 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                             : '— 選擇品項 —'}
                                   </option>
                                   {directItemOptions.map(item => (
-                                    <option key={item.item_name} value={item.item_name}>{item.item_name}</option>
+                                    <option key={item.item_name} value={item.item_name}>
+                                      {item.item_name}{configuredDirectItemOptions.some(option => option.item_name === item.item_name) ? '' : '（原設定）'}
+                                    </option>
                                   ))}
                                 </select>
                               ) : (
@@ -1576,7 +1621,9 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                   }}>
                                   <option value="">{activeCategoryName ? '— 選擇廠商/群組 —' : '（先選類別）'}</option>
                                   {formVendors.map(v => (
-                                    <option key={v.id} value={v.name}>{v.name}</option>
+                                    <option key={v.id} value={v.name}>
+                                      {v.name}{v.id.startsWith('historical-') ? '（原設定）' : ''}
+                                    </option>
                                   ))}
                                 </select>
                               )}
@@ -1642,7 +1689,11 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                                               : `— 選擇品項 ${lineIndex + 1} —`
                                             : '（先選廠商）'}</option>
                                         {form.vendor_group && hasItemOptions
-                                          ? itemOptions.map(item => <option key={item.item_name} value={item.item_name}>{item.item_name}</option>)
+                                          ? itemOptions.map(item => (
+                                              <option key={item.item_name} value={item.item_name}>
+                                                {item.item_name}{configuredItemOptions.some(option => option.item_name === item.item_name) ? '' : '（原設定）'}
+                                              </option>
+                                            ))
                                           : form.vendor_group && !requiresPhotoItem && <option value={form.vendor_group}>{form.vendor_group}</option>
                                         }
                                       </select>
