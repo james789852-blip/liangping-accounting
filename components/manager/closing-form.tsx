@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, memo, startTransition, type CSSProperties } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, memo, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
 import { toast } from 'sonner'
@@ -1646,6 +1646,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const savingRef = useRef(false)  // mutex 防止並發 handleSave 衝突（自動存 + 手動下一步）
   const saveWaitersRef = useRef<Array<() => void>>([])
   const backgroundSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 同一份表單在逐步導覽時不需要重複寫入。完整簽章包含明細內容，不能只比總額，
+  // 否則「品項不同但合計相同」會被誤判為沒有變更。
+  const lastSavedDraftSignatureRef = useRef<string | null>(null)
+  const lastSyncedCKTotalRef = useRef<number | null>(null)
   useEffect(() => () => {
     if (backgroundSaveTimerRef.current) clearTimeout(backgroundSaveTimerRef.current)
   }, [])
@@ -1845,6 +1849,27 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const set = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) => {
     setData(prev => ({ ...prev, [key]: value }))
   }, [])
+  const updateCkQuantity = useCallback((priceId: string, quantity: number) => {
+    const nextQuantities = { ...ckQuantities, [priceId]: quantity }
+    const nextTotal = ckPrices.reduce(
+      (sum, price) => sum + (nextQuantities[price.id] || 0) * (ckPriceOverrides[price.id] ?? price.unit_price),
+      0,
+    )
+    // 同一個輸入事件內批次更新數量與總額，避免 effect 再觸發第二次完整 render。
+    setCkQuantities(nextQuantities)
+    setData(prev => prev.ck_total === nextTotal ? prev : { ...prev, ck_total: nextTotal })
+  }, [ckPrices, ckPriceOverrides, ckQuantities])
+  const updateCkPriceOverride = useCallback((priceId: string, rawValue: string) => {
+    const nextOverrides = { ...ckPriceOverrides }
+    if (rawValue === '') delete nextOverrides[priceId]
+    else nextOverrides[priceId] = parseFloat(rawValue) || 0
+    const nextTotal = ckPrices.reduce(
+      (sum, price) => sum + (ckQuantities[price.id] || 0) * (nextOverrides[price.id] ?? price.unit_price),
+      0,
+    )
+    setCkPriceOverrides(nextOverrides)
+    setData(prev => prev.ck_total === nextTotal ? prev : { ...prev, ck_total: nextTotal })
+  }, [ckPriceOverrides, ckPrices, ckQuantities])
   const addLargeCashExpense = useCallback(() => {
     setLargeCashExpenses(prev => [...prev, { id: crypto.randomUUID(), description: '', amount: 0 }])
   }, [])
@@ -1916,15 +1941,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expenses, handwriteOrders, adjustments, reserves, largeCashExpenses, channelPhotos, ckPhotoUrl, envelopePhotoUrl, extraPhotos, voidInvoicePhotos, notePhotoUrl, ckPriceOverrides, pettyCounts, pettyLumps, isLocked, submitDone, closingId])
 
+  // localStorage／資料庫恢復可能直接更新 ckQuantities，沒有經過輸入事件；此處只在
+  // 總額真的不同時補同步。一般鍵盤輸入已在同一事件中批次完成，不會多 render。
   useEffect(() => {
-    const fromQty = ckPrices.reduce((sum, p) => sum + (ckQuantities[p.id] || 0) * effectiveCKPrice(p), 0)
-    // Only override when quantities produce a positive total (handles both current and legacy order_items format)
-    if (fromQty > 0) set('ck_total', fromQty)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ckQuantities, ckPriceOverrides])
-
-
-
+    const fromQuantity = ckPrices.reduce(
+      (sum, price) => sum + (ckQuantities[price.id] || 0) * (ckPriceOverrides[price.id] ?? price.unit_price),
+      0,
+    )
+    if (fromQuantity <= 0) return
+    setData(prev => prev.ck_total === fromQuantity ? prev : { ...prev, ck_total: fromQuantity })
+  }, [ckPrices, ckPriceOverrides, ckQuantities])
 
   async function handleCkPhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -2874,6 +2900,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         note_photo_url: snapshot.notePhotoUrl ?? null,
         extra_photo_urls: snapshot.extraPhotos,
       }
+      const draftSignature = JSON.stringify({
+        payload,
+        expenses: snapshot.expenses,
+        handwriteOrders: snapshot.handwriteOrders,
+        largeCashExpenses: snapshot.largeCashExpenses,
+        ckQuantities: ckQuantitiesRef.current,
+        ckPriceOverrides: ckPriceOverridesRef.current,
+        cashCounts: Object.fromEntries(CASH_KEYS.map(key => [key, d[key]])),
+      })
+      const knownClosingId = closingId ?? existingClosing?.id ?? null
+      if (knownClosingId && lastSavedDraftSignatureRef.current === draftSignature) {
+        return knownClosingId
+      }
       if (!cid) {
         // 防呆：當日可能已有 closing 但 state 沒同步（page race / refresh / multi-tab），
         // 先查 DB 看 (store_id, business_date) 是否已存在，避免硬 INSERT 撞 unique constraint
@@ -3033,13 +3072,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       ])
       // 同步央廚叫貨金額到央廚每日記錄；必須等待完成，不能讓總公司讀到舊副本。
       // 使用 closing 實際保存的 total_cost，兼容舊資料仍由 deliveryFee 帶入的情況。
-      const ckSyncResult = await syncStoreCKOrder(store.id, today, Number(payload.total_cost) || 0)
-      if (ckSyncResult.error) throw new Error(`央廚叫貨同步失敗：${ckSyncResult.error}`)
+      const ckTotalToSync = Number(payload.total_cost) || 0
+      if (lastSyncedCKTotalRef.current !== ckTotalToSync) {
+        const ckSyncResult = await syncStoreCKOrder(store.id, today, ckTotalToSync)
+        if (ckSyncResult.error) throw new Error(`央廚叫貨同步失敗：${ckSyncResult.error}`)
+        lastSyncedCKTotalRef.current = ckTotalToSync
+      }
       try {
         if (hwItems.length > 0) localStorage.setItem(handwriteOrdersLsKey, JSON.stringify(currentHandwriteOrders))
         else localStorage.removeItem(handwriteOrdersLsKey)
       } catch {}
       try { localStorage.removeItem(saveBkKey) } catch {}
+      lastSavedDraftSignatureRef.current = draftSignature
       if (!silent) toast.success('草稿已儲存')
       return cid
     } catch (err: any) {
@@ -3059,7 +3103,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     backgroundSaveTimerRef.current = setTimeout(() => {
       backgroundSaveTimerRef.current = null
       void handleSave(true)
-    }, 250)
+    // 讓步驟切換與輸入先完成，再合併短時間內的多次變更；避免每次按「繼續」
+    // 都立刻啟動多個資料表寫入，拖慢下一次互動。
+    }, 900)
   }
 
   async function handleSubmit() {
@@ -3188,11 +3234,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     })
   }, [stepId, stepMounted])
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (stepId === 'ai_verify') buildVerifyItems()
-  }, [stepId])
-
   function goNext() {
     if (!isLocked && hasPendingPhotoUploads) {
       toast.error('照片仍在上傳中，請等候上傳完成後再繼續')
@@ -3269,7 +3310,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     return true
   }
   function goToStep(n: number) {
-    startTransition(() => setCurrentStep(n))
+    // 在點擊事件的同一批更新中準備照片核對資料，避免先切頁、再由 effect
+    // 觸發第二次完整表單 render。
+    if (STEPS[n]?.id === 'ai_verify' && stepId !== 'ai_verify') buildVerifyItems()
+    // 步驟導覽是使用者直接操作，必須使用高優先度更新。用 transition 會在表單
+    // 正忙於圖片與自動儲存更新時被延後，造成按鈕看起來沒有反應。
+    setCurrentStep(n)
     try { localStorage.setItem(stepLsKey, String(n)) } catch {}
   }
   function goPrev() { if (step > 0) goToStep(step - 1) }
@@ -4757,7 +4803,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         placeholder="0"
                         value={qty || ''}
                         ref={el => { if (el) ckQtyRefsMap.current.set(p.id, el); else ckQtyRefsMap.current.delete(p.id) }}
-                        onChange={e => setCkQuantities(prev => ({ ...prev, [p.id]: parseInt(e.target.value) || 0 }))}
+                        onChange={e => updateCkQuantity(p.id, parseInt(e.target.value) || 0)}
                         onKeyDown={e => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
@@ -4779,15 +4825,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           type="number" min="0" step="0.01"
                           placeholder=""
                           value={ckPriceOverrides[p.id] ?? ''}
-                          onChange={e => {
-                            const v = e.target.value
-                            setCkPriceOverrides(prev => {
-                              const next = { ...prev }
-                              if (v === '' || v === null) delete next[p.id]
-                              else next[p.id] = parseFloat(v) || 0
-                              return next
-                            })
-                          }}
+                          onChange={e => updateCkPriceOverride(p.id, e.target.value)}
                           style={{ width: '64px', height: '28px', padding: '0 6px', border: '1.5px solid #fed7aa', borderRadius: '6px', fontSize: '12px', textAlign: 'right', outline: 'none', background: '#fffbeb', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit' }}
                           title={`預設 $${p.unit_price}（雞肉單價浮動，可填當天實際單價）`}
                         />
