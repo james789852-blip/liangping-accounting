@@ -253,11 +253,12 @@ export default async function ClosingPage({
     ? toMappingColumns(mappingBasedItems)
     : newItems.length > 0
     ? toMappingColumns(newItems)
-    : (mappingRows ?? []).map((r: { item_name: string; item_category: string; vendor_group: string | null; excel_column: string }) => ({
+    : (mappingRows ?? []).map((r: { item_name: string; item_category: string; vendor_group: string | null; excel_column: string; doc_type_override: string | null }) => ({
         name: r.item_name,
         category: r.item_category,
         vendor_group: r.vendor_group ?? undefined,
         excel_column: r.excel_column,
+        doc_type: r.doc_type_override,
       })).sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
 
   // 「品項對應管理」是店面單據廠商分類的 source of truth。

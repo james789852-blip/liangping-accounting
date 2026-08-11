@@ -130,6 +130,7 @@ export function toMappingColumns(items: ResolvedStoreItem[]) {
     name: i.name,
     category: i.category,
     vendor_group: i.vendor_group,
+    doc_type: i.doc_type,
     // excel_column 在新系統由匯出邏輯動態決定，這裡先填 name 作為過渡
     excel_column: i.name,
     is_tax_addon: !!i.is_tax_addon,

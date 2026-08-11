@@ -929,9 +929,59 @@ type MappingColumn = {
   category: string
   vendor_group?: string
   excel_column?: string
+  doc_type?: string | null
   is_tax_addon?: boolean
   tax_scope?: 'category' | 'item' | null
   tax_target_item?: string | null
+}
+
+function directReceiptDocType(categoryName: string, itemName: string, mappingColumns: MappingColumn[]): string | null {
+  if (categoryName !== '日常用品' || !itemName.trim()) return null
+  const normalizedItemName = itemName.trim()
+  const matchedItem = mappingColumns.find(column =>
+    !column.is_tax_addon
+    && column.name.trim() === normalizedItemName
+    && (column.category === categoryName || column.vendor_group === categoryName),
+  )
+  return matchedItem?.doc_type?.trim() || null
+}
+
+function directReceiptOptionLabel(categoryName: string, itemName: string, mappingColumns: MappingColumn[]) {
+  const docType = directReceiptDocType(categoryName, itemName, mappingColumns)
+  return docType ? `${itemName}（${docType}）` : itemName
+}
+
+function DailyItemDocTypeHint({ docType }: { docType: string | null }) {
+  const isConfigured = !!docType
+  const palette = docType === '發票'
+    ? { background: '#eff6ff', border: '#bfdbfe', color: '#1d4ed8' }
+    : docType === '收據'
+      ? { background: '#ecfdf5', border: '#a7f3d0', color: '#047857' }
+      : { background: '#fffbeb', border: '#fde68a', color: '#92400e' }
+
+  return (
+    <div
+      role="status"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        width: 'fit-content',
+        maxWidth: '100%',
+        padding: '5px 8px',
+        borderRadius: '8px',
+        border: `1px solid ${palette.border}`,
+        background: palette.background,
+        color: palette.color,
+        fontSize: '12px',
+        fontWeight: 700,
+        lineHeight: 1.35,
+      }}
+    >
+      <FileText size={14} aria-hidden="true" style={{ flex: '0 0 auto' }} />
+      <span>{isConfigured ? `此用品單據類型：${docType}` : '此用品尚未設定單據類型，請詢問總公司'}</span>
+    </div>
+  )
 }
 
 function directReceiptOptions(categoryName: string, categories: CategoryWithVendors[], mappingColumns: MappingColumn[]) {
@@ -3775,14 +3825,24 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             const catObj = categories.find(c => c.name === form.category)
                             if (isDirectReceiptCategory(form.category)) {
                               const options = directReceiptOptions(form.category, categories, mappingColumns)
+                              const selectedDocType = directReceiptDocType(form.category, form.vendor_name, mappingColumns)
                               return (
-                                <select value={form.vendor_name}
-                                  onChange={e => updateReceiptFormContext(form.id, form.category, e.target.value)}
-                                  className="receipt-field"
-                                  style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
-                                  <option value="">— {isItemOnlyReceiptCategory(form.category) ? '選擇品項' : '選擇'} —</option>
-                                  {options.map(option => <option key={option} value={option}>{option}</option>)}
-                                </select>
+                                <>
+                                  <select value={form.vendor_name}
+                                    onChange={e => updateReceiptFormContext(form.id, form.category, e.target.value)}
+                                    className="receipt-field"
+                                    style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
+                                    <option value="">— {isItemOnlyReceiptCategory(form.category) ? '選擇品項' : '選擇'} —</option>
+                                    {options.map(option => (
+                                      <option key={option} value={option}>
+                                        {directReceiptOptionLabel(form.category, option, mappingColumns)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {form.category === '日常用品' && form.vendor_name.trim() && (
+                                    <DailyItemDocTypeHint docType={selectedDocType} />
+                                  )}
+                                </>
                               )
                             }
                             if (form.category === '雜項') {
@@ -4238,17 +4298,23 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   const options = editVendor && !configuredOptions.includes(editVendor)
                                     ? [editVendor, ...configuredOptions]
                                     : configuredOptions
+                                  const selectedDocType = directReceiptDocType(editCategory, editVendor, mappingColumns)
                                   return (
-                                    <select value={editVendor} onChange={e => updateEditContext(editCategory, e.target.value)}
-                                      className="receipt-field"
-                                      style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
-                                      <option value="">— {isItemOnlyReceiptCategory(editCategory) ? '選擇品項' : '選擇'} —</option>
-                                      {options.map(option => (
-                                        <option key={option} value={option}>
-                                          {option}{configuredOptions.includes(option) ? '' : '（原設定）'}
-                                        </option>
-                                      ))}
-                                    </select>
+                                    <>
+                                      <select value={editVendor} onChange={e => updateEditContext(editCategory, e.target.value)}
+                                        className="receipt-field"
+                                        style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit', background: 'white', outline: 'none', color: '#18181b' }}>
+                                        <option value="">— {isItemOnlyReceiptCategory(editCategory) ? '選擇品項' : '選擇'} —</option>
+                                        {options.map(option => (
+                                          <option key={option} value={option}>
+                                            {directReceiptOptionLabel(editCategory, option, mappingColumns)}{configuredOptions.includes(option) ? '' : '（原設定）'}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      {editCategory === '日常用品' && editVendor.trim() && (
+                                        <DailyItemDocTypeHint docType={selectedDocType} />
+                                      )}
+                                    </>
                                   )
                                 }
                                 if (editCategory === '雜項') {

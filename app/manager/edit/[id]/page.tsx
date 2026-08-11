@@ -83,7 +83,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .eq('business_date', closing.business_date)
       .order('created_at'),
     getReceiptSettings(storeId),
-    admin2.from('item_column_mappings').select('item_name, item_category, vendor_group, excel_column').eq('store_id', storeId),
+    admin2.from('item_column_mappings').select('item_name, item_category, vendor_group, excel_column, doc_type_override').eq('store_id', storeId),
     admin2.storage.from('excel-templates').download(`${storeId}-item-order.json`)
       .then(async ({ data }) => (data ? data.text() : null))
       .catch((): null => null),
@@ -125,6 +125,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
         category: r.item_category,
         vendor_group: r.vendor_group ?? undefined,
         excel_column: r.excel_column,
+        doc_type: r.doc_type_override ?? null,
       })).sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
 
   // 退回修改頁也必須和一般結帳頁相同：廠商下拉以該店最新的
