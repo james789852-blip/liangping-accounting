@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -702,7 +702,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     setExtOrders(prev => mergeExternalOrders(externalStores, prev))
   }, [externalStores])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isLocked || typeof window === 'undefined') return
     const raw = window.localStorage.getItem(draftKey)
     if (!raw) return
@@ -742,11 +742,15 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   useEffect(() => {
     if (isLocked || typeof window === 'undefined') return
     const timer = window.setTimeout(() => {
+      // blob: 只在本頁有效，重新整理後一定失效；待上傳完成換成正式 URL 再寫草稿。
+      const persistedPhotoUrls = photoUrls.filter(url => !url.startsWith('blob:'))
+      const persistedPhotoForms = photoForms.filter(form => !form.photoUrl.startsWith('blob:'))
+      const persistedSelectedPhotoUrl = selectedPhotoUrl.startsWith('blob:') ? '' : selectedPhotoUrl
       const hasDraftContent =
         payerName.trim() ||
         note.trim() ||
-        photoUrls.length > 0 ||
-        photoForms.some(f =>
+        persistedPhotoUrls.length > 0 ||
+        persistedPhotoForms.some(f =>
           getPhotoExpenseItems(f).some(item => item.item_name.trim() || item.amount) ||
           f.vendor_group.trim() ||
           f.note.trim()
@@ -773,10 +777,10 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         newExpense,
         activeCat,
         activeVendor,
-        photoUrls,
-        photoForms,
+        photoUrls: persistedPhotoUrls,
+        photoForms: persistedPhotoForms,
         memberOrderInputs,
-        selectedPhotoUrl,
+        selectedPhotoUrl: persistedSelectedPhotoUrl,
       }))
     }, 300)
     return () => window.clearTimeout(timer)
@@ -1040,43 +1044,74 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     }
   }
 
-  async function handlePhotoUpload(files: FileList | null) {
-    if (!files || files.length === 0) return
+  function openPhotoPicker() {
+    if (photoInputRef.current) photoInputRef.current.value = ''
+    photoInputRef.current?.click()
+  }
+
+  async function handlePhotoUpload(files: File[]) {
+    if (files.length === 0) return
     setPhotoUploading(true)
-    for (const rawFile of Array.from(files)) {
-      const file = await compressImage(rawFile)
-      const fd = new FormData()
-      fd.append('file', file)
-      const path = centralKitchenPhotoPath(ckStoreId, date, 'expenses', `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`)
-      const result = await uploadToStorage(fd, 'receipts', path)
-      if ('error' in result) { toast.error('上傳失敗：' + result.error) }
-      else {
-        setPhotoUrls(prev => {
-          const next = [...prev, result.publicUrl]
-          if (!selectedPhotoUrl) setSelectedPhotoUrl(result.publicUrl)
-          return next
-        })
-        setPhotoForms(prev => [...prev, {
-          id: `photo-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          photoUrl: result.publicUrl,
-          category: '食材',
-          category_name: '',
-          item_name: '',
-          amount: '',
-          items: [blankPhotoExpenseItem()],
-          payer_name: '',
-          vendor_group: '',
-          doc_type: '發票',
-          note: '',
-          has_tax: false,
-          tax_amount: '',
-        }])
+    const pendingUploads = files.map(rawFile => {
+      const formId = `photo-${crypto.randomUUID()}`
+      const previewUrl = URL.createObjectURL(rawFile)
+      const form: PhotoExpenseForm = {
+        id: formId,
+        photoUrl: previewUrl,
+        category: '食材',
+        category_name: '',
+        item_name: '',
+        amount: '',
+        items: [blankPhotoExpenseItem()],
+        payer_name: '',
+        vendor_group: '',
+        doc_type: '發票',
+        note: '',
+        has_tax: false,
+        tax_amount: '',
       }
+      return { rawFile, formId, previewUrl, form }
+    })
+
+    // 所有照片選完後一次顯示本機預覽，不必逐張等待壓縮與網路上傳。
+    setPhotoUrls(prev => [...prev, ...pendingUploads.map(item => item.previewUrl)])
+    setSelectedPhotoUrl(prev => prev || pendingUploads[0]?.previewUrl || '')
+    setPhotoForms(prev => [...prev, ...pendingUploads.map(item => item.form)])
+
+    try {
+      await Promise.all(pendingUploads.map(async ({ rawFile, formId, previewUrl }) => {
+        try {
+          const file = await compressImage(rawFile)
+          const fd = new FormData()
+          fd.append('file', file)
+          const path = centralKitchenPhotoPath(ckStoreId, date, 'expenses', `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`)
+          const result = await uploadToStorage(fd, 'receipts', path)
+          if ('error' in result) throw new Error(result.error)
+
+          setPhotoUrls(prev => prev.map(url => url === previewUrl ? result.publicUrl : url))
+          setSelectedPhotoUrl(prev => prev === previewUrl ? result.publicUrl : prev)
+          setPhotoForms(prev => prev.map(form => form.id === formId
+            ? { ...form, photoUrl: result.publicUrl }
+            : form))
+        } catch (error) {
+          setPhotoUrls(prev => prev.filter(url => url !== previewUrl))
+          setSelectedPhotoUrl(prev => prev === previewUrl ? '' : prev)
+          setPhotoForms(prev => prev.filter(form => form.id !== formId))
+          toast.error('上傳失敗：' + ((error as Error).message || '未知錯誤'))
+        } finally {
+          window.setTimeout(() => URL.revokeObjectURL(previewUrl), 1000)
+        }
+      }))
+    } finally {
+      setPhotoUploading(false)
     }
-    setPhotoUploading(false)
   }
 
   async function handleSave(asSubmit = false, opts: { silent?: boolean } = {}) {
+    if (photoUploading) {
+      toast.error('照片仍在上傳中，請稍候完成')
+      return false
+    }
     if (asSubmit) setSubmitting(true); else setSaving(true)
     const r = await saveCKDailyRecord(ckStoreId, date, {
       payerName: payerName || undefined,
@@ -1217,7 +1252,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
               <p className="text-sm font-bold" style={{ color: '#18181b' }}>請上傳當日支出單據照片</p>
               <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>可一次多張，上傳後逐張編輯類別、廠商、品項與金額。</p>
             </div>
-            <button type="button" onClick={() => photoInputRef.current?.click()} disabled={photoUploading}
+            <button type="button" onClick={openPhotoPicker} disabled={photoUploading}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl shrink-0"
               style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white', opacity: photoUploading ? 0.7 : 1 }}>
               {photoUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
@@ -1225,7 +1260,11 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
             </button>
           </div>
           <input ref={photoInputRef} type="file" accept="image/*" multiple className="hidden"
-            onChange={e => handlePhotoUpload(e.target.files)} />
+            onChange={e => {
+              const files = Array.from(e.currentTarget.files ?? [])
+              e.currentTarget.value = ''
+              void handlePhotoUpload(files)
+            }} />
           {photoUrls.length > 0 && (
             <div className="flex gap-2 overflow-x-auto pb-1">
               {photoUrls.slice(0, 8).map((url, i) => (
@@ -1963,21 +2002,21 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
               上一步
             </button>
           )}
-          <button type="button" onClick={() => handleSave(false)} disabled={saving}
+          <button type="button" onClick={() => handleSave(false)} disabled={saving || photoUploading}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold"
             style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             儲存草稿
           </button>
           {currentStep < 4 ? (
-            <button type="button" onClick={goNext} disabled={saving}
+            <button type="button" onClick={goNext} disabled={saving || photoUploading}
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold text-white"
               style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
               儲存並下一步
             </button>
           ) : (
-          <button type="button" onClick={() => handleSave(true)} disabled={submitting}
+          <button type="button" onClick={() => handleSave(true)} disabled={submitting || photoUploading}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold text-white"
             style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

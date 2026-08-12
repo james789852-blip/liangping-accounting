@@ -1473,7 +1473,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   //   原因：receiptForms 初始 []，persist useEffect on mount 會先執行→把 localStorage 清空
   //   再 restore 就找不到 draft → 類別/廠商全消失
   const [receiptFormsHydrated, setReceiptFormsHydrated] = useState(false)
-  useEffect(() => {
+  useLayoutEffect(() => {
     try {
       const stored = localStorage.getItem(receiptFormsDraftKey)
       if (stored) {
@@ -2308,12 +2308,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const result = await uploadReceiptPhoto(path, file)
     if (pendingReceiptUploadTokensRef.current[formId] !== token) return
     if ('error' in result) {
+      setReceiptForms(prev => prev.map(f => f.id === formId && f.file === file
+        ? { ...f, uploading: false }
+        : f))
       toast.error('照片上傳失敗：' + result.error)
       return
     }
     setReceiptForms(prev => prev.map(f => f.id === formId && f.file === file
-      ? { ...f, uploadedPhotoUrl: result.publicUrl }
+      ? { ...f, uploadedPhotoUrl: result.publicUrl, uploading: false }
       : f))
+  }
+
+  function openReceiptPhotoPicker() {
+    // 清空上一次 input 值，iPhone／Android 再選同一張照片時也一定會觸發 change。
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    fileInputRef.current?.click()
   }
 
   function openPendingReceiptPhotoReplace(formId: string) {
@@ -2332,7 +2341,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setReceiptForms(prev => prev.map(form => {
       if (form.id !== formId) return form
       revokeLocalPhotoUrl(form.previewUrl)
-      return { ...form, file, previewUrl, uploadedPhotoUrl: undefined }
+      return { ...form, file, previewUrl, uploadedPhotoUrl: undefined, uploading: true }
     }))
     void uploadPendingReceiptPhoto(formId, file)
   }
@@ -2352,7 +2361,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       has_tax: false,
       tax_amount: 0,
       notes: '',
-      uploading: false,
+      uploading: true,
       items: [{ id: crypto.randomUUID(), item_name: '', unit: '', quantity: 1, unit_price: 0, amount: 0 }],
     }))
     setReceiptForms(prev => [...prev, ...newForms])
@@ -3658,7 +3667,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {!isLocked && (
               <div className="space-y-2 mb-1">
                 {/* 上傳區塊 */}
-                <button onClick={() => fileInputRef.current?.click()}
+                <button type="button" onClick={openReceiptPhotoPicker}
                   className="w-full rounded-2xl flex flex-col items-center justify-center gap-2 py-6 transition-colors"
                   style={{ border: '2px dashed #FDE68A', background: '#f8f9ff', color: '#F59E0B' }}>
                   <UploadCloud className="h-8 w-8" />
