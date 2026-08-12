@@ -226,7 +226,7 @@ function buildHtml({
       <div class="kpi"><div class="kpi-label">改善完成</div><div class="kpi-value">${completedActions} / ${carryItems.length}</div></div>
       <div class="kpi"><div class="kpi-label">本次提案</div><div class="kpi-value">${thisItems.length} 項</div></div>
     </div>
-    <div class="callout"><div class="label">KEY TAKEAWAY</div><div class="value">${formatText(stringValue(report.revenue_difference_note) || plainText(stringValue(report.operations_review_html)) || '尚未填寫')}</div></div>
+    <div class="callout"><div class="label">本次會議重點</div><div class="value">${formatText(stringValue(report.revenue_difference_note) || plainText(stringValue(report.operations_review_html)) || '尚未填寫')}</div></div>
   </section>
 
   <section>

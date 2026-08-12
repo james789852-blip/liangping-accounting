@@ -118,7 +118,7 @@ export default function SubmittedReportView({
             <Metric label="本次提案" value={`${proposals.length} 項`} />
           </div>
           <div className="mt-5 rounded-2xl border border-orange-100 bg-orange-50/70 p-5">
-            <p className="text-xs font-extrabold uppercase tracking-widest text-orange-600">Key takeaway</p>
+            <p className="text-xs font-extrabold tracking-widest text-orange-600">本次會議重點</p>
             <p className="mt-2 whitespace-pre-wrap text-base font-semibold leading-7 text-zinc-800">{report.revenue_difference_note || '本次尚未填寫營業額差異說明'}</p>
           </div>
         </ReportSection>
