@@ -9,7 +9,7 @@ import {
   Store, Users, LogOut,
   ClipboardList, History,
   ArrowRightLeft, Package, BookOpen, Settings, FileBarChart2, ChefHat, ExternalLink,
-  Menu, X,
+  Menu, X, FileText,
 } from 'lucide-react'
 
 const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
@@ -60,6 +60,7 @@ const hqSections = [
     items: [
       { href: '/hq/accounting', label: '帳目中心', icon: BookOpen },
       { href: '/hq/dashboard',  label: '統計中心', icon: LayoutDashboard },
+      { href: '/manager/meeting-report', label: '店務會議', icon: FileText },
     ],
   },
   // ── 系統與權限 ─────────────
@@ -83,6 +84,7 @@ const managerSections = [
       { href: '/manager/closing',    label: '今日結帳', icon: ClipboardList },
       { href: '/manager/dashboard',  label: '今日狀態', icon: LayoutDashboard },
       { href: '/manager/analytics',  label: '營運統計', icon: FileBarChart2 },
+      { href: '/manager/meeting-report', label: '店務會議', icon: FileText },
       { href: '/manager/settings',   label: '廠商設定', icon: Settings },
       { href: '/manager/history',    label: '歷史紀錄', icon: History },
     ],
@@ -92,6 +94,7 @@ const managerSections = [
 const mobileHQTabs = [
   { href: '/hq/accounting',     label: '帳目',   icon: BookOpen },
   { href: '/hq/dashboard',      label: '統計', icon: LayoutDashboard },
+  { href: '/manager/meeting-report', label: '會議', icon: FileText },
   { href: '/hq/item-mappings',  label: '品項',   icon: Package },
   { href: '/hq/stores',         label: '店家',   icon: Store },
 ]
@@ -99,6 +102,7 @@ const mobileManagerTabs = [
   { href: '/manager/closing',    label: '今日結帳', icon: ClipboardList },
   { href: '/manager/dashboard',  label: '今日狀態', icon: LayoutDashboard },
   { href: '/manager/analytics',  label: '營運統計', icon: FileBarChart2 },
+  { href: '/manager/meeting-report', label: '店務會議', icon: FileText },
   { href: '/manager/settings',   label: '廠商設定', icon: Settings },
   { href: '/manager/history',    label: '歷史紀錄', icon: History },
 ]
@@ -194,6 +198,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         items: sec.items.filter(it => {
           if (it.href === '/hq/accounting') return canSeeReviews
           if (it.href === '/hq/dashboard') return canSeeReviews || canSeeExports
+          if (it.href === '/manager/meeting-report') return hasStores
           if (it.href === '/hq/item-mappings') return canSeeItems
           if (it.href === '/hq/receipt-settings') return canSeeReceipts
           if (it.href === '/hq/ck-prices') return canSeeCKPrices
@@ -206,6 +211,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   const filteredMobileHQTabs = mobileHQTabs.filter(tab => {
     if (tab.href === '/hq/accounting') return canSeeReviews
     if (tab.href === '/hq/dashboard') return canSeeReviews || canSeeExports
+    if (tab.href === '/manager/meeting-report') return hasStores
     if (tab.href === '/hq/item-mappings') return canSeeItems
     if (tab.href === '/hq/stores') return canSeeStores
     return true
@@ -229,7 +235,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   }, [])
 
   useEffect(() => {
-    for (const href of ['/hq/accounting', '/hq/dashboard', '/hq/item-mappings', '/manager/dashboard', '/manager/closing', '/manager/analytics', '/manager/settings']) {
+    for (const href of ['/hq/accounting', '/hq/dashboard', '/hq/item-mappings', '/manager/dashboard', '/manager/closing', '/manager/analytics', '/manager/meeting-report', '/manager/settings']) {
       router.prefetch(href)
     }
   }, [router])
