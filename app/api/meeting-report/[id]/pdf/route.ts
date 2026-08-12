@@ -76,6 +76,7 @@ function buildHtml({
   const google = objectValue(report.google_review_data)
   const complaint = objectValue(report.complaint_data)
   const staff = objectValue(report.staff_overview)
+  const staffMembers = arrayValue(report.staff_members)
   const vendors = arrayValue(report.vendor_issues)
   const presenters = arrayValue(report.presenters)
   const feedbackPhotos = stringArray(report.customer_feedback_photos)
@@ -166,6 +167,8 @@ function buildHtml({
     <h2>四、店內同仁目前狀況</h2>
     <div class="grid"><div class="box"><div class="label">人力狀況</div><div class="value">${escapeHtml(stringValue(staff.staffing_status) || '未填寫')}</div></div><div class="box"><div class="label">訓練需求</div><div class="value">${formatText(stringValue(staff.training_needs) || '無')}</div></div></div>
     <div class="box" style="margin-top:10px"><div class="label">其他說明</div><div class="value">${formatText(stringValue(staff.note) || plainText(stringValue(report.staff_status_html)) || '無')}</div></div>
+    <h3>個別同仁分析回報</h3>
+    ${staffMembers.length ? staffMembers.map((member, index) => staffMemberHtml(member, index)).join('') : '<p class="empty">本期沒有個別同仁分析</p>'}
     ${photoHtml(staffPhotos)}
   </section>
 
@@ -196,8 +199,22 @@ function actionHtml(item: Record<string, unknown>) {
       ${detailCell('如何確認有效', stringValue(details.verification_method))}
       ${detailCell('本期改善進度', stringValue(item.progress_note))}
       ${detailCell('遇到的困難', stringValue(item.difficulty_note))}
-      ${detailCell('需要總部協助', stringValue(item.hq_support_note))}
+      ${detailCell('需要各店支援', stringValue(item.store_support_note) || stringValue(item.hq_support_note))}
       ${detailCell('處理結論', stringValue(item.resolution_note))}
+    </div>
+  </div>`
+}
+
+function staffMemberHtml(member: Record<string, unknown>, index: number) {
+  const supportStore = stringValue(member.support_store)
+  const supportNeeded = stringValue(member.support_needed)
+  return `<div class="action ${stringValue(member.current_status) === '表現良好' ? 'done' : ''}">
+    <div class="action-title">${index + 1}. ${escapeHtml(stringValue(member.name) || '未填姓名')}｜${escapeHtml(stringValue(member.role) || '未填職務')} <span style="float:right">${escapeHtml(stringValue(member.current_status) || '未填狀況')}</span></div>
+    <div class="action-detail">
+      ${detailCell('表現亮點', stringValue(member.strengths))}
+      ${detailCell('需要改善／觀察', stringValue(member.concerns))}
+      ${detailCell('預計處理方式', stringValue(member.action_plan))}
+      ${detailCell('需要各店支援', supportStore || supportNeeded ? `${supportStore ? `支援店家：${supportStore}` : ''}${supportStore && supportNeeded ? '\n' : ''}${supportNeeded}` : '')}
     </div>
   </div>`
 }

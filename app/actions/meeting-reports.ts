@@ -31,6 +31,18 @@ export interface StaffOverview {
   note: string
 }
 
+export interface StaffMemberAnalysis {
+  id: string
+  name: string
+  role: string
+  current_status: '表現良好' | '穩定' | '培訓中' | '需要關注'
+  strengths: string
+  concerns: string
+  action_plan: string
+  support_store: string
+  support_needed: string
+}
+
 export interface MeetingPresenter {
   id: string
   name: string
@@ -48,6 +60,7 @@ export interface MeetingReport {
   complaint_data: ComplaintData
   vendor_issues: VendorIssue[]
   staff_overview: StaffOverview
+  staff_members: StaffMemberAnalysis[]
   presenters: MeetingPresenter[]
   current_step: number
   operations_review_html: string | null
@@ -86,6 +99,7 @@ export interface ActionItem {
   progress_note: string | null
   difficulty_note: string | null
   hq_support_note: string | null
+  store_support_note: string | null
   photos: string[]
   status: 'open' | 'resolved' | 'dropped'
   resolution_note: string | null
@@ -128,6 +142,7 @@ type MeetingReportPatch = Partial<Pick<MeetingReport,
   | 'complaint_data'
   | 'vendor_issues'
   | 'staff_overview'
+  | 'staff_members'
   | 'presenters'
   | 'current_step'
   | 'operations_review_html'
@@ -150,6 +165,7 @@ type ActionItemPatch = Partial<Pick<ActionItem,
   | 'progress_note'
   | 'difficulty_note'
   | 'hq_support_note'
+  | 'store_support_note'
   | 'photos'
   | 'resolution_note'
 >>

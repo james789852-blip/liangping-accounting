@@ -23,6 +23,7 @@ import {
   type MeetingPresenter,
   type MeetingReport,
   type MeetingRevenueComparison,
+  type StaffMemberAnalysis,
   type VendorIssue,
 } from '@/app/actions/meeting-reports'
 
@@ -73,6 +74,7 @@ function normalizeReport(report: MeetingReport): MeetingReport {
       training_needs: '',
       note: plainText(report.staff_status_html),
     },
+    staff_members: report.staff_members ?? [],
     presenters: report.presenters ?? [],
     current_step: report.current_step ?? 1,
     customer_feedback_photos: report.customer_feedback_photos ?? [],
@@ -87,6 +89,7 @@ function normalizeItem(item: ActionItem): ActionItem {
     ...item,
     details: { ...EMPTY_DETAILS, ...(item.details ?? {}) },
     progress_percent: item.progress_percent ?? (item.status === 'resolved' ? 100 : 0),
+    store_support_note: item.store_support_note ?? item.hq_support_note ?? null,
     photos: item.photos ?? [],
   }
 }
@@ -194,6 +197,28 @@ export default function EditClient({
 
   function removeVendorIssue(issueId: string) {
     updateReportField('vendor_issues', report.vendor_issues.filter(issue => issue.id !== issueId))
+  }
+
+  function addStaffMember() {
+    updateReportField('staff_members', [...report.staff_members, {
+      id: crypto.randomUUID(),
+      name: '',
+      role: '',
+      current_status: '穩定',
+      strengths: '',
+      concerns: '',
+      action_plan: '',
+      support_store: '',
+      support_needed: '',
+    }])
+  }
+
+  function updateStaffMember(memberId: string, patch: Partial<StaffMemberAnalysis>) {
+    updateReportField('staff_members', report.staff_members.map(member => member.id === memberId ? { ...member, ...patch } : member))
+  }
+
+  function removeStaffMember(memberId: string) {
+    updateReportField('staff_members', report.staff_members.filter(member => member.id !== memberId))
   }
 
   function addPresenter() {
@@ -402,13 +427,46 @@ export default function EditClient({
               <div className="mt-4"><SectionPhotoGrid storeId={report.store_id} photos={report.product_quality_photos} onChange={photos => updateReportField('product_quality_photos', photos, 0)} disabled={isSubmitted} /></div>
             </Card>
 
-            <Card title="店內同仁目前狀況" icon={<Users className="h-5 w-5" />}>
+            <Card title="店內整體人力狀況" icon={<Users className="h-5 w-5" />}>
               <div className="grid gap-3 md:grid-cols-2">
-                <Field label="人力狀況"><select value={report.staff_overview.staffing_status} disabled={isSubmitted} onChange={event => updateReportField('staff_overview', { ...report.staff_overview, staffing_status: event.target.value })} className={inputClass}><option>正常</option><option>人力吃緊</option><option>缺額招募中</option><option>新人訓練中</option><option>需總部協助</option></select></Field>
+                <Field label="人力狀況"><select value={report.staff_overview.staffing_status} disabled={isSubmitted} onChange={event => updateReportField('staff_overview', { ...report.staff_overview, staffing_status: event.target.value })} className={inputClass}><option>正常</option><option>人力吃緊</option><option>缺額招募中</option><option>新人訓練中</option><option>需要各店支援</option></select></Field>
                 <Field label="訓練需求"><input value={report.staff_overview.training_needs} disabled={isSubmitted} onChange={event => updateReportField('staff_overview', { ...report.staff_overview, training_needs: event.target.value })} placeholder="例：外場服務話術" className={inputClass} /></Field>
               </div>
               <Field label="其他說明"><textarea value={report.staff_overview.note} disabled={isSubmitted} onChange={event => updateReportField('staff_overview', { ...report.staff_overview, note: event.target.value })} rows={5} className={textareaClass} /></Field>
               <div className="mt-4"><SectionPhotoGrid storeId={report.store_id} photos={report.staff_status_photos} onChange={photos => updateReportField('staff_status_photos', photos, 0)} disabled={isSubmitted} /></div>
+            </Card>
+
+            <Card title="個別同仁分析回報" icon={<UserRound className="h-5 w-5" />}>
+              <p className="mb-4 text-xs leading-5 text-zinc-500">可針對每位同仁記錄表現亮點、需要改善的地方、後續安排，以及是否需要其他店家協助。</p>
+              <div className="space-y-4">
+                {report.staff_members.map((member, index) => (
+                  <div key={member.id} className="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-100 text-xs font-extrabold text-orange-600">{index + 1}</span>
+                        <p className="text-sm font-bold text-zinc-800">{member.name.trim() || `同仁 ${index + 1}`}</p>
+                      </div>
+                      {!isSubmitted && <button type="button" onClick={() => removeStaffMember(member.id)} className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-400 hover:bg-rose-50 hover:text-rose-600" aria-label="刪除同仁分析"><Trash2 className="h-4 w-4" /></button>}
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <Field label="同仁姓名"><input value={member.name} disabled={isSubmitted} onChange={event => updateStaffMember(member.id, { name: event.target.value })} placeholder="姓名" className={inputClass} /></Field>
+                      <Field label="職務／工作站"><input value={member.role} disabled={isSubmitted} onChange={event => updateStaffMember(member.id, { role: event.target.value })} placeholder="例：外場、廚房、儲備幹部" className={inputClass} /></Field>
+                      <Field label="目前狀況"><select value={member.current_status} disabled={isSubmitted} onChange={event => updateStaffMember(member.id, { current_status: event.target.value as StaffMemberAnalysis['current_status'] })} className={inputClass}><option>表現良好</option><option>穩定</option><option>培訓中</option><option>需要關注</option></select></Field>
+                    </div>
+                    <div className="grid gap-3 lg:grid-cols-3">
+                      <Field label="表現亮點"><textarea value={member.strengths} disabled={isSubmitted} onChange={event => updateStaffMember(member.id, { strengths: event.target.value })} rows={4} placeholder="近期做得好的地方…" className={textareaClass} /></Field>
+                      <Field label="需要改善／觀察"><textarea value={member.concerns} disabled={isSubmitted} onChange={event => updateStaffMember(member.id, { concerns: event.target.value })} rows={4} placeholder="目前問題或需要持續觀察的狀況…" className={textareaClass} /></Field>
+                      <Field label="預計處理方式"><textarea value={member.action_plan} disabled={isSubmitted} onChange={event => updateStaffMember(member.id, { action_plan: event.target.value })} rows={4} placeholder="訓練、面談、排班或追蹤安排…" className={textareaClass} /></Field>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Field label="需要支援的店家"><input value={member.support_store} disabled={isSubmitted} onChange={event => updateStaffMember(member.id, { support_store: event.target.value })} placeholder="例：中壢店；不需要可留空" className={inputClass} /></Field>
+                      <Field label="需要各店支援的內容"><input value={member.support_needed} disabled={isSubmitted} onChange={event => updateStaffMember(member.id, { support_needed: event.target.value })} placeholder="例：支援新人訓練、借調尖峰人力" className={inputClass} /></Field>
+                    </div>
+                  </div>
+                ))}
+                {report.staff_members.length === 0 && <p className="rounded-xl border border-dashed border-zinc-200 py-9 text-center text-sm text-zinc-400">尚未新增個別同仁分析</p>}
+              </div>
+              {!isSubmitted && <button type="button" onClick={addStaffMember} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl border border-orange-300 px-4 text-sm font-bold text-orange-600 hover:bg-orange-50"><Plus className="h-4 w-4" />新增同仁分析</button>}
             </Card>
           </div>
         )}
@@ -428,7 +486,7 @@ export default function EditClient({
                 <div className="grid gap-3 lg:grid-cols-3">
                   <Field label="目前處理狀況／本期進度"><textarea value={item.progress_note ?? ''} disabled={isSubmitted} onChange={event => updateCarry(item.id, 'progress_note', event.target.value)} rows={4} className={textareaClass} /></Field>
                   <Field label="實際遇到的困難"><textarea value={item.difficulty_note ?? ''} disabled={isSubmitted} onChange={event => updateCarry(item.id, 'difficulty_note', event.target.value)} rows={4} className={textareaClass} /></Field>
-                  <Field label="需要總部協助"><textarea value={item.hq_support_note ?? ''} disabled={isSubmitted} onChange={event => updateCarry(item.id, 'hq_support_note', event.target.value)} rows={4} className={textareaClass} /></Field>
+                  <Field label="需要各店支援"><textarea value={item.store_support_note ?? ''} disabled={isSubmitted} onChange={event => updateCarry(item.id, 'store_support_note', event.target.value)} rows={4} placeholder="請說明需要哪間店提供何種支援…" className={textareaClass} /></Field>
                 </div>
                 <Field label="本次處理結論"><textarea value={item.resolution_note ?? ''} disabled={isSubmitted} onChange={event => { setCarryItems(items => items.map(current => current.id === item.id ? { ...current, resolution_note: event.target.value } : current)); queueItemSave(item.id, 'resolution_note', event.target.value, 650) }} rows={3} className={textareaClass} /></Field>
                 {!isSubmitted && <div className="mt-3 flex flex-wrap gap-2"><StatusButton active={item.status === 'open'} onClick={() => updateCarryStatus(item, 'open')}>進行中</StatusButton><StatusButton active={item.status === 'resolved'} tone="green" onClick={() => updateCarryStatus(item, 'resolved')}>已完成</StatusButton><StatusButton active={item.status === 'dropped'} tone="gray" onClick={() => updateCarryStatus(item, 'dropped')}>不再處理</StatusButton></div>}
