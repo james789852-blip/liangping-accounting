@@ -9,6 +9,7 @@ import {
   RefreshCw, Save, Send, Store, Target, Trash2, UserRound, Users, X,
 } from 'lucide-react'
 import SectionPhotoGrid from '@/components/manager/section-photo-grid'
+import SubmittedReportView from './submitted-report-view'
 import {
   addActionItem,
   deleteActionItem,
@@ -341,6 +342,21 @@ export default function EditClient({
     { label: '店長／副店長皆已提出問題', ok: managers.length > 0 && missingManagers.length === 0 },
   ]
   const canSubmit = readiness.every(item => item.ok)
+
+  if (isSubmitted) {
+    return (
+      <SubmittedReportView
+        report={report}
+        storeName={storeName}
+        comparison={comparison}
+        proposals={proposals}
+        carryItems={carryItems}
+        pending={pending}
+        onExportPdf={exportPdf}
+        onUnsubmit={handleUnsubmit}
+      />
+    )
+  }
 
   return (
     <div className="min-h-full bg-[#fafafa] pb-32 lg:pb-10">
