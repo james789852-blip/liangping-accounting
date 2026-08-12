@@ -11,14 +11,16 @@ interface Props {
   photos: string[]
   onChange: (photos: string[]) => void
   maxPhotos?: number
+  disabled?: boolean
 }
 
-export default function SectionPhotoGrid({ storeId, photos, onChange, maxPhotos = 12 }: Props) {
+export default function SectionPhotoGrid({ storeId, photos, onChange, maxPhotos = 12, disabled = false }: Props) {
   const [uploading, setUploading] = useState(false)
   const [preview, setPreview] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function handleFiles(files: FileList | null) {
+    if (disabled) return
     if (!files || files.length === 0) return
     if (photos.length + files.length > maxPhotos) {
       toast.error(`最多 ${maxPhotos} 張照片`)
@@ -64,13 +66,13 @@ export default function SectionPhotoGrid({ storeId, photos, onChange, maxPhotos 
         {photos.map((url, i) => (
           <div key={url} style={{ position: 'relative', aspectRatio: '1', borderRadius: 10, overflow: 'hidden', background: '#f4f4f5', border: '1px solid #e4e4e7' }}>
             <img src={url} alt={`photo-${i}`} style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in' }} onClick={() => setPreview(url)} />
-            <button type="button" onClick={() => removePhoto(i)}
+            {!disabled && <button type="button" onClick={() => removePhoto(i)}
               style={{ position: 'absolute', top: 4, right: 4, height: 24, width: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Trash2 className="h-3 w-3" />
-            </button>
+            </button>}
           </div>
         ))}
-        {photos.length < maxPhotos && (
+        {!disabled && photos.length < maxPhotos && (
           <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}
             style={{
               aspectRatio: '1', borderRadius: 10, border: '1.5px dashed #d4d4d8', background: '#fafafa',

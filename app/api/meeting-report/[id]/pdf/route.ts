@@ -1,64 +1,41 @@
-/**
- * 雙週會議報告 PDF 匯出
- *   GET /api/meeting-report/[id]/pdf
- *
- * 流程：
- *   1) 用 admin client 拉資料庫資料
- *   2) 組成 HTML（含 CSS 排版）
- *   3) puppeteer headless 把 HTML 轉 PDF
- *   4) 回傳 PDF blob
- */
-import { NextRequest, NextResponse } from 'next/server'
-import { getVerifiedUser } from '@/lib/authed-user'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { NextResponse } from 'next/server'
 import puppeteer from 'puppeteer'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { canAccessStore, getAuthContext } from '@/lib/permissions'
+import { getMeetingRevenueComparison, type MeetingRevenueComparison } from '@/app/actions/meeting-reports'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const supabase = await createClient()
-  const user = await getVerifiedUser()
-  if (!user) return new NextResponse('未登入', { status: 401 })
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = await getAuthContext()
+  if (!ctx) return new NextResponse('未登入', { status: 401 })
 
   const { id } = await params
   const admin = createAdminClient()
   const { data: report } = await admin.from('meeting_reports').select('*').eq('id', id).single()
   if (!report) return new NextResponse('找不到報告', { status: 404 })
+  if (!canAccessStore(ctx, report.store_id as string)) return new NextResponse('無權限', { status: 403 })
 
-  const { data: store } = await admin.from('stores').select('name').eq('id', report.store_id).single()
-  const storeName = (store?.name as string) ?? ''
+  const [storeResult, thisItemsResult, carryItemsResult, openCarryResult, comparisonResult] = await Promise.all([
+    admin.from('stores').select('name').eq('id', report.store_id).single(),
+    admin.from('meeting_action_items').select('*').eq('raised_in_report_id', id).order('order_index'),
+    admin.from('meeting_action_items').select('*')
+      .eq('store_id', report.store_id).eq('resolved_in_report_id', id).neq('raised_in_report_id', id).order('order_index'),
+    admin.from('meeting_action_items').select('*')
+      .eq('store_id', report.store_id).eq('status', 'open').neq('raised_in_report_id', id).order('order_index'),
+    getMeetingRevenueComparison(report.store_id, report.period_start, report.period_end),
+  ])
 
-  // 本次提出的行動項目
-  const { data: thisItems } = await admin.from('meeting_action_items')
-    .select('*').eq('raised_in_report_id', id).order('order_index')
-
-  // 上次結轉的（本次有處理紀錄的）
-  const { data: carryItems } = await admin.from('meeting_action_items')
-    .select('*')
-    .eq('store_id', report.store_id)
-    .neq('raised_in_report_id', id)
-    .or(`status.eq.resolved,status.eq.dropped,resolved_in_report_id.eq.${id}`)
-    .order('order_index')
-
-  // 也撈尚未處理的（仍為 open 但是從前面結轉）
-  const { data: openCarryItems } = await admin.from('meeting_action_items')
-    .select('*')
-    .eq('store_id', report.store_id)
-    .eq('status', 'open')
-    .neq('raised_in_report_id', id)
-    .order('order_index')
-
-  const html = buildHTML({
+  const storeName = (storeResult.data?.name as string | null) ?? ''
+  const html = buildHtml({
     report,
     storeName,
-    thisItems: (thisItems ?? []) as any[],
-    resolvedCarryItems: (carryItems ?? []).filter((i: any) => i.resolved_in_report_id === id) as any[],
-    openCarryItems: (openCarryItems ?? []) as any[],
+    thisItems: thisItemsResult.data ?? [],
+    carryItems: [...(carryItemsResult.data ?? []), ...(openCarryResult.data ?? [])],
+    comparison: 'error' in comparisonResult ? null : comparisonResult,
   })
 
-  // 啟動 puppeteer
   const browser = await puppeteer.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -69,10 +46,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const pdf = await page.pdf({
       format: 'A4',
       printBackground: true,
-      margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
+      margin: { top: '16mm', bottom: '16mm', left: '14mm', right: '14mm' },
     })
     const filename = encodeURIComponent(`會議報告_${storeName}_${report.period_start}_${report.period_end}.pdf`)
-    return new NextResponse(pdf as any, {
+    return new NextResponse(pdf as BodyInit, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename*=UTF-8''${filename}`,
@@ -83,177 +60,198 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-function buildHTML(opts: {
-  report: any
+function buildHtml({
+  report,
+  storeName,
+  thisItems,
+  carryItems,
+  comparison,
+}: {
+  report: Record<string, unknown>
   storeName: string
-  thisItems: any[]
-  resolvedCarryItems: any[]
-  openCarryItems: any[]
-}): string {
-  const { report, storeName, thisItems, resolvedCarryItems, openCarryItems } = opts
+  thisItems: Array<Record<string, unknown>>
+  carryItems: Array<Record<string, unknown>>
+  comparison: MeetingRevenueComparison | null
+}) {
+  const google = objectValue(report.google_review_data)
+  const complaint = objectValue(report.complaint_data)
+  const staff = objectValue(report.staff_overview)
+  const vendors = arrayValue(report.vendor_issues)
+  const presenters = arrayValue(report.presenters)
+  const feedbackPhotos = stringArray(report.customer_feedback_photos)
+  const productPhotos = stringArray(report.product_quality_photos)
+  const staffPhotos = stringArray(report.staff_status_photos)
 
-  function section(num: string, title: string, contentHtml: string | null, photos: string[]) {
-    const hasContent = contentHtml && contentHtml.replace(/<[^>]*>/g, '').trim().length > 0
-    const hasPhotos = photos && photos.length > 0
-    if (!hasContent && !hasPhotos) return ''
-    return `
-<section class="report-section">
-  <h2 class="section-title">${num} ${title}</h2>
-  ${hasContent ? `<div class="section-body">${contentHtml}</div>` : ''}
-  ${hasPhotos ? `
-    <div class="photo-grid">
-      ${photos.map(p => `<img src="${p}" alt="photo" />`).join('')}
-    </div>
-  ` : ''}
-</section>
-    `
-  }
-
-  const carryHTML = (resolvedCarryItems.length + openCarryItems.length > 0) ? `
-<section class="report-section">
-  <h2 class="section-title">五、上次提出的問題追蹤</h2>
-  ${[...resolvedCarryItems, ...openCarryItems].map((item, i) => `
-    <div class="action-item ${item.status === 'resolved' ? 'resolved' : item.status === 'dropped' ? 'dropped' : 'open'}">
-      <div class="action-head">
-        <span class="action-status">${item.status === 'resolved' ? '✓ 已解決' : item.status === 'dropped' ? '○ 放棄' : '⋯ 進行中'}</span>
-        <span class="action-num">${i + 1}.</span>
-        <span class="action-desc">${escapeHtml(item.description)}</span>
-      </div>
-      ${item.resolution_note ? `<p class="action-note">${escapeHtml(item.resolution_note)}</p>` : ''}
-    </div>
-  `).join('')}
-</section>
-  ` : ''
-
-  const nextItemsHTML = thisItems.length > 0 ? `
-<section class="report-section">
-  <h2 class="section-title">${resolvedCarryItems.length + openCarryItems.length > 0 ? '六' : '五'}、本次提出的改善項目</h2>
-  <ol class="next-items">
-    ${thisItems.map(item => `<li>${escapeHtml(item.description)}</li>`).join('')}
-  </ol>
-</section>
-  ` : ''
+  const revenueRows = comparison ? [
+    ['總營業額', comparison.current.total, comparison.previous.total],
+    ['現場', comparison.current.onsite, comparison.previous.onsite],
+    ['Uber Eats', comparison.current.uber, comparison.previous.uber],
+    ['foodpanda', comparison.current.panda, comparison.previous.panda],
+    ['線上點餐', comparison.current.online, comparison.previous.online],
+  ] as Array<[string, number, number]> : []
 
   return `<!doctype html>
 <html lang="zh-TW">
 <head>
-<meta charset="utf-8">
-<title>雙週會議報告 - ${storeName}</title>
+<meta charset="utf-8" />
+<title>${escapeHtml(storeName)}雙週店務會議報告</title>
 <style>
   @page { size: A4; }
   * { box-sizing: border-box; }
-  body {
-    font-family: "Microsoft JhengHei", "PingFang TC", -apple-system, BlinkMacSystemFont, sans-serif;
-    margin: 0; padding: 0;
-    color: #18181b; line-height: 1.6; font-size: 13px;
-  }
-  .report-header {
-    border-bottom: 3px solid #F59E0B;
-    padding-bottom: 16px; margin-bottom: 24px;
-  }
-  .report-title {
-    font-size: 26px; font-weight: 800;
-    color: #18181b; margin: 0 0 4px 0;
-    letter-spacing: -0.02em;
-  }
-  .report-subtitle {
-    font-size: 14px; color: #71717a; margin: 0;
-  }
-  .meta-row {
-    display: flex; gap: 24px; margin-top: 12px;
-    font-size: 12px;
-  }
-  .meta-row strong { color: #18181b; margin-right: 4px; }
-  .meta-row span { color: #52525b; }
-
-  .report-section {
-    margin-bottom: 24px;
-    page-break-inside: avoid;
-  }
-  .section-title {
-    font-size: 16px; font-weight: 700;
-    color: #18181b; margin: 0 0 10px 0;
-    padding-bottom: 6px;
-    border-bottom: 2px solid #F4F4F5;
-  }
-  .section-body {
-    font-size: 13px; color: #18181b;
-  }
-  .section-body h2 { font-size: 15px; margin: 12px 0 6px; color: #18181b; }
-  .section-body h3 { font-size: 14px; margin: 10px 0 4px; color: #52525b; font-weight: 700; }
-  .section-body p { margin: 6px 0; }
-  .section-body ul, .section-body ol { margin: 6px 0; padding-left: 24px; }
-  .section-body li { margin: 3px 0; }
-  .section-body strong { color: #18181b; font-weight: 700; }
-  .section-body em { font-style: normal; }
-  .section-body em[data-trend="good"] { color: #047857; font-weight: 700; }
-  .section-body em[data-trend="bad"] { color: #be123c; font-weight: 700; }
-  .section-body em[data-trend="neutral"] { color: #71717a; }
-
-  .photo-grid {
-    display: grid; gap: 8px;
-    grid-template-columns: repeat(3, 1fr);
-    margin-top: 10px;
-  }
-  .photo-grid img {
-    width: 100%; height: 120px; object-fit: cover;
-    border-radius: 6px; border: 1px solid #e4e4e7;
-  }
-
-  .action-item {
-    padding: 10px 12px; margin-bottom: 8px;
-    border-radius: 8px;
-    border-left: 4px solid;
-  }
-  .action-item.resolved { background: #F0FDF4; border-color: #22C55E; }
-  .action-item.dropped { background: #F4F4F5; border-color: #A1A1AA; }
-  .action-item.open { background: #FFFBEB; border-color: #F59E0B; }
-  .action-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-  .action-status {
-    font-size: 11px; font-weight: 700;
-    padding: 2px 8px; border-radius: 999px;
-    background: white;
-  }
-  .resolved .action-status { color: #047857; }
-  .dropped .action-status { color: #71717a; }
-  .open .action-status { color: #B45309; }
-  .action-num { font-weight: 700; color: #52525b; }
-  .action-desc { color: #18181b; flex: 1; min-width: 200px; }
-  .action-note {
-    font-size: 12px; color: #52525b;
-    margin: 6px 0 0 0; padding-left: 12px;
-    border-left: 2px solid rgba(0,0,0,0.1);
-  }
-
-  .next-items {
-    margin: 0; padding-left: 28px;
-  }
-  .next-items li {
-    margin: 6px 0; color: #18181b;
-  }
+  body { margin: 0; color: #27272a; font: 13px/1.65 "PingFang TC", "Microsoft JhengHei", sans-serif; }
+  header { border-bottom: 3px solid #f97316; padding-bottom: 15px; margin-bottom: 22px; }
+  h1 { margin: 0 0 4px; font-size: 25px; letter-spacing: -.02em; }
+  h2 { margin: 0 0 10px; padding-bottom: 6px; border-bottom: 2px solid #f4f4f5; font-size: 16px; }
+  h3 { margin: 12px 0 6px; font-size: 13px; color: #52525b; }
+  p { margin: 5px 0; }
+  section { margin-bottom: 22px; page-break-inside: avoid; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 10px; color: #71717a; font-size: 12px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .box { border: 1px solid #e4e4e7; border-radius: 8px; padding: 10px 12px; }
+  .label { color: #71717a; font-size: 11px; font-weight: 700; }
+  .value { margin-top: 3px; white-space: pre-wrap; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border-bottom: 1px solid #e4e4e7; padding: 7px 8px; text-align: left; vertical-align: top; }
+  th { background: #fafafa; color: #71717a; font-size: 11px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .up { color: #047857; font-weight: 700; }
+  .down { color: #be123c; font-weight: 700; }
+  .photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+  .photos img { width: 100%; height: 115px; border: 1px solid #e4e4e7; border-radius: 6px; object-fit: cover; }
+  .action { margin-bottom: 9px; padding: 10px 12px; border-left: 4px solid #f97316; border-radius: 7px; background: #fff7ed; }
+  .action.done { border-color: #22c55e; background: #f0fdf4; }
+  .action.dropped { border-color: #a1a1aa; background: #f4f4f5; }
+  .action-title { font-weight: 700; }
+  .action-meta { margin-top: 3px; color: #71717a; font-size: 11px; }
+  .action-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; margin-top: 8px; }
+  .action-detail div { white-space: pre-wrap; }
+  .empty { color: #a1a1aa; }
 </style>
 </head>
 <body>
-  <div class="report-header">
-    <h1 class="report-title">${storeName} · 雙週會議報告</h1>
-    <p class="report-subtitle">會議日期：${report.meeting_date ?? report.period_end}</p>
-    <div class="meta-row">
-      <div><strong>本期區間：</strong><span>${report.period_start} ~ ${report.period_end}</span></div>
-      <div><strong>狀態：</strong><span>${report.status === 'submitted' ? '已提交' : '草稿'}</span></div>
+  <header>
+    <h1>${escapeHtml(storeName)} · 雙週店務會議報告</h1>
+    <p>會議日期：${escapeHtml(stringValue(report.meeting_date) || stringValue(report.period_end))}</p>
+    <div class="meta">
+      <span><strong>本期：</strong>${escapeHtml(stringValue(report.period_start))} → ${escapeHtml(stringValue(report.period_end))}</span>
+      ${comparison ? `<span><strong>前期：</strong>${comparison.previousStart} → ${comparison.previousEnd}</span>` : ''}
+      <span><strong>狀態：</strong>${report.status === 'submitted' ? '已提交' : '草稿'}</span>
+      ${presenters.length ? `<span><strong>報告人員：</strong>${presenters.map(person => `${escapeHtml(stringValue(person.name))}（${escapeHtml(stringValue(person.role))}）`).join('、')}</span>` : ''}
     </div>
-  </div>
+  </header>
 
-  ${section('一、', '主要營運回顧', report.operations_review_html, [])}
-  ${section('二、', '客訴反應 / Google 評論', report.customer_feedback_html, report.customer_feedback_photos ?? [])}
-  ${section('三、', '同仁狀況', report.staff_status_html, report.staff_status_photos ?? [])}
-  ${section('四、', '產品品質', report.product_quality_html, report.product_quality_photos ?? [])}
-  ${carryHTML}
-  ${nextItemsHTML}
-  ${section('其他', '備註', report.notes_html, report.notes_photos ?? [])}
+  <section>
+    <h2>一、營業數據與差異說明</h2>
+    ${revenueRows.length ? `<table><thead><tr><th>通路</th><th class="num">本期</th><th class="num">前期</th><th class="num">差異</th></tr></thead><tbody>${revenueRows.map(([label, current, previous]) => `<tr><td>${label}</td><td class="num">${formatMoney(current)}</td><td class="num">${formatMoney(previous)}</td><td class="num ${current >= previous ? 'up' : 'down'}">${formatChange(current, previous)}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">沒有可顯示的營業資料</p>'}
+    <h3>營業額差異說明</h3>
+    <div class="box"><div class="value">${formatText(stringValue(report.revenue_difference_note) || plainText(stringValue(report.operations_review_html)) || '尚未填寫')}</div></div>
+  </section>
+
+  <section>
+    <h2>二、Google 評論與客訴</h2>
+    <div class="grid">
+      <div class="box"><div class="label">Google 評論</div><div class="value">新增 ${numberValue(google.new_reviews)} 則｜平均 ${google.average_rating == null ? '—' : numberValue(google.average_rating)} 星<br/>${formatText(stringValue(google.summary) || '無')}</div></div>
+      <div class="box"><div class="label">客訴紀錄</div><div class="value">共 ${numberValue(complaint.count)} 件｜${escapeHtml(stringValue(complaint.category) || '未分類')}<br/>${formatText(stringValue(complaint.description) || '無')}<br/><strong>處理結果：</strong>${formatText(stringValue(complaint.resolution) || '無')}</div></div>
+    </div>
+    ${photoHtml(feedbackPhotos)}
+  </section>
+
+  <section>
+    <h2>三、廠商供貨品質及問題</h2>
+    ${vendors.length ? `<table><thead><tr><th>廠商</th><th>品項</th><th>問題說明</th><th>處理狀況</th></tr></thead><tbody>${vendors.map(issue => `<tr><td>${escapeHtml(stringValue(issue.vendor))}</td><td>${escapeHtml(stringValue(issue.item))}</td><td>${formatText(stringValue(issue.issue))}</td><td>${escapeHtml(stringValue(issue.status))}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">本期無供貨問題</p>'}
+    ${photoHtml(productPhotos)}
+  </section>
+
+  <section>
+    <h2>四、店內同仁目前狀況</h2>
+    <div class="grid"><div class="box"><div class="label">人力狀況</div><div class="value">${escapeHtml(stringValue(staff.staffing_status) || '未填寫')}</div></div><div class="box"><div class="label">訓練需求</div><div class="value">${formatText(stringValue(staff.training_needs) || '無')}</div></div></div>
+    <div class="box" style="margin-top:10px"><div class="label">其他說明</div><div class="value">${formatText(stringValue(staff.note) || plainText(stringValue(report.staff_status_html)) || '無')}</div></div>
+    ${photoHtml(staffPhotos)}
+  </section>
+
+  <section>
+    <h2>五、上次問題處理與改善進度</h2>
+    ${carryItems.length ? carryItems.map(actionHtml).join('') : '<p class="empty">沒有上次結轉事項</p>'}
+  </section>
+
+  <section>
+    <h2>六、本次主動提出問題與解法</h2>
+    ${thisItems.length ? thisItems.map(actionHtml).join('') : '<p class="empty">尚未新增問題提案</p>'}
+  </section>
 </body>
 </html>`
 }
 
-function escapeHtml(s: string): string {
-  return (s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[ch])
+function actionHtml(item: Record<string, unknown>) {
+  const details = objectValue(item.details)
+  const status = stringValue(item.status)
+  const statusText = status === 'resolved' ? '已完成' : status === 'dropped' ? '不再處理' : '進行中'
+  return `<div class="action ${status === 'resolved' ? 'done' : status === 'dropped' ? 'dropped' : ''}">
+    <div class="action-title">${escapeHtml(stringValue(item.description) || stringValue(details.observation) || '未命名事項')} <span style="float:right">${statusText}</span></div>
+    <div class="action-meta">提出人：${escapeHtml(stringValue(details.proposer_name) || '—')}｜負責人：${escapeHtml(stringValue(item.owner_name) || '—')}｜期限：${escapeHtml(stringValue(item.due_date) || '—')}｜進度：${numberValue(item.progress_percent)}%</div>
+    <div class="action-detail">
+      ${detailCell('影響範圍', stringValue(details.impact))}
+      ${detailCell('原因判斷', stringValue(details.cause))}
+      ${detailCell('預計處理方式', stringValue(details.solution))}
+      ${detailCell('如何確認有效', stringValue(details.verification_method))}
+      ${detailCell('本期改善進度', stringValue(item.progress_note))}
+      ${detailCell('遇到的困難', stringValue(item.difficulty_note))}
+      ${detailCell('需要總部協助', stringValue(item.hq_support_note))}
+      ${detailCell('處理結論', stringValue(item.resolution_note))}
+    </div>
+  </div>`
+}
+
+function detailCell(label: string, value: string) {
+  return `<div><span class="label">${label}</span><br/>${formatText(value || '—')}</div>`
+}
+
+function photoHtml(photos: string[]) {
+  if (!photos.length) return ''
+  return `<div class="photos">${photos.map(url => `<img src="${escapeHtml(url)}" alt="附件照片" />`).join('')}</div>`
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function arrayValue(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter(item => item && typeof item === 'object') as Array<Record<string, unknown>> : []
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter(item => typeof item === 'string') : []
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value : ''
+}
+
+function numberValue(value: unknown) {
+  const number = typeof value === 'number' ? value : Number(value ?? 0)
+  return Number.isFinite(number) ? number : 0
+}
+
+function plainText(html: string) {
+  return html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim()
+}
+
+function formatText(value: string) {
+  return escapeHtml(value).replace(/\n/g, '<br/>')
+}
+
+function formatMoney(value: number) {
+  return `NT$ ${Math.round(value).toLocaleString('zh-TW')}`
+}
+
+function formatChange(current: number, previous: number) {
+  if (previous === 0) return current > 0 ? '本期新增' : '—'
+  const value = ((current - previous) / previous) * 100
+  return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character] ?? character)
 }

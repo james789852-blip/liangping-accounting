@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink, BarChart3, Settings, Building2, ArrowRightLeft } from 'lucide-react'
+import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink, BarChart3, Settings, Building2, ArrowRightLeft, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
 import { clearStoreSelectionOnLogout } from '@/app/actions/store-select'
@@ -43,6 +43,7 @@ const STORE_NAV_ITEMS = [
   { href: '/manager/closing',        label: '今日結帳', icon: ClipboardList },
   { href: '/manager/dashboard',      label: '今日狀態', icon: LayoutDashboard },
   { href: '/manager/analytics',      label: '營運統計', icon: BarChart3 },
+  { href: '/manager/meeting-report', label: '店務會議', icon: FileText },
   { href: '/manager/settings',       label: '廠商設定', icon: Settings },
   { href: '/manager/history',        label: '歷史紀錄', icon: History },
 ]
@@ -83,7 +84,7 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
   }
 
   useEffect(() => {
-    for (const href of ['/manager/dashboard', '/manager/closing', '/manager/ck', '/manager/analytics', '/manager/settings', '/manager/history']) {
+    for (const href of ['/manager/dashboard', '/manager/closing', '/manager/ck', '/manager/analytics', '/manager/meeting-report', '/manager/settings', '/manager/history']) {
       router.prefetch(href)
     }
   }, [router])
