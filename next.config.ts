@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  outputFileTracingIncludes: {
+    "/api/meeting-report/*/pdf": [
+      "./node_modules/@sparticuz/chromium/bin/**/*",
+      "./node_modules/@fontsource-variable/noto-sans-tc/files/**/*",
+      "./node_modules/@fontsource-variable/noto-sans-tc/index.css",
+    ],
+  },
   // 針對 barrel 套件做按需引用，縮小 client bundle 並加快 dev 編譯。
   // lucide-react 被 80+ 檔案引用，最有感。
   experimental: {

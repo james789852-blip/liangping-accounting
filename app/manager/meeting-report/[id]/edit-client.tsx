@@ -20,6 +20,7 @@ import {
   updateMeetingReport,
   type ActionItem,
   type ActionItemDetails,
+  type DailyRevenueSummary,
   type MeetingPresenter,
   type MeetingReport,
   type MeetingRevenueComparison,
@@ -58,9 +59,19 @@ function plainText(html: string | null | undefined) {
   return html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim()
 }
 
+function shiftDate(date: string, amount: number) {
+  const value = new Date(`${date}T12:00:00+08:00`)
+  value.setDate(value.getDate() + amount)
+  return value.toISOString().slice(0, 10)
+}
+
 function normalizeReport(report: MeetingReport): MeetingReport {
+  const comparisonEnd = report.comparison_period_end ?? shiftDate(report.period_start, -1)
+  const periodDays = Math.round((new Date(report.period_end).getTime() - new Date(report.period_start).getTime()) / 86400000) + 1
   return {
     ...report,
+    comparison_period_start: report.comparison_period_start ?? shiftDate(comparisonEnd, -(periodDays - 1)),
+    comparison_period_end: comparisonEnd,
     revenue_difference_note: report.revenue_difference_note ?? plainText(report.operations_review_html),
     google_review_data: report.google_review_data ?? {
       new_reviews: 0,
@@ -99,7 +110,7 @@ function money(value: number) {
 }
 
 function trend(current: number, previous: number) {
-  if (previous === 0) return { label: current > 0 ? '本期新增' : '—', positive: null as boolean | null }
+  if (previous === 0) return { label: current > 0 ? 'A 區間新增' : '—', positive: null as boolean | null }
   const value = ((current - previous) / previous) * 100
   return { label: `${value > 0 ? '+' : ''}${value.toFixed(1)}%`, positive: value >= 0 }
 }
@@ -141,6 +152,14 @@ export default function EditClient({
     reportTimers.current[key] = setTimeout(() => persistReport(field, value), delay)
   }
 
+  function updateComparisonDate(
+    field: 'period_start' | 'period_end' | 'comparison_period_start' | 'comparison_period_end',
+    value: string,
+  ) {
+    setComparison(null)
+    updateReportField(field, value, 0)
+  }
+
   async function persistItem(itemId: string, field: string, value: unknown) {
     setSavingCount(count => count + 1)
     try {
@@ -176,7 +195,13 @@ export default function EditClient({
   async function refreshRevenue() {
     setRefreshingRevenue(true)
     try {
-      const result = await getMeetingRevenueComparison(report.store_id, report.period_start, report.period_end)
+      const result = await getMeetingRevenueComparison(
+        report.store_id,
+        report.period_start,
+        report.period_end,
+        report.comparison_period_start,
+        report.comparison_period_end,
+      )
       if ('error' in result) return toast.error(result.error)
       setComparison(result)
       toast.success('已更新營業數據')
@@ -208,8 +233,6 @@ export default function EditClient({
       strengths: '',
       concerns: '',
       action_plan: '',
-      support_store: '',
-      support_needed: '',
     }])
   }
 
@@ -359,24 +382,36 @@ export default function EditClient({
       <main className="mx-auto max-w-7xl px-4 py-5 lg:px-8">
         {activeStep === 1 && (
           <div className="space-y-5">
-            <SectionHeader number="01" title="營業數據" description="確認本次與前次的兩週區間，再說明營業額變化原因。" />
+            <SectionHeader number="01" title="營業數據" description="自行選擇兩個獨立區間，比較各通路與每天的營業額。" />
             <Card>
-              <div className="grid gap-4 md:grid-cols-3">
-                <Field label="本期起始日期"><input type="date" value={report.period_start} disabled={isSubmitted} onChange={event => updateReportField('period_start', event.target.value, 0)} className={inputClass} /></Field>
-                <Field label="本期結束日期"><input type="date" value={report.period_end} disabled={isSubmitted} onChange={event => updateReportField('period_end', event.target.value, 0)} className={inputClass} /></Field>
-                <Field label="會議日期"><input type="date" value={report.meeting_date ?? ''} disabled={isSubmitted} onChange={event => updateReportField('meeting_date', event.target.value, 0)} className={inputClass} /></Field>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-orange-200 bg-orange-50/40 p-4">
+                  <p className="mb-3 text-sm font-extrabold text-orange-700">比較區間 A</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="起始日期"><input type="date" value={report.period_start} disabled={isSubmitted} onChange={event => updateComparisonDate('period_start', event.target.value)} className={inputClass} /></Field>
+                    <Field label="結束日期"><input type="date" value={report.period_end} disabled={isSubmitted} onChange={event => updateComparisonDate('period_end', event.target.value)} className={inputClass} /></Field>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-sky-200 bg-sky-50/40 p-4">
+                  <p className="mb-3 text-sm font-extrabold text-sky-700">比較區間 B</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="起始日期"><input type="date" value={report.comparison_period_start} disabled={isSubmitted} onChange={event => updateComparisonDate('comparison_period_start', event.target.value)} className={inputClass} /></Field>
+                    <Field label="結束日期"><input type="date" value={report.comparison_period_end} disabled={isSubmitted} onChange={event => updateComparisonDate('comparison_period_end', event.target.value)} className={inputClass} /></Field>
+                  </div>
+                </div>
               </div>
+              <div className="mt-1 max-w-sm"><Field label="會議日期"><input type="date" value={report.meeting_date ?? ''} disabled={isSubmitted} onChange={event => updateReportField('meeting_date', event.target.value, 0)} className={inputClass} /></Field></div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-zinc-50 p-3 text-sm text-zinc-600">
-                <span><strong className="text-zinc-900">本期：</strong>{report.period_start.replaceAll('-', '/')} → {report.period_end.replaceAll('-', '/')} {comparison && <>　vs　{comparison.previousStart.replaceAll('-', '/')} → {comparison.previousEnd.replaceAll('-', '/')}</>}</span>
+                <span><strong className="text-orange-700">A：</strong>{report.period_start.replaceAll('-', '/')} → {report.period_end.replaceAll('-', '/')}　vs　<strong className="text-sky-700">B：</strong>{report.comparison_period_start.replaceAll('-', '/')} → {report.comparison_period_end.replaceAll('-', '/')}</span>
                 <button type="button" onClick={refreshRevenue} disabled={refreshingRevenue} className="inline-flex h-9 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 hover:bg-zinc-50"><RefreshCw className={`h-3.5 w-3.5 ${refreshingRevenue ? 'animate-spin' : ''}`} />重新統計</button>
               </div>
             </Card>
 
-            {comparison ? <RevenueCards comparison={comparison} /> : <div className="rounded-2xl border border-dashed border-zinc-200 bg-white p-10 text-center text-sm text-zinc-500">目前日期區間沒有可顯示的營業資料</div>}
+            {comparison ? <><RevenueCards comparison={comparison} /><DailyRevenueComparison comparison={comparison} /></> : <div className="rounded-2xl border border-dashed border-zinc-200 bg-white p-10 text-center text-sm text-zinc-500">日期已變更，請按「重新統計」查看兩個區間的營業資料</div>}
 
             <Card>
               <Field label="營業額差異說明" hint="請說明上升或下降的主要原因，例如活動、天氣、商圈人流、外送促銷或人力影響。">
-                <textarea value={report.revenue_difference_note ?? ''} disabled={isSubmitted} onChange={event => updateReportField('revenue_difference_note', event.target.value)} rows={6} placeholder="例：本期週末內用來客增加，Uber Eats 同步進行優惠活動，因此整體營業額較前期成長…" className={textareaClass} />
+                <textarea value={report.revenue_difference_note ?? ''} disabled={isSubmitted} onChange={event => updateReportField('revenue_difference_note', event.target.value)} rows={6} placeholder="例：區間 A 的週末內用來客增加，Uber Eats 同步進行優惠活動，因此整體營業額較區間 B 成長…" className={textareaClass} />
               </Field>
             </Card>
           </div>
@@ -437,7 +472,7 @@ export default function EditClient({
             </Card>
 
             <Card title="個別同仁分析回報" icon={<UserRound className="h-5 w-5" />}>
-              <p className="mb-4 text-xs leading-5 text-zinc-500">可針對每位同仁記錄表現亮點、需要改善的地方、後續安排，以及是否需要其他店家協助。</p>
+              <p className="mb-4 text-xs leading-5 text-zinc-500">可針對每位同仁記錄表現亮點、需要改善的地方與後續安排。</p>
               <div className="space-y-4">
                 {report.staff_members.map((member, index) => (
                   <div key={member.id} className="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4">
@@ -457,10 +492,6 @@ export default function EditClient({
                       <Field label="表現亮點"><textarea value={member.strengths} disabled={isSubmitted} onChange={event => updateStaffMember(member.id, { strengths: event.target.value })} rows={4} placeholder="近期做得好的地方…" className={textareaClass} /></Field>
                       <Field label="需要改善／觀察"><textarea value={member.concerns} disabled={isSubmitted} onChange={event => updateStaffMember(member.id, { concerns: event.target.value })} rows={4} placeholder="目前問題或需要持續觀察的狀況…" className={textareaClass} /></Field>
                       <Field label="預計處理方式"><textarea value={member.action_plan} disabled={isSubmitted} onChange={event => updateStaffMember(member.id, { action_plan: event.target.value })} rows={4} placeholder="訓練、面談、排班或追蹤安排…" className={textareaClass} /></Field>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <Field label="需要支援的店家"><input value={member.support_store} disabled={isSubmitted} onChange={event => updateStaffMember(member.id, { support_store: event.target.value })} placeholder="例：中壢店；不需要可留空" className={inputClass} /></Field>
-                      <Field label="需要各店支援的內容"><input value={member.support_needed} disabled={isSubmitted} onChange={event => updateStaffMember(member.id, { support_needed: event.target.value })} placeholder="例：支援新人訓練、借調尖峰人力" className={inputClass} /></Field>
                     </div>
                   </div>
                 ))}
@@ -537,7 +568,7 @@ export default function EditClient({
 
               <Card title="報告摘要" icon={<FileDown className="h-5 w-5" />}>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <SummaryMetric label="本期營業額" value={comparison ? money(comparison.current.total) : '—'} />
+                  <SummaryMetric label="區間 A 營業額" value={comparison ? money(comparison.current.total) : '—'} />
                   <SummaryMetric label="Google 評論" value={`${report.google_review_data.new_reviews} 則`} />
                   <SummaryMetric label="客訴" value={`${report.complaint_data.count} 件`} />
                   <SummaryMetric label="問題提案" value={`${proposals.length} 項`} />
@@ -575,8 +606,26 @@ function RevenueCards({ comparison }: { comparison: MeetingRevenueComparison }) 
   return <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{items.map(item => {
     const delta = trend(item.current, item.previous)
     const Icon = item.icon
-    return <div key={item.label} className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><span className="text-sm font-semibold text-zinc-500">{item.label}</span><Icon className="h-4 w-4 text-orange-500" /></div><p className="mt-3 text-xl font-extrabold tabular-nums text-zinc-900">{money(item.current)}</p><p className={`mt-1 text-sm font-bold ${delta.positive === null ? 'text-zinc-400' : delta.positive ? 'text-emerald-600' : 'text-rose-600'}`}>{delta.label}<span className="ml-1 text-xs font-normal text-zinc-400">較前期</span></p></div>
+    return <div key={item.label} className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><span className="text-sm font-semibold text-zinc-500">{item.label}</span><Icon className="h-4 w-4 text-orange-500" /></div><div className="mt-3 space-y-1"><p className="text-xs font-bold text-orange-600">A <span className="ml-1 text-lg font-extrabold tabular-nums text-zinc-900">{money(item.current)}</span></p><p className="text-xs font-bold text-sky-600">B <span className="ml-1 text-sm font-bold tabular-nums text-zinc-600">{money(item.previous)}</span></p></div><p className={`mt-2 text-sm font-bold ${delta.positive === null ? 'text-zinc-400' : delta.positive ? 'text-emerald-600' : 'text-rose-600'}`}>{delta.label}<span className="ml-1 text-xs font-normal text-zinc-400">A 相較 B</span></p></div>
   })}</div>
+}
+
+function DailyRevenueComparison({ comparison }: { comparison: MeetingRevenueComparison }) {
+  return <div className="grid gap-4 xl:grid-cols-2">
+    <DailyRevenueTable title="比較區間 A 每日營業額" tone="orange" rows={comparison.current.daily} />
+    <DailyRevenueTable title="比較區間 B 每日營業額" tone="sky" rows={comparison.previous.daily} />
+  </div>
+}
+
+function DailyRevenueTable({ title, tone, rows }: { title: string; tone: 'orange' | 'sky'; rows: DailyRevenueSummary[] }) {
+  return <section className="overflow-hidden rounded-2xl border border-zinc-100 bg-white shadow-sm">
+    <div className={`border-b px-4 py-3 ${tone === 'orange' ? 'border-orange-100 bg-orange-50/60' : 'border-sky-100 bg-sky-50/60'}`}><h3 className={`text-sm font-extrabold ${tone === 'orange' ? 'text-orange-700' : 'text-sky-700'}`}>{title}</h3></div>
+    <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-xs"><thead className="bg-zinc-50 text-zinc-500"><tr><th className="px-3 py-2 text-left">日期</th><th className="px-3 py-2 text-right">總營業額</th><th className="px-3 py-2 text-right">現場</th><th className="px-3 py-2 text-right">Uber</th><th className="px-3 py-2 text-right">熊貓</th><th className="px-3 py-2 text-right">線上點餐</th></tr></thead><tbody>{rows.map(row => <tr key={row.date} className="border-t border-zinc-100"><td className="whitespace-nowrap px-3 py-2 font-semibold text-zinc-700">{row.date.replaceAll('-', '/')}</td>{row.hasData ? <><RevenueCell value={row.total} strong /><RevenueCell value={row.onsite} /><RevenueCell value={row.uber} /><RevenueCell value={row.panda} /><RevenueCell value={row.online} /></> : <td colSpan={5} className="px-3 py-2 text-center text-zinc-400">當日尚無營業資料</td>}</tr>)}</tbody><tfoot className="border-t-2 border-zinc-200 bg-zinc-50 font-bold text-zinc-800"><tr><td className="px-3 py-2">合計</td><RevenueCell value={rows.reduce((sum, row) => sum + row.total, 0)} strong /><RevenueCell value={rows.reduce((sum, row) => sum + row.onsite, 0)} /><RevenueCell value={rows.reduce((sum, row) => sum + row.uber, 0)} /><RevenueCell value={rows.reduce((sum, row) => sum + row.panda, 0)} /><RevenueCell value={rows.reduce((sum, row) => sum + row.online, 0)} /></tr></tfoot></table></div>
+  </section>
+}
+
+function RevenueCell({ value, strong = false }: { value: number; strong?: boolean }) {
+  return <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${strong ? 'font-bold text-zinc-900' : 'text-zinc-600'}`}>{Math.round(value).toLocaleString('zh-TW')}</td>
 }
 
 function ProposalCard({ item, index, presenters, disabled, complete, onChange, onDelete }: {

@@ -22,7 +22,13 @@ export default async function ManagerMeetingReportDetailPage({
   const admin = createAdminClient()
   const [storeResult, comparisonResult] = await Promise.all([
     admin.from('stores').select('name').eq('id', report.store_id).single(),
-    getMeetingRevenueComparison(report.store_id, report.period_start, report.period_end),
+    getMeetingRevenueComparison(
+      report.store_id,
+      report.period_start,
+      report.period_end,
+      report.comparison_period_start,
+      report.comparison_period_end,
+    ),
   ])
 
   return (

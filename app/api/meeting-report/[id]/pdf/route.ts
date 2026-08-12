@@ -1,11 +1,50 @@
 import { NextResponse } from 'next/server'
-import puppeteer from 'puppeteer'
+import chromium from '@sparticuz/chromium'
+import puppeteer from 'puppeteer-core'
+import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canAccessStore, getAuthContext } from '@/lib/permissions'
 import { getMeetingRevenueComparison, type MeetingRevenueComparison } from '@/app/actions/meeting-reports'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
+
+const localChromePath = process.platform === 'darwin'
+  ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  : process.platform === 'win32'
+    ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+    : '/usr/bin/google-chrome'
+
+async function launchPdfBrowser() {
+  const isVercel = Boolean(process.env.VERCEL)
+  return puppeteer.launch({
+    args: isVercel
+      ? await puppeteer.defaultArgs({ args: chromium.args, headless: 'shell' })
+      : ['--no-sandbox', '--disable-setuid-sandbox'],
+    executablePath: isVercel ? await chromium.executablePath() : localChromePath,
+    headless: isVercel ? 'shell' : true,
+  })
+}
+
+async function loadPdfFontCss() {
+  try {
+    const cssPath = require.resolve('@fontsource-variable/noto-sans-tc/index.css')
+    const css = await readFile(cssPath, 'utf8')
+    const files = [...css.matchAll(/url\(\.\/files\/([^)]*\.woff2)\)/g)].map(match => match[1])
+    const embeddedFonts = await Promise.all([...new Set(files)].map(async file => {
+      const data = await readFile(join(dirname(cssPath), 'files', file))
+      return [file, data.toString('base64')] as const
+    }))
+    const fontsByFile = new Map(embeddedFonts)
+    return css.replace(/url\(\.\/files\/([^)]*\.woff2)\)/g, (_match, file: string) => {
+      const encoded = fontsByFile.get(file)
+      return encoded ? `url(data:font/woff2;base64,${encoded})` : 'url()'
+    })
+  } catch {
+    return ''
+  }
+}
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await getAuthContext()
@@ -24,25 +63,31 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       .eq('store_id', report.store_id).eq('resolved_in_report_id', id).neq('raised_in_report_id', id).order('order_index'),
     admin.from('meeting_action_items').select('*')
       .eq('store_id', report.store_id).eq('status', 'open').neq('raised_in_report_id', id).order('order_index'),
-    getMeetingRevenueComparison(report.store_id, report.period_start, report.period_end),
+    getMeetingRevenueComparison(
+      report.store_id,
+      report.period_start,
+      report.period_end,
+      report.comparison_period_start,
+      report.comparison_period_end,
+    ),
   ])
 
   const storeName = (storeResult.data?.name as string | null) ?? ''
+  const fontCss = await loadPdfFontCss()
   const html = buildHtml({
     report,
     storeName,
     thisItems: thisItemsResult.data ?? [],
     carryItems: [...(carryItemsResult.data ?? []), ...(openCarryResult.data ?? [])],
     comparison: 'error' in comparisonResult ? null : comparisonResult,
+    fontCss,
   })
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  })
+  const browser = await launchPdfBrowser()
   try {
     const page = await browser.newPage()
     await page.setContent(html, { waitUntil: 'load' })
+    await page.evaluate(() => document.fonts.ready)
     const pdf = await page.pdf({
       format: 'A4',
       printBackground: true,
@@ -66,12 +111,14 @@ function buildHtml({
   thisItems,
   carryItems,
   comparison,
+  fontCss,
 }: {
   report: Record<string, unknown>
   storeName: string
   thisItems: Array<Record<string, unknown>>
   carryItems: Array<Record<string, unknown>>
   comparison: MeetingRevenueComparison | null
+  fontCss: string
 }) {
   const google = objectValue(report.google_review_data)
   const complaint = objectValue(report.complaint_data)
@@ -97,9 +144,10 @@ function buildHtml({
 <meta charset="utf-8" />
 <title>${escapeHtml(storeName)}雙週店務會議報告</title>
 <style>
+  ${fontCss}
   @page { size: A4; }
   * { box-sizing: border-box; }
-  body { margin: 0; color: #27272a; font: 13px/1.65 "PingFang TC", "Microsoft JhengHei", sans-serif; }
+  body { margin: 0; color: #27272a; font: 13px/1.65 "Noto Sans TC Variable", "PingFang TC", "Microsoft JhengHei", sans-serif; }
   header { border-bottom: 3px solid #f97316; padding-bottom: 15px; margin-bottom: 22px; }
   h1 { margin: 0 0 4px; font-size: 25px; letter-spacing: -.02em; }
   h2 { margin: 0 0 10px; padding-bottom: 6px; border-bottom: 2px solid #f4f4f5; font-size: 16px; }
@@ -134,8 +182,8 @@ function buildHtml({
     <h1>${escapeHtml(storeName)} · 雙週店務會議報告</h1>
     <p>會議日期：${escapeHtml(stringValue(report.meeting_date) || stringValue(report.period_end))}</p>
     <div class="meta">
-      <span><strong>本期：</strong>${escapeHtml(stringValue(report.period_start))} → ${escapeHtml(stringValue(report.period_end))}</span>
-      ${comparison ? `<span><strong>前期：</strong>${comparison.previousStart} → ${comparison.previousEnd}</span>` : ''}
+      <span><strong>比較區間 A：</strong>${escapeHtml(stringValue(report.period_start))} → ${escapeHtml(stringValue(report.period_end))}</span>
+      <span><strong>比較區間 B：</strong>${escapeHtml(stringValue(report.comparison_period_start))} → ${escapeHtml(stringValue(report.comparison_period_end))}</span>
       <span><strong>狀態：</strong>${report.status === 'submitted' ? '已提交' : '草稿'}</span>
       ${presenters.length ? `<span><strong>報告人員：</strong>${presenters.map(person => `${escapeHtml(stringValue(person.name))}（${escapeHtml(stringValue(person.role))}）`).join('、')}</span>` : ''}
     </div>
@@ -143,7 +191,8 @@ function buildHtml({
 
   <section>
     <h2>一、營業數據與差異說明</h2>
-    ${revenueRows.length ? `<table><thead><tr><th>通路</th><th class="num">本期</th><th class="num">前期</th><th class="num">差異</th></tr></thead><tbody>${revenueRows.map(([label, current, previous]) => `<tr><td>${label}</td><td class="num">${formatMoney(current)}</td><td class="num">${formatMoney(previous)}</td><td class="num ${current >= previous ? 'up' : 'down'}">${formatChange(current, previous)}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">沒有可顯示的營業資料</p>'}
+    ${revenueRows.length ? `<table><thead><tr><th>通路</th><th class="num">區間 A</th><th class="num">區間 B</th><th class="num">A 相較 B</th></tr></thead><tbody>${revenueRows.map(([label, current, previous]) => `<tr><td>${label}</td><td class="num">${formatMoney(current)}</td><td class="num">${formatMoney(previous)}</td><td class="num ${current >= previous ? 'up' : 'down'}">${formatChange(current, previous)}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">沒有可顯示的營業資料</p>'}
+    ${comparison ? `<h3>比較區間 A 每日營業額</h3>${dailyRevenueTableHtml(comparison.current.daily)}<h3>比較區間 B 每日營業額</h3>${dailyRevenueTableHtml(comparison.previous.daily)}` : ''}
     <h3>營業額差異說明</h3>
     <div class="box"><div class="value">${formatText(stringValue(report.revenue_difference_note) || plainText(stringValue(report.operations_review_html)) || '尚未填寫')}</div></div>
   </section>
@@ -206,21 +255,24 @@ function actionHtml(item: Record<string, unknown>) {
 }
 
 function staffMemberHtml(member: Record<string, unknown>, index: number) {
-  const supportStore = stringValue(member.support_store)
-  const supportNeeded = stringValue(member.support_needed)
   return `<div class="action ${stringValue(member.current_status) === '表現良好' ? 'done' : ''}">
     <div class="action-title">${index + 1}. ${escapeHtml(stringValue(member.name) || '未填姓名')}｜${escapeHtml(stringValue(member.role) || '未填職務')} <span style="float:right">${escapeHtml(stringValue(member.current_status) || '未填狀況')}</span></div>
     <div class="action-detail">
       ${detailCell('表現亮點', stringValue(member.strengths))}
       ${detailCell('需要改善／觀察', stringValue(member.concerns))}
       ${detailCell('預計處理方式', stringValue(member.action_plan))}
-      ${detailCell('需要各店支援', supportStore || supportNeeded ? `${supportStore ? `支援店家：${supportStore}` : ''}${supportStore && supportNeeded ? '\n' : ''}${supportNeeded}` : '')}
     </div>
   </div>`
 }
 
 function detailCell(label: string, value: string) {
   return `<div><span class="label">${label}</span><br/>${formatText(value || '—')}</div>`
+}
+
+function dailyRevenueTableHtml(rows: MeetingRevenueComparison['current']['daily']) {
+  return `<table><thead><tr><th>日期</th><th class="num">總營業額</th><th class="num">現場</th><th class="num">Uber</th><th class="num">熊貓</th><th class="num">線上點餐</th></tr></thead><tbody>${rows.map(row => row.hasData
+    ? `<tr><td>${escapeHtml(row.date)}</td><td class="num">${formatMoney(row.total)}</td><td class="num">${formatMoney(row.onsite)}</td><td class="num">${formatMoney(row.uber)}</td><td class="num">${formatMoney(row.panda)}</td><td class="num">${formatMoney(row.online)}</td></tr>`
+    : `<tr><td>${escapeHtml(row.date)}</td><td colspan="5" class="empty">當日尚無營業資料</td></tr>`).join('')}</tbody></table>`
 }
 
 function photoHtml(photos: string[]) {
@@ -262,7 +314,7 @@ function formatMoney(value: number) {
 }
 
 function formatChange(current: number, previous: number) {
-  if (previous === 0) return current > 0 ? '本期新增' : '—'
+  if (previous === 0) return current > 0 ? 'A 區間新增' : '—'
   const value = ((current - previous) / previous) * 100
   return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
 }

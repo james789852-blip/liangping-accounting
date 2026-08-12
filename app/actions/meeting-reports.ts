@@ -39,8 +39,6 @@ export interface StaffMemberAnalysis {
   strengths: string
   concerns: string
   action_plan: string
-  support_store: string
-  support_needed: string
 }
 
 export interface MeetingPresenter {
@@ -54,6 +52,8 @@ export interface MeetingReport {
   store_id: string
   period_start: string
   period_end: string
+  comparison_period_start: string
+  comparison_period_end: string
   meeting_date: string | null
   revenue_difference_note: string | null
   google_review_data: GoogleReviewData
@@ -116,6 +116,17 @@ export interface RevenuePeriodSummary {
   panda: number
   online: number
   operatingDays: number
+  daily: DailyRevenueSummary[]
+}
+
+export interface DailyRevenueSummary {
+  date: string
+  total: number
+  onsite: number
+  uber: number
+  panda: number
+  online: number
+  hasData: boolean
 }
 
 export interface MeetingRevenueComparison {
@@ -136,6 +147,8 @@ interface ClosingRevenueRow {
 type MeetingReportPatch = Partial<Pick<MeetingReport,
   | 'period_start'
   | 'period_end'
+  | 'comparison_period_start'
+  | 'comparison_period_end'
   | 'meeting_date'
   | 'revenue_difference_note'
   | 'google_review_data'
@@ -238,8 +251,8 @@ export async function getMeetingReport(reportId: string) {
 }
 
 /**
- * 建立新會議報告。比較區間預設為會議日前一天往回 14 天，
- * 並可在報告第一步再調整。
+ * 建立新會議報告。預設提供連續的兩個 14 天區間，
+ * 店家可在報告第一步獨立調整兩組起訖日期。
  */
 export async function createMeetingReport(storeId: string, requestedMeetingDate?: string) {
   const ctx = await getAuthContext()
@@ -251,12 +264,16 @@ export async function createMeetingReport(storeId: string, requestedMeetingDate?
     : isoToday()
   const periodEnd = addDays(meetingDate, -1)
   const periodStart = addDays(periodEnd, -13)
+  const comparisonPeriodEnd = addDays(periodStart, -1)
+  const comparisonPeriodStart = addDays(comparisonPeriodEnd, -13)
 
   const admin = createAdminClient()
   const { data, error } = await admin.from('meeting_reports').insert({
     store_id: storeId,
     period_start: periodStart,
     period_end: periodEnd,
+    comparison_period_start: comparisonPeriodStart,
+    comparison_period_end: comparisonPeriodEnd,
     meeting_date: meetingDate,
     status: 'draft',
     current_step: 1,
@@ -280,6 +297,8 @@ export async function updateMeetingReport(reportId: string, patch: MeetingReport
   }
   if (patch.period_start && !isIsoDate(patch.period_start)) return { error: '起始日期格式不正確' as const }
   if (patch.period_end && !isIsoDate(patch.period_end)) return { error: '結束日期格式不正確' as const }
+  if (patch.comparison_period_start && !isIsoDate(patch.comparison_period_start)) return { error: '比較區間 B 起始日期格式不正確' as const }
+  if (patch.comparison_period_end && !isIsoDate(patch.comparison_period_end)) return { error: '比較區間 B 結束日期格式不正確' as const }
   if (patch.meeting_date && !isIsoDate(patch.meeting_date)) return { error: '會議日期格式不正確' as const }
 
   const admin = createAdminClient()
@@ -465,6 +484,8 @@ export async function getMeetingRevenueComparison(
   storeId: string,
   periodStart: string,
   periodEnd: string,
+  requestedComparisonStart?: string,
+  requestedComparisonEnd?: string,
 ) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' as const }
@@ -474,8 +495,11 @@ export async function getMeetingRevenueComparison(
   }
 
   const days = Math.round((new Date(periodEnd).getTime() - new Date(periodStart).getTime()) / 86400000) + 1
-  const previousEnd = addDays(periodStart, -1)
-  const previousStart = addDays(previousEnd, -(days - 1))
+  const previousEnd = requestedComparisonEnd ?? addDays(periodStart, -1)
+  const previousStart = requestedComparisonStart ?? addDays(previousEnd, -(days - 1))
+  if (!isIsoDate(previousStart) || !isIsoDate(previousEnd) || previousStart > previousEnd) {
+    return { error: '比較區間 B 日期不正確' as const }
+  }
   const admin = createAdminClient()
   const { data: store } = await admin.from('stores').select('ichef_uber_linked').eq('id', storeId).single()
   const ichefUberLinked = Boolean(store?.ichef_uber_linked)
@@ -494,15 +518,16 @@ export async function getMeetingRevenueComparison(
       if (!current || (priority[row.status] ?? 0) >= (priority[current.status] ?? 0)) byDate.set(row.business_date, row)
     }
 
-    const result: RevenuePeriodSummary = { total: 0, onsite: 0, uber: 0, panda: 0, online: 0, operatingDays: 0 }
-    for (const row of byDate.values()) {
+    const result: RevenuePeriodSummary = { total: 0, onsite: 0, uber: 0, panda: 0, online: 0, operatingDays: 0, daily: [] }
+    for (let date = start; date <= end; date = addDays(date, 1)) {
+      const row = byDate.get(date)
       let pos = 0
       let twpay = 0
       let handwrite = 0
       let uber = 0
       let panda = 0
       let online = 0
-      for (const item of row.revenue_items ?? []) {
+      for (const item of row?.revenue_items ?? []) {
         const amount = Number(item.gross_amount ?? 0)
         if (item.channel === 'pos') pos += amount
         else if (item.channel === 'twpay') twpay += amount
@@ -511,7 +536,7 @@ export async function getMeetingRevenueComparison(
         else if (item.channel === 'panda') panda += amount
         else if (item.channel === 'online' || item.channel === 'online_cash') online += amount
       }
-      const reportedTotal = Number(row.total_revenue ?? 0)
+      const reportedTotal = Number(row?.total_revenue ?? 0)
       const rawOnsite = pos + twpay + handwrite
       const onsite = ichefUberLinked
         ? Math.max(0, reportedTotal - uber - panda - online)
@@ -526,7 +551,8 @@ export async function getMeetingRevenueComparison(
       result.uber += uber
       result.panda += panda
       result.online += online
-      result.operatingDays += 1
+      if (row) result.operatingDays += 1
+      result.daily.push({ date, total, onsite, uber, panda, online, hasData: Boolean(row) })
     }
     return result
   }
@@ -543,8 +569,14 @@ export async function getMeetingRevenueComparison(
 }
 
 /** 舊版 PDF/報告相容：產出一段可編輯的營運回顧 HTML。 */
-export async function generateOperationsReview(storeId: string, periodStart: string, periodEnd: string) {
-  const result = await getMeetingRevenueComparison(storeId, periodStart, periodEnd)
+export async function generateOperationsReview(
+  storeId: string,
+  periodStart: string,
+  periodEnd: string,
+  comparisonStart?: string,
+  comparisonEnd?: string,
+) {
+  const result = await getMeetingRevenueComparison(storeId, periodStart, periodEnd, comparisonStart, comparisonEnd)
   if ('error' in result) return result
 
   const fmt = (value: number) => Math.round(value).toLocaleString('zh-TW')
@@ -556,13 +588,13 @@ export async function generateOperationsReview(storeId: string, periodStart: str
   const { current, previous, previousStart, previousEnd } = result
   const html = `
 <h2>主要營運回顧</h2>
-<p><strong>本期：</strong>${periodStart} ~ ${periodEnd}<br/><strong>前期：</strong>${previousStart} ~ ${previousEnd}</p>
+<p><strong>比較區間 A：</strong>${periodStart} ~ ${periodEnd}<br/><strong>比較區間 B：</strong>${previousStart} ~ ${previousEnd}</p>
 <ul>
-  <li>總營業額：<strong>$${fmt(current.total)}</strong>，前期 $${fmt(previous.total)}（${pct(current.total, previous.total)}）</li>
-  <li>現場：$${fmt(current.onsite)}，前期 $${fmt(previous.onsite)}（${pct(current.onsite, previous.onsite)}）</li>
-  <li>Uber Eats：$${fmt(current.uber)}，前期 $${fmt(previous.uber)}（${pct(current.uber, previous.uber)}）</li>
-  <li>foodpanda：$${fmt(current.panda)}，前期 $${fmt(previous.panda)}（${pct(current.panda, previous.panda)}）</li>
-  <li>線上點餐：$${fmt(current.online)}，前期 $${fmt(previous.online)}（${pct(current.online, previous.online)}）</li>
+  <li>總營業額：A <strong>$${fmt(current.total)}</strong>，B $${fmt(previous.total)}（${pct(current.total, previous.total)}）</li>
+  <li>現場：A $${fmt(current.onsite)}，B $${fmt(previous.onsite)}（${pct(current.onsite, previous.onsite)}）</li>
+  <li>Uber Eats：A $${fmt(current.uber)}，B $${fmt(previous.uber)}（${pct(current.uber, previous.uber)}）</li>
+  <li>foodpanda：A $${fmt(current.panda)}，B $${fmt(previous.panda)}（${pct(current.panda, previous.panda)}）</li>
+  <li>線上點餐：A $${fmt(current.online)}，B $${fmt(previous.online)}（${pct(current.online, previous.online)}）</li>
 </ul>`.trim()
   return { html, cur: current, prev: previous, prevStart: previousStart, prevEnd: previousEnd }
 }
