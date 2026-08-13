@@ -8,6 +8,7 @@ import { BarChart3, Calendar, ChefHat, ChevronDown, LayoutDashboard, Store } fro
 import { getCachedAllStores } from '@/lib/cached-queries'
 import { canExportReports, canReviewClosings } from '@/lib/user-permissions'
 import { getCKRangeStats } from '@/lib/ck-aggregator'
+import { getDisplayPosTotal, getPlatformTotal, getRangeStats } from '@/lib/store-aggregator'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,21 +62,30 @@ export default async function HQDashboard({
     ? today
     : `${year}-${month}-${String(lastDay).padStart(2, '0')}`
 
-  const [stores, { data: monthClosings }, { data: monthReceipts }] = await Promise.all([
+  const [stores, { data: monthReceipts }] = await Promise.all([
     getCachedAllStores(),
-    admin.from('daily_closings')
-      .select('store_id, total_revenue, status')
-      .gte('business_date', firstOfMonth).lte('business_date', selectedEnd)
-      .in('status', ['submitted', 'verified']),
     admin.from('receipts')
       .select('store_id, vendor_name, actual_vendor_name, total_amount')
       .gte('business_date', firstOfMonth).lte('business_date', selectedEnd),
   ])
 
   const storeMap = Object.fromEntries(stores.map(store => [store.id, store.name]))
+  const storefrontStores = stores.filter(store => store.type !== '央廚')
+  const storeRevenueEntries = await Promise.all(storefrontStores.map(async storeRow => {
+    const { store, days } = await getRangeStats(storeRow.id, firstOfMonth, selectedEnd)
+    const excelMRevenue = days
+      .filter(day => day.closingStatus === 'submitted' || day.closingStatus === 'verified')
+      .reduce((sum, day) => {
+        const onsite = getDisplayPosTotal(day, store) - getPlatformTotal(day)
+        const afterDeduct = onsite - day.totalCost
+        const result = day.actual - afterDeduct - day.ck
+        return sum + (onsite > 0 ? onsite + result : 0)
+      }, 0)
+    return [storeRow.id, excelMRevenue] as const
+  }))
   const revenueByStore: Record<string, number> = {}
-  for (const closing of monthClosings ?? []) {
-    revenueByStore[closing.store_id] = (revenueByStore[closing.store_id] || 0) + Number(closing.total_revenue ?? 0)
+  for (const [storeId, excelMRevenue] of storeRevenueEntries) {
+    revenueByStore[storeId] = excelMRevenue
   }
 
   // 央廚月營業額 = 本月各店叫貨收入 + 整月梁平退稅。
@@ -280,7 +290,7 @@ export default async function HQDashboard({
         <StoreStatsSection
           icon={<Store className="h-4 w-4" />}
           title={`${parseInt(month)} 月店面營業額排名`}
-          description="依本月營業額由高至低，從左至右、由上而下排列；點擊店家可展開明細"
+          description="僅加總各店 Excel M 欄營業額，並依金額由高至低排列；點擊店家可展開明細"
           stores={storeStatsOnly}
           variant="store"
         />
