@@ -255,39 +255,47 @@ interface PrevDayReserve {
   }[]
 }
 
-function withPendingRentReserve(items: ReserveItem[], context?: PrevDayReserve | null): ReserveItem[] {
-  const pending = context?.items.find(item =>
-    item.reason === '房租'
-    && (item.total_bill ?? 0) > 0
-    && (item.remaining_amount ?? ((item.total_bill ?? 0) - item.amount)) > 0,
-  )
-  if (!pending?.total_bill) return items
+function withPendingReserveContext(items: ReserveItem[], context?: PrevDayReserve | null): ReserveItem[] {
+  let next = items
+  for (const pending of context?.items ?? []) {
+    const totalBill = Number(pending.total_bill ?? 0)
+    const remaining = pending.remaining_amount ?? (totalBill - pending.amount)
+    if (totalBill <= 0 || remaining <= 0) continue
 
-  const matchingIndex = items.findIndex(item =>
-    item.reason === '房租' && Number(item.total_bill ?? 0) === Number(pending.total_bill),
-  )
-  if (matchingIndex >= 0) {
-    return items.map((item, index) => index === matchingIndex
-      ? {
-          ...item,
-          source_start_date: item.source_start_date ?? pending.started_date,
-          accumulated_before: item.accumulated_before ?? pending.amount,
-        }
-      : item)
-  }
+    const matchingIndex = next.findIndex(item =>
+      item.reason === pending.reason && Number(item.total_bill ?? 0) === totalBill,
+    )
+    if (matchingIndex >= 0) {
+      const current = next[matchingIndex]
+      const sourceStartDate = current.source_start_date ?? pending.started_date
+      const accumulatedBefore = current.accumulated_before ?? pending.amount
+      if (
+        current.source_start_date !== sourceStartDate
+        || current.accumulated_before !== accumulatedBefore
+      ) {
+        next = next.map((item, index) => index === matchingIndex
+          ? {
+              ...item,
+              source_start_date: sourceStartDate,
+              accumulated_before: accumulatedBefore,
+            }
+          : item)
+      }
+      continue
+    }
 
-  return [
-    ...items,
-    {
-      id: `auto-rent-${pending.started_date ?? context?.business_date ?? 'previous'}-${pending.total_bill}`,
-      reason: '房租',
+    if (next === items) next = [...items]
+    next.push({
+      id: `auto-reserve-${pending.started_date ?? context?.business_date ?? 'previous'}-${pending.reason}-${totalBill}`,
+      reason: pending.reason,
       amount: 0,
-      total_bill: pending.total_bill,
+      total_bill: totalBill,
       auto_reserved: true,
       source_start_date: pending.started_date,
       accumulated_before: pending.amount,
-    },
-  ]
+    })
+  }
+  return next
 }
 
 interface Props {
@@ -1451,7 +1459,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [adjustments, adjustmentsHydrated, existingClosing?.status])
   const [reserves, setReserves] = useState<ReserveItem[]>(() => {
     const saved = existingClosing?.reserve_items
-    return withPendingRentReserve(Array.isArray(saved) ? saved : [], prevDayReserves)
+    return withPendingReserveContext(Array.isArray(saved) ? saved : [], prevDayReserves)
   })
   const [showReserveForm, setShowReserveForm] = useState(false)
   const [reserveForm, setReserveForm] = useState<Omit<ReserveItem, 'id'>>({ reason: '電費', amount: 0, total_bill: 0 })
@@ -1466,7 +1474,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     try {
       const stored = JSON.parse(localStorage.getItem(reserveLsKey) ?? '[]')
       if (Array.isArray(stored) && stored.length > 0) {
-        setReserves(withPendingRentReserve(stored, prevDayReserves))
+        setReserves(withPendingReserveContext(stored, prevDayReserves))
       }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1832,13 +1840,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const isRemittanceLocked = status === 'submitted' || status === 'verified'
   const isDisputed = status === 'disputed'
   const disputeNote = existingClosing?.dispute_note ?? ''
-  const pendingRentReserve = useMemo(() => {
-    const items = prevDayReserves?.items ?? []
-    return items.find(item =>
-      item.reason === '房租' &&
-      (item.total_bill ?? 0) > 0 &&
-      (item.remaining_amount ?? ((item.total_bill ?? 0) - item.amount)) > 0
-    ) ?? null
+  const pendingCarryReserves = useMemo(() => {
+    return (prevDayReserves?.items ?? []).filter(item =>
+      (item.total_bill ?? 0) > 0
+      && (item.remaining_amount ?? ((item.total_bill ?? 0) - item.amount)) > 0,
+    )
   }, [prevDayReserves])
 
   // 若前幾日已有同名預留款，且本日輸入相同的大額支出，預設視為由預留款支付。
@@ -1853,62 +1859,53 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [isLocked, submitDone, preReservedExpenseHints, largeCashExpenses])
 
   useEffect(() => {
-    if (!pendingRentReserve || isLocked || submitDone) return
-    const savedReserves = Array.isArray(existingClosing?.reserve_items) ? existingClosing.reserve_items as ReserveItem[] : []
-    const savedManualMatching = savedReserves.find(item =>
-      item.reason === '房租' && item.total_bill === pendingRentReserve.total_bill && !item.auto_reserved,
-    )
-    if (savedManualMatching) return
-    try {
-      const stored = JSON.parse(localStorage.getItem(reserveLsKey) ?? '[]')
-      // 初次掛載等待 localStorage 還原；還原完成後允許自動預留金額跟著實匯入更新。
-      if (reserves.length === 0 && Array.isArray(stored) && stored.length > 0) return
-    } catch {}
-
-    const remaining = Math.max(0, pendingRentReserve.remaining_amount ?? ((pendingRentReserve.total_bill ?? 0) - pendingRentReserve.amount))
-    const amount = Math.min(Math.max(0, Math.round(s.finalRemit)), remaining)
+    if (pendingCarryReserves.length === 0 || isLocked || submitDone) return
     setReserves(prev => {
-      const existingAuto = prev.find(item =>
-        item.reason === '房租' && item.total_bill === pendingRentReserve.total_bill && item.auto_reserved,
-      )
-      if (existingAuto) {
-        if (amount <= 0) return prev
-        return prev.map(item => item.id === existingAuto.id
-          ? {
-              ...item,
-              amount,
-              source_start_date: pendingRentReserve.started_date,
-              accumulated_before: pendingRentReserve.amount,
-            }
-          : item)
-      }
-      // 使用者若已手動建立同一筆預留，保留手動金額。
-      if (prev.some(item => item.reason === '房租' && item.total_bill === pendingRentReserve.total_bill)) return prev
-      if (amount <= 0) return prev
-      return [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          reason: '房租',
-          amount,
-          total_bill: pendingRentReserve.total_bill,
-          auto_reserved: true,
-          source_start_date: pendingRentReserve.started_date,
-          accumulated_before: pendingRentReserve.amount,
-        },
-      ]
-    })
-  }, [pendingRentReserve, isLocked, submitDone, existingClosing?.reserve_items, reserves, reserveLsKey, s.finalRemit])
+      let available = Math.max(0, Math.round(s.finalRemit))
+      let next = withPendingReserveContext(prev, prevDayReserves)
+      let changed = next !== prev
 
-  // 歷史資料補足後，舊草稿可能還留著前一版自動帶入的房租預留。
+      for (const pending of pendingCarryReserves) {
+        const totalBill = Number(pending.total_bill ?? 0)
+        const remaining = Math.max(0, pending.remaining_amount ?? (totalBill - pending.amount))
+        const matching = next.find(item => item.reason === pending.reason && Number(item.total_bill ?? 0) === totalBill)
+        if (matching && !matching.auto_reserved) {
+          available = Math.max(0, available - Math.max(0, matching.amount))
+          continue
+        }
+
+        const amount = Math.min(available, remaining)
+        available -= amount
+        if (!matching) continue
+        if (
+          matching.amount !== amount
+          || matching.source_start_date !== pending.started_date
+          || matching.accumulated_before !== pending.amount
+        ) {
+          next = next.map(item => item.id === matching.id
+            ? {
+                ...item,
+                amount,
+                source_start_date: pending.started_date,
+                accumulated_before: pending.amount,
+              }
+            : item)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [pendingCarryReserves, prevDayReserves, isLocked, submitDone, s.finalRemit])
+
+  // 歷史資料補足後，舊草稿可能還留著前一版自動帶入的預留款。
   // 沒有未結清帳單時移除這筆暫存，避免畫面仍顯示已完成的差額。
   useEffect(() => {
-    if (pendingRentReserve || isLocked || submitDone) return
+    if (pendingCarryReserves.length > 0 || isLocked || submitDone) return
     setReserves(prev => {
-      const next = prev.filter(item => !(item.auto_reserved && item.reason.trim() === '房租'))
+      const next = prev.filter(item => !item.auto_reserved)
       return next.length === prev.length ? prev : next
     })
-  }, [pendingRentReserve, isLocked, submitDone])
+  }, [pendingCarryReserves, isLocked, submitDone])
 
   useEffect(() => {
     if (!handwriteOrdersHydrated || isLocked || submitDone) return
