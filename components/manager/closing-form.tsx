@@ -262,20 +262,29 @@ function withPendingReserveContext(items: ReserveItem[], context?: PrevDayReserv
     const remaining = pending.remaining_amount ?? (totalBill - pending.amount)
     if (totalBill <= 0 || remaining <= 0) continue
 
-    const matchingIndex = next.findIndex(item =>
+    const exactMatchingIndex = next.findIndex(item =>
       item.reason === pending.reason && Number(item.total_bill ?? 0) === totalBill,
     )
+    // 舊版草稿可能只存「原因＋今日金額」，沒有 total_bill。
+    // 同原因且未綁定帳單的項目，應視為這一期預留款的延續，
+    // 否則會把今天金額與昨天預留拆成兩筆。
+    const legacyMatchingIndex = exactMatchingIndex < 0
+      ? next.findIndex(item => item.reason === pending.reason && Number(item.total_bill ?? 0) <= 0)
+      : -1
+    const matchingIndex = exactMatchingIndex >= 0 ? exactMatchingIndex : legacyMatchingIndex
     if (matchingIndex >= 0) {
       const current = next[matchingIndex]
       const sourceStartDate = current.source_start_date ?? pending.started_date
       const accumulatedBefore = current.accumulated_before ?? pending.amount
       if (
-        current.source_start_date !== sourceStartDate
+        Number(current.total_bill ?? 0) !== totalBill
+        || current.source_start_date !== sourceStartDate
         || current.accumulated_before !== accumulatedBefore
       ) {
         next = next.map((item, index) => index === matchingIndex
           ? {
               ...item,
+              total_bill: totalBill,
               source_start_date: sourceStartDate,
               accumulated_before: accumulatedBefore,
             }
