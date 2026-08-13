@@ -8,6 +8,7 @@ import { BarChart3, Calendar, ChefHat, ChevronDown, LayoutDashboard, Store } fro
 import { getCachedAllStores } from '@/lib/cached-queries'
 import { canExportReports, canReviewClosings } from '@/lib/user-permissions'
 import { getCKRangeStats } from '@/lib/ck-aggregator'
+import { getRangeStats } from '@/lib/store-aggregator'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +23,10 @@ type StoreSummary = {
   type?: string | null
   revenue: number
   taxRefund: number
+  excelRevenue: number
+  uberRevenue: number
+  pandaRevenue: number
+  onlineRevenue: number
   cost: number
   costRate: number
   vendors: VendorStat[]
@@ -61,21 +66,42 @@ export default async function HQDashboard({
     ? today
     : `${year}-${month}-${String(lastDay).padStart(2, '0')}`
 
-  const [stores, { data: monthClosings }, { data: monthReceipts }] = await Promise.all([
+  const [stores, { data: monthReceipts }] = await Promise.all([
     getCachedAllStores(),
-    admin.from('daily_closings')
-      .select('store_id, total_revenue, status')
-      .gte('business_date', firstOfMonth).lte('business_date', selectedEnd)
-      .in('status', ['submitted', 'verified']),
     admin.from('receipts')
       .select('store_id, vendor_name, actual_vendor_name, total_amount')
       .gte('business_date', firstOfMonth).lte('business_date', selectedEnd),
   ])
 
   const storeMap = Object.fromEntries(stores.map(store => [store.id, store.name]))
+  const storefrontStores = stores.filter(store => store.type !== '央廚')
+  const storeRevenueEntries = await Promise.all(storefrontStores.map(async store => {
+    const { days, items } = await getRangeStats(store.id, firstOfMonth, selectedEnd)
+    const submittedDays = days.filter(day => day.closingStatus === 'submitted' || day.closingStatus === 'verified')
+    const excelRevenue = submittedDays.reduce((sum, day) => sum + day.onsite + day.variance, 0)
+    const uberRevenue = submittedDays.reduce(
+      (sum, day) => sum + Object.values(day.uber).reduce((channelSum, amount) => channelSum + amount, 0),
+      0,
+    )
+    const pandaRevenue = submittedDays.reduce((sum, day) => sum + day.panda, 0)
+    const onlineRevenue = submittedDays.reduce((sum, day) => sum + day.online, 0)
+    const hasRefundMappings = items.some(item => item.is_refund)
+    const taxRefund = days.reduce((sum, day) => sum + (hasRefundMappings
+      ? day.taxRefund
+      : (day.vendorGroupBreakdown['退稅']?.['發票'] || 0)), 0)
+    return [store.id, {
+      excelRevenue,
+      uberRevenue,
+      pandaRevenue,
+      onlineRevenue,
+      taxRefund,
+      total: excelRevenue + uberRevenue + pandaRevenue + onlineRevenue + taxRefund,
+    }] as const
+  }))
+  const storeRevenueBreakdown = new Map(storeRevenueEntries)
   const revenueByStore: Record<string, number> = {}
-  for (const closing of monthClosings ?? []) {
-    revenueByStore[closing.store_id] = (revenueByStore[closing.store_id] || 0) + Number(closing.total_revenue ?? 0)
+  for (const [storeId, breakdown] of storeRevenueEntries) {
+    revenueByStore[storeId] = breakdown.total
   }
 
   // 央廚月營業額 = 本月各店叫貨收入 + 整月梁平退稅。
@@ -196,6 +222,7 @@ export default async function HQDashboard({
     vendorsByStore.set(vendor.storeId, rows)
   }
   const storeStats: StoreSummary[] = stores.map(store => {
+    const storefrontRevenue = storeRevenueBreakdown.get(store.id)
     const revenue = store.type === '央廚'
       ? (ckRevenueByStore[store.id] || 0)
       : (revenueByStore[store.id] || 0)
@@ -205,7 +232,11 @@ export default async function HQDashboard({
     return {
       ...store,
       revenue,
-      taxRefund: store.type === '央廚' ? (ckRefundByStore[store.id] || 0) : 0,
+      taxRefund: store.type === '央廚' ? (ckRefundByStore[store.id] || 0) : (storefrontRevenue?.taxRefund || 0),
+      excelRevenue: storefrontRevenue?.excelRevenue || 0,
+      uberRevenue: storefrontRevenue?.uberRevenue || 0,
+      pandaRevenue: storefrontRevenue?.pandaRevenue || 0,
+      onlineRevenue: storefrontRevenue?.onlineRevenue || 0,
       cost,
       costRate: revenue > 0 ? (cost / revenue) * 100 : 0,
       vendors: vendorsByStore.get(store.id) ?? [],
@@ -280,7 +311,7 @@ export default async function HQDashboard({
         <StoreStatsSection
           icon={<Store className="h-4 w-4" />}
           title={`${parseInt(month)} 月店面營業額排名`}
-          description="依本月營業額由高至低，從左至右、由上而下排列；點擊店家可展開明細"
+          description="依 Excel 營業額欄＋Uber＋線上點餐＋熊貓＋梁平退稅計算，並由高至低排列"
           stores={storeStatsOnly}
           variant="store"
         />
@@ -396,6 +427,21 @@ function StoreStatsCard({ store, rank, isKitchen }: { store: StoreSummary; rank:
               )}
             </div>
           )}
+          {!isKitchen && (
+            <div className="mb-3 rounded-xl overflow-hidden" style={{ border: '1px solid #fde68a', background: '#fffbeb' }}>
+              <div className="flex items-center justify-between gap-3 px-3 py-2" style={{ borderBottom: '1px solid #fef3c7' }}>
+                <p className="text-xs font-bold" style={{ color: '#92400e' }}>最終實際營業額計算</p>
+                <p className="text-sm font-extrabold tabular-nums" style={{ color: '#92400e' }}>${fmt(store.revenue)}</p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-px" style={{ background: '#fde68a' }}>
+                <RevenuePart label="Excel 營業額欄" value={store.excelRevenue} />
+                <RevenuePart label="Uber" value={store.uberRevenue} />
+                <RevenuePart label="線上點餐" value={store.onlineRevenue} />
+                <RevenuePart label="熊貓" value={store.pandaRevenue} />
+                <RevenuePart label="梁平退稅" value={store.taxRefund} />
+              </div>
+            </div>
+          )}
           {store.vendors.length === 0 ? <p className="text-xs text-center py-3" style={{ color: '#a1a1aa' }}>{isKitchen ? '本月尚無央廚採購支出' : '本月尚無廠商叫貨'}</p> : <div className="space-y-1.5">
             {isKitchen && <p className="px-1 pb-0.5 text-xs font-semibold" style={{ color: '#71717a' }}>央廚採購／支出明細</p>}
             {store.vendors.map(group => <div key={`${group.storeId}-${group.group}`} className="rounded-lg overflow-hidden" style={{ background: '#f8fafc' }}>
@@ -436,6 +482,10 @@ function MetricCard({ label, value, sub, color }: { label: string; value: string
 
 function SmallStat({ label, value, tone }: { label: string; value: string; tone?: 'orange' }) {
   return <div className="bg-white px-3 py-2.5 min-w-0"><p className="text-[10px] truncate" style={{ color: '#a1a1aa' }}>{label}</p><p className="text-sm font-bold tabular-nums truncate" style={{ color: tone === 'orange' ? '#c2410c' : '#18181b' }}>{value}</p></div>
+}
+
+function RevenuePart({ label, value }: { label: string; value: number }) {
+  return <div className="bg-white px-3 py-2.5 min-w-0"><p className="text-[10px] truncate" style={{ color: '#a1a1aa' }}>{label}</p><p className="text-sm font-bold tabular-nums truncate" style={{ color: '#92400e' }}>+ ${fmt(value)}</p></div>
 }
 
 function SectionTitle({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
