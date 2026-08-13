@@ -255,6 +255,41 @@ interface PrevDayReserve {
   }[]
 }
 
+function withPendingRentReserve(items: ReserveItem[], context?: PrevDayReserve | null): ReserveItem[] {
+  const pending = context?.items.find(item =>
+    item.reason === '房租'
+    && (item.total_bill ?? 0) > 0
+    && (item.remaining_amount ?? ((item.total_bill ?? 0) - item.amount)) > 0,
+  )
+  if (!pending?.total_bill) return items
+
+  const matchingIndex = items.findIndex(item =>
+    item.reason === '房租' && Number(item.total_bill ?? 0) === Number(pending.total_bill),
+  )
+  if (matchingIndex >= 0) {
+    return items.map((item, index) => index === matchingIndex
+      ? {
+          ...item,
+          source_start_date: item.source_start_date ?? pending.started_date,
+          accumulated_before: item.accumulated_before ?? pending.amount,
+        }
+      : item)
+  }
+
+  return [
+    ...items,
+    {
+      id: `auto-rent-${pending.started_date ?? context?.business_date ?? 'previous'}-${pending.total_bill}`,
+      reason: '房租',
+      amount: 0,
+      total_bill: pending.total_bill,
+      auto_reserved: true,
+      source_start_date: pending.started_date,
+      accumulated_before: pending.amount,
+    },
+  ]
+}
+
 interface Props {
   store: Store
   ckPrices: CKPrice[]
@@ -1416,8 +1451,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [adjustments, adjustmentsHydrated, existingClosing?.status])
   const [reserves, setReserves] = useState<ReserveItem[]>(() => {
     const saved = existingClosing?.reserve_items
-    if (Array.isArray(saved) && saved.length > 0) return saved
-    return []
+    return withPendingRentReserve(Array.isArray(saved) ? saved : [], prevDayReserves)
   })
   const [showReserveForm, setShowReserveForm] = useState(false)
   const [reserveForm, setReserveForm] = useState<Omit<ReserveItem, 'id'>>({ reason: '電費', amount: 0, total_bill: 0 })
@@ -1431,7 +1465,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (existingClosing?.reserve_items && (existingClosing.reserve_items as any[]).length > 0) return
     try {
       const stored = JSON.parse(localStorage.getItem(reserveLsKey) ?? '[]')
-      if (Array.isArray(stored) && stored.length > 0) setReserves(stored)
+      if (Array.isArray(stored) && stored.length > 0) {
+        setReserves(withPendingRentReserve(stored, prevDayReserves))
+      }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -1836,7 +1872,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         item.reason === '房租' && item.total_bill === pendingRentReserve.total_bill && item.auto_reserved,
       )
       if (existingAuto) {
-        if (amount <= 0) return prev.filter(item => item.id !== existingAuto.id)
+        if (amount <= 0) return prev
         return prev.map(item => item.id === existingAuto.id
           ? {
               ...item,
@@ -5673,7 +5709,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             </div>
                             <div className="flex items-center gap-2 shrink-0 ml-2">
                               <span className="text-base font-bold tabular-nums" style={{ color: '#ea580c' }}>
-                                −{fmt(r.amount)}
+                                {r.auto_reserved && r.amount <= 0 ? '待自動計算' : `−${fmt(r.amount)}`}
                               </span>
                               {!isLocked && (
                                 <button type="button" onClick={() => setReserves(prev => prev.filter(x => x.id !== r.id))}

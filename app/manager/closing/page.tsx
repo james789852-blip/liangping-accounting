@@ -10,6 +10,7 @@ import { getReceiptSettings } from '@/app/actions/receipt-settings'
 import { getCachedUserProfile, getCachedStoreFull, getCachedStoreMappings, getCachedItemOrder, getCachedActiveCKPrices } from '@/lib/cached-queries'
 import { getStoreItemsResolved, toMappingColumns } from '@/lib/store-items-resolver'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
+import { buildReserveHistoryContext } from '@/lib/reserve-history'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +35,7 @@ export default async function ClosingPage({
       </div>
     )
   }
+  const admin = createAdminClient()
 
   const realToday = getBusinessDate()
   const taipeiNow = new Date(Date.now() + 8 * 3600000)
@@ -77,7 +79,7 @@ export default async function ClosingPage({
       .order('created_at'),
     getReceiptSettings(storeId),
     getCachedStoreMappings(storeId),
-    supabase
+    admin
       .from('daily_closings')
       .select('reserve_items, business_date, expense_items(description, amount)')
       .eq('store_id', storeId)
@@ -111,7 +113,6 @@ export default async function ClosingPage({
   ] as const)
 
   if (existingClosing) {
-    const admin = createAdminClient()
     const { data: cashCounts } = await admin
       .from('cash_counts')
       .select('*')
@@ -131,118 +132,7 @@ export default async function ClosingPage({
     if (pettyDone) redirect(`/manager/summary?date=${encodeURIComponent(today)}`)
   }
 
-  const reserveGroups = new Map<string, {
-    reason: string
-    total_bill: number
-    amount: number
-    started_date: string
-    last_date: string
-  }>()
-  const reserveExpenseHints = new Map<string, {
-    reason: string
-    amount: number
-    total_bill?: number
-  }>()
-  const normalizeReserveText = (value: unknown) => String(value ?? '').replace(/[\s　]+/g, '').toLowerCase()
-  const paidReserveKeys = new Set<string>()
-  const historicalExpenses = ((prevReserveClosings ?? []) as any[]).flatMap(closing => {
-    const expenses = Array.isArray(closing.expense_items) ? closing.expense_items : []
-    return expenses.map((expense: any) => ({
-      ...expense,
-      business_date: closing.business_date as string,
-    }))
-  })
-  for (const closing of (prevReserveClosings ?? []) as any[]) {
-    const reserveItems = Array.isArray(closing.reserve_items) ? closing.reserve_items : []
-    for (const item of reserveItems) {
-      const reason = typeof item.reason === 'string' && item.reason.trim() ? item.reason.trim() : '其他'
-      const totalBill = Number(item.total_bill ?? 0)
-      const reserveAmount = Math.max(0, Number(item.amount ?? 0))
-      if (reserveAmount <= 0) continue
-      const reasonText = normalizeReserveText(reason)
-      const paid = historicalExpenses.some((expense: any) => {
-        // 預留與實際付款通常不會發生在同一天。只要在開始預留後的
-        // 歷史帳目中出現對應支出，就應視為已結清。
-        if (expense.business_date < closing.business_date) return false
-        const expenseAmount = Math.abs(Number(expense?.amount ?? 0))
-        if (expenseAmount <= 0) return false
-        const description = normalizeReserveText(expense?.description)
-        const reasonMatches = reasonText !== '其他' && description.length > 0 && (
-          description.includes(reasonText) || reasonText.includes(description)
-        )
-        const amountMatches = totalBill > 0
-          ? expenseAmount >= totalBill - 1
-          : expenseAmount >= reserveAmount - 1
-        // 有帳單總額時，完整支出金額本身就足以辨識這筆預留款；
-        // 沒有帳單總額則要求支出說明與預留原因相符，避免誤判其他支出。
-        return amountMatches && (reasonMatches || (totalBill > 0 && expenseAmount >= totalBill - 1))
-      })
-      if (paid) paidReserveKeys.add(`${normalizeReserveText(reason)}||${totalBill}`)
-    }
-  }
-  // 查詢結果是日期倒序；預留款的「續存」要按日期正序判斷，
-  // 才能把後一天未重填帳單總額的補足金額接回前一天的同一筆帳單。
-  // 例如：7/12 房租 48,433（帳單 77,000），7/13 補 28,567（舊資料沒有 total_bill）。
-  const reserveHistory = [...(prevReserveClosings ?? [])].reverse()
-  for (const closing of reserveHistory) {
-    const date = closing.business_date as string
-    const items = Array.isArray(closing.reserve_items) ? closing.reserve_items as any[] : []
-    for (const item of items) {
-      const reason = typeof item.reason === 'string' && item.reason.trim() ? item.reason.trim() : '其他'
-      const totalBill = Number(item.total_bill ?? 0)
-      const amount = Math.max(0, Number(item.amount ?? 0))
-      const reserveKey = `${normalizeReserveText(reason)}||${totalBill}`
-      const alreadyPaid = paidReserveKeys.has(reserveKey)
-      if (amount > 0) {
-        if (!alreadyPaid) {
-          const hint = reserveExpenseHints.get(reason)
-          if (hint) {
-            hint.amount += amount
-            if (totalBill > 0) hint.total_bill = Math.max(hint.total_bill ?? 0, totalBill)
-          } else {
-            reserveExpenseHints.set(reason, { reason, amount, ...(totalBill > 0 ? { total_bill: totalBill } : {}) })
-          }
-        }
-      }
-      if (totalBill <= 0) {
-        // 舊版／手動續存資料可能沒有帶 total_bill。若同原因最近仍有
-        // 尚未結清的帳單，視為該帳單的續存，而不是另一筆獨立預留。
-        // 這可避免已累計達到帳單總額後，隔天又被自動要求同一筆差額。
-        const continuation = Array.from(reserveGroups.values())
-          .filter(group => group.reason === reason && group.amount < group.total_bill)
-          .sort((a, b) => b.last_date.localeCompare(a.last_date))[0]
-        if (continuation) {
-          continuation.amount += amount
-          if (date > continuation.last_date) continuation.last_date = date
-        }
-        continue
-      }
-      const key = `${reason}||${totalBill}`
-      const existing = reserveGroups.get(key)
-      if (existing) {
-        existing.amount += amount
-        if (date < existing.started_date) existing.started_date = date
-        if (date > existing.last_date) existing.last_date = date
-      } else {
-        reserveGroups.set(key, { reason, total_bill: totalBill, amount, started_date: date, last_date: date })
-      }
-    }
-  }
-  const pendingReserves = Array.from(reserveGroups.values())
-    .filter(item => item.total_bill > item.amount && !paidReserveKeys.has(`${normalizeReserveText(item.reason)}||${item.total_bill}`))
-    .sort((a, b) => b.last_date.localeCompare(a.last_date))
-  const prevDayReserves = pendingReserves.length > 0
-    ? {
-        business_date: pendingReserves[0].last_date,
-        items: pendingReserves.map(item => ({
-          reason: item.reason,
-          amount: item.amount,
-          total_bill: item.total_bill,
-          started_date: item.started_date,
-          remaining_amount: item.total_bill - item.amount,
-        })),
-      }
-    : null
+  const { prevDayReserves, preReservedExpenseHints } = buildReserveHistoryContext(prevReserveClosings ?? [])
 
   const orderMap = new Map<string, number>(itemOrder.map((name, i) => [name, i] as const))
   const newItems = mappingBasedItems.length > 0 ? [] : await getStoreItemsResolved(storeId)
@@ -292,7 +182,7 @@ export default async function ClosingPage({
       mappingColumns={mappingColumns}
       actualVendors={actualVendors ?? []}
       prevDayReserves={prevDayReserves}
-      preReservedExpenseHints={Array.from(reserveExpenseHints.values())}
+      preReservedExpenseHints={preReservedExpenseHints}
       isBackfill={isBackfill}
       realToday={realToday}
       calendarToday={calendarToday}
