@@ -22,9 +22,11 @@ export async function getAuthContext(): Promise<AuthContext | null> {
   const supabase = await createClient()
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('role, is_hq, store_ids, name')
+    .select('role, is_hq, store_ids, name, active')
     .eq('user_id', user.id)
     .single()
+
+  if (!profile || profile.active === false) return null
 
   return {
     userId: user.id,

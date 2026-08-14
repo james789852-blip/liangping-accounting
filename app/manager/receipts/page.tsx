@@ -30,13 +30,24 @@ export default async function ReceiptsPage() {
     .toISOString().slice(0, 10)
 
   const admin = createAdminClient()
-  const { data: receipts } = await admin
-    .from('receipts')
-    .select('*, receipt_items(*)')
-    .eq('store_id', storeId)
-    .gte('business_date', thirtyDaysAgo)
-    .order('business_date', { ascending: false })
-    .order('created_at', { ascending: false })
+  const [{ data: receipts }, { data: closings }] = await Promise.all([
+    admin
+      .from('receipts')
+      .select('*, receipt_items(*)')
+      .eq('store_id', storeId)
+      .gte('business_date', thirtyDaysAgo)
+      .order('business_date', { ascending: false })
+      .order('created_at', { ascending: false }),
+    admin
+      .from('daily_closings')
+      .select('business_date, status')
+      .eq('store_id', storeId)
+      .gte('business_date', thirtyDaysAgo),
+  ])
+
+  const closingStatusByDate = Object.fromEntries(
+    (closings ?? []).map(closing => [closing.business_date, closing.status])
+  )
 
   const [store, mappingBasedItems] = await Promise.all([
     getCachedStoreById(storeId),
@@ -66,6 +77,7 @@ export default async function ReceiptsPage() {
       today={today}
       receipts={receipts ?? []}
       mappings={mappings}
+      closingStatusByDate={closingStatusByDate}
     />
   )
 }

@@ -6,6 +6,7 @@ import { deleteReceipt, updateReceipt } from '@/app/actions/receipts'
 import ReceiptUpload from './receipt-upload'
 import Link from 'next/link'
 import SafePhotoImage from '@/components/shared/safe-photo-image'
+import { isReceiptDateLocked } from '@/lib/receipt-guards'
 
 interface ReceiptItem {
   id: string; item_name: string; quantity?: number; unit?: string; unit_price?: number; amount: number; excel_column: string; item_category: string
@@ -18,6 +19,7 @@ interface ReceiptData {
 interface MappingOption { item_name: string; excel_column: string; item_category: string; vendor_group?: string | null }
 interface Props {
   storeId: string; storeName: string; today: string; receipts: ReceiptData[]; mappings: MappingOption[]
+  closingStatusByDate: Record<string, string>
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -61,9 +63,9 @@ function inputStyle(extra?: object) {
   }
 }
 
-function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
+function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: {
   receipt: ReceiptData; onDelete: (id: string) => void; onUpdated: (updated: ReceiptData) => void
-  mappings: MappingOption[]
+  mappings: MappingOption[]; closingStatus?: string
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showPhoto, setShowPhoto] = useState(false)
@@ -71,6 +73,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [openItemIdx, setOpenItemIdx] = useState<number | null>(null)
+  const isLocked = isReceiptDateLocked(closingStatus)
 
   function selectMappedItem(idx: number, key: string) {
     const m = mappings.find(item => mappingKey(item) === key)
@@ -101,6 +104,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
   )
 
   function startEdit() {
+    if (isLocked) return
     setEditVendor(receipt.vendor_name); setEditType(receipt.receipt_type)
     setEditActualVendor(receipt.actual_vendor_name ?? '')
     setEditDate(receipt.business_date); setEditTotal(receipt.total_amount)
@@ -140,8 +144,13 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
   }
 
   async function handleDelete() {
+    if (isLocked) return
     if (!confirm('確定要刪除這筆收據嗎？')) return
-    setDeleting(true); await deleteReceipt(receipt.id); onDelete(receipt.id)
+    setDeleting(true)
+    const result = await deleteReceipt(receipt.id)
+    setDeleting(false)
+    if (result?.error) { alert('刪除失敗：' + result.error); return }
+    onDelete(receipt.id)
   }
 
   const st = STATUS_STYLE[receipt.status] ?? STATUS_STYLE.draft
@@ -171,6 +180,12 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
               style={{ background: st.bg, color: st.color }}>
               {STATUS_LABEL[receipt.status] ?? receipt.status}
             </span>
+            {isLocked && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+                style={{ background: '#fef2f2', color: '#b91c1c' }}>
+                帳目已鎖定
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-base font-bold tabular-nums" style={{ color: '#18181b' }}>
@@ -195,16 +210,22 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
             style={{ color: '#a1a1aa' }}>
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
-          <button onClick={startEdit}
-            className="h-8 w-8 flex items-center justify-center rounded-xl transition-colors hover:bg-indigo-50"
-            style={{ color: editing ? '#92400E' : '#a1a1aa' }}>
-            <Edit2 className="h-4 w-4" />
-          </button>
-          <button onClick={handleDelete} disabled={deleting}
-            className="h-8 w-8 flex items-center justify-center rounded-xl transition-colors hover:bg-red-50 disabled:opacity-40"
-            style={{ color: '#a1a1aa' }}>
-            <Trash2 className="h-4 w-4" />
-          </button>
+          {!isLocked && (
+            <>
+              <button onClick={startEdit}
+                aria-label="編輯收據"
+                className="h-8 w-8 flex items-center justify-center rounded-xl transition-colors hover:bg-indigo-50"
+                style={{ color: editing ? '#92400E' : '#a1a1aa' }}>
+                <Edit2 className="h-4 w-4" />
+              </button>
+              <button onClick={handleDelete} disabled={deleting}
+                aria-label="刪除收據"
+                className="h-8 w-8 flex items-center justify-center rounded-xl transition-colors hover:bg-red-50 disabled:opacity-40"
+                style={{ color: '#a1a1aa' }}>
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -435,7 +456,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings }: {
   )
 }
 
-export default function ReceiptsClient({ storeId, storeName, today, receipts: initial, mappings }: Props) {
+export default function ReceiptsClient({ storeId, storeName, today, receipts: initial, mappings, closingStatusByDate }: Props) {
   const [receipts, setReceipts] = useState(initial)
   const [showUpload, setShowUpload] = useState(false)
 
@@ -529,7 +550,7 @@ export default function ReceiptsClient({ storeId, storeName, today, receipts: in
                 </p>
               </div>
               {grouped[date].map(r => (
-                <ReceiptCard key={r.id} receipt={r} mappings={mappings}
+                <ReceiptCard key={r.id} receipt={r} mappings={mappings} closingStatus={closingStatusByDate[r.business_date]}
                   onDelete={(id) => setReceipts(prev => prev.filter(r => r.id !== id))}
                   onUpdated={(updated) => setReceipts(prev => prev.map(r => r.id === updated.id ? updated : r))} />
               ))}

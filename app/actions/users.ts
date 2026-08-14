@@ -21,7 +21,7 @@ async function getCallerProfile() {
   if (!user) return null
   const { data } = await supabase
     .from('user_profiles').select('*').eq('user_id', user.id).single()
-  return data
+  return data?.active === false ? null : data
 }
 
 function readableUserCreateError(message: string) {
@@ -235,8 +235,8 @@ export async function updateUserStatus(userId: string, active: boolean) {
   const caller = await getCallerProfile()
   if (!canManageUsers(caller)) return { error: '權限不足' }
 
-  const supabase = await createClient()
-  const { error } = await supabase
+  const admin = getAdminClient()
+  const { error } = await admin
     .from('user_profiles').update({ active }).eq('user_id', userId)
   if (error) return { error: error.message }
   revalidatePath('/hq/users')
@@ -257,17 +257,13 @@ export async function deleteUser(userId: string) {
 }
 
 export async function updateUserHQ(userId: string, isHQ: boolean) {
-  const supabase = await createClient()
-  const caller = await getVerifiedUser()
-  if (!caller) return { error: '未登入' }
-
-  const { data: callerProfile } = await supabase
-    .from('user_profiles').select('*').eq('user_id', caller.id).single()
+  const callerProfile = await getCallerProfile()
   if (!canManageUsers(callerProfile)) {
     return { error: '權限不足' }
   }
 
-  const { error } = await supabase
+  const admin = getAdminClient()
+  const { error } = await admin
     .from('user_profiles').update({ is_hq: isHQ }).eq('user_id', userId)
   if (error) return { error: error.message }
   revalidatePath('/hq/users')

@@ -15,6 +15,15 @@ async function resolveAuthedUser(): Promise<User | null> {
   const claims = data?.claims
   if (error || !claims?.sub) return null
 
+  // Auth token 有效不代表帳號仍可使用。每個請求都重新確認 profile，
+  // 避免已停用帳號靠尚未過期的 JWT 繼續呼叫 Server Action / Route Handler。
+  const { data: profile, error: profileError } = await supabase
+    .from('user_profiles')
+    .select('active')
+    .eq('user_id', claims.sub)
+    .maybeSingle()
+  if (profileError || !profile || profile.active === false) return null
+
   return {
     id: claims.sub,
     email: claims.email,

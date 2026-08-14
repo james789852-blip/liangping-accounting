@@ -2,9 +2,10 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
-import { getAuthContext, canAccessStore, getReceiptStoreId } from '@/lib/permissions'
+import { getAuthContext, canAccessStore } from '@/lib/permissions'
 import { logAudit } from '@/lib/audit'
 import { normalizeItemAmount } from '@/lib/negative-items'
+import { receiptDateWriteError } from '@/lib/receipt-write-access'
 
 interface ReceiptItemPayload {
   item_name: string
@@ -56,6 +57,8 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
   if (!canAccessStore(ctx, payload.storeId)) return { error: '無權限存取此店家' }
 
   const admin = createAdminClient()
+  const lockError = await receiptDateWriteError(admin, payload.storeId, payload.businessDate)
+  if (lockError) return { error: lockError }
 
   const { data: receipt, error: rErr } = await admin
     .from('receipts')
@@ -77,14 +80,20 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
     .single()
 
   if (rErr || !receipt) return { error: rErr?.message ?? '儲存失敗' }
-  await rememberActualVendor(admin, payload.storeId, payload.vendorName, payload.actualVendorName)
 
   const normalizedItems = normalizeReceiptItemsForTotal(payload.items, payload.totalAmount, payload.taxAmount)
   if (normalizedItems.length > 0) {
-    await admin.from('receipt_items').insert(
+    const { error: itemError } = await admin.from('receipt_items').insert(
       normalizedItems.map(item => ({ ...item, amount: normalizeItemAmount(item.item_name, item.amount), receipt_id: receipt.id }))
     )
+    if (itemError) {
+      // receipts -> receipt_items 是 cascade 關聯；刪除主檔可完整回滾本次新增。
+      await admin.from('receipts').delete().eq('id', receipt.id)
+      return { error: `品項儲存失敗：${itemError.message}` }
+    }
   }
+
+  await rememberActualVendor(admin, payload.storeId, payload.vendorName, payload.actualVendorName)
 
   await logAudit({
     eventType: 'receipt_create',
@@ -101,18 +110,41 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
 export async function deleteReceipt(receiptId: string) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
-  const storeId = await getReceiptStoreId(receiptId)
-  if (!storeId) return { error: '找不到此收據' }
-  if (!canAccessStore(ctx, storeId)) return { error: '無權限存取此收據' }
 
   const admin = createAdminClient()
-  // 先讀取資料用於 audit
-  const { data: existing } = await admin.from('receipts').select('vendor_name, total_amount, business_date').eq('id', receiptId).single()
+  const { data: existing, error: readError } = await admin
+    .from('receipts')
+    .select('store_id, vendor_name, total_amount, business_date, receipt_items(*)')
+    .eq('id', receiptId)
+    .single()
+  if (readError || !existing) return { error: '找不到此收據' }
 
-  await admin.from('receipt_items').delete().eq('receipt_id', receiptId)
+  const storeId = existing.store_id as string
+  if (!canAccessStore(ctx, storeId)) return { error: '無權限存取此收據' }
+  const lockError = await receiptDateWriteError(admin, storeId, existing.business_date as string)
+  if (lockError) return { error: lockError }
+
+  const previousItems = Array.isArray(existing.receipt_items) ? existing.receipt_items : []
+  const { error: itemDeleteError } = await admin.from('receipt_items').delete().eq('receipt_id', receiptId)
+  if (itemDeleteError) return { error: `收據品項刪除失敗：${itemDeleteError.message}` }
+
   const { error } = await admin.from('receipts').delete().eq('id', receiptId)
 
-  if (error) return { error: error.message }
+  if (error) {
+    if (previousItems.length > 0) {
+      await admin.from('receipt_items').insert(previousItems.map(item => ({
+        receipt_id: receiptId,
+        item_name: item.item_name,
+        item_category: item.item_category,
+        amount: item.amount,
+        excel_column: item.excel_column,
+        quantity: item.quantity,
+        unit: item.unit,
+        unit_price: item.unit_price,
+      })))
+    }
+    return { error: error.message }
+  }
 
   await logAudit({
     eventType: 'receipt_delete',
@@ -133,11 +165,25 @@ export async function updateReceipt(
 ) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
-  const storeId = await getReceiptStoreId(receiptId)
-  if (!storeId) return { error: '找不到此收據' }
-  if (!canAccessStore(ctx, storeId)) return { error: '無權限存取此收據' }
 
   const admin = createAdminClient()
+  const { data: existing, error: readError } = await admin
+    .from('receipts')
+    .select('store_id, business_date, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, notes, receipt_items(*)')
+    .eq('id', receiptId)
+    .single()
+  if (readError || !existing) return { error: '找不到此收據' }
+
+  const storeId = existing.store_id as string
+  if (!canAccessStore(ctx, storeId)) return { error: '無權限存取此收據' }
+
+  const currentDateLockError = await receiptDateWriteError(admin, storeId, existing.business_date as string)
+  if (currentDateLockError) return { error: currentDateLockError }
+  if (payload.businessDate !== existing.business_date) {
+    const targetDateLockError = await receiptDateWriteError(admin, storeId, payload.businessDate)
+    if (targetDateLockError) return { error: targetDateLockError }
+  }
+
   const { error: rErr } = await admin
     .from('receipts')
     .update({
@@ -153,15 +199,53 @@ export async function updateReceipt(
     .eq('id', receiptId)
 
   if (rErr) return { error: rErr.message }
-  await rememberActualVendor(admin, storeId, payload.vendorName, payload.actualVendorName)
+  const { error: deleteItemsError } = await admin.from('receipt_items').delete().eq('receipt_id', receiptId)
+  if (deleteItemsError) {
+    await admin.from('receipts').update({
+      business_date: existing.business_date,
+      vendor_name: existing.vendor_name,
+      actual_vendor_name: existing.actual_vendor_name,
+      receipt_type: existing.receipt_type,
+      total_amount: existing.total_amount,
+      tax_amount: existing.tax_amount,
+      notes: existing.notes,
+    }).eq('id', receiptId)
+    return { error: `品項更新失敗：${deleteItemsError.message}` }
+  }
 
-  await admin.from('receipt_items').delete().eq('receipt_id', receiptId)
   const normalizedItems = normalizeReceiptItemsForTotal(payload.items, payload.totalAmount, payload.taxAmount)
   if (normalizedItems.length > 0) {
-    await admin.from('receipt_items').insert(
+    const { error: itemError } = await admin.from('receipt_items').insert(
       normalizedItems.map(item => ({ ...item, amount: normalizeItemAmount(item.item_name, item.amount), receipt_id: receiptId }))
     )
+    if (itemError) {
+      await admin.from('receipts').update({
+        business_date: existing.business_date,
+        vendor_name: existing.vendor_name,
+        actual_vendor_name: existing.actual_vendor_name,
+        receipt_type: existing.receipt_type,
+        total_amount: existing.total_amount,
+        tax_amount: existing.tax_amount,
+        notes: existing.notes,
+      }).eq('id', receiptId)
+      const previousItems = Array.isArray(existing.receipt_items) ? existing.receipt_items : []
+      if (previousItems.length > 0) {
+        await admin.from('receipt_items').insert(previousItems.map(item => ({
+          receipt_id: receiptId,
+          item_name: item.item_name,
+          item_category: item.item_category,
+          amount: item.amount,
+          excel_column: item.excel_column,
+          quantity: item.quantity,
+          unit: item.unit,
+          unit_price: item.unit_price,
+        })))
+      }
+      return { error: `品項儲存失敗：${itemError.message}` }
+    }
   }
+
+  await rememberActualVendor(admin, storeId, payload.vendorName, payload.actualVendorName)
 
   await logAudit({
     eventType: 'receipt_update',
@@ -179,11 +263,20 @@ export async function updateReceipt(
 export async function updateReceiptStatus(receiptId: string, status: string) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
-  const storeId = await getReceiptStoreId(receiptId)
-  if (!storeId) return { error: '找不到此收據' }
-  if (!canAccessStore(ctx, storeId)) return { error: '無權限存取此收據' }
 
   const admin = createAdminClient()
+  const { data: existing, error: readError } = await admin
+    .from('receipts')
+    .select('store_id, business_date')
+    .eq('id', receiptId)
+    .single()
+  if (readError || !existing) return { error: '找不到此收據' }
+
+  const storeId = existing.store_id as string
+  if (!canAccessStore(ctx, storeId)) return { error: '無權限存取此收據' }
+  const lockError = await receiptDateWriteError(admin, storeId, existing.business_date as string)
+  if (lockError) return { error: lockError }
+
   const { error } = await admin
     .from('receipts')
     .update({ status, updated_at: new Date().toISOString() })
