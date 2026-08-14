@@ -7,6 +7,7 @@ import { revalidatePath, revalidateTag } from 'next/cache'
 import { after } from 'next/server'
 import { syncMiscVendorsFromMappingChange } from '@/lib/misc-sync'
 import { canManageCKItems, canManageStoreItems } from '@/lib/user-permissions'
+import { historicalItemSyncTargets } from '@/lib/item-history-scope'
 
 // 用 defer 執行 sync：response 送回 client 後才跑，不阻塞使用者
 function deferSyncMisc(storeId: string | null | undefined) {
@@ -408,7 +409,7 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
 
   // 選擇性同步既有帳目資料，避免改名後舊資料因名稱不同而對不到。
   if (syncReceipts && trimmedName !== oldName) {
-    await syncHistoricalItemNames(oldName, trimmedName, mapping.store_id ?? null)
+    await syncHistoricalItemNames(oldName, trimmedName, mapping.store_id ?? null, mapping.vendor_group)
   }
 
   // 若品項屬「未分類/雜項」→ 同步 receipt_vendors 名稱（先刪舊 + 加新 = full re-sync）
@@ -421,13 +422,23 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
   return { success: true as const }
 }
 
-async function syncHistoricalItemNames(oldName: string, newName: string, storeId: string | null) {
+async function syncHistoricalItemNames(
+  oldName: string,
+  newName: string,
+  storeId: string | null,
+  vendorGroup?: string | null,
+) {
   const admin = createAdminClient()
+  const targets = historicalItemSyncTargets(vendorGroup)
 
   if (storeId) {
     const [{ data: receiptRows }, { data: closingRows }] = await Promise.all([
-      admin.from('receipts').select('id').eq('store_id', storeId),
-      admin.from('daily_closings').select('id').eq('store_id', storeId),
+      targets.receiptItems
+        ? admin.from('receipts').select('id').eq('store_id', storeId)
+        : Promise.resolve({ data: [] as Array<{ id: string }> }),
+      targets.orderItems
+        ? admin.from('daily_closings').select('id').eq('store_id', storeId)
+        : Promise.resolve({ data: [] as Array<{ id: string }> }),
     ])
 
     const receiptIds = (receiptRows ?? []).map((r: any) => r.id as string)
@@ -454,10 +465,15 @@ async function syncHistoricalItemNames(oldName: string, newName: string, storeId
     return
   }
 
-  // 全域 mapping 沒有店家範圍可限制，使用者確認覆蓋時才更新全系統舊名稱。
+  // 全域 mapping 沒有店家範圍可限制，但仍必須依來源分類隔離。
+  // 一般廠商改名不可污染央廚叫貨；央廚改名也不可改到一般收據。
   await Promise.all([
-    admin.from('receipt_items').update({ item_name: newName }).eq('item_name', oldName),
-    admin.from('order_items').update({ item_name: newName, excel_column: newName }).eq('item_name', oldName),
+    targets.receiptItems
+      ? admin.from('receipt_items').update({ item_name: newName }).eq('item_name', oldName)
+      : Promise.resolve(),
+    targets.orderItems
+      ? admin.from('order_items').update({ item_name: newName, excel_column: newName }).eq('item_name', oldName)
+      : Promise.resolve(),
   ])
 }
 

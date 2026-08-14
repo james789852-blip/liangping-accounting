@@ -26,15 +26,48 @@ export function deriveExportReconciliation(input: ExportReconciliationInput) {
   }
 }
 
+type ExportItemCandidate = {
+  name: string
+  vendor_group?: string | null
+}
+
 /**
- * 央廚叫貨固定標記為「央廚配送」，但舊店家可能只建立同名的一般 mapping。
- * 若只有一個候選欄位，應落到該欄，不能讓金額從 Excel 明細消失。
+ * daily_closings.order_items 是央廚叫貨單的明細，因此來源分類永遠是
+ *「央廚配送」。歷史資料可能把央廚品項存成一般廠商欄位的完整名稱
+ *（例如「上逸-滷肉」），這裡只借該 mapping 拆回品項本名，再到央廚
+ * mapping 內找對應欄位；絕不把央廚金額送到一般廠商分類。
  */
-export function resolveOrderItemVendorGroup(
-  candidates: Array<{ vendor_group?: string | null }>,
-): string {
-  const centralKitchen = candidates.find(item => item.vendor_group === '央廚配送')
-  if (centralKitchen) return '央廚配送'
-  if (candidates.length === 1 && candidates[0].vendor_group) return candidates[0].vendor_group
-  return '央廚配送'
+export function resolveCentralKitchenOrderTarget(
+  rawName: string,
+  allItems: ExportItemCandidate[],
+  compatibilityKey: (value: string | null | undefined) => string,
+): { itemName: string; vendorGroup: '央廚配送' } {
+  const rawKey = compatibilityKey(rawName)
+  const centralKitchenItems = allItems.filter(item => item.vendor_group === '央廚配送')
+
+  const directCentralKitchen = centralKitchenItems.find(item => compatibilityKey(item.name) === rawKey)
+  if (directCentralKitchen) {
+    return { itemName: directCentralKitchen.name, vendorGroup: '央廚配送' }
+  }
+
+  // 若歷史 order_item 名稱直接等於其他廠商的 mapping 名稱，去掉該
+  // mapping 的廠商前綴後再尋找央廚欄位。例如：上逸-滷肉 → 滷肉。
+  const matchedExternalItem = allItems.find(item =>
+    item.vendor_group !== '央廚配送' && compatibilityKey(item.name) === rawKey,
+  )
+  const externalVendor = matchedExternalItem?.vendor_group?.trim()
+  if (externalVendor) {
+    const escapedVendor = externalVendor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const baseName = rawName.replace(new RegExp(`^${escapedVendor}[\\s　\\-－—–_]*`), '').trim()
+    if (baseName && baseName !== rawName) {
+      const baseKey = compatibilityKey(baseName)
+      const centralKitchenByBaseName = centralKitchenItems.find(item => compatibilityKey(item.name) === baseKey)
+      if (centralKitchenByBaseName) {
+        return { itemName: centralKitchenByBaseName.name, vendorGroup: '央廚配送' }
+      }
+    }
+  }
+
+  // 尚未建立央廚 mapping 時也保留央廚來源，不能 fallback 到其他廠商。
+  return { itemName: rawName, vendorGroup: '央廚配送' }
 }

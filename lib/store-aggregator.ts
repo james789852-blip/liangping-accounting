@@ -17,7 +17,7 @@ import { type ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { compareResolvedItemsByMappingOrder, getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 import { taxAddonBaseName } from '@/lib/tax-addon'
 import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
-import { deriveExportReconciliation, resolveOrderItemVendorGroup } from '@/lib/export-reconciliation'
+import { deriveExportReconciliation, resolveCentralKitchenOrderTarget } from '@/lib/export-reconciliation'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -277,10 +277,14 @@ export async function getRangeStats(
       if (oi.item_name === '央廚配送') continue
       const amt = oi.total_amount ?? 0
       if (!amt) continue
-      // 優先放入央廚配送欄；若舊設定只有一個同名欄位，使用該欄，
-      // 避免像「油蔥酥」有金額但因分類不同而從 Excel 明細消失。
-      const orderCandidates = itemCandidates.get(itemNameCompatibilityKey(String(oi.item_name ?? ''))) ?? []
-      addItemAmount(dd, oi.item_name, amt, resolveOrderItemVendorGroup(orderCandidates))
+      // order_items 的來源是央廚叫貨，必須先鎖定央廚配送，再解析歷史別名。
+      // 不能因名稱曾存成「上逸-滷肉」就把央廚金額灌入上逸欄位。
+      const target = resolveCentralKitchenOrderTarget(
+        String(oi.item_name ?? ''),
+        items,
+        itemNameCompatibilityKey,
+      )
+      addItemAmount(dd, target.itemName, amt, target.vendorGroup)
     }
     byDate[date] = dd
   }
