@@ -6,6 +6,36 @@ export type ExportReconciliationInput = {
   storedVariance: number | null
 }
 
+export type HistoricalExcelLedgerInput = {
+  pos: number
+  platformAmounts: number[]
+  actual: number
+  centralKitchen: number
+  itemizedCost: number
+}
+
+/**
+ * 舊版人工 Excel 每日列的固定公式。
+ *
+ * 這個函式刻意只接受帳本原始欄位，讓 tests/fixtures 裡的歷史案例能成為
+ * 獨立標準，而不是拿系統匯出的結果反過來驗證系統自己。
+ */
+export function deriveHistoricalExcelLedgerRow(input: HistoricalExcelLedgerInput) {
+  const platformTotal = input.platformAmounts.reduce((sum, amount) => sum + amount, 0)
+  const onsite = input.pos - platformTotal
+  const afterDeduct = onsite - input.itemizedCost
+  const variance = input.actual - afterDeduct - input.centralKitchen
+  const revenueCandidate = onsite + variance
+
+  return {
+    platformTotal,
+    afterDeduct,
+    onsite,
+    variance,
+    revenue: revenueCandidate > 0 ? revenueCandidate : 0,
+  }
+}
+
 /**
  * 已有結帳資料時，系統送出當下儲存的 variance 是審核依據。
  * Excel 不得因品項 mapping 暫時缺漏而重新算出另一個誤差。
@@ -19,10 +49,16 @@ export function deriveExportReconciliation(input: ExportReconciliationInput) {
     }
   }
 
-  const afterDeduct = input.onsite - input.itemizedCost
+  const historical = deriveHistoricalExcelLedgerRow({
+    pos: input.onsite,
+    platformAmounts: [],
+    actual: input.actual,
+    centralKitchen: input.centralKitchen,
+    itemizedCost: input.itemizedCost,
+  })
   return {
-    variance: input.actual - afterDeduct - input.centralKitchen,
-    afterDeduct,
+    variance: historical.variance,
+    afterDeduct: historical.afterDeduct,
   }
 }
 

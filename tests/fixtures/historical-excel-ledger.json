@@ -1,0 +1,71 @@
+[
+  {
+    "case": "巷日 2026-06-08（線上現金為負數）",
+    "source": {
+      "workbook": "2026巷日明細.xlsx",
+      "sheet": "6月食耗成本",
+      "row": 12,
+      "cells": "C12:K12,M12"
+    },
+    "input": {
+      "pos": 41055,
+      "platformAmounts": [21375, -6990],
+      "actual": 23735,
+      "centralKitchen": 14485,
+      "itemizedCost": 17400
+    },
+    "expected": {
+      "platformTotal": 14385,
+      "afterDeduct": 9270,
+      "onsite": 26670,
+      "variance": -20,
+      "revenue": 26650
+    }
+  },
+  {
+    "case": "景新 2026-01-06（兩個平台欄位）",
+    "source": {
+      "workbook": "2026景新明細.xlsx",
+      "sheet": "1月食耗成本",
+      "row": 6,
+      "cells": "C6:M6"
+    },
+    "input": {
+      "pos": 77400,
+      "platformAmounts": [25235, 12630, 0, 0],
+      "actual": 20825,
+      "centralKitchen": 33315,
+      "itemizedCost": 51980
+    },
+    "expected": {
+      "platformTotal": 37865,
+      "afterDeduct": -12445,
+      "onsite": 39535,
+      "variance": -45,
+      "revenue": 39490
+    }
+  },
+  {
+    "case": "府中 2026-01-06（一般正數平台款）",
+    "source": {
+      "workbook": "2026府中明細.xlsx",
+      "sheet": "1月食耗成本",
+      "row": 6,
+      "cells": "C6:N6"
+    },
+    "input": {
+      "pos": 129894,
+      "platformAmounts": [39451, 0, 0],
+      "actual": 70754,
+      "centralKitchen": 43415,
+      "itemizedCost": 63076
+    },
+    "expected": {
+      "platformTotal": 39451,
+      "afterDeduct": 27367,
+      "onsite": 90443,
+      "variance": -28,
+      "revenue": 90415
+    }
+  }
+]

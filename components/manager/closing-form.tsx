@@ -13,9 +13,9 @@ import { compressImage } from '@/lib/compress-image'
 import { normalizeItemAmount } from '@/lib/negative-items'
 import {
   applyPreReservedExpenseHints,
-  getPreReservedExpenseTotal,
   type PreReservedExpenseHint,
 } from '@/lib/pre-reserved-expenses'
+import { calculateClosingSummary } from '@/lib/closing-summary'
 import { findTaxAddonMapping as findTaxAddonByContext, taxAddonBaseName } from '@/lib/tax-addon'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
 import SharedSafePhotoImage from '@/components/shared/safe-photo-image'
@@ -471,54 +471,17 @@ function initLargeCashExpenses(existing: any): LargeCashExpense[] {
     .filter(item => item.amount > 0 || item.description.trim())
 }
 
-function calcSummary(data: FormData, store: Store, ckPrices: CKPrice[], totalExpenses: number, handwriteTotal: number, adjustments: RemittanceAdjustment[], reserves: ReserveItem[], largeCashExpenses: LargeCashExpense[]) {
-  const uberTotal = Object.values(data.uber_amounts).reduce((a, b) => a + b, 0)
-  // platformTotal = 全部平台名目金額（含線上點餐的「現金部分」），算進總營業額
-  const platformTotal = uberTotal + data.panda_amount + data.twpay_amount + data.online_amount
-  // platformPaid = 真的進到平台帳戶（不在收銀台現金內）的金額
-  // 線上點餐(現金) 是負數，代表「線上點餐裡有 X 元是客人付現金」，所以從 platformTotal 扣回
-  const platformPaid = platformTotal + data.online_cash_amount
-
-  const totalRevenue = store.ichef_uber_linked
-    ? data.pos_cash
-    : data.pos_cash + handwriteTotal + platformTotal
-
-  const deliveryFee = data.ck_total
-  // 應包進信封 = 總營業額 - 真實平台收款 - 現金支出
-  const shouldEnvelope = totalRevenue - platformPaid - totalExpenses
-  const netToHQ = shouldEnvelope - deliveryFee
-
-  const cashSubtotal =
-    (data.bills_1000 * 1000 + data.lump_1000) +
-    (data.bills_500  * 500  + data.lump_500)  +
-    (data.bills_100  * 100  + data.lump_100)  +
-    (data.coins_50   * 50   + data.lump_50)   +
-    (data.coins_10   * 10   + data.lump_10)   +
-    (data.coins_5    * 5    + data.lump_5)    +
-    (data.coins_1    * 1    + data.lump_1)
-  const largeExpenseTotal = largeCashExpenses.reduce((sum, item) => sum + Math.abs(item.amount || 0), 0)
-  // 現金清點、實匯入、誤差與 Excel 維持原始邏輯：大額支出一律先從今日現金扣除。
-  // 「前幾日已預留」只在最後包回 HQ 的金額加回，不改動上述原始帳務數字。
-  const preReservedExpenseTotal = getPreReservedExpenseTotal(largeCashExpenses)
-  const cashExpenseTotal = largeExpenseTotal
-  // 顧客轉帳屬於當日營業收入，但不會出現在實體現金清點中。對帳時必須先
-  // 加回，才能和包含該筆收入的應包金額比較；最後包款再由負的匯款調整扣除。
-  // 例如實體現金 118,463、顧客轉帳 2,875、零用金 50,000：
-  // 對帳實匯入為 71,338，包款階段再扣 2,875，不能在兩個階段重複扣除。
-  const customerTransferTotal = adjustments
-    .filter(item => item.type === 'customer_transfer')
-    .reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0)
-  const cashTotal = cashSubtotal - cashExpenseTotal + customerTransferTotal
-
-  const actualRemit = cashTotal - store.petty_cash
-  const variance = actualRemit - shouldEnvelope
-  const storeRevenue = totalRevenue - platformPaid
-  const adjustmentTotal = adjustments.reduce((sum, a) => sum + a.amount, 0)
-  const finalRemit = actualRemit + adjustmentTotal
-  const netVariance = finalRemit - shouldEnvelope
-  const totalReserved = reserves.reduce((sum, r) => sum + r.amount, 0)
-  const remitToHQ = finalRemit - totalReserved + preReservedExpenseTotal
-  return { totalRevenue, platformTotal, platformPaid, storeRevenue, deliveryFee, totalExpenses, shouldEnvelope, netToHQ, cashSubtotal, largeExpenseTotal, preReservedExpenseTotal, cashExpenseTotal, cashTotal, actualRemit, variance, adjustmentTotal, finalRemit, netVariance, totalReserved, remitToHQ }
+function calcSummary(data: FormData, store: Store, _ckPrices: CKPrice[], totalExpenses: number, handwriteTotal: number, adjustments: RemittanceAdjustment[], reserves: ReserveItem[], largeCashExpenses: LargeCashExpense[]) {
+  return calculateClosingSummary({
+    revenue: data,
+    store,
+    totalExpenses,
+    handwriteTotal,
+    deliveryFee: data.ck_total,
+    adjustments,
+    reserves,
+    largeCashExpenses,
+  })
 }
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
