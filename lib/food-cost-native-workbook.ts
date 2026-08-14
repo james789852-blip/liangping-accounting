@@ -526,11 +526,7 @@ export async function addFoodCostSheet(
   const numFmtForColumn = (c: ColumnDef) => c.kind === 'item' && c.index >= blankZeroFromCol ? BLANK_ZERO_NUM_FMT : ZERO_NUM_FMT
   const incomeRef = (key: string) => cols.find(c => c.incomeKey === key)?.index
   const posCol = incomeRef('pos')
-  const afterDeductCol = incomeRef('after_deduct')
-  const actualCol = incomeRef('actual')
-  const ckCol = incomeRef('ck')
   const varianceCol = incomeRef('variance')
-  const statTotalCol = cols.find(c => c.statKey === 'total')?.index
   const platformIncomeCols = cols
     .filter(c => c.kind === 'income' && (
       c.incomeKey === 'twpay' ||
@@ -750,14 +746,14 @@ export async function addFoodCostSheet(
       } else if (c.kind === 'income' && dd && c.incomeKey) {
         const platformSum = sumRefs(platformIncomeCols, rowNum)
         // 「結果」欄特殊：=0 顯示 0（不是空）、有誤差顯示紅色
-        if (c.incomeKey === 'after_deduct' && posCol && statTotalCol) {
-          cell.value = { formula: `${cellRef(posCol, rowNum)}-${cellRef(statTotalCol, rowNum)}-${platformSum}` } as any
+        if (c.incomeKey === 'after_deduct') {
+          cell.value = dd.after_deduct
           cell.numFmt = ZERO_NUM_FMT
         } else if (c.incomeKey === 'onsite' && posCol) {
           cell.value = { formula: `${cellRef(posCol, rowNum)}-${platformSum}` } as any
           cell.numFmt = ZERO_NUM_FMT
-        } else if (c.incomeKey === 'variance' && actualCol && afterDeductCol && ckCol) {
-          cell.value = { formula: `${cellRef(actualCol, rowNum)}-${cellRef(afterDeductCol, rowNum)}-${cellRef(ckCol, rowNum)}` } as any
+        } else if (c.incomeKey === 'variance') {
+          cell.value = dd.variance
           cell.numFmt = RESULT_NUM_FMT
           cell.font = { ...(cell.font as any), color: { argb: BLACK }, bold: true }
         } else if (c.incomeKey === 'revenue' && posCol && varianceCol) {

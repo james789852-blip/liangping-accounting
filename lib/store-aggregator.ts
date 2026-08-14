@@ -17,6 +17,7 @@ import { type ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { compareResolvedItemsByMappingOrder, getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 import { taxAddonBaseName } from '@/lib/tax-addon'
 import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
+import { deriveExportReconciliation, resolveOrderItemVendorGroup } from '@/lib/export-reconciliation'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -165,7 +166,7 @@ export async function getRangeStats(
       .eq('id', storeId).single(),
     getStoreItemsFromMappings(storeId),  // 跟 xlsx 匯出用同源，確保成本 category 分類一致
     admin.from('daily_closings')
-      .select('business_date, status, updated_at, actual_remit, total_revenue, total_cost, revenue_items(channel, account_name, gross_amount), order_items(item_name, total_amount)')
+      .select('business_date, status, updated_at, actual_remit, total_revenue, total_cost, variance, revenue_items(channel, account_name, gross_amount), order_items(item_name, total_amount)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay)
       .order('updated_at', { ascending: true }),
@@ -253,6 +254,7 @@ export async function getRangeStats(
       .filter((oi: any) => oi.item_name !== '央廚配送')
       .reduce((s: number, oi: any) => s + (oi.total_amount ?? 0), 0)
     dd.ck = (best.total_cost ?? 0) > 0 ? (best.total_cost ?? 0) : ckFromOrders
+    dd.variance = Number(best.variance ?? 0)
     dd.totalRevenue = best.total_revenue ?? 0
     dd.closingStatus = (best.status ?? 'none') as DailyStats['closingStatus']
     for (const rv of (best.revenue_items ?? []) as any[]) {
@@ -275,8 +277,10 @@ export async function getRangeStats(
       if (oi.item_name === '央廚配送') continue
       const amt = oi.total_amount ?? 0
       if (!amt) continue
-      // order_items 全部來自央廚配送流程；保留廠商分類，避免同名一般廠商品項被誤填。
-      addItemAmount(dd, oi.item_name, amt, '央廚配送')
+      // 優先放入央廚配送欄；若舊設定只有一個同名欄位，使用該欄，
+      // 避免像「油蔥酥」有金額但因分類不同而從 Excel 明細消失。
+      const orderCandidates = itemCandidates.get(itemNameCompatibilityKey(String(oi.item_name ?? ''))) ?? []
+      addItemAmount(dd, oi.item_name, amt, resolveOrderItemVendorGroup(orderCandidates))
     }
     byDate[date] = dd
   }
@@ -424,11 +428,17 @@ export async function getRangeStats(
       : dd.pos
     ) + dd.handwriteTotal
 
-    // Step 3: 扣除後 = 現場 − 總成本
-    dd.after_deduct = dd.onsite - dd.totalCost
-
-    // Step 4: 結果 = 實際 − 扣除後 − 配送
-    dd.variance = dd.actual - dd.after_deduct - dd.ck
+    // Step 3/4：已有結帳時，以送出當下儲存的誤差為審核依據。
+    // 品項 mapping 即使暫時缺漏，也不能讓 Excel 顯示出另一個誤差。
+    const reconciliation = deriveExportReconciliation({
+      actual: dd.actual,
+      centralKitchen: dd.ck,
+      onsite: dd.onsite,
+      itemizedCost: dd.totalCost,
+      storedVariance: dd.closingStatus === 'none' ? null : dd.variance,
+    })
+    dd.after_deduct = reconciliation.afterDeduct
+    dd.variance = reconciliation.variance
 
     // Step 5: 營業額以 daily_closings.total_revenue 為準；沒有時才用通路加總補齊。
     dd.revenue = getDisplayPosTotal(dd, store)
