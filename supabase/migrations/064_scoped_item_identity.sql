@@ -1,5 +1,7 @@
 -- 品項不可只用品名識別。同名品項必須由「店家 + 廠商分類 + mapping id」區分。
 
+BEGIN;
+
 ALTER TABLE public.receipt_items
   ADD COLUMN IF NOT EXISTS item_mapping_id uuid REFERENCES public.item_column_mappings(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS vendor_group_snapshot text;
@@ -12,6 +14,21 @@ CREATE INDEX IF NOT EXISTS idx_receipt_items_mapping_id
   ON public.receipt_items(item_mapping_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_mapping_id
   ON public.order_items(item_mapping_id);
+
+-- 歷史資料可能已送出／審核；只在本次管理員遷移交易中暫停鎖定 trigger。
+-- 交易成功或失敗後都不會留下停用狀態。
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgrelid = 'public.receipt_items'::regclass
+      AND tgname = 'trg_prevent_locked_receipt_item_mutation'
+      AND NOT tgisinternal
+  ) THEN
+    EXECUTE 'ALTER TABLE public.receipt_items DISABLE TRIGGER trg_prevent_locked_receipt_item_mutation';
+  END IF;
+END;
+$$;
 
 -- 一般單據：只在「同店 + 同分類 + 同品名」完全吻合時回填 mapping。
 UPDATE public.receipt_items ri
@@ -54,6 +71,19 @@ WHERE oi.closing_id = dc.id
       AND regexp_replace(lower(oi.item_name), '[[:space:]　()（）\-－—–_]', '', 'g') IN ('油蔥', '油蔥酥')
     )
   );
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgrelid = 'public.receipt_items'::regclass
+      AND tgname = 'trg_prevent_locked_receipt_item_mutation'
+      AND NOT tgisinternal
+  ) THEN
+    EXECUTE 'ALTER TABLE public.receipt_items ENABLE TRIGGER trg_prevent_locked_receipt_item_mutation';
+  END IF;
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION public.enforce_receipt_item_identity()
 RETURNS trigger
@@ -179,3 +209,5 @@ COMMENT ON COLUMN public.receipt_items.item_mapping_id IS '不可變的品項對
 COMMENT ON COLUMN public.receipt_items.vendor_group_snapshot IS '建立帳目當下的廠商分類快照';
 COMMENT ON COLUMN public.order_items.item_mapping_id IS '央廚叫貨對應的店家品項 mapping id';
 COMMENT ON COLUMN public.order_items.vendor_group_snapshot IS '央廚來源分類快照，固定為央廚配送';
+
+COMMIT;

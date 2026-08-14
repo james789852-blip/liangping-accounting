@@ -8,7 +8,6 @@ import { createClient } from '@/lib/supabase/client'
 import ClosingHelp from './closing-help'
 import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn, PiggyBank } from 'lucide-react'
 import { saveCashCounts, submitClosing, savePettyCounts } from '@/app/actions/closings'
-import { syncStoreCKOrder } from '@/app/actions/ck'
 import { createSignedUploadUrl, uploadToStorage } from '@/app/actions/upload'
 import { compressImage } from '@/lib/compress-image'
 import { normalizeItemAmount } from '@/lib/negative-items'
@@ -1758,7 +1757,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // 同一份表單在逐步導覽時不需要重複寫入。完整簽章包含明細內容，不能只比總額，
   // 否則「品項不同但合計相同」會被誤判為沒有變更。
   const lastSavedDraftSignatureRef = useRef<string | null>(null)
-  const lastSyncedCKTotalRef = useRef<number | null>(null)
   useEffect(() => () => {
     if (backgroundSaveTimerRef.current) clearTimeout(backgroundSaveTimerRef.current)
   }, [])
@@ -3189,14 +3187,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           if (hwItems.length > 0) await supabase.from('handwrite_orders').insert(hwItems)
         })(),
       ])
-      // 同步央廚叫貨金額到央廚每日記錄；必須等待完成，不能讓總公司讀到舊副本。
-      // 使用 closing 實際保存的 total_cost，兼容舊資料仍由 deliveryFee 帶入的情況。
-      const ckTotalToSync = Number(payload.total_cost) || 0
-      if (lastSyncedCKTotalRef.current !== ckTotalToSync) {
-        const ckSyncResult = await syncStoreCKOrder(store.id, today, ckTotalToSync)
-        if (ckSyncResult.error) throw new Error(`央廚叫貨同步失敗：${ckSyncResult.error}`)
-        lastSyncedCKTotalRef.current = ckTotalToSync
-      }
       try {
         if (hwItems.length > 0) localStorage.setItem(handwriteOrdersLsKey, JSON.stringify(currentHandwriteOrders))
         else localStorage.removeItem(handwriteOrdersLsKey)

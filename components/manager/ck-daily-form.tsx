@@ -15,70 +15,47 @@ import SafePhotoImage from '@/components/shared/safe-photo-image'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
-/**
- * 央廚對帳列：顯示店家自報金額 + 央廚自輸入金額 + 比對狀態
- * 不一致時紅色警告，相符顯示綠色 ✓
- */
-function CrossCheckRow({ order, value, onChange, disabled }: {
+/** 央廚帳目只記錄央廚自行確認的各店金額。 */
+function MemberAmountRow({ order, value, onChange, disabled }: {
   order: MemberOrder
   value: string
   onChange: (value: string) => void
   disabled: boolean
 }) {
-  const storeAmount = order.amount || 0
-  const isConfirmed = value.trim() !== ''
-  const ckAmount = isConfirmed ? Number(value) || 0 : 0
-  const matched = isConfirmed && ckAmount === storeAmount
-  const diff = isConfirmed ? (ckAmount - storeAmount) : 0
+  const hasAmount = value.trim() !== ''
 
   return (
     <div className="px-4 py-3" style={{ borderBottom: '1px solid #f9f9f9' }}>
-      {/* 店家名稱 + 狀態 */}
       <div className="flex items-center gap-2 mb-2">
         <span className="text-sm font-semibold flex-1" style={{ color: '#18181b' }}>{order.store_name}</span>
-        {!order.submitted ? (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
-            style={{ background: '#f4f4f5', color: '#a1a1aa' }}>店家未送出</span>
-        ) : matched ? (
+        {hasAmount ? (
           <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex items-center gap-1"
             style={{ background: '#d1fae5', color: '#047857' }}>
-            <CheckCircle2 className="h-3 w-3" />對帳完成
+            <CheckCircle2 className="h-3 w-3" />已填寫
           </span>
-        ) : isConfirmed ? (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
-            style={{ background: '#ffe4e6', color: '#be123c' }}>⚠ 差 {diff > 0 ? '+' : ''}{fmt(diff)}</span>
         ) : (
           <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
-            style={{ background: '#fef3c7', color: '#92400e' }}>待對帳</span>
+            style={{ background: '#f4f4f5', color: '#71717a' }}>待填寫</span>
         )}
       </div>
 
-      {/* 兩欄並列：店家自報 vs 央廚對帳 */}
-      <div className="grid grid-cols-2 gap-2 text-sm">
-        <div className="rounded-lg px-3 py-2" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
-          <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#a1a1aa' }}>店家自報</p>
-          <p className="font-bold tabular-nums" style={{ color: storeAmount > 0 ? '#18181b' : '#d4d4d8' }}>
-            {storeAmount > 0 ? `$${fmt(storeAmount)}` : '—'}
-          </p>
-        </div>
-        <div className="rounded-lg px-3 py-2" style={{ background: matched ? '#d1fae5' : isConfirmed ? '#ffe4e6' : '#fef3c7', border: '1px solid #f4f4f5' }}>
-          <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#a1a1aa' }}>央廚自報</p>
-          <div className="flex items-center gap-1">
-            <span className="text-sm font-bold" style={{ color: '#52525b' }}>$</span>
-            <input
-              type="number" inputMode="numeric" placeholder="輸入"
-              value={value} onChange={e => onChange(e.target.value)}
-              disabled={disabled}
-              style={{ width: '100%', padding: '2px 4px', border: 'none', background: 'transparent', fontSize: 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}
-            />
-          </div>
+      <div className="rounded-lg px-3 py-2 text-sm" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+        <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#92400E' }}>央廚帳目金額</p>
+        <div className="flex items-center gap-1">
+          <span className="text-sm font-bold" style={{ color: '#52525b' }}>$</span>
+          <input
+            type="number" inputMode="numeric" placeholder="請輸入央廚金額"
+            value={value} onChange={e => onChange(e.target.value)}
+            disabled={disabled}
+            style={{ width: '100%', padding: '2px 4px', border: 'none', background: 'transparent', fontSize: 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}
+          />
         </div>
       </div>
     </div>
   )
 }
 
-interface MemberOrder { store_id: string; store_name: string; amount: number; submitted: boolean; confirmed_amount?: number | null }
+interface MemberOrder { store_id: string; store_name: string; confirmed_amount?: number | null }
 interface ExternalStore { id: string; name: string }
 interface ExternalOrder { name: string; amount: number }
 interface Expense { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string; vendor_group: string; doc_type: string; note: string; receipt_photo_url?: string }
@@ -1318,7 +1295,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
               <p className="px-4 py-4 text-sm text-center" style={{ color: '#a1a1aa' }}>尚未設定服務店家</p>
             ) : (
               memberOrders.map(o => (
-                <CrossCheckRow key={o.store_id}
+                <MemberAmountRow key={o.store_id}
                   order={o}
                   value={memberOrderInputs[o.store_id] ?? ''}
                   onChange={value => setMemberOrderInputs(prev => ({ ...prev, [o.store_id]: value }))}

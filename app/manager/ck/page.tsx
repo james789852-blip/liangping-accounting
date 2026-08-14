@@ -8,7 +8,7 @@ import CKDailyForm from '@/components/manager/ck-daily-form'
 import { sortStores } from '@/lib/store-order'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
 import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment'
-import { storeReportedAmountsFromClosings } from '@/lib/ck-store-reporting'
+import { confirmedMemberAmountMap } from '@/lib/ck-member-amounts'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,7 +61,6 @@ export default async function CKPage({
     { data: assignedStores },
     { data: externalStores },
     { data: ckRecord },
-    { data: todayClosings },
     { data: ckVendorGroups },
     { data: rawMappings },
     reimbursementAdjustments,
@@ -75,12 +74,6 @@ export default async function CKPage({
       .eq('ck_store_id', storeId)
       .eq('business_date', today)
       .maybeSingle(),
-    assignedStoreIds.length > 0
-      ? supabase.from('daily_closings')
-          .select('store_id, status, updated_at, total_cost, order_items(total_amount)')
-          .in('store_id', assignedStoreIds)
-          .eq('business_date', today)
-      : Promise.resolve({ data: [] }),
     admin.from('ck_vendor_groups')
       .select('id, name, doc_type').eq('ck_store_id', storeId).eq('active', true)
       .order('sort_order').order('name'),
@@ -103,18 +96,8 @@ export default async function CKPage({
   // 收據類別（跟店面版一致的 UI）
   const receiptCategories = await getReceiptSettings(storeId)
 
-  // 哪些店已送出今日結帳
-  const submittedStores = new Set(
-    (todayClosings ?? [])
-      .filter((c: any) => ['submitted', 'verified'].includes(c.status))
-      .map((c: any) => c.store_id as string)
-  )
-  // 店家自報以 daily_closings 為正式來源；ck_store_orders.amount 只是同步副本，
-  // 不可因店家同時出現在多個央廚設定中而顯示成 0。
-  const storeReportedAmountMap = storeReportedAmountsFromClosings((todayClosings ?? []) as any[])
   // 體系內叫貨 + 支出，從 ck_daily_record 載入
-  let memberOrderMap: Record<string, number> = {}
-  let memberConfirmedMap: Record<string, number | null> = {}  // 央廚對帳金額
+  let memberConfirmedMap: Record<string, number | null> = {}  // 央廚輸入金額
   let existing: {
     id: string
     payer_name?: string
@@ -142,7 +125,7 @@ export default async function CKPage({
       { data: extOrders },
       { data: expenseItems },
     ] = await Promise.all([
-      admin.from('ck_store_orders').select('store_id, amount, ck_confirmed_amount')
+      admin.from('ck_store_orders').select('store_id, ck_confirmed_amount')
         .eq('ck_daily_record_id', ckRecord.id).not('store_id', 'is', null),
       admin.from('ck_store_orders').select('external_store_name, amount')
         .eq('ck_daily_record_id', ckRecord.id).is('store_id', null),
@@ -150,12 +133,10 @@ export default async function CKPage({
         .eq('ck_daily_record_id', ckRecord.id).order('sort_order'),
     ])
 
-    for (const o of ((storeOrders ?? []) as any[])) {
-      if (o.store_id) {
-        memberOrderMap[o.store_id] = o.amount
-        memberConfirmedMap[o.store_id] = (o.ck_confirmed_amount as number | null) ?? null
-      }
-    }
+    memberConfirmedMap = confirmedMemberAmountMap((storeOrders ?? []) as {
+      store_id: string | null
+      ck_confirmed_amount: number | null
+    }[])
 
     existing = {
       id: ckRecord.id,
@@ -195,9 +176,7 @@ export default async function CKPage({
   const memberOrders = sortStores((assignedStores ?? []) as { id: string; name: string }[]).map((s: any) => ({
     store_id: s.id as string,
     store_name: s.name as string,
-    amount: storeReportedAmountMap[s.id] ?? memberOrderMap[s.id] ?? 0,
     confirmed_amount: memberConfirmedMap[s.id] ?? null,
-    submitted: submittedStores.has(s.id),
   }))
 
   return (

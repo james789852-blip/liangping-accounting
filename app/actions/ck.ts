@@ -31,9 +31,7 @@ export async function syncCKMonthToSheets(_ckStoreId: string, _month: string) {
   return { error: 'Google Sheets 同步已停用' as const }
 }
 
-// ──────────────────────────────────────────────────────
-// 央廚交叉對帳：央廚管理人員輸入該店配送金額，與店家自報比對
-// ──────────────────────────────────────────────────────
+// 央廚管理人員輸入各店配送金額。
 export async function confirmCKOrder(input: {
   ckDailyRecordId: string
   storeId: string
@@ -62,91 +60,6 @@ export async function confirmCKOrder(input: {
       .eq('ck_daily_record_id', input.ckDailyRecordId)
       .eq('store_id', input.storeId)
   }
-  revalidatePath('/manager/ck')
-  revalidatePath('/hq/ck')
-  return { success: true }
-}
-
-// 同步店面央廚叫貨金額 → ck_store_orders
-export async function syncStoreCKOrder(storeId: string, date: string, amount: number) {
-  const ctx = await getAuthContext()
-  if (!ctx) return { error: '未登入' }
-  if (!canAccessStore(ctx, storeId)) return { error: '無權限存取此店家' }
-
-  const admin = createAdminClient()
-
-  // 找這間店屬於哪間央廚
-  const { data: ckStores, error: ckStoreErr } = await admin
-    .from('stores')
-    .select('id')
-    .eq('type', '央廚')
-    .eq('active', true)
-    .contains('assigned_store_ids', [storeId])
-
-  if (ckStoreErr) return { error: ckStoreErr.message }
-  if (!ckStores?.length) return { success: true }
-
-  // 金額清空時只清除店面自報金額，不可刪掉央廚已完成的確認。
-  // 店面可能先自動儲存 $0，稍後才輸入叫貨；若整列刪除，
-  // 會連 ck_confirmed_amount 一起消失，造成總公司誤顯示「央廚未輸入」。
-  if (amount <= 0) {
-    for (const ckStore of ckStores) {
-      const { data: existingRecord, error: existingRecordErr } = await admin
-        .from('ck_daily_records')
-        .select('id')
-        .eq('ck_store_id', ckStore.id)
-        .eq('business_date', date)
-        .maybeSingle()
-      if (existingRecordErr) return { error: existingRecordErr.message }
-
-      if (existingRecord) {
-        const { data: existingOrder, error: orderLookupErr } = await admin.from('ck_store_orders')
-          .select('id, ck_confirmed_amount')
-          .eq('ck_daily_record_id', existingRecord.id)
-          .eq('store_id', storeId)
-          .maybeSingle()
-        if (orderLookupErr) return { error: orderLookupErr.message }
-
-        if (existingOrder?.ck_confirmed_amount != null) {
-          const { error: clearAmountErr } = await admin.from('ck_store_orders')
-            .update({ amount: 0 })
-            .eq('id', existingOrder.id)
-          if (clearAmountErr) return { error: clearAmountErr.message }
-        } else if (existingOrder) {
-          const { error: deleteErr } = await admin.from('ck_store_orders')
-            .delete()
-            .eq('id', existingOrder.id)
-          if (deleteErr) return { error: deleteErr.message }
-        }
-      }
-    }
-
-    revalidatePath('/manager/ck')
-    revalidatePath('/hq/ck')
-    return { success: true }
-  }
-
-  // 同一店若出現在多個央廚的服務清單，每一個央廚頁都必須看到同一份
-  // 店家自報；不可依資料庫回傳順序只同步第一間。
-  for (const ckStore of ckStores) {
-    const { data: record, error: recErr } = await admin
-      .from('ck_daily_records')
-      .upsert(
-        { ck_store_id: ckStore.id, business_date: date, updated_at: new Date().toISOString() },
-        { onConflict: 'ck_store_id,business_date' }
-      )
-      .select('id')
-      .single()
-    if (recErr || !record) return { error: recErr?.message ?? '無法建立央廚每日記錄' }
-
-    const { error: orderErr } = await admin.from('ck_store_orders')
-      .upsert(
-        { ck_daily_record_id: record.id, store_id: storeId, amount },
-        { onConflict: 'ck_daily_record_id,store_id' }
-      )
-    if (orderErr) return { error: orderErr.message }
-  }
-
   revalidatePath('/manager/ck')
   revalidatePath('/hq/ck')
   return { success: true }
@@ -209,23 +122,9 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
     }
   }
 
-  // 體系內店家叫貨：央廚自報金額寫入 ck_confirmed_amount，店家自報 amount 保留供隔日對帳
+  // 體系內店家叫貨只保存央廚輸入金額；amount 不再存放店家自報。
   if (data.memberOrders !== undefined) {
     const cleaned = data.memberOrders.filter(o => o.storeId)
-    const storeIds = cleaned.map(o => o.storeId)
-    const existingAmountByStore: Record<string, number> = {}
-
-    if (storeIds.length > 0) {
-      const { data: existingOrders, error: existingErr } = await admin
-        .from('ck_store_orders')
-        .select('store_id, amount')
-        .eq('ck_daily_record_id', recordId)
-        .in('store_id', storeIds)
-      if (existingErr) return { error: existingErr.message }
-      for (const row of existingOrders ?? []) {
-        existingAmountByStore[row.store_id as string] = Number(row.amount ?? 0)
-      }
-    }
 
     const clearIds = cleaned
       .filter(o => o.confirmedAmount === null)
@@ -244,7 +143,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
       .map(o => ({
         ck_daily_record_id: recordId,
         store_id: o.storeId,
-        amount: existingAmountByStore[o.storeId] ?? 0,
+        amount: 0,
         ck_confirmed_amount: o.confirmedAmount,
         ck_confirmed_at: new Date().toISOString(),
         ck_confirmed_by: ctx.userId,
