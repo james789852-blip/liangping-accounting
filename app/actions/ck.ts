@@ -85,38 +85,39 @@ export async function syncStoreCKOrder(storeId: string, date: string, amount: nu
 
   if (ckStoreErr) return { error: ckStoreErr.message }
   if (!ckStores?.length) return { success: true }
-  const ckStoreId = ckStores[0].id
 
   // 金額清空時只清除店面自報金額，不可刪掉央廚已完成的確認。
   // 店面可能先自動儲存 $0，稍後才輸入叫貨；若整列刪除，
   // 會連 ck_confirmed_amount 一起消失，造成總公司誤顯示「央廚未輸入」。
   if (amount <= 0) {
-    const { data: existingRecord, error: existingRecordErr } = await admin
-      .from('ck_daily_records')
-      .select('id')
-      .eq('ck_store_id', ckStoreId)
-      .eq('business_date', date)
-      .maybeSingle()
-    if (existingRecordErr) return { error: existingRecordErr.message }
-
-    if (existingRecord) {
-      const { data: existingOrder, error: orderLookupErr } = await admin.from('ck_store_orders')
-        .select('id, ck_confirmed_amount')
-        .eq('ck_daily_record_id', existingRecord.id)
-        .eq('store_id', storeId)
+    for (const ckStore of ckStores) {
+      const { data: existingRecord, error: existingRecordErr } = await admin
+        .from('ck_daily_records')
+        .select('id')
+        .eq('ck_store_id', ckStore.id)
+        .eq('business_date', date)
         .maybeSingle()
-      if (orderLookupErr) return { error: orderLookupErr.message }
+      if (existingRecordErr) return { error: existingRecordErr.message }
 
-      if (existingOrder?.ck_confirmed_amount != null) {
-        const { error: clearAmountErr } = await admin.from('ck_store_orders')
-          .update({ amount: 0 })
-          .eq('id', existingOrder.id)
-        if (clearAmountErr) return { error: clearAmountErr.message }
-      } else if (existingOrder) {
-        const { error: deleteErr } = await admin.from('ck_store_orders')
-          .delete()
-          .eq('id', existingOrder.id)
-        if (deleteErr) return { error: deleteErr.message }
+      if (existingRecord) {
+        const { data: existingOrder, error: orderLookupErr } = await admin.from('ck_store_orders')
+          .select('id, ck_confirmed_amount')
+          .eq('ck_daily_record_id', existingRecord.id)
+          .eq('store_id', storeId)
+          .maybeSingle()
+        if (orderLookupErr) return { error: orderLookupErr.message }
+
+        if (existingOrder?.ck_confirmed_amount != null) {
+          const { error: clearAmountErr } = await admin.from('ck_store_orders')
+            .update({ amount: 0 })
+            .eq('id', existingOrder.id)
+          if (clearAmountErr) return { error: clearAmountErr.message }
+        } else if (existingOrder) {
+          const { error: deleteErr } = await admin.from('ck_store_orders')
+            .delete()
+            .eq('id', existingOrder.id)
+          if (deleteErr) return { error: deleteErr.message }
+        }
       }
     }
 
@@ -125,24 +126,26 @@ export async function syncStoreCKOrder(storeId: string, date: string, amount: nu
     return { success: true }
   }
 
-  // upsert 央廚每日主記錄
-  const { data: record, error: recErr } = await admin
-    .from('ck_daily_records')
-    .upsert(
-      { ck_store_id: ckStoreId, business_date: date, updated_at: new Date().toISOString() },
-      { onConflict: 'ck_store_id,business_date' }
-    )
-    .select('id')
-    .single()
-  if (recErr || !record) return { error: recErr?.message ?? '無法建立央廚每日記錄' }
+  // 同一店若出現在多個央廚的服務清單，每一個央廚頁都必須看到同一份
+  // 店家自報；不可依資料庫回傳順序只同步第一間。
+  for (const ckStore of ckStores) {
+    const { data: record, error: recErr } = await admin
+      .from('ck_daily_records')
+      .upsert(
+        { ck_store_id: ckStore.id, business_date: date, updated_at: new Date().toISOString() },
+        { onConflict: 'ck_store_id,business_date' }
+      )
+      .select('id')
+      .single()
+    if (recErr || !record) return { error: recErr?.message ?? '無法建立央廚每日記錄' }
 
-  // upsert 店家叫貨
-  const { error: orderErr } = await admin.from('ck_store_orders')
-    .upsert(
-      { ck_daily_record_id: record.id, store_id: storeId, amount },
-      { onConflict: 'ck_daily_record_id,store_id' }
-    )
-  if (orderErr) return { error: orderErr.message }
+    const { error: orderErr } = await admin.from('ck_store_orders')
+      .upsert(
+        { ck_daily_record_id: record.id, store_id: storeId, amount },
+        { onConflict: 'ck_daily_record_id,store_id' }
+      )
+    if (orderErr) return { error: orderErr.message }
+  }
 
   revalidatePath('/manager/ck')
   revalidatePath('/hq/ck')

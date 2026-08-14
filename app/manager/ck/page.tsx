@@ -8,6 +8,7 @@ import CKDailyForm from '@/components/manager/ck-daily-form'
 import { sortStores } from '@/lib/store-order'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
 import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment'
+import { storeReportedAmountsFromClosings } from '@/lib/ck-store-reporting'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,7 +77,7 @@ export default async function CKPage({
       .maybeSingle(),
     assignedStoreIds.length > 0
       ? supabase.from('daily_closings')
-          .select('store_id, status')
+          .select('store_id, status, updated_at, total_cost, order_items(total_amount)')
           .in('store_id', assignedStoreIds)
           .eq('business_date', today)
       : Promise.resolve({ data: [] }),
@@ -108,6 +109,9 @@ export default async function CKPage({
       .filter((c: any) => ['submitted', 'verified'].includes(c.status))
       .map((c: any) => c.store_id as string)
   )
+  // 店家自報以 daily_closings 為正式來源；ck_store_orders.amount 只是同步副本，
+  // 不可因店家同時出現在多個央廚設定中而顯示成 0。
+  const storeReportedAmountMap = storeReportedAmountsFromClosings((todayClosings ?? []) as any[])
   // 體系內叫貨 + 支出，從 ck_daily_record 載入
   let memberOrderMap: Record<string, number> = {}
   let memberConfirmedMap: Record<string, number | null> = {}  // 央廚對帳金額
@@ -191,7 +195,7 @@ export default async function CKPage({
   const memberOrders = sortStores((assignedStores ?? []) as { id: string; name: string }[]).map((s: any) => ({
     store_id: s.id as string,
     store_name: s.name as string,
-    amount: memberOrderMap[s.id] ?? 0,
+    amount: storeReportedAmountMap[s.id] ?? memberOrderMap[s.id] ?? 0,
     confirmed_amount: memberConfirmedMap[s.id] ?? null,
     submitted: submittedStores.has(s.id),
   }))
