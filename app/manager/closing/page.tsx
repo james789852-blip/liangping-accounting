@@ -73,7 +73,7 @@ export default async function ClosingPage({
       .maybeSingle(),
     supabase
       .from('receipts')
-      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount)')
+      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount, item_mapping_id, vendor_group_snapshot)')
       .eq('store_id', storeId)
       .eq('business_date', today)
       .order('created_at'),
@@ -143,7 +143,8 @@ export default async function ClosingPage({
     ? toMappingColumns(mappingBasedItems)
     : newItems.length > 0
     ? toMappingColumns(newItems)
-    : (mappingRows ?? []).map((r: { item_name: string; item_category: string; vendor_group: string | null; excel_column: string; doc_type_override: string | null }) => ({
+    : (mappingRows ?? []).map((r: { id: string; item_name: string; item_category: string; vendor_group: string | null; excel_column: string; doc_type_override: string | null }) => ({
+        mapping_id: r.id,
         name: r.item_name,
         category: r.item_category,
         vendor_group: r.vendor_group ?? undefined,

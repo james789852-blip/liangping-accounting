@@ -27,8 +27,38 @@ export function deriveExportReconciliation(input: ExportReconciliationInput) {
 }
 
 type ExportItemCandidate = {
+  id?: string
+  mapping_id?: string
   name: string
   vendor_group?: string | null
+}
+
+/**
+ * 帳目品項的正式識別順序：mapping id > 分類快照 + 品名。
+ * 若同名候選仍超過一筆就回傳 undefined，禁止猜第一筆。
+ */
+export function resolveScopedItemIdentity<T extends ExportItemCandidate>(
+  input: {
+    mappingId?: string | null
+    vendorGroup?: string | null
+    itemName: string
+  },
+  candidates: T[],
+  compatibilityKey: (value: string | null | undefined) => string,
+): T | undefined {
+  if (input.mappingId) {
+    const byId = candidates.find(candidate =>
+      candidate.mapping_id === input.mappingId || candidate.id === input.mappingId,
+    )
+    if (byId && (!input.vendorGroup || byId.vendor_group === input.vendorGroup)) return byId
+    return undefined
+  }
+
+  const compatible = candidates.filter(candidate =>
+    compatibilityKey(candidate.name) === compatibilityKey(input.itemName)
+    && (!input.vendorGroup || candidate.vendor_group === input.vendorGroup),
+  )
+  return compatible.length === 1 ? compatible[0] : undefined
 }
 
 /**

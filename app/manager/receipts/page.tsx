@@ -58,17 +58,17 @@ export default async function ReceiptsPage() {
     ? [[], { data: [] }] as const
     : await Promise.all([
         getStoreItemsResolved(storeId),
-        admin.from('item_column_mappings').select('item_name, excel_column, item_category, vendor_group').eq('store_id', storeId),
+        admin.from('item_column_mappings').select('id, item_name, excel_column, item_category, vendor_group').eq('store_id', storeId),
       ])
 
   // 優先用 mapping-based（跟 xlsx 匯出同源）→ newItems → 舊 mapping
   // 保留同名但不同廠商分類的品項（例如「免洗｜酒精」與「日常用品｜酒精」），
   // 不再用 item_name 當 object key 造成其中一筆被覆蓋。
   const mappings = mappingBasedItems.length > 0
-    ? mappingBasedItems.map(i => ({ item_name: i.name, excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group }))
+    ? mappingBasedItems.map(i => ({ id: i.mapping_id, item_name: i.name, excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group }))
     : newItems.length > 0
-    ? newItems.map(i => ({ item_name: i.name, excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group }))
-    : (mappingRows ?? []).map(r => ({ item_name: r.item_name, excel_column: r.excel_column, item_category: r.item_category, vendor_group: r.vendor_group ?? null }))
+    ? newItems.map(i => ({ id: i.mapping_id, item_name: i.name, excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group }))
+    : (mappingRows ?? []).map(r => ({ id: r.id, item_name: r.item_name, excel_column: r.excel_column, item_category: r.item_category, vendor_group: r.vendor_group ?? null }))
 
   return (
     <ReceiptsClient

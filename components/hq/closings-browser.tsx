@@ -263,12 +263,12 @@ function ReviewPanel({ closingId, status, canReview }: { closingId: string; stat
 
   return (
     <div className="flex gap-2 flex-wrap">
-      {(status === 'submitted' || status === 'disputed') && (
+      {status === 'submitted' && (
         <button disabled={loading} onClick={handleVerify}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
           style={{ background: 'linear-gradient(135deg,#10b981,#059669)', opacity: loading ? 0.5 : 1 }}>
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-          {status === 'disputed' ? '重新核准' : '核准'}
+          核准
         </button>
       )}
       <button disabled={loading} onClick={() => setMode('dispute')}

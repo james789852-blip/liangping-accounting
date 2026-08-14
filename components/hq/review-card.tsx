@@ -726,7 +726,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
         )}
 
         {/* 操作按鈕 */}
-        {canReview && (closing.status === 'submitted' || closing.status === 'disputed') && (
+        {canReview && closing.status === 'submitted' && (
           <button type="button" onClick={openReview} className="w-full py-3 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg,#f59e0b,#f97316)', boxShadow: '0 3px 10px rgba(245,158,11,0.22)' }}>
             <Camera className="h-4 w-4" />{reviewedCount > 0 && !reviewComplete ? `繼續核對（剩 ${allPhotos.length - reviewedCount} 張）` : '開始核對'}
           </button>

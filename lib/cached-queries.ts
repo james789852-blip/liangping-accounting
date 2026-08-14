@@ -89,7 +89,7 @@ export async function getCachedStoreMappings(storeId: string) {
       const admin = createAdminClient()
       const { data } = await admin
         .from('item_column_mappings')
-        .select('item_name, item_category, vendor_group, excel_column, doc_type_override')
+        .select('id, item_name, item_category, vendor_group, excel_column, doc_type_override')
         .eq('store_id', storeId)
       return data ?? []
     },

@@ -5,6 +5,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 export interface ResolvedStoreItem {
   /** 品項唯一識別（store-side：可能是 system_item.id 或 store_item.id） */
   id: string
+  /** item_column_mappings.id；只有 mapping-based 資料源會提供 */
+  mapping_id?: string
   /** 顯示名稱（內建用 system_items.name；自訂用 store_items.custom_name） */
   name: string
   /** 食材 / 耗材 / 雜項 */
@@ -114,12 +116,12 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
     })
   }
 
-  // 合併 + dedup by name（同名保留第一個，通常是店家 override 或第一個 vg 命中的）
-  // 避免 system_items 有多筆同名不同 vg 都 active 造成下拉重複顯示
+  // 同名但不同廠商分類是不同品項，不可只用品名去重。
   const merged = [...enabledSys, ...customs]
   const byName = new Map<string, ResolvedStoreItem>()
   for (const it of merged) {
-    if (!byName.has(it.name)) byName.set(it.name, it)
+    const scopedKey = `${it.vendor_group_id ?? it.vendor_group}||${it.name}`
+    if (!byName.has(scopedKey)) byName.set(scopedKey, it)
   }
   return [...byName.values()].sort((a, b) => a.sort_order - b.sort_order)
 }
@@ -127,6 +129,7 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
 /** 把 ResolvedStoreItem[] 轉成 closing-form 期待的 mappingColumns 格式 */
 export function toMappingColumns(items: ResolvedStoreItem[]) {
   return items.map(i => ({
+    mapping_id: i.mapping_id,
     name: i.name,
     category: i.category,
     vendor_group: i.vendor_group,

@@ -1,7 +1,15 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { NextRequest, NextResponse } from 'next/server'
+import { canAccessStore, getAuthContext } from '@/lib/permissions'
+import {
+  extractTrustedReceiptPath,
+  isAllowedImageMimeType,
+  parseStorageTarget,
+} from '@/lib/upload-security'
 
 let genAI: GoogleGenerativeAI
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024
+const IMAGE_FETCH_TIMEOUT_MS = 15_000
 
 const RECEIPT_PROMPT = `分析這張收據、發票、估價單或送貨單照片，回傳 JSON（只回傳 JSON，不要任何說明文字）：
 {
@@ -45,18 +53,44 @@ const CHANNEL_PROMPT = `分析這張外送平台或 POS 系統截圖，找出今
 
 export async function POST(req: NextRequest) {
   try {
+    const ctx = await getAuthContext()
+    if (!ctx) return NextResponse.json({ error: '未登入' }, { status: 401 })
+
     const apiKey = process.env.GOOGLE_GEMINI_API_KEY
     if (!apiKey) return NextResponse.json({ error: '未設定 GOOGLE_GEMINI_API_KEY' }, { status: 500 })
     genAI = new GoogleGenerativeAI(apiKey)
 
-    const { imageUrl, type = 'receipt' } = await req.json()
+    const body = await req.json().catch(() => null) as { imageUrl?: unknown; type?: unknown } | null
+    const imageUrl = typeof body?.imageUrl === 'string' ? body.imageUrl : ''
+    const type = body?.type === 'channel' ? 'channel' : 'receipt'
     if (!imageUrl) return NextResponse.json({ error: '缺少圖片網址' }, { status: 400 })
 
-    const imageRes = await fetch(imageUrl)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    if (!supabaseUrl) return NextResponse.json({ error: '伺服器儲存設定不完整' }, { status: 500 })
+    const trustedPath = extractTrustedReceiptPath(imageUrl, supabaseUrl)
+    const target = trustedPath ? parseStorageTarget('receipts', trustedPath) : null
+    if (!target || !canAccessStore(ctx, target.storeId)) {
+      return NextResponse.json({ error: '圖片網址不合法或無權限存取此店家圖片' }, { status: 403 })
+    }
+
+    const imageRes = await fetch(imageUrl, {
+      redirect: 'error',
+      signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
+    })
     if (!imageRes.ok) return NextResponse.json({ error: '無法讀取圖片' }, { status: 400 })
+    const mimeType = imageRes.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() ?? ''
+    if (!isAllowedImageMimeType(mimeType)) {
+      return NextResponse.json({ error: '不支援的圖片格式' }, { status: 400 })
+    }
+    const declaredSize = Number(imageRes.headers.get('content-length') ?? 0)
+    if (declaredSize > MAX_IMAGE_BYTES) {
+      return NextResponse.json({ error: '圖片過大（上限 8MB）' }, { status: 413 })
+    }
     const buffer = await imageRes.arrayBuffer()
+    if (buffer.byteLength > MAX_IMAGE_BYTES) {
+      return NextResponse.json({ error: '圖片過大（上限 8MB）' }, { status: 413 })
+    }
     const base64 = Buffer.from(buffer).toString('base64')
-    const mimeType = (imageRes.headers.get('content-type') || 'image/jpeg') as any
 
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.0-flash-lite',

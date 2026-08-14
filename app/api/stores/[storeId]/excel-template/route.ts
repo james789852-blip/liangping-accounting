@@ -5,8 +5,33 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import { revalidateTag } from 'next/cache'
+import { canManageStoreItems } from '@/lib/user-permissions'
+import { isAllowedExcelFile, isUuid } from '@/lib/upload-security'
 
 const BUCKET = 'excel-templates'
+const MAX_TEMPLATE_BYTES = 15 * 1024 * 1024
+
+async function authorizeStoreTemplate(storeId: string) {
+  if (!isUuid(storeId)) return { error: '店家編號格式錯誤', status: 400 }
+
+  const user = await getVerifiedUser()
+  if (!user) return { error: '未登入', status: 401 }
+
+  const supabase = await createClient()
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('*')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (!canManageStoreItems(profile)) return { error: '權限不足，未開啟店面品項管理權限', status: 403 }
+
+  const admin = createAdminClient()
+  const { data: store } = await admin.from('stores').select('id, type').eq('id', storeId).maybeSingle()
+  if (!store) return { error: '找不到店家', status: 404 }
+  if (store.type === '央廚') return { error: '此端點只允許店面 Excel 模板', status: 400 }
+
+  return { admin }
+}
 
 async function ensureBucket(admin: ReturnType<typeof createAdminClient>) {
   const { data: buckets } = await admin.storage.listBuckets()
@@ -198,7 +223,9 @@ function parseColumnsFlexible(
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ storeId: string }> }) {
   const { storeId } = await params
-  const admin = createAdminClient()
+  const auth = await authorizeStoreTemplate(storeId)
+  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  const { admin } = auth
   const { data: files } = await admin.storage.from(BUCKET).list('', { search: `${storeId}-columns` })
   const exists = (files ?? []).some(f => f.name === `${storeId}-columns.json`)
   if (!exists) return NextResponse.json({ exists: false })
@@ -219,13 +246,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ sto
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ storeId: string }> }) {
   const { storeId } = await params
-  const supabase = await createClient()
-  const user = await getVerifiedUser()
-  if (!user) return NextResponse.json({ error: '未登入' }, { status: 401 })
+  const auth = await authorizeStoreTemplate(storeId)
+  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  const { admin } = auth
 
   const formData = await req.formData()
   const file = formData.get('file') as File | null
   if (!file) return NextResponse.json({ error: '缺少檔案' }, { status: 400 })
+  if (file.size > MAX_TEMPLATE_BYTES) return NextResponse.json({ error: 'Excel 檔案過大（上限 15MB）' }, { status: 413 })
+  if (!isAllowedExcelFile(file.name, file.type)) {
+    return NextResponse.json({ error: '只允許上傳 .xlsx Excel 檔案' }, { status: 400 })
+  }
 
   const arrayBuffer = await file.arrayBuffer()
 
@@ -238,7 +269,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
     return NextResponse.json({ error: '無法解析 Excel 檔案，請確認格式正確' }, { status: 400 })
   }
 
-  const admin = createAdminClient()
   await ensureBucket(admin)
 
   // Upload Excel file first (template fill doesn't need parsed columns)
@@ -409,12 +439,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sto
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ storeId: string }> }) {
   const { storeId } = await params
-  const supabase = await createClient()
-  const user = await getVerifiedUser()
-  if (!user) return NextResponse.json({ error: '未登入' }, { status: 401 })
+  const auth = await authorizeStoreTemplate(storeId)
+  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  const { admin } = auth
 
-  const admin = createAdminClient()
-  await admin.storage.from(BUCKET).remove([`${storeId}.xlsx`, `${storeId}-columns.json`, `${storeId}-item-order.json`])
+  await admin.storage.from(BUCKET).remove([
+    `${storeId}.xlsx`,
+    `${storeId}-columns.json`,
+    `${storeId}-item-order.json`,
+    `${storeId}-meta.json`,
+  ])
   revalidateTag('item-order', 'default')
   return NextResponse.json({ success: true })
 }

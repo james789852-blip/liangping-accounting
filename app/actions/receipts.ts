@@ -12,6 +12,8 @@ interface ReceiptItemPayload {
   item_category: string
   amount: number
   excel_column: string
+  item_mapping_id?: string | null
+  vendor_group_snapshot?: string | null
 }
 
 interface SaveReceiptPayload {
@@ -141,6 +143,8 @@ export async function deleteReceipt(receiptId: string) {
         quantity: item.quantity,
         unit: item.unit,
         unit_price: item.unit_price,
+        item_mapping_id: item.item_mapping_id,
+        vendor_group_snapshot: item.vendor_group_snapshot,
       })))
     }
     return { error: error.message }
@@ -239,6 +243,8 @@ export async function updateReceipt(
           quantity: item.quantity,
           unit: item.unit,
           unit_price: item.unit_price,
+          item_mapping_id: item.item_mapping_id,
+          vendor_group_snapshot: item.vendor_group_snapshot,
         })))
       }
       return { error: `品項儲存失敗：${itemError.message}` }

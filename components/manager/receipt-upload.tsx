@@ -12,14 +12,14 @@ import { Separator } from '@/components/ui/separator'
 import { storePhotoPath } from '@/lib/storage-paths'
 
 interface MappingOption {
-  item_name: string; excel_column: string; item_category: string; vendor_group?: string | null
+  id?: string; item_name: string; excel_column: string; item_category: string; vendor_group?: string | null
 }
 
 interface NewReceiptData {
   id: string; business_date: string; vendor_name: string; actual_vendor_name?: string | null; receipt_type: string
   total_amount: number; tax_amount: number; photo_url: string; notes: string
   status: string; created_at: string
-  receipt_items: { id: string; item_name: string; amount: number; excel_column: string; item_category: string }[]
+  receipt_items: { id: string; item_name: string; amount: number; excel_column: string; item_category: string; item_mapping_id?: string | null; vendor_group_snapshot?: string | null }[]
 }
 
 interface Props {
@@ -36,6 +36,7 @@ interface FormItem {
   excel_column: string
   item_category: string
   vendor_group?: string | null
+  item_mapping_id?: string | null
 }
 
 function mappingKey(item: MappingOption) { return `${item.vendor_group ?? ''}::${item.item_name}` }
@@ -124,6 +125,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
       excel_column: m?.excel_column ?? '',
       item_category: m?.item_category ?? '食材',
       vendor_group: m?.vendor_group ?? null,
+      item_mapping_id: m?.id ?? null,
     }))
     if (m?.vendor_group) setVendorName(m.vendor_group)
     setOpenItemIdx(null)
@@ -131,14 +133,16 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
 
   function applyMappings(rawItems: { name: string; amount: number }[], vendorGroup = ''): FormItem[] {
     return rawItems.map(item => {
-      const m = mappings.find(option => option.item_name === item.name && (!vendorGroup || option.vendor_group === vendorGroup))
-        ?? mappings.find(option => option.item_name === item.name)
+      const sameName = mappings.filter(option => option.item_name === item.name)
+      const m = sameName.find(option => !!vendorGroup && option.vendor_group === vendorGroup)
+        ?? (sameName.length === 1 ? sameName[0] : undefined)
       return {
         name: item.name,
         amount: item.amount,
         excel_column: m?.excel_column ?? '',
         item_category: m?.item_category ?? '食材',
         vendor_group: m?.vendor_group ?? null,
+        item_mapping_id: m?.id ?? null,
       }
     })
   }
@@ -221,6 +225,8 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
         items: validItems.map(it => ({
           item_name: it.name, item_category: it.item_category,
           amount: it.amount, excel_column: it.excel_column,
+          item_mapping_id: it.item_mapping_id ?? null,
+          vendor_group_snapshot: it.vendor_group ?? vendorName ?? null,
         })),
       })
       if (result?.error) { setError(result.error); setStep('review') }
@@ -244,6 +250,8 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
           amount: it.amount,
           excel_column: it.excel_column,
           item_category: it.item_category,
+          item_mapping_id: it.item_mapping_id ?? null,
+          vendor_group_snapshot: it.vendor_group ?? vendorName ?? null,
         })),
       })
       }

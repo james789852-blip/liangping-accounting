@@ -73,7 +73,7 @@ function normalizedVendorGroup(vendorGroup?: string | null) {
 async function findActiveSystemItem(
   admin: ReturnType<typeof createAdminClient>,
   itemName: string,
-  vendorGroup?: string | null,
+  vendorGroup: string | null | undefined,
 ) {
   const groupName = normalizedVendorGroup(vendorGroup)
   let groupId: string | null = null
@@ -409,7 +409,7 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
 
   // 選擇性同步既有帳目資料，避免改名後舊資料因名稱不同而對不到。
   if (syncReceipts && trimmedName !== oldName) {
-    await syncHistoricalItemNames(oldName, trimmedName, mapping.store_id ?? null, mapping.vendor_group)
+    await syncHistoricalItemNames(oldName, trimmedName, mapping.store_id ?? null, mapping.vendor_group, mapping.id)
   }
 
   // 若品項屬「未分類/雜項」→ 同步 receipt_vendors 名稱（先刪舊 + 加新 = full re-sync）
@@ -426,7 +426,8 @@ async function syncHistoricalItemNames(
   oldName: string,
   newName: string,
   storeId: string | null,
-  vendorGroup?: string | null,
+  vendorGroup: string | null | undefined,
+  mappingId: string,
 ) {
   const admin = createAdminClient()
   const targets = historicalItemSyncTargets(vendorGroup)
@@ -434,7 +435,7 @@ async function syncHistoricalItemNames(
   if (storeId) {
     const [{ data: receiptRows }, { data: closingRows }] = await Promise.all([
       targets.receiptItems
-        ? admin.from('receipts').select('id').eq('store_id', storeId)
+        ? admin.from('receipts').select('id').eq('store_id', storeId).eq('vendor_name', vendorGroup ?? '')
         : Promise.resolve({ data: [] as Array<{ id: string }> }),
       targets.orderItems
         ? admin.from('daily_closings').select('id').eq('store_id', storeId)
@@ -447,6 +448,11 @@ async function syncHistoricalItemNames(
       if (ids.length) {
         await admin.from('receipt_items')
           .update({ item_name: newName })
+          .eq('item_mapping_id', mappingId)
+          .in('receipt_id', ids)
+        await admin.from('receipt_items')
+          .update({ item_name: newName })
+          .is('item_mapping_id', null)
           .eq('item_name', oldName)
           .in('receipt_id', ids)
       }
@@ -458,6 +464,11 @@ async function syncHistoricalItemNames(
       if (ids.length) {
         await admin.from('order_items')
           .update({ item_name: newName, excel_column: newName })
+          .eq('item_mapping_id', mappingId)
+          .in('closing_id', ids)
+        await admin.from('order_items')
+          .update({ item_name: newName, excel_column: newName })
+          .is('item_mapping_id', null)
           .eq('item_name', oldName)
           .in('closing_id', ids)
       }
@@ -465,14 +476,14 @@ async function syncHistoricalItemNames(
     return
   }
 
-  // 全域 mapping 沒有店家範圍可限制，但仍必須依來源分類隔離。
-  // 一般廠商改名不可污染央廚叫貨；央廚改名也不可改到一般收據。
+  // 全域 mapping 沒有店家範圍可安全推斷同名歷史資料，只更新已綁定
+  // mapping id 的資料；未綁定資料留給明確的資料修復流程，禁止猜測。
   await Promise.all([
     targets.receiptItems
-      ? admin.from('receipt_items').update({ item_name: newName }).eq('item_name', oldName)
+      ? admin.from('receipt_items').update({ item_name: newName }).eq('item_mapping_id', mappingId)
       : Promise.resolve(),
     targets.orderItems
-      ? admin.from('order_items').update({ item_name: newName, excel_column: newName }).eq('item_name', oldName)
+      ? admin.from('order_items').update({ item_name: newName, excel_column: newName }).eq('item_mapping_id', mappingId)
       : Promise.resolve(),
   ])
 }

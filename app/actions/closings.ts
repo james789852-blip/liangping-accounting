@@ -173,16 +173,21 @@ export async function verifyClosing(closingId: string) {
     .from('daily_closings').select('store_id, business_date, status')
     .eq('id', closingId).single()
   if (!closing) return { error: '找不到此帳目' }
-  if (!['submitted', 'disputed'].includes(closing.status)) {
-    return { error: `只能審核已送出/退回修改的帳目（目前狀態：${closing.status}）` }
+  if (closing.status !== 'submitted') {
+    return { error: `只能核准店面重新送出的待審帳目（目前狀態：${closing.status}）` }
   }
 
-  const { error } = await supabase
+  const admin = createAdminClient()
+  const { data: updated, error } = await admin
     .from('daily_closings')
     .update({ status: 'verified', updated_at: new Date().toISOString() })
     .eq('id', closingId)
+    .eq('status', 'submitted')
+    .select('id')
+    .maybeSingle()
 
   if (error) return { error: error.message }
+  if (!updated) return { error: '帳目狀態已被其他人變更，請重新整理後再操作' }
 
   await logAudit({
     eventType: 'closing_verify',
@@ -222,13 +227,18 @@ export async function verifyClosingsBatch(closingIds: string[]) {
   const skipped = closings.length - okIds.length
   if (okIds.length === 0) return { error: '無可核准帳目（皆非待審狀態）' }
 
-  const { error: updateErr } = await admin
+  const { data: updatedClosings, error: updateErr } = await admin
     .from('daily_closings')
     .update({ status: 'verified', updated_at: new Date().toISOString() })
     .in('id', okIds)
+    .eq('status', 'submitted')
+    .select('id')
   if (updateErr) return { error: updateErr.message }
 
-  await Promise.all(okIds.map(async (id: string) => {
+  const updatedIds = (updatedClosings ?? []).map((closing: any) => closing.id as string)
+  if (updatedIds.length === 0) return { error: '帳目狀態已被其他人變更，請重新整理後再操作' }
+
+  await Promise.all(updatedIds.map(async (id: string) => {
     const c = closings.find((x: any) => x.id === id)!
     await logAudit({
       eventType: 'closing_verify',
@@ -240,7 +250,11 @@ export async function verifyClosingsBatch(closingIds: string[]) {
   revalidatePath('/hq/reviews')
   revalidatePath('/hq/closings')
   revalidatePath('/hq/audit')
-  return { success: true, verified: okIds.length, skipped }
+  return {
+    success: true,
+    verified: updatedIds.length,
+    skipped: skipped + (okIds.length - updatedIds.length),
+  }
 }
 
 export async function deleteClosingDraft(closingId: string) {
@@ -311,7 +325,7 @@ export async function disputeClosing(closingId: string, note: string) {
     .eq('id', closingId).single()
   if (!closing) return { error: '找不到此帳目' }
   if (!['submitted', 'verified', 'disputed'].includes(closing.status)) {
-    return { error: `只能退回已送出/已審核/退回修改的帳目（目前狀態：${closing.status}）` }
+    return { error: `只能退回已送出、已審核或已退回的帳目（目前狀態：${closing.status}）` }
   }
 
   // 退回前先保留完整帳務快照。日後即使店長端裝置或網路發生異常，
@@ -335,7 +349,7 @@ export async function disputeClosing(closingId: string, note: string) {
     : null
 
   const cleanNote = note.trim()
-  const { error } = await supabase
+  const { data: updated, error } = await admin
     .from('daily_closings')
     .update({
       status: 'disputed',
@@ -345,8 +359,12 @@ export async function disputeClosing(closingId: string, note: string) {
       updated_at: new Date().toISOString(),
     })
     .eq('id', closingId)
+    .eq('status', closing.status)
+    .select('id')
+    .maybeSingle()
 
   if (error) return { error: error.message }
+  if (!updated) return { error: '帳目狀態已被其他人變更，請重新整理後再操作' }
 
   await logAudit({
     eventType: 'closing_dispute', severity: 'warn',

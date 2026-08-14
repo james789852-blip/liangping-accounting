@@ -6,6 +6,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getMonthLastDay } from '@/lib/business-date'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
+import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
+import { resolveScopedItemIdentity } from '@/lib/export-reconciliation'
 
 export interface MonthlyStats {
   revenue: number
@@ -38,11 +40,11 @@ export async function getMonthlyStats(storeId: string, year: number, monthNum: n
 
   const [{ data: receipts }, { data: closings }, { data: storeRow }, { data: mappingsRaw }, { data: ckPricesData }] = await Promise.all([
     admin.from('receipts')
-      .select('business_date, tax_amount, receipt_type, receipt_items(item_name, excel_column, amount)')
+      .select('business_date, tax_amount, receipt_type, vendor_name, receipt_items(item_name, excel_column, amount, item_mapping_id, vendor_group_snapshot)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('daily_closings')
-      .select('business_date, status, updated_at, total_revenue, total_cost, revenue_items(channel, gross_amount), order_items(item_name, total_amount)')
+      .select('business_date, status, updated_at, total_revenue, total_cost, revenue_items(channel, gross_amount), order_items(item_name, total_amount, item_mapping_id, vendor_group_snapshot)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('stores').select('name').eq('id', storeId).single(),
@@ -101,6 +103,15 @@ export async function getMonthlyStats(storeId: string, year: number, monthNum: n
     docTypeByName[r.name] = r.doc_type ?? ''
     vgNameByName[r.name] = r.vendor_group
   }
+  const resolveIdentity = (item: any, fallbackVendorGroup?: string | null) => resolveScopedItemIdentity(
+    {
+      mappingId: item.item_mapping_id,
+      vendorGroup: item.vendor_group_snapshot ?? fallbackVendorGroup,
+      itemName: String(item.item_name ?? ''),
+    },
+    resolved,
+    itemNameCompatibilityKey,
+  )
 
   let food = 0, pack = 0, misc = 0
   const vendorMap: Record<string, { vendor_group: string; doc_type: string; food: number; pack: number; misc: number }> = {}
@@ -119,15 +130,16 @@ export async function getMonthlyStats(storeId: string, year: number, monthNum: n
     for (const it of (r.receipt_items ?? [])) {
       const amt = (it.amount ?? 0) as number
       if (!amt) continue
-      const resolvedCol = mappingLookup[it.item_name] ?? it.excel_column ?? ''
-      const cat = categoryOf(it.item_name, resolvedCol)
+      const identity = resolveIdentity(it, r.vendor_name)
+      const resolvedCol = identity?.name ?? mappingLookup[it.item_name] ?? it.excel_column ?? ''
+      const cat = identity?.category ?? categoryOf(it.item_name, resolvedCol)
       if (!cat) continue
       if (cat === '食材') food += amt
       else if (cat === '耗材') pack += amt
       else misc += amt
 
-      const vg = vendorGroupLookup[it.item_name] ?? vgNameByName[it.item_name] ?? '其他'
-      const doc = docTypeByName[it.item_name] || (r.receipt_type === 'invoice' ? '發票' : r.receipt_type === 'receipt' ? '收據' : '')
+      const vg = identity?.vendor_group ?? it.vendor_group_snapshot ?? r.vendor_name ?? '其他'
+      const doc = identity?.doc_type || docTypeByName[it.item_name] || (r.receipt_type === 'invoice' ? '發票' : r.receipt_type === 'receipt' ? '收據' : '')
       addToVendor(vg, doc, cat, amt)
     }
     // Tax 分流
@@ -168,15 +180,16 @@ export async function getMonthlyStats(storeId: string, year: number, monthNum: n
       if (oi.item_name === '央廚配送') {
         ckSummarySum += oi.total_amount ?? 0
       } else {
-        const excelCol = mappingLookup[oi.item_name] ?? ckColLookup[oi.item_name] ?? oi.item_name
-        const cat = categoryOf(oi.item_name, excelCol)
+        const identity = resolveIdentity(oi, '央廚配送')
+        const excelCol = identity?.name ?? mappingLookup[oi.item_name] ?? ckColLookup[oi.item_name] ?? oi.item_name
+        const cat = identity?.category ?? categoryOf(oi.item_name, excelCol)
         if (cat && (oi.total_amount ?? 0) > 0) {
           const amt = oi.total_amount as number
           if (cat === '食材') food += amt
           else if (cat === '耗材') pack += amt
           else misc += amt
-          const vg = vendorGroupLookup[oi.item_name] ?? vgNameByName[oi.item_name] ?? '央廚配送'
-          const doc = docTypeByName[oi.item_name] ?? ''
+          const vg = identity?.vendor_group ?? '央廚配送'
+          const doc = identity?.doc_type ?? docTypeByName[oi.item_name] ?? ''
           addToVendor(vg, doc, cat, amt)
         }
         if (oi.item_name in ckColLookup) ckItemsSum += oi.total_amount ?? 0

@@ -78,12 +78,12 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .order('sort_order').order('item_name'),
     supabase
       .from('receipts')
-      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount)')
+      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount, item_mapping_id, vendor_group_snapshot)')
       .eq('store_id', storeId)
       .eq('business_date', closing.business_date)
       .order('created_at'),
     getReceiptSettings(storeId),
-    admin2.from('item_column_mappings').select('item_name, item_category, vendor_group, excel_column, doc_type_override').eq('store_id', storeId),
+    admin2.from('item_column_mappings').select('id, item_name, item_category, vendor_group, excel_column, doc_type_override').eq('store_id', storeId),
     admin2.storage.from('excel-templates').download(`${storeId}-item-order.json`)
       .then(async ({ data }) => (data ? data.text() : null))
       .catch((): null => null),
@@ -121,6 +121,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
     : newItems.length > 0
     ? toMappingColumns(newItems)
     : (mappingRows ?? []).map((r: any) => ({
+        mapping_id: r.id,
         name: r.item_name,
         category: r.item_category,
         vendor_group: r.vendor_group ?? undefined,

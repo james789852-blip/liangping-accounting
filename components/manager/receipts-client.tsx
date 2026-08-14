@@ -10,13 +10,14 @@ import { isReceiptDateLocked } from '@/lib/receipt-guards'
 
 interface ReceiptItem {
   id: string; item_name: string; quantity?: number; unit?: string; unit_price?: number; amount: number; excel_column: string; item_category: string
+  item_mapping_id?: string | null; vendor_group_snapshot?: string | null
 }
 interface ReceiptData {
   id: string; business_date: string; vendor_name: string; actual_vendor_name?: string | null; receipt_type: string
   total_amount: number; tax_amount: number; photo_url: string; status: string
   notes: string; created_at: string; receipt_items: ReceiptItem[]
 }
-interface MappingOption { item_name: string; excel_column: string; item_category: string; vendor_group?: string | null }
+interface MappingOption { id?: string; item_name: string; excel_column: string; item_category: string; vendor_group?: string | null }
 interface Props {
   storeId: string; storeName: string; today: string; receipts: ReceiptData[]; mappings: MappingOption[]
   closingStatusByDate: Record<string, string>
@@ -48,7 +49,7 @@ function formatDate(d: string) {
   return `${dt.getMonth() + 1}/${dt.getDate()}（${['日','一','二','三','四','五','六'][dt.getDay()]}）`
 }
 
-interface EditItem { item_name: string; amount: number; excel_column: string; item_category: string; vendor_group?: string | null }
+interface EditItem { item_name: string; amount: number; excel_column: string; item_category: string; vendor_group?: string | null; item_mapping_id?: string | null }
 
 function mappingKey(item: MappingOption) { return `${item.vendor_group ?? ''}::${item.item_name}` }
 function findMapping(mappings: MappingOption[], itemName: string, vendorGroup?: string | null) {
@@ -82,6 +83,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
       excel_column: m?.excel_column ?? '',
       item_category: m?.item_category ?? '食材',
       vendor_group: m?.vendor_group ?? null,
+      item_mapping_id: m?.id ?? null,
     }))
     // 廠商分類就是品項歸屬的來源；選定分類品項時同步帶入，避免同名品項失去分類。
     if (m?.vendor_group) setEditVendor(m.vendor_group)
@@ -100,6 +102,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
       item_name: i.item_name, amount: i.amount,
       excel_column: i.excel_column ?? '', item_category: i.item_category ?? '食材',
       vendor_group: findMapping(mappings, i.item_name, receipt.vendor_name)?.vendor_group ?? null,
+      item_mapping_id: i.item_mapping_id ?? findMapping(mappings, i.item_name, receipt.vendor_name)?.id ?? null,
     }))
   )
 
@@ -113,6 +116,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
       item_name: i.item_name, amount: i.amount,
       excel_column: i.excel_column ?? '', item_category: i.item_category ?? '食材',
       vendor_group: findMapping(mappings, i.item_name, receipt.vendor_name)?.vendor_group ?? null,
+      item_mapping_id: i.item_mapping_id ?? findMapping(mappings, i.item_name, receipt.vendor_name)?.id ?? null,
     })))
     setEditing(true); setExpanded(true)
   }
@@ -123,7 +127,15 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
     const result = await updateReceipt(receipt.id, {
       businessDate: editDate, vendorName: editVendor, actualVendorName: editActualVendor, receiptType: editType,
       totalAmount: editTotal, taxAmount: editTax, photoUrl: receipt.photo_url,
-      notes: editNotes, items: filteredItems,
+      notes: editNotes,
+      items: filteredItems.map(item => ({
+        item_name: item.item_name,
+        item_category: item.item_category,
+        amount: item.amount,
+        excel_column: item.excel_column,
+        item_mapping_id: item.item_mapping_id ?? null,
+        vendor_group_snapshot: item.vendor_group ?? editVendor ?? null,
+      })),
     })
     setSaving(false)
     if (result?.error) { alert('儲存失敗：' + result.error); return }
@@ -136,6 +148,8 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
         id: receipt.receipt_items[idx]?.id ?? `local-${idx}`,
         item_name: item.item_name, amount: item.amount,
         excel_column: item.excel_column, item_category: item.item_category,
+        item_mapping_id: item.item_mapping_id ?? null,
+        vendor_group_snapshot: item.vendor_group ?? editVendor ?? null,
         quantity: receipt.receipt_items[idx]?.quantity ?? 0,
         unit: receipt.receipt_items[idx]?.unit ?? '',
         unit_price: receipt.receipt_items[idx]?.unit_price ?? 0,

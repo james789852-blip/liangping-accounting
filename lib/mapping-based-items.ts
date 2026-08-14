@@ -60,6 +60,7 @@ async function loadStoreItemsFromMappings(storeId: string): Promise<ResolvedStor
 
     items.push({
       id: m.id as string,
+      mapping_id: m.id as string,
       name: m.item_name as string,
       category: (m.item_category ?? '雜項') as ResolvedStoreItem['category'],
       vendor_group: vgName,

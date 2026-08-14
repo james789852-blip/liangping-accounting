@@ -113,7 +113,7 @@ interface TodayReceipt {
   receipt_type: string
   photo_url?: string
   notes?: string
-  receipt_items?: { item_name: string; unit: string; quantity: number; unit_price: number; amount: number }[]
+  receipt_items?: { item_name: string; unit: string; quantity: number; unit_price: number; amount: number; item_mapping_id?: string | null; vendor_group_snapshot?: string | null }[]
 }
 
 interface ChannelPhoto {
@@ -180,6 +180,7 @@ interface ReceiptFormItem {
   unit_price: number
   amount: number
   vendor_group_hint?: string
+  item_mapping_id?: string | null
 }
 
 interface ReceiptForm {
@@ -636,18 +637,19 @@ function findReceiptItemMapping(
   const vendor = vendorName.trim()
   const category = categoryName.trim()
   const compatibleName = itemNameCompatibilityKey(name)
+  const exactMappings = mappingColumns.filter(c => c.name === name)
   const compatibleMappings = mappingColumns.filter(c => itemNameCompatibilityKey(c.name) === compatibleName)
   return (
     mappingColumns.find(c => c.name === name && c.vendor_group === vendor)
     ?? mappingColumns.find(c => c.name === name && c.vendor_group === category)
     ?? mappingColumns.find(c => c.name === name && c.category === category)
-    ?? mappingColumns.find(c => c.name === name)
+    ?? (exactMappings.length === 1 ? exactMappings[0] : undefined)
     // 相容舊資料的括號、連字號及「與／跟、購買／買」差異；
     // 新增或編輯後仍會完整儲存目前 mapping 名稱。
     ?? compatibleMappings.find(c => c.vendor_group === vendor)
     ?? compatibleMappings.find(c => c.vendor_group === category)
     ?? compatibleMappings.find(c => c.category === category)
-    ?? compatibleMappings[0]
+    ?? (compatibleMappings.length === 1 ? compatibleMappings[0] : undefined)
   )
 }
 
@@ -706,10 +708,13 @@ function findTaxAddonMapping(
   }
   for (const item of items) {
     if (item.vendor_group_hint) groups.add(item.vendor_group_hint)
-    const mapping = mappingColumns.find(column =>
-      !column.is_tax_addon && column.name === item.item_name
-      && (!item.vendor_group_hint || column.vendor_group === item.vendor_group_hint),
-    )
+    const mapping = (item.item_mapping_id
+      ? mappingColumns.find(column => column.mapping_id === item.item_mapping_id)
+      : undefined)
+      ?? mappingColumns.find(column =>
+        !column.is_tax_addon && column.name === item.item_name
+        && (!item.vendor_group_hint || column.vendor_group === item.vendor_group_hint),
+      )
     if (mapping) {
       selectedItemNames.add(mapping.name.trim())
       if (mapping.vendor_group) groups.add(mapping.vendor_group)
@@ -727,10 +732,10 @@ function resetReceiptItemsForContext(
 ): ReceiptFormItem[] {
   return items.map(item => {
     const name = item.item_name.trim()
-    if (!name) return { ...item, vendor_group_hint: undefined }
+    if (!name) return { ...item, vendor_group_hint: undefined, item_mapping_id: null }
     const options = receiptItemMappingsForContext(mappingColumns, categoryName, vendorName, undefined, vendorName === '退稅' || categoryName === '退稅')
     const stillValid = options.some(c => c.name === name && (!item.vendor_group_hint || c.vendor_group === item.vendor_group_hint))
-    return stillValid ? item : { ...item, item_name: '', vendor_group_hint: undefined }
+    return stillValid ? item : { ...item, item_name: '', vendor_group_hint: undefined, item_mapping_id: null }
   })
 }
 
@@ -977,6 +982,7 @@ function dropdownGroupRank(name: string): number {
 }
 
 type MappingColumn = {
+  mapping_id?: string
   name: string
   category: string
   vendor_group?: string
@@ -2218,7 +2224,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const supabase = createClient()
     const { data: receipts } = await supabase
       .from('receipts')
-      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount)')
+      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount, item_mapping_id, vendor_group_snapshot)')
       .eq('store_id', store.id)
       .eq('business_date', today)
       .order('created_at')
@@ -2282,17 +2288,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       validItems = [{ id: crypto.randomUUID(), item_name: editVendor.trim(), unit: '', quantity: 1, unit_price: 0, amount: editAmount }]
     }
     if (taxMapping && taxAmount > 0) {
-      validItems.push({ id: crypto.randomUUID(), item_name: taxMapping.name, unit: '', quantity: 1, unit_price: 0, amount: taxAmount, vendor_group_hint: taxMapping.vendor_group })
+      validItems.push({ id: crypto.randomUUID(), item_name: taxMapping.name, unit: '', quantity: 1, unit_price: 0, amount: taxAmount, vendor_group_hint: taxMapping.vendor_group, item_mapping_id: taxMapping.mapping_id })
     }
-    const resolveEditItemMapping = (item: ReceiptFormItem) => item.vendor_group_hint
-      ? mappingColumns.find(c =>
+    const resolveEditItemMapping = (item: ReceiptFormItem) =>
+      (item.item_mapping_id ? mappingColumns.find(c => c.mapping_id === item.item_mapping_id) : undefined)
+      ?? (item.vendor_group_hint ? mappingColumns.find(c =>
         itemNameCompatibilityKey(c.name) === itemNameCompatibilityKey(item.item_name)
         && c.vendor_group === item.vendor_group_hint,
-      )
-      : findReceiptItemMapping(item.item_name, editVendor, editCategory, mappingColumns)
+      ) : findReceiptItemMapping(item.item_name, editVendor, editCategory, mappingColumns))
     const canonicalItems = validItems.map(item => {
       const match = resolveEditItemMapping(item)
-      return { ...item, item_name: match?.name ?? item.item_name.trim() }
+      return { ...item, item_name: match?.name ?? item.item_name.trim(), item_mapping_id: match?.mapping_id ?? null, vendor_group_hint: match?.vendor_group ?? item.vendor_group_hint }
     })
 
     const updatedReceipts = localReceipts.map(r =>
@@ -2302,7 +2308,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         receipt_type: r.receipt_type,
         photo_url: newPhotoUrl,
         notes: editNotes.trim() || undefined,
-        receipt_items: canonicalItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: normalizeItemAmount(i.item_name, i.amount) })),
+        receipt_items: canonicalItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: normalizeItemAmount(i.item_name, i.amount), item_mapping_id: i.item_mapping_id ?? null, vendor_group_snapshot: i.vendor_group_hint ?? editVendor ?? null })),
       } : r
     )
     setLocalReceipts(updatedReceipts)
@@ -2331,6 +2337,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             amount: normalizeItemAmount(i.item_name, i.amount),
             item_category: match?.category ?? '食材',
             excel_column: match?.excel_column ?? match?.name ?? '',
+            item_mapping_id: match?.mapping_id ?? null,
+            vendor_group_snapshot: match?.vendor_group ?? editVendor ?? null,
           }
         })
       )
@@ -2456,6 +2464,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             unit_price: first?.unit_price ?? 0,
             amount: forceNegative ? -Math.abs(first?.amount ?? 0) : first?.amount ?? 0,
             vendor_group_hint: mapping?.vendor_group,
+            item_mapping_id: mapping?.mapping_id ?? null,
           }],
         }
       }
@@ -2501,6 +2510,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           unit_price: first?.unit_price ?? 0,
           amount: forceNegative ? -Math.abs(first?.amount ?? 0) : first?.amount ?? 0,
           vendor_group_hint: mapping?.vendor_group,
+          item_mapping_id: mapping?.mapping_id ?? null,
         }]
       })
       if (isAutoNegativeOtherReceiptItem(vendorName, category)) {
@@ -2631,17 +2641,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       validItems = [{ id: crypto.randomUUID(), item_name: form.vendor_name.trim(), unit: '', quantity: 1, unit_price: 0, amount: form.total_amount }]
     }
     if (taxMapping && taxAmount > 0) {
-      validItems.push({ id: crypto.randomUUID(), item_name: taxMapping.name, unit: '', quantity: 1, unit_price: 0, amount: taxAmount, vendor_group_hint: taxMapping.vendor_group })
+      validItems.push({ id: crypto.randomUUID(), item_name: taxMapping.name, unit: '', quantity: 1, unit_price: 0, amount: taxAmount, vendor_group_hint: taxMapping.vendor_group, item_mapping_id: taxMapping.mapping_id })
     }
-    const resolveFormItemMapping = (item: ReceiptFormItem) => item.vendor_group_hint
-      ? mappingColumns.find(c =>
+    const resolveFormItemMapping = (item: ReceiptFormItem) =>
+      (item.item_mapping_id ? mappingColumns.find(c => c.mapping_id === item.item_mapping_id) : undefined)
+      ?? (item.vendor_group_hint ? mappingColumns.find(c =>
         itemNameCompatibilityKey(c.name) === itemNameCompatibilityKey(item.item_name)
         && c.vendor_group === item.vendor_group_hint,
-      )
-      : findReceiptItemMapping(item.item_name, form.vendor_name, form.category, mappingColumns)
+      ) : findReceiptItemMapping(item.item_name, form.vendor_name, form.category, mappingColumns))
     const canonicalItems = validItems.map(item => {
       const match = resolveFormItemMapping(item)
-      return { ...item, item_name: match?.name ?? item.item_name.trim() }
+      return { ...item, item_name: match?.name ?? item.item_name.trim(), item_mapping_id: match?.mapping_id ?? null, vendor_group_hint: match?.vendor_group ?? item.vendor_group_hint }
     })
     if (canonicalItems.length > 0) {
       await supabase.from('receipt_items').insert(
@@ -2656,6 +2666,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             amount: normalizeItemAmount(i.item_name, i.amount),
             item_category: match?.category ?? '食材',
             excel_column: match?.excel_column ?? match?.name ?? '',
+            item_mapping_id: match?.mapping_id ?? null,
+            vendor_group_snapshot: match?.vendor_group ?? form.vendor_name ?? null,
           }
         })
       )
@@ -3118,13 +3130,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         .map(p => {
           const effPrice = ckPriceOverridesRef.current[p.id] ?? p.unit_price
           const qty = ckQuantitiesRef.current[p.id] || 0
+          const ckMapping = mappingColumns.find(column =>
+            column.vendor_group === '央廚配送'
+            && itemNameCompatibilityKey(column.name) === itemNameCompatibilityKey(p.item_name),
+          )
           return {
             closing_id: cid,
             vendor: '央廚',
-            item_name: p.item_name,
+            item_name: ckMapping?.name ?? p.item_name,
             unit_price: effPrice,
             quantity: qty,
             total_amount: Math.round(effPrice * qty),
+            item_mapping_id: ckMapping?.mapping_id ?? null,
+            vendor_group_snapshot: '央廚配送',
           }
         })
       // expense_items：只有 expItems.length > 0 才 wipe-insert
@@ -4054,9 +4072,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           // 「{vg}|{name}」格式（多個同名品項需要 vg 區分）；無 | 則整字串視為 name
                                           const vg = sepIdx > 0 ? raw.slice(0, sepIdx) : ''
                                           const name = sepIdx > 0 ? raw.slice(sepIdx + 1) : raw
+                                          const selectedMapping = mappingColumns.find(c => c.name === name && (!vg || c.vendor_group === vg))
                                           // 一次 syncItems 同時更新兩欄位，避免兩個連續 setState 因 closure 看到舊 state 互相覆蓋
                                           syncItems((form.items ?? []).map(i =>
-                                            i.id !== item.id ? i : { ...i, item_name: name, vendor_group_hint: vg || undefined }
+                                            i.id !== item.id ? i : { ...i, item_name: name, vendor_group_hint: vg || undefined, item_mapping_id: selectedMapping?.mapping_id ?? null }
                                           ))
                                         }}
                                         className="receipt-field"
@@ -4524,8 +4543,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                               const sepIdx = raw.indexOf('|')
                                               const vg = sepIdx > 0 ? raw.slice(0, sepIdx) : ''
                                               const name = sepIdx > 0 ? raw.slice(sepIdx + 1) : raw
+                                              const selectedMapping = mappingColumns.find(c => c.name === name && (!vg || c.vendor_group === vg))
                                               syncEditItems(editItems.map((row, i) =>
-                                                i !== idx ? row : { ...row, item_name: name, vendor_group_hint: vg }
+                                                i !== idx ? row : { ...row, item_name: name, vendor_group_hint: vg, item_mapping_id: selectedMapping?.mapping_id ?? null }
                                               ))
                                             }}
                                             className="receipt-field"
@@ -4789,7 +4809,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                     quantity: i.quantity ?? 1,
                                     unit_price: i.unit_price ?? 0,
                                     amount: i.amount,
-                                    vendor_group_hint: match?.vendor_group,
+                                    vendor_group_hint: i.vendor_group_snapshot ?? match?.vendor_group,
+                                    item_mapping_id: i.item_mapping_id ?? match?.mapping_id ?? null,
                                   }
                                 })
                                 setEditingReceiptId(r.id)

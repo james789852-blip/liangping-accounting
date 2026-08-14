@@ -17,7 +17,7 @@ import { type ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { compareResolvedItemsByMappingOrder, getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 import { taxAddonBaseName } from '@/lib/tax-addon'
 import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
-import { deriveExportReconciliation, resolveCentralKitchenOrderTarget } from '@/lib/export-reconciliation'
+import { deriveExportReconciliation, resolveCentralKitchenOrderTarget, resolveScopedItemIdentity } from '@/lib/export-reconciliation'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -166,12 +166,12 @@ export async function getRangeStats(
       .eq('id', storeId).single(),
     getStoreItemsFromMappings(storeId),  // 跟 xlsx 匯出用同源，確保成本 category 分類一致
     admin.from('daily_closings')
-      .select('business_date, status, updated_at, actual_remit, total_revenue, total_cost, variance, revenue_items(channel, account_name, gross_amount), order_items(item_name, total_amount)')
+      .select('business_date, status, updated_at, actual_remit, total_revenue, total_cost, variance, revenue_items(channel, account_name, gross_amount), order_items(item_name, total_amount, item_mapping_id, vendor_group_snapshot)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay)
       .order('updated_at', { ascending: true }),
     admin.from('receipts')
-      .select('business_date, vendor_name, actual_vendor_name, total_amount, tax_amount, notes, receipt_type, receipt_items(item_name, amount, item_category, excel_column)')
+      .select('business_date, vendor_name, actual_vendor_name, total_amount, tax_amount, notes, receipt_type, receipt_items(item_name, amount, item_category, excel_column, item_mapping_id, vendor_group_snapshot)')
       .eq('store_id', storeId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
     admin.from('store_holidays')
@@ -183,6 +183,7 @@ export async function getRangeStats(
   )
   const store = (storeRow ?? { id: storeId, name: '' }) as StoreInfo
   const items = resolved
+  const itemByMappingId = new Map(items.map(item => [item.mapping_id ?? item.id, item] as const))
   const itemMeta = new Map(items.map(i => [i.name, i] as const))
   const itemCandidates = new Map<string, ResolvedStoreItem[]>()
   for (const item of items) {
@@ -205,7 +206,16 @@ export async function getRangeStats(
     vendorName?: string | null,
     actualVendorName?: string | null,
     relatedItems?: any[],
+    mappingId?: string | null,
+    vendorGroupSnapshot?: string | null,
   ) => {
+    const identityMatch = resolveScopedItemIdentity(
+      { mappingId, vendorGroup: vendorGroupSnapshot, itemName },
+      items,
+      itemNameCompatibilityKey,
+    )
+    if (identityMatch) return identityMatch
+    if (mappingId || vendorGroupSnapshot) return undefined
     const candidates = itemCandidates.get(itemNameCompatibilityKey(itemName)) ?? []
     if (candidates.length <= 1) return candidates[0]
     const vendorText = `${vendorName ?? ''} ${actualVendorName ?? ''}`
@@ -219,7 +229,6 @@ export async function getRangeStats(
       const targetName = taxCandidate.tax_target_item?.trim() || taxAddonBaseName(itemName)
       const targetCandidates = itemCandidates.get(itemNameCompatibilityKey(targetName)) ?? []
       const target = targetCandidates.find(candidate => candidate.vendor_group && vendorText.includes(candidate.vendor_group))
-        ?? targetCandidates[0]
       if (target?.vendor_group) {
         const sameGroup = candidates.find(candidate => candidate.vendor_group === target.vendor_group)
         if (sameGroup) return sameGroup
@@ -230,13 +239,14 @@ export async function getRangeStats(
     for (const related of relatedItems ?? []) {
       const relatedCandidates = itemCandidates.get(itemNameCompatibilityKey(String(related.item_name ?? ''))) ?? []
       const relatedMatch = relatedCandidates.find(candidate => candidate.vendor_group && vendorText.includes(candidate.vendor_group))
-        ?? relatedCandidates[0]
       if (relatedMatch?.vendor_group) {
         const sameGroup = candidates.find(candidate => candidate.vendor_group === relatedMatch.vendor_group)
         if (sameGroup) return sameGroup
       }
     }
-    return candidates[0]
+    // 同名且無法由分類／mapping id 唯一判斷時不可猜第一筆；寧可保留在
+    // 原始分類快照等待修正，也不能把帳目寫入另一個廠商。
+    return undefined
   }
 
   // 建 date map，同日多筆 closings 取 status 優先高
@@ -284,7 +294,14 @@ export async function getRangeStats(
         items,
         itemNameCompatibilityKey,
       )
-      addItemAmount(dd, target.itemName, amt, target.vendorGroup)
+      const mappedById = oi.item_mapping_id ? itemByMappingId.get(oi.item_mapping_id) : undefined
+      const centralKitchenMapping = mappedById?.vendor_group === '央廚配送' ? mappedById : undefined
+      addItemAmount(
+        dd,
+        centralKitchenMapping?.name ?? target.itemName,
+        amt,
+        '央廚配送',
+      )
     }
     byDate[date] = dd
   }
@@ -307,10 +324,22 @@ export async function getRangeStats(
     for (const it of receiptItems) {
       if (!it.amount) continue
       const rawItemName = String(it.item_name ?? '')
-      const receiptMeta = resolveReceiptItem(rawItemName, r.vendor_name, r.actual_vendor_name, receiptItems)
+      const receiptMeta = resolveReceiptItem(
+        rawItemName,
+        r.vendor_name,
+        r.actual_vendor_name,
+        receiptItems,
+        it.item_mapping_id,
+        it.vendor_group_snapshot,
+      )
       // 歷史別名聚合到目前 mapping 名稱，讓 Excel 欄位、分類及月合計使用同一份資料。
       const itemKey = receiptMeta?.name ?? rawItemName
-      addItemAmount(dd, itemKey, it.amount, receiptMeta?.vendor_group)
+      addItemAmount(
+        dd,
+        itemKey,
+        it.amount,
+        receiptMeta?.vendor_group ?? it.vendor_group_snapshot ?? r.vendor_name ?? '未分類',
+      )
       if (noteText && !notedItemNames.has(itemKey)) {
         dd.notes[itemKey] = dd.notes[itemKey]
           ? `${dd.notes[itemKey]}\n${noteText}`

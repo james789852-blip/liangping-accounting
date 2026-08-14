@@ -1,7 +1,8 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getAuthContext } from '@/lib/permissions'
+import { canAccessStore, getAuthContext } from '@/lib/permissions'
+import { isAllowedExcelFile, isAllowedImageMimeType, parseStorageTarget } from '@/lib/upload-security'
 
 // 允許上傳的 bucket 與最大檔案大小（位元組）
 // 不再允許 menu-videos 上傳；歷史影片仍可從顯示頁面查看
@@ -28,10 +29,18 @@ export async function uploadToStorage(
 
   const file = formData.get('file') as File | null
   if (!file) return { error: 'No file provided' }
-  if (file.size > MAX_FILE_BYTES) return { error: '檔案過大（上限 50MB）' }
+  if (file.size > MAX_FILE_BYTES) return { error: '檔案過大（上限 5MB）' }
 
   // excel-templates 只允許 HQ 上傳
   if (bucket === 'excel-templates' && !ctx.isHQ) return { error: '權限不足（僅總公司可上傳模板）' }
+  if (bucket === 'excel-templates' && !isAllowedExcelFile(file.name, file.type)) {
+    return { error: '只允許上傳 .xlsx Excel 檔案' }
+  }
+  if (bucket !== 'excel-templates') {
+    if (!isAllowedImageMimeType(file.type)) return { error: '只允許上傳 JPG、PNG、WebP 或 HEIC 圖片' }
+    const target = parseStorageTarget(bucket, path)
+    if (!target || !canAccessStore(ctx, target.storeId)) return { error: '無權限上傳到此店家路徑' }
+  }
 
   const supabase = createAdminClient()
   const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true })
@@ -51,6 +60,10 @@ export async function createSignedUploadUrl(
   if (!ALLOWED_BUCKETS.has(bucket)) return { error: '不允許的 bucket' }
   if (!pathTraversalSafe(path)) return { error: '路徑不合法' }
   if (bucket === 'excel-templates' && !ctx.isHQ) return { error: '權限不足（僅總公司可上傳模板）' }
+  if (bucket !== 'excel-templates') {
+    const target = parseStorageTarget(bucket, path)
+    if (!target || !canAccessStore(ctx, target.storeId)) return { error: '無權限上傳到此店家路徑' }
+  }
 
   const supabase = createAdminClient()
   const { data, error } = await supabase.storage.from(bucket).createSignedUploadUrl(path)

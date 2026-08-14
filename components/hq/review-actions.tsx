@@ -18,7 +18,7 @@ export default function ReviewActions({ closingId, currentStatus, onProcessed, h
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [note, setNote] = useState('')
   const [done, setDone] = useState(false)
-  const canVerify = currentStatus === 'submitted' || currentStatus === 'disputed'
+  const canVerify = currentStatus === 'submitted'
   const canDispute = currentStatus === 'submitted' || currentStatus === 'verified' || currentStatus === 'disputed'
 
   if (done) return null
@@ -113,7 +113,7 @@ export default function ReviewActions({ closingId, currentStatus, onProcessed, h
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
           style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 2px 8px rgba(16,185,129,0.25)', opacity: loading ? 0.5 : 1 }}>
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-          {currentStatus === 'disputed' ? '重新核准' : '核准'}
+          核准
         </button>
       )}
       {canDispute && (

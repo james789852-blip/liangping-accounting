@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   deriveExportReconciliation,
   resolveCentralKitchenOrderTarget,
+  resolveScopedItemIdentity,
 } from '../lib/export-reconciliation.ts'
 import { itemNameCompatibilityKey } from '../lib/item-name-compat.ts'
 import { historicalItemSyncTargets } from '../lib/item-history-scope.ts'
@@ -68,6 +69,26 @@ test('unmapped central-kitchen order never falls back to another vendor', () => 
 
 test('central-kitchen oil shallot names share one compatibility key', () => {
   assert.equal(itemNameCompatibilityKey('油蔥酥'), itemNameCompatibilityKey('油蔥'))
+})
+
+test('same-name items resolve by mapping id and never by candidate order', () => {
+  const items = [
+    { id: 'upstream-id', name: '滷肉', vendor_group: '上逸' },
+    { id: 'ck-id', name: '滷肉', vendor_group: '央廚配送' },
+  ]
+
+  assert.deepEqual(
+    resolveScopedItemIdentity(
+      { mappingId: 'ck-id', vendorGroup: '央廚配送', itemName: '滷肉' },
+      items,
+      itemNameCompatibilityKey,
+    ),
+    items[1],
+  )
+  assert.equal(
+    resolveScopedItemIdentity({ itemName: '滷肉' }, items, itemNameCompatibilityKey),
+    undefined,
+  )
 })
 
 test('external vendor rename cannot rewrite central-kitchen order history', () => {
