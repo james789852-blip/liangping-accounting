@@ -19,5 +19,12 @@ export function itemNameCompatibilityKey(value: string | null | undefined): stri
     return '與分店買食材'
   }
 
+  // 央廚單價表歷史名稱是「油蔥酥」，各店央廚配送 mapping 則統一使用
+  // 「油蔥」。兩者是同一個央廚品項；vendor_group 仍會在匯出時分流，
+  // 因此不會跟「雜貨」分類下購買的油蔥酥混在一起。
+  if (compact === '油蔥酥' || compact === '油蔥') {
+    return '油蔥'
+  }
+
   return compact
 }

@@ -85,6 +85,21 @@ function scopedItemValueForExport(
     const exactKey = `${vendorGroup}|${key}`
     if (exactKey in scoped) return { value: scoped[exactKey] ?? 0, sourceKey: key }
 
+    // 同一分類內允許歷史相容名稱，例如央廚單價「油蔥酥」對應各店
+    // mapping「油蔥」。分類必須相同，避免一般雜貨金額被灌入央廚欄。
+    const compatibleKey = Object.keys(scoped).find(scopedKey => {
+      const separator = scopedKey.indexOf('|')
+      if (separator < 0) return false
+      const scopedVendorGroup = scopedKey.slice(0, separator)
+      const scopedItemName = scopedKey.slice(separator + 1)
+      return scopedVendorGroup === vendorGroup
+        && itemNameCompatibilityKey(scopedItemName) === itemNameCompatibilityKey(key)
+    })
+    if (compatibleKey) {
+      const sourceKey = compatibleKey.slice(compatibleKey.indexOf('|') + 1)
+      return { value: scoped[compatibleKey] ?? 0, sourceKey }
+    }
+
     // 只要這個品項已有任何廠商分類明細，就不能再 fallback 到品名總額。
     // 否則「菜商|油豆腐」90 會同時被寫入「豆腐商|油豆腐」欄位。
     // 舊名稱可能有空白、括號或連字號差異，因此分類明細也使用相容鍵比對。

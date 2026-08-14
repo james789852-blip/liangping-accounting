@@ -5,6 +5,7 @@ import {
   deriveExportReconciliation,
   resolveOrderItemVendorGroup,
 } from '../lib/export-reconciliation.ts'
+import { itemNameCompatibilityKey } from '../lib/item-name-compat.ts'
 
 test('submitted closing keeps the stored system variance in Excel', () => {
   const result = deriveExportReconciliation({
@@ -37,4 +38,8 @@ test('legacy single mapping receives a central-kitchen order amount', () => {
     resolveOrderItemVendorGroup([{ vendor_group: '雜貨' }, { vendor_group: '央廚配送' }]),
     '央廚配送',
   )
+})
+
+test('central-kitchen oil shallot names share one compatibility key', () => {
+  assert.equal(itemNameCompatibilityKey('油蔥酥'), itemNameCompatibilityKey('油蔥'))
 })
