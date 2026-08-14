@@ -610,6 +610,13 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   const [note, setNote] = useState(existing?.note ?? '')
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const backgroundSaveTimerRef = useRef<number | null>(null)
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const latestHandleSaveRef = useRef<((asSubmit?: boolean, opts?: { silent?: boolean }) => Promise<boolean>) | null>(null)
+
+  useEffect(() => () => {
+    if (backgroundSaveTimerRef.current) window.clearTimeout(backgroundSaveTimerRef.current)
+  }, [])
 
   // 體系外叫貨
   const [extOrders, setExtOrders] = useState<ExternalOrder[]>(
@@ -1086,11 +1093,21 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
 
   async function handleSave(asSubmit = false, opts: { silent?: boolean } = {}) {
     if (photoUploading) {
-      toast.error('照片仍在上傳中，請稍候完成')
+      if (!opts.silent) toast.error('照片仍在上傳中，請稍候完成')
       return false
     }
-    if (asSubmit) setSubmitting(true); else setSaving(true)
-    const r = await saveCKDailyRecord(ckStoreId, date, {
+
+    if ((asSubmit || !opts.silent) && backgroundSaveTimerRef.current) {
+      window.clearTimeout(backgroundSaveTimerRef.current)
+      backgroundSaveTimerRef.current = null
+    }
+
+    if (asSubmit) setSubmitting(true)
+    else if (!opts.silent) setSaving(true)
+
+    // 在加入佇列前先建立當下快照。快速切換步驟時，每次儲存會依序完成，
+    // 最後送出也一定排在先前的背景儲存之後，不會互相覆寫。
+    const payload = {
       payerName: payerName || undefined,
       note: note || undefined,
       status: asSubmit ? 'submitted' : 'draft',
@@ -1107,22 +1124,46 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         receipt_photo_url: (e as any).receipt_photo_url || undefined,
       })),
       receiptPhotoUrls: photoUrls,
-    })
-    if (r.error) { toast.error('儲存失敗：' + r.error) }
-    else {
+    } as const
+
+    let succeeded = false
+    const queuedSave = saveQueueRef.current.then(async () => {
+      const r = await saveCKDailyRecord(ckStoreId, date, payload)
+      if (r.error) {
+        toast.error('儲存失敗：' + r.error)
+        return
+      }
+      succeeded = true
       if (typeof window !== 'undefined') window.localStorage.removeItem(draftKey)
       if (!opts.silent) toast.success(asSubmit ? '已送出！' : '草稿已儲存')
       if (!opts.silent) router.refresh()
+    })
+    saveQueueRef.current = queuedSave.catch(() => undefined)
+
+    try {
+      await queuedSave
+    } catch (error) {
+      toast.error('儲存失敗：' + ((error as Error)?.message ?? '未知錯誤'))
+    } finally {
+      if (asSubmit) setSubmitting(false)
+      else if (!opts.silent) setSaving(false)
     }
-    if (asSubmit) setSubmitting(false); else setSaving(false)
-    return !r.error
+    return succeeded
+  }
+  latestHandleSaveRef.current = handleSave
+
+  function scheduleBackgroundSave() {
+    if (backgroundSaveTimerRef.current) window.clearTimeout(backgroundSaveTimerRef.current)
+    backgroundSaveTimerRef.current = window.setTimeout(() => {
+      backgroundSaveTimerRef.current = null
+      void latestHandleSaveRef.current?.(false, { silent: true })
+    }, 900)
   }
 
-  async function goNext() {
+  function goNext() {
     if (currentStep >= 4) return
-    const ok = await handleSave(false, { silent: true })
-    if (!ok) return
     setCurrentStep(s => Math.min(4, s + 1))
+    scheduleBackgroundSave()
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -1990,7 +2031,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold text-white"
               style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-              儲存並下一步
+              下一步
             </button>
           ) : (
           <button type="button" onClick={() => handleSave(true)} disabled={submitting || photoUploading}
