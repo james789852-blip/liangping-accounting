@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import ClosingHelp from './closing-help'
 import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn, PiggyBank } from 'lucide-react'
 import { saveCashCounts, submitClosing, savePettyCounts } from '@/app/actions/closings'
+import { refreshReserveHistoryContext } from '@/app/actions/reserve-history'
 import { createSignedUploadUrl, uploadToStorage } from '@/app/actions/upload'
 import { compressImage } from '@/lib/compress-image'
 import { normalizeItemAmount } from '@/lib/negative-items'
@@ -1109,7 +1110,7 @@ function CategoryPicker({ categories, value, onChange }: {
   )
 }
 
-export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], actualVendors = [], prevDayReserves, preReservedExpenseHints = [], isBackfill = false, realToday, calendarToday, isEarlyMorningBusinessDate = false, latestBackfillDraftDate }: Props) {
+export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], actualVendors = [], prevDayReserves: initialPrevDayReserves, preReservedExpenseHints: initialPreReservedExpenseHints = [], isBackfill = false, realToday, calendarToday, isEarlyMorningBusinessDate = false, latestBackfillDraftDate }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
   const [largeCashExpenses, setLargeCashExpenses] = useState<LargeCashExpense[]>(() => initLargeCashExpenses(existingClosing))
@@ -1434,10 +1435,68 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     return () => window.clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adjustments, adjustmentsHydrated, existingClosing?.status])
+  const [prevDayReserves, setPrevDayReserves] = useState(() => initialPrevDayReserves)
+  const [preReservedExpenseHints, setPreReservedExpenseHints] = useState(() => initialPreReservedExpenseHints)
   const [reserves, setReserves] = useState<ReserveItem[]>(() => {
     const saved = existingClosing?.reserve_items
     return withPendingReserveContext(Array.isArray(saved) ? saved : [], prevDayReserves)
   })
+
+  useEffect(() => {
+    setPrevDayReserves(initialPrevDayReserves)
+    setPreReservedExpenseHints(initialPreReservedExpenseHints)
+  }, [initialPrevDayReserves, initialPreReservedExpenseHints])
+
+  const hasHistoricalReserveReminder = Boolean(
+    prevDayReserves?.items.length || preReservedExpenseHints.length,
+  )
+
+  // 店長可能把頁面留在背景數小時；期間總公司已完成核銷，但 Client Router
+  // 仍保留舊的 Server Component props。只重抓預留款脈絡，不整頁 refresh，
+  // 以免尚未送出的營業額、照片或現金清點被重新初始化。
+  useEffect(() => {
+    let disposed = false
+    let inFlight = false
+    let lastCheckedAt = 0
+
+    const refreshReserveState = async () => {
+      if (disposed || inFlight || document.visibilityState !== 'visible') return
+      const now = Date.now()
+      if (now - lastCheckedAt < 3000) return
+      inFlight = true
+      lastCheckedAt = now
+      try {
+        const result = await refreshReserveHistoryContext(store.id, today)
+        if (!disposed && 'context' in result && result.context) {
+          setPrevDayReserves(result.context.prevDayReserves)
+          setPreReservedExpenseHints(result.context.preReservedExpenseHints)
+        }
+      } finally {
+        inFlight = false
+      }
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refreshReserveState()
+    }
+    const onPageShow = () => void refreshReserveState()
+    const onFocus = () => void refreshReserveState()
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('pageshow', onPageShow)
+    window.addEventListener('focus', onFocus)
+    const interval = hasHistoricalReserveReminder
+      ? window.setInterval(() => void refreshReserveState(), 60_000)
+      : null
+
+    return () => {
+      disposed = true
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('pageshow', onPageShow)
+      window.removeEventListener('focus', onFocus)
+      if (interval !== null) window.clearInterval(interval)
+    }
+  }, [store.id, today, hasHistoricalReserveReminder])
   const [showReserveForm, setShowReserveForm] = useState(false)
   const [reserveForm, setReserveForm] = useState<Omit<ReserveItem, 'id'>>({ reason: '電費', amount: 0, total_bill: 0 })
   const legacyReserveLsKey = `reserve_items_${store.id}_${today}`
