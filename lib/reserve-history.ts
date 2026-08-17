@@ -111,15 +111,29 @@ export function buildReserveHistoryContext(rows: HistoricalClosing[]) {
         existing.amount += amount
         if (date < existing.started_date) existing.started_date = date
         if (date > existing.last_date) existing.last_date = date
-      } else {
-        activeCycles.push({
-          reason,
-          total_bill: totalBill,
-          amount,
-          started_date: date,
-          last_date: date,
-        })
+        continue
       }
+
+      // 舊版店長端曾把「前一期尚差金額」存進 total_bill，而非原始帳單總額。
+      // 例如第一天 18,655 / 42,709，隔天存成 24,054 / 24,054；若直接建立
+      // 新週期，付款時只會核銷其中一筆，之後便永久出現幽靈提醒。
+      const legacyContinuation = activeCycles
+        .filter(cycle => cycle.reason === reason && cycle.amount < cycle.total_bill)
+        .filter(cycle => Math.abs((cycle.total_bill - cycle.amount) - totalBill) <= 1)
+        .sort((a, b) => b.last_date.localeCompare(a.last_date))[0]
+      if (legacyContinuation) {
+        legacyContinuation.amount += amount
+        if (date > legacyContinuation.last_date) legacyContinuation.last_date = date
+        continue
+      }
+
+      activeCycles.push({
+        reason,
+        total_bill: totalBill,
+        amount,
+        started_date: date,
+        last_date: date,
+      })
     }
   }
 

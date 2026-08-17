@@ -23,6 +23,7 @@ import SharedSafePhotoImage from '@/components/shared/safe-photo-image'
 import { storePhotoPath } from '@/lib/storage-paths'
 import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
 import { shouldRestoreRemittanceAdjustmentDraft } from '@/lib/remittance-adjustment-draft'
+import { prepareReserveDraftItems } from '@/lib/reserve-draft'
 
 interface RemittanceAdjustment {
   id: string
@@ -254,58 +255,6 @@ interface PrevDayReserve {
     started_date?: string
     remaining_amount?: number
   }[]
-}
-
-function withPendingReserveContext(items: ReserveItem[], context?: PrevDayReserve | null): ReserveItem[] {
-  let next = items
-  for (const pending of context?.items ?? []) {
-    const totalBill = Number(pending.total_bill ?? 0)
-    const remaining = pending.remaining_amount ?? (totalBill - pending.amount)
-    if (totalBill <= 0 || remaining <= 0) continue
-
-    const exactMatchingIndex = next.findIndex(item =>
-      item.reason === pending.reason && Number(item.total_bill ?? 0) === totalBill,
-    )
-    // 舊版草稿可能只存「原因＋今日金額」，沒有 total_bill。
-    // 同原因且未綁定帳單的項目，應視為這一期預留款的延續，
-    // 否則會把今天金額與昨天預留拆成兩筆。
-    const legacyMatchingIndex = exactMatchingIndex < 0
-      ? next.findIndex(item => item.reason === pending.reason && Number(item.total_bill ?? 0) <= 0)
-      : -1
-    const matchingIndex = exactMatchingIndex >= 0 ? exactMatchingIndex : legacyMatchingIndex
-    if (matchingIndex >= 0) {
-      const current = next[matchingIndex]
-      const sourceStartDate = current.source_start_date ?? pending.started_date
-      const accumulatedBefore = current.accumulated_before ?? pending.amount
-      if (
-        Number(current.total_bill ?? 0) !== totalBill
-        || current.source_start_date !== sourceStartDate
-        || current.accumulated_before !== accumulatedBefore
-      ) {
-        next = next.map((item, index) => index === matchingIndex
-          ? {
-              ...item,
-              total_bill: totalBill,
-              source_start_date: sourceStartDate,
-              accumulated_before: accumulatedBefore,
-            }
-          : item)
-      }
-      continue
-    }
-
-    if (next === items) next = [...items]
-    next.push({
-      id: `auto-reserve-${pending.started_date ?? context?.business_date ?? 'previous'}-${pending.reason}-${totalBill}`,
-      reason: pending.reason,
-      amount: 0,
-      total_bill: totalBill,
-      auto_reserved: true,
-      source_start_date: pending.started_date,
-      accumulated_before: pending.amount,
-    })
-  }
-  return next
 }
 
 interface Props {
@@ -1437,10 +1386,31 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [adjustments, adjustmentsHydrated, existingClosing?.status])
   const [prevDayReserves, setPrevDayReserves] = useState(() => initialPrevDayReserves)
   const [preReservedExpenseHints, setPreReservedExpenseHints] = useState(() => initialPreReservedExpenseHints)
+  const reserveSuggestionDismissKey = `reserve_suggestion_dismissed_${store.id}_${today}`
+  const [dismissedReserveSuggestions, setDismissedReserveSuggestions] = useState<string[]>([])
+  const [reserveSuggestionDismissalsHydrated, setReserveSuggestionDismissalsHydrated] = useState(false)
   const [reserves, setReserves] = useState<ReserveItem[]>(() => {
     const saved = existingClosing?.reserve_items
-    return withPendingReserveContext(Array.isArray(saved) ? saved : [], prevDayReserves)
+    const editable = !['submitted', 'verified'].includes(existingClosing?.status ?? '')
+    return prepareReserveDraftItems(Array.isArray(saved) ? saved : [], prevDayReserves, editable)
   })
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(reserveSuggestionDismissKey) ?? '[]')
+      setDismissedReserveSuggestions(Array.isArray(stored) ? stored.filter(item => typeof item === 'string') : [])
+    } catch {
+      setDismissedReserveSuggestions([])
+    }
+    setReserveSuggestionDismissalsHydrated(true)
+  }, [reserveSuggestionDismissKey])
+
+  useEffect(() => {
+    if (!reserveSuggestionDismissalsHydrated) return
+    try {
+      localStorage.setItem(reserveSuggestionDismissKey, JSON.stringify(dismissedReserveSuggestions))
+    } catch {}
+  }, [dismissedReserveSuggestions, reserveSuggestionDismissKey, reserveSuggestionDismissalsHydrated])
 
   useEffect(() => {
     setPrevDayReserves(initialPrevDayReserves)
@@ -1510,7 +1480,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     try {
       const stored = JSON.parse(localStorage.getItem(reserveLsKey) ?? '[]')
       if (Array.isArray(stored) && stored.length > 0) {
-        setReserves(withPendingReserveContext(stored, prevDayReserves))
+        setReserves(prepareReserveDraftItems(stored, prevDayReserves))
       }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1718,7 +1688,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       if (!localStorage.getItem(adjLsKey) && Array.isArray(bk.adjustments)) {
         setAdjustments(normalizeRemittanceAdjustments(bk.adjustments))
       }
-      if (Array.isArray(bk.reserves)) setReserves(bk.reserves)
+      if (Array.isArray(bk.reserves)) setReserves(prepareReserveDraftItems(bk.reserves, prevDayReserves))
       if (Array.isArray(bk.largeCashExpenses)) setLargeCashExpenses(bk.largeCashExpenses)
       if (bk.ckQuantities && typeof bk.ckQuantities === 'object') setCkQuantities(bk.ckQuantities)
       if (bk.ckPriceOverrides && typeof bk.ckPriceOverrides === 'object') setCkPriceOverrides(bk.ckPriceOverrides)
@@ -1875,13 +1845,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const isRemittanceLocked = status === 'submitted' || status === 'verified'
   const isDisputed = status === 'disputed'
   const disputeNote = existingClosing?.dispute_note ?? ''
-  const pendingCarryReserves = useMemo(() => {
-    return (prevDayReserves?.items ?? []).filter(item =>
-      (item.total_bill ?? 0) > 0
-      && (item.remaining_amount ?? ((item.total_bill ?? 0) - item.amount)) > 0,
-    )
-  }, [prevDayReserves])
-
   // 若前幾日已有同名預留款，且本日輸入相同的大額支出，預設視為由預留款支付。
   // 只有尚未明確設定過的資料才自動判定；使用者取消勾選後不會被重新勾回。
   useEffect(() => {
@@ -1892,55 +1855,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return changed ? next : prev
     })
   }, [isLocked, submitDone, preReservedExpenseHints, largeCashExpenses])
-
-  useEffect(() => {
-    if (pendingCarryReserves.length === 0 || isLocked || submitDone) return
-    setReserves(prev => {
-      let available = Math.max(0, Math.round(s.finalRemit))
-      let next = withPendingReserveContext(prev, prevDayReserves)
-      let changed = next !== prev
-
-      for (const pending of pendingCarryReserves) {
-        const totalBill = Number(pending.total_bill ?? 0)
-        const remaining = Math.max(0, pending.remaining_amount ?? (totalBill - pending.amount))
-        const matching = next.find(item => item.reason === pending.reason && Number(item.total_bill ?? 0) === totalBill)
-        if (matching && !matching.auto_reserved) {
-          available = Math.max(0, available - Math.max(0, matching.amount))
-          continue
-        }
-
-        const amount = Math.min(available, remaining)
-        available -= amount
-        if (!matching) continue
-        if (
-          matching.amount !== amount
-          || matching.source_start_date !== pending.started_date
-          || matching.accumulated_before !== pending.amount
-        ) {
-          next = next.map(item => item.id === matching.id
-            ? {
-                ...item,
-                amount,
-                source_start_date: pending.started_date,
-                accumulated_before: pending.amount,
-              }
-            : item)
-          changed = true
-        }
-      }
-      return changed ? next : prev
-    })
-  }, [pendingCarryReserves, prevDayReserves, isLocked, submitDone, s.finalRemit])
-
-  // 歷史資料補足後，舊草稿可能還留著前一版自動帶入的預留款。
-  // 沒有未結清帳單時移除這筆暫存，避免畫面仍顯示已完成的差額。
-  useEffect(() => {
-    if (pendingCarryReserves.length > 0 || isLocked || submitDone) return
-    setReserves(prev => {
-      const next = prev.filter(item => !item.auto_reserved)
-      return next.length === prev.length ? prev : next
-    })
-  }, [pendingCarryReserves, isLocked, submitDone])
 
   useEffect(() => {
     if (!handwriteOrdersHydrated || isLocked || submitDone) return
@@ -5705,6 +5619,34 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {/* 預留款 */}
             {(() => {
               const RESERVE_REASONS = ['電費', '房租', '營業稅', '其他']
+              const pendingForReason = (prevDayReserves?.items ?? []).find(item =>
+                item.reason === reserveForm.reason
+                && (!reserveForm.source_start_date || item.started_date === reserveForm.source_start_date)
+                && (item.remaining_amount ?? ((item.total_bill ?? 0) - item.amount)) > 0,
+              )
+              const pendingRemaining = pendingForReason
+                ? Math.max(0, pendingForReason.remaining_amount ?? ((pendingForReason.total_bill ?? 0) - pendingForReason.amount))
+                : null
+              const alreadyReservedToday = reserves.reduce((sum, item) => sum + Math.max(0, item.amount || 0), 0)
+              const availableToReserve = Math.max(0, Math.round(s.finalRemit) - alreadyReservedToday)
+              let suggestionBudget = availableToReserve
+              const pendingSuggestions = (prevDayReserves?.items ?? [])
+                .filter(pending => {
+                  const totalBill = Number(pending.total_bill ?? 0)
+                  const suggestionKey = `${pending.started_date ?? prevDayReserves?.business_date}-${pending.reason}-${totalBill}`
+                  return (pending.remaining_amount ?? (totalBill - pending.amount)) > 0
+                    && !dismissedReserveSuggestions.includes(suggestionKey)
+                    && !reserves.some(item =>
+                      item.reason === pending.reason
+                      && Number(item.total_bill ?? 0) === totalBill,
+                    )
+                })
+                .map(pending => {
+                  const remaining = Math.max(0, pending.remaining_amount ?? ((pending.total_bill ?? 0) - pending.amount))
+                  const suggestedAmount = Math.min(suggestionBudget, remaining)
+                  suggestionBudget -= suggestedAmount
+                  return { pending, remaining, suggestedAmount }
+                })
               return (
                 <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                   <div className="px-4 pt-4 pb-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
@@ -5719,7 +5661,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         </div>
                       </div>
                       {!isLocked && (
-                        <button type="button" onClick={() => { setShowReserveForm(v => !v); setReserveForm({ reason: '電費', amount: 0, total_bill: 0 }) }}
+                        <button type="button" onClick={() => {
+                          const pending = prevDayReserves?.items.find(item =>
+                            (item.remaining_amount ?? ((item.total_bill ?? 0) - item.amount)) > 0,
+                          )
+                          const remaining = pending
+                            ? Math.max(0, pending.remaining_amount ?? ((pending.total_bill ?? 0) - pending.amount))
+                            : 0
+                          setShowReserveForm(v => !v)
+                          setReserveForm({
+                            reason: pending?.reason ?? '電費',
+                            amount: pending ? Math.min(availableToReserve, remaining) : 0,
+                            total_bill: pending?.total_bill ?? 0,
+                            source_start_date: pending?.started_date,
+                            accumulated_before: pending?.amount,
+                          })
+                        }}
                           className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg"
                           style={{ background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa' }}>
                           <Plus className="h-3.5 w-3.5" />新增預留
@@ -5728,7 +5685,53 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     </div>
                   </div>
                   <div className="px-4 py-3 space-y-2">
-                    {reserves.length === 0 && !showReserveForm && (
+                    {!isLocked && pendingSuggestions.map(({ pending, remaining, suggestedAmount }) => {
+                      const suggestionKey = `${pending.started_date ?? prevDayReserves?.business_date}-${pending.reason}-${pending.total_bill ?? 0}`
+                      return (
+                      <div key={suggestionKey}
+                        className="py-2.5 px-3 rounded-xl"
+                        style={{ background: '#fffbeb', border: '1.5px solid #fde68a' }}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-semibold px-2 py-0.5 rounded-md" style={{ background: '#fef3c7', color: '#92400e' }}>{pending.reason}</span>
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: '#dbeafe', color: '#1d4ed8' }}>前期自動帶入・待確認</span>
+                            </div>
+                            <p className="text-xs mt-1.5 tabular-nums" style={{ color: '#92400e' }}>
+                              帳單 ${fmt(pending.total_bill ?? 0)}，已預留 ${fmt(pending.amount)}，尚差 ${fmt(remaining)}
+                            </p>
+                            <p className="text-[10px] mt-1" style={{ color: '#a16207' }}>
+                              尚未計入今日帳目，店長確認後才會扣除。
+                            </p>
+                          </div>
+                          <div className="shrink-0 flex items-center gap-1.5">
+                            <button type="button" onClick={() => {
+                              setReserveForm({
+                                reason: pending.reason,
+                                amount: suggestedAmount,
+                                total_bill: pending.total_bill ?? 0,
+                                source_start_date: pending.started_date,
+                                accumulated_before: pending.amount,
+                              })
+                              setShowReserveForm(true)
+                            }}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg"
+                              style={{ background: '#ea580c', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+                              帶入 ${fmt(suggestedAmount)}
+                            </button>
+                            <button type="button"
+                              aria-label="今天不預留"
+                              title="今天不預留，明天會再次提醒"
+                              onClick={() => setDismissedReserveSuggestions(prev => prev.includes(suggestionKey) ? prev : [...prev, suggestionKey])}
+                              className="h-7 w-7 rounded-lg flex items-center justify-center"
+                              style={{ background: 'transparent', color: '#a16207', border: '1px solid #fcd34d', cursor: 'pointer' }}>
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )})}
+                    {reserves.length === 0 && pendingSuggestions.length === 0 && !showReserveForm && (
                       <p className="text-xs text-center py-2" style={{ color: '#a1a1aa' }}>尚無預留款項</p>
                     )}
                     {reserves.map(r => {
@@ -5779,15 +5782,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             <label className="block text-[10px] font-semibold mb-1" style={{ color: '#52525b' }}>原因</label>
                             <select value={reserveForm.reason} onChange={e => {
                               const reason = e.target.value
-                              setReserveForm(prev => {
-                                const totalBill = prev.total_bill ?? 0
-                                const shouldAutoAmount = reason === '房租' && (prev.amount ?? 0) <= 0 && totalBill > 0
-                                return {
-                                  ...prev,
-                                  reason,
-                                  amount: shouldAutoAmount ? Math.min(Math.max(0, Math.round(s.finalRemit)), totalBill) : prev.amount,
-                                }
-                              })
+                              const pending = prevDayReserves?.items.find(item =>
+                                item.reason === reason
+                                && (item.remaining_amount ?? ((item.total_bill ?? 0) - item.amount)) > 0,
+                              )
+                              const remaining = pending
+                                ? Math.max(0, pending.remaining_amount ?? ((pending.total_bill ?? 0) - pending.amount))
+                                : 0
+                              setReserveForm(prev => ({
+                                ...prev,
+                                reason,
+                                amount: pending ? Math.min(availableToReserve, remaining) : 0,
+                                total_bill: pending?.total_bill ?? 0,
+                                source_start_date: pending?.started_date,
+                                accumulated_before: pending?.amount,
+                              }))
                             }}
                               style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}>
                               {RESERVE_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
@@ -5810,20 +5819,19 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           <input type="number" inputMode="numeric"
                             value={reserveForm.total_bill || ''}
                             placeholder="如：39891"
-                            onChange={e => {
-                              const totalBill = parseFloat(e.target.value) || 0
-                              setReserveForm(prev => {
-                                const shouldAutoAmount = prev.reason === '房租' && (prev.amount ?? 0) <= 0 && totalBill > 0
-                                return {
-                                  ...prev,
-                                  total_bill: totalBill,
-                                  amount: shouldAutoAmount ? Math.min(Math.max(0, Math.round(s.finalRemit)), totalBill) : prev.amount,
-                                }
-                              })
-                            }}
+                            disabled={!!pendingForReason}
+                            onChange={e => setReserveForm(prev => ({
+                              ...prev,
+                              total_bill: parseFloat(e.target.value) || 0,
+                            }))}
                             style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: 'white', outline: 'none', fontFamily: 'inherit', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#18181b' }} />
                         </div>
-                        {(reserveForm.total_bill ?? 0) > 0 && reserveForm.amount > 0 && (reserveForm.total_bill ?? 0) > reserveForm.amount && (
+                        {pendingForReason && (
+                          <p className="text-xs px-2 py-1.5 rounded-lg" style={{ background: '#fffbeb', color: '#92400e' }}>
+                            同一張帳單已預留 ${fmt(pendingForReason.amount)}，目前尚差 ${fmt(pendingRemaining ?? 0)}；系統已帶入今日建議金額，按下確認後才會正式計入。
+                          </p>
+                        )}
+                        {!pendingForReason && (reserveForm.total_bill ?? 0) > 0 && reserveForm.amount > 0 && (reserveForm.total_bill ?? 0) > reserveForm.amount && (
                           <p className="text-xs px-2 py-1.5 rounded-lg" style={{ background: '#ffe4e6', color: '#be123c' }}>
                             今日預留 ${fmt(reserveForm.amount)}，明日尚差 ${fmt((reserveForm.total_bill ?? 0) - reserveForm.amount)}
                           </p>
@@ -5831,17 +5839,40 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         <div className="flex gap-2">
                           <button type="button" onClick={() => {
                             if (reserveForm.amount <= 0) { toast.error('請輸入預留金額'); return }
+                            if (reserveForm.amount > availableToReserve) {
+                              toast.error(`今日最多只能預留 $${fmt(availableToReserve)}`)
+                              return
+                            }
+                            if (pendingRemaining !== null && reserveForm.amount > pendingRemaining) {
+                              toast.error(`此帳單目前只差 $${fmt(pendingRemaining)}`)
+                              return
+                            }
+                            const totalBill = pendingForReason?.total_bill ?? reserveForm.total_bill ?? 0
+                            if (totalBill > 0 && !pendingForReason && reserveForm.amount > totalBill) {
+                              toast.error('預留金額不能超過帳單總額')
+                              return
+                            }
+                            const duplicate = reserves.some(item =>
+                              item.reason === reserveForm.reason
+                              && Number(item.total_bill ?? 0) === Number(totalBill),
+                            )
+                            if (duplicate) {
+                              toast.error('今天已有相同帳單的預留款，請先刪除原項目再修改')
+                              return
+                            }
                             const item: ReserveItem = {
                               ...reserveForm,
                               id: crypto.randomUUID(),
-                              total_bill: reserveForm.total_bill || undefined,
+                              total_bill: totalBill || undefined,
+                              source_start_date: pendingForReason?.started_date,
+                              accumulated_before: pendingForReason?.amount,
                             }
                             setReserves(prev => [...prev, item])
                             setShowReserveForm(false)
                             setReserveForm({ reason: '電費', amount: 0, total_bill: 0 })
                           }}
                             className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ background: '#ea580c', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-                            儲存
+                            確認預留
                           </button>
                           <button type="button" onClick={() => { setShowReserveForm(false); setReserveForm({ reason: '電費', amount: 0, total_bill: 0 }) }}
                             className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: '#f4f4f5', color: '#71717a', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
