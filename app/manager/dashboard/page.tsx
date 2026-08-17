@@ -53,15 +53,10 @@ export default async function ManagerDashboard() {
   let todayClosing: any = null
   let recentClosings: any[] = []
   let storeName = ''
-  let ckMismatches: { business_date: string; amount: number; ck_confirmed_amount: number }[] = []
 
   if (storeId) {
-    // 過去 7 天範圍
-    const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-    const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10)
-
     const admin = createAdminClient()
-    const [storeData, closingRes, recentRes, ckMismatchRes, validClosingRes] = await Promise.all([
+    const [storeData, closingRes, recentRes] = await Promise.all([
       getCachedStoreById(storeId),
       supabase.from('daily_closings')
         .select('id, status, petty_counts, total_revenue, should_include_delivery, actual_remit, total_cost, variance')
@@ -69,19 +64,6 @@ export default async function ManagerDashboard() {
       supabase.from('daily_closings')
         .select('id, business_date, status, total_revenue, should_include_delivery, variance')
         .eq('store_id', storeId).order('business_date', { ascending: false }).limit(8),
-      // 央廚對帳異常：過去 7 天以店面 daily_closings.total_cost 對比央廚確認金額。
-      // ck_store_orders.amount 是歷史同步欄位，不能當作店面結帳畫面顯示的自報金額。
-      admin.from('ck_store_orders')
-        .select('amount, ck_confirmed_amount, ck_daily_record_id, ck_daily_records!inner(business_date)')
-        .eq('store_id', storeId)
-        .not('ck_confirmed_amount', 'is', null)
-        .gte('ck_daily_records.business_date', sevenDaysAgoStr),
-      admin.from('daily_closings')
-        .select('business_date, total_cost')
-        .eq('store_id', storeId)
-        .gte('business_date', sevenDaysAgoStr)
-        .lte('business_date', today)
-        .in('status', ['submitted', 'verified']),
     ])
     storeName = (storeData as any)?.name ?? ''
     if ((storeData as any)?.type === '央廚') {
@@ -346,30 +328,6 @@ export default async function ManagerDashboard() {
     }
     todayClosing = closingRes.data
     recentClosings = (recentRes.data ?? []).filter((c: any) => c.business_date !== today).slice(0, 7)
-
-    const storeCostByDate = new Map(
-      (validClosingRes.data ?? []).map((c: any) => [
-        c.business_date as string,
-        Number(c.total_cost ?? 0),
-      ])
-    )
-    ckMismatches = (ckMismatchRes.data ?? [])
-      .map((o: any) => {
-        const businessDate = (o.ck_daily_records as any)?.business_date as string
-        return {
-          business_date: businessDate,
-          amount: storeCostByDate.get(businessDate) ?? 0,
-          ck_confirmed_amount: Number(o.ck_confirmed_amount),
-        }
-      })
-      .filter((o) => storeCostByDate.has(o.business_date))
-      .filter((o) => o.ck_confirmed_amount !== o.amount)
-      .map((o) => ({
-        business_date: o.business_date,
-        amount: o.amount,
-        ck_confirmed_amount: o.ck_confirmed_amount,
-      }))
-      .sort((a, b) => b.business_date.localeCompare(a.business_date))
   }
 
   const pettyVerified = !!(todayClosing?.petty_counts as { verified_at?: string } | null | undefined)?.verified_at
@@ -412,43 +370,6 @@ export default async function ManagerDashboard() {
           </span>
           <ArrowRight className="h-4 w-4 shrink-0" />
         </Link>
-
-        {/* 央廚對帳異常橫幅 — 過去 7 天店家自報 vs 央廚對帳金額不一致 */}
-        {ckMismatches.length > 0 && (
-          <div className="rounded-2xl p-4 mb-4" style={{ background: '#FEF2F2', border: '1.5px solid #FECACA' }}>
-            <div className="flex items-center gap-2 mb-2">
-              <span style={{ fontSize: '18px' }}>⚠️</span>
-              <p className="text-sm font-bold" style={{ color: '#991B1B' }}>
-                央廚對帳異常（{ckMismatches.length} 筆）
-              </p>
-            </div>
-            <p className="text-xs mb-3" style={{ color: '#7F1D1D' }}>
-              你提交的央廚叫貨金額跟央廚那邊確認的金額不一致，請核對：
-            </p>
-            <div className="space-y-1.5">
-              {ckMismatches.slice(0, 5).map((m, i) => {
-                const diff = m.ck_confirmed_amount - m.amount
-                return (
-                  <div key={i} className="flex items-center justify-between text-xs px-3 py-2 rounded-lg" style={{ background: '#fff' }}>
-                    <span style={{ color: '#52525b' }}>{m.business_date}</span>
-                    <div className="flex items-center gap-3">
-                      <span style={{ color: '#71717a' }}>自報 ${Math.round(m.amount).toLocaleString()}</span>
-                      <span style={{ color: '#71717a' }}>央廚 ${Math.round(m.ck_confirmed_amount).toLocaleString()}</span>
-                      <span className="font-bold tabular-nums" style={{ color: diff > 0 ? '#dc2626' : '#0369a1' }}>
-                        {diff > 0 ? '+' : ''}{Math.round(diff).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
-              {ckMismatches.length > 5 && (
-                <p className="text-xs text-center pt-1" style={{ color: '#a1a1aa' }}>
-                  …還有 {ckMismatches.length - 5} 筆
-                </p>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* ── 大 CTA 卡片 ── */}
         <Link href={actionHref}>
