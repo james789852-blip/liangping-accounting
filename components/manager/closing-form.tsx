@@ -24,6 +24,7 @@ import { storePhotoPath } from '@/lib/storage-paths'
 import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
 import { shouldRestoreRemittanceAdjustmentDraft } from '@/lib/remittance-adjustment-draft'
 import { prepareReserveDraftItems } from '@/lib/reserve-draft'
+import { getEnvelopePackingState } from '@/lib/envelope-packing'
 
 interface RemittanceAdjustment {
   id: string
@@ -1185,6 +1186,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   // Envelope bag photo
   const [envelopePhotoPreview, setEnvelopePhotoPreview] = useState<string | undefined>(undefined)
   const [envelopePhotoUploading, setEnvelopePhotoUploading] = useState(false)
+  const [envelopeConfirmationSignature, setEnvelopeConfirmationSignature] = useState<string | null>(null)
   const envelopePhotoLsKey = `envelope_photo_${store.id}_${today}`
   const [envelopePhotoUrl, setEnvelopePhotoUrl] = useState<string | undefined>(
     (existingClosing as any)?.envelope_photo_url ?? undefined
@@ -1796,6 +1798,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     () => calcSummary(data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, effectiveLargeCashExpenses),
     [data, store, ckPrices, totalExpenses, handwriteTotal, adjustments, reserves, effectiveLargeCashExpenses],
   )
+  const envelopePacking = useMemo(() => getEnvelopePackingState({
+    remitToHQ: s.remitToHQ,
+    actualRemit: s.actualRemit,
+    adjustmentTotal: s.adjustmentTotal,
+    totalReserved: s.totalReserved,
+    preReservedExpenseTotal: s.preReservedExpenseTotal,
+  }), [s.remitToHQ, s.actualRemit, s.adjustmentTotal, s.totalReserved, s.preReservedExpenseTotal])
   // debounce timer / in-flight save 會持有舊 render 的 closure；所有真正寫入 DB 的資料
   // 必須在執行當下從 ref 取得，否則剛上傳的照片或最後一次輸入可能被前一版狀態覆蓋。
   const saveSnapshotRef = useRef({
@@ -1829,7 +1838,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const hasRemittanceChange = s.totalReserved > 0 || s.adjustmentTotal !== 0 || s.preReservedExpenseTotal > 0
   // 信封袋實際裝的是完成匯款調整、扣除預留款後要交回 HQ 的金額。
   // 例如整筆現金預留營業稅時 remitToHQ = 0，當天不會有信封，也不應要求照片。
-  const requiresEnvelopePhoto = s.remitToHQ > 0
+  const requiresEnvelopePhoto = envelopePacking.requiresPhoto
+  const envelopePackingConfirmed = envelopeConfirmationSignature === envelopePacking.signature
   const hasPendingPhotoUploads =
     ckPhotoUploading ||
     envelopePhotoUploading ||
@@ -1845,6 +1855,20 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const isRemittanceLocked = status === 'submitted' || status === 'verified'
   const isDisputed = status === 'disputed'
   const disputeNote = existingClosing?.dispute_note ?? ''
+
+  // 確認或拍照後，只要最終匯款、匯款調整或預留款組成再變動，舊照片就失效。
+  useEffect(() => {
+    if (!envelopeConfirmationSignature || envelopeConfirmationSignature === envelopePacking.signature) return
+    setEnvelopeConfirmationSignature(null)
+    if (!envelopePhotoUrl || isLocked || submitDone) return
+    setEnvelopePhotoUrl(undefined)
+    setEnvelopePhotoPreview(undefined)
+    saveSnapshotRef.current = { ...saveSnapshotRef.current, envelopePhotoUrl: undefined }
+    try { localStorage.removeItem(envelopePhotoLsKey) } catch {}
+    scheduleBackgroundSave()
+    toast.warning('裝袋金額已變動，請重新確認並上傳信封照片')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [envelopePacking.signature, envelopeConfirmationSignature])
   // 若前幾日已有同名預留款，且本日輸入相同的大額支出，預設視為由預留款支付。
   // 只有尚未明確設定過的資料才自動判定；使用者取消勾選後不會被重新勾回。
   useEffect(() => {
@@ -2023,6 +2047,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
+    if (!envelopePackingConfirmed) {
+      toast.error('請先確認最終裝袋金額，再上傳信封照片')
+      return
+    }
     const previewUrl = URL.createObjectURL(file)
     setEnvelopePhotoPreview(previewUrl)
     setEnvelopePhotoUploading(true)
@@ -2676,7 +2704,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
     const envelopeFinal = envelopePhotoUrl
     if (envelopeFinal) {
-      items.push({ key: 'envelope', type: 'envelope', label: '信封袋', photoUrl: envelopeFinal, inputAmount: s.remitToHQ, confirmed: false })
+      items.push({ key: 'envelope', type: 'envelope', label: '信封袋', photoUrl: envelopeFinal, inputAmount: envelopePacking.amount, confirmed: false })
     }
     voidInvoicePhotos.forEach((url, i) => {
       items.push({ key: `void_invoice_${i}`, type: 'void_invoice', label: `作廢發票 ${i + 1}`, photoUrl: url, inputAmount: 0, confirmed: false })
@@ -3174,9 +3202,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       goToStep(STEPS.findIndex(s => s.id === 'ck_delivery'))
       return
     }
+    if (requiresEnvelopePhoto && !envelopePackingConfirmed) {
+      toast.error('請先確認最終裝袋金額')
+      goToStep(STEPS.findIndex(step => step.id === 'envelope'))
+      return
+    }
     if (requiresEnvelopePhoto && !envelopePhotoUrl) {
       toast.error('信封袋有金額，請先完成信封袋照片上傳')
-      goToStep(STEPS.findIndex(step => step.id === 'summary'))
+      goToStep(STEPS.findIndex(step => step.id === 'envelope'))
       return
     }
     if (backgroundSaveTimerRef.current) {
@@ -3238,6 +3271,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     { id: 'revenue',   label: '營業額'  },
     { id: 'cash',      label: '現金清點' },
     { id: 'summary',   label: '確認結帳' },
+    { id: 'envelope',  label: '信封裝袋' },
     { id: 'ai_verify', label: '照片核對' },
     { id: 'petty',     label: '零用金核對' },
     { id: 'submit',    label: '送出'    },
@@ -3247,6 +3281,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const submitStepIdx = STEPS.findIndex(s => s.id === 'submit')
   const pettyStepIdx = STEPS.findIndex(s => s.id === 'petty')
   const ckDeliveryStepIdx = STEPS.findIndex(s => s.id === 'ck_delivery')
+  const envelopeStepIdx = STEPS.findIndex(s => s.id === 'envelope')
   const isPostSubmit = submitDone || status === 'submitted' || status === 'verified'
   const pettyIsComplete = pettyFinished || !!(existingClosing as { petty_counts?: { verified_at?: string } } | null)?.petty_counts?.verified_at
   const step = isLocked && !submitDone
@@ -3314,7 +3349,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         return
       }
     }
-    if (stepId === 'summary' && !isLocked) {
+    if (stepId === 'envelope' && !isLocked) {
+      if (requiresEnvelopePhoto && !envelopePackingConfirmed) {
+        toast.error('請先勾選確認最終裝袋金額')
+        return
+      }
       if (requiresEnvelopePhoto && !envelopePhotoUrl) {
         toast.error('信封袋有金額，請先完成信封袋照片上傳')
         return
@@ -3345,6 +3384,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (!isLocked && n > ckDeliveryStepIdx && hasCkDeliveryQuantity && !hasCkDeliveryPhoto) {
       toast.error('已有央廚配送數量，請先上傳當日配送單照片')
       goToStep(ckDeliveryStepIdx)
+      return false
+    }
+    if (!isLocked && n > envelopeStepIdx && requiresEnvelopePhoto && (!envelopePackingConfirmed || !envelopePhotoUrl)) {
+      toast.error(!envelopePackingConfirmed ? '請先確認最終裝袋金額' : '請先完成信封袋照片上傳')
+      goToStep(envelopeStepIdx)
       return false
     }
     if (!isLocked && n >= submitStepIdx && pettyStepIdx >= 0 && !pettyIsComplete) {
@@ -5360,7 +5404,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         {(stepId === 'summary' || (isLocked && !submitDone)) && (
           <>
             {!isLocked && <GradientTitle step={stepNum} total={totalSteps} title="結帳確認"
-              desc="確認所有金額無誤後，送出今日結帳。" />}
+              desc="確認帳目、匯款調整與預留款；下一步再依最終金額裝袋拍照。" />}
 
             {/* Summary card */}
             <div className="bg-white rounded-2xl overflow-hidden" style={{ border: `1.5px solid ${varBorder}` }}>
@@ -5400,9 +5444,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 </div>
                 <div className="flex justify-between items-center px-4 py-3 rounded-2xl mt-2"
                   style={{ background: 'linear-gradient(135deg,#1e1b4b,#312e81)', border: '2px solid #92400E' }}>
-                  <span className="text-sm font-bold" style={{ color: '#FDE68A' }}>今日實際包進信封（調整／預留後）</span>
-                  <span className="text-2xl font-extrabold tabular-nums" style={{ color: '#fff', letterSpacing: '-0.02em' }}>${fmt(s.remitToHQ)}</span>
+                  <span className="text-sm font-bold" style={{ color: '#FDE68A' }}>下一步最終裝袋金額</span>
+                  <span className="text-2xl font-extrabold tabular-nums" style={{ color: '#fff', letterSpacing: '-0.02em' }}>${fmt(envelopePacking.amount)}</span>
                 </div>
+                {envelopePacking.shortfall > 0 && (
+                  <div className="mt-2 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: '#fff1f2', color: '#be123c' }}>
+                    今日不需裝袋；另有待處理差額 ${fmt(envelopePacking.shortfall)}，不會顯示成負數信封。
+                  </div>
+                )}
                 {hasRemittanceChange && (
                   <div className="mt-2 px-3 py-2 rounded-xl space-y-1 text-[11px]" style={{ background: '#f8fafc', color: '#64748b' }}>
                     <div className="flex justify-between gap-3">
@@ -5431,51 +5480,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     )}
                   </div>
                 )}
-                {/* Envelope bag photo */}
-                <div className="mt-3">
-                  {(envelopePhotoPreview || envelopePhotoUrl) ? (
-                    <div className="flex items-center gap-3">
-                      <button type="button" onClick={() => setPhotoLightbox((envelopePhotoPreview || envelopePhotoUrl)!)}
-                        className="relative shrink-0 rounded-xl overflow-hidden"
-                        style={{ width: '56px', height: '56px', padding: 0, border: 'none', cursor: 'pointer' }}>
-                        <SharedSafePhotoImage src={envelopePhotoPreview || envelopePhotoUrl} alt="信封袋" thumb width={160} height={160}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        <div className="absolute inset-0 flex items-center justify-center"
-                          style={{ background: 'rgba(0,0,0,0.25)' }}>
-                          <ZoomIn className="h-4 w-4" style={{ color: '#fff' }} />
-                        </div>
-                      </button>
-                      <span className="flex-1 text-xs font-medium" style={{ color: envelopePhotoUploading ? '#f97316' : '#52525b' }}>
-                        {envelopePhotoUploading ? '信封袋照片上傳中…' : '信封袋照片已上傳'}
-                      </span>
-                      {!isRemittanceLocked && (
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button type="button" onClick={() => envelopePhotoInputRef.current?.click()} disabled={envelopePhotoUploading}
-                            className="text-xs px-3 py-1.5 rounded-lg font-medium"
-                            style={{ background: '#f4f4f5', color: '#71717a', border: 'none', cursor: 'pointer' }}>重拍</button>
-                          <button type="button" disabled={envelopePhotoUploading} onClick={clearEnvelopePhoto}
-                            className="rounded-full flex items-center justify-center"
-                            style={{ background: '#fee2e2', width: '28px', height: '28px', border: 'none', cursor: 'pointer' }}>
-                            <X className="h-3.5 w-3.5" style={{ color: '#dc2626' }} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <button type="button" disabled={isLocked || envelopePhotoUploading}
-                      onClick={() => envelopePhotoInputRef.current?.click()}
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium"
-                      style={{
-                        background: requiresEnvelopePhoto ? '#FEF2F2' : '#fafafa',
-                        color: requiresEnvelopePhoto ? '#dc2626' : '#a1a1aa',
-                        border: `1.5px dashed ${requiresEnvelopePhoto ? '#fca5a5' : '#d4d4d8'}`,
-                        cursor: isLocked ? 'default' : 'pointer',
-                      }}>
-                      {envelopePhotoUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                      {envelopePhotoUploading ? '信封袋照片上傳中…' : requiresEnvelopePhoto ? '請上傳信封袋照片（必填）' : '今日無實匯入，不需上傳信封袋照片'}
-                    </button>
-                  )}
-                </div>
               </div>
             </div>
 
@@ -6006,6 +6010,139 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           </>
         )}
 
+        {/* ── STEP: 信封裝袋 ──────────────────────────────────────────── */}
+        {stepId === 'envelope' && (
+          <>
+            <GradientTitle step={stepNum} total={totalSteps} title="信封裝袋與拍照"
+              desc="所有調整與預留完成後，依下方最終金額裝袋並上傳信封照片。" />
+
+            <div className="rounded-3xl overflow-hidden mb-4"
+              style={{ background: '#fff', border: '1.5px solid #fed7aa', boxShadow: '0 12px 30px rgba(245,158,11,0.08)' }}>
+              <div className="px-5 py-4" style={{ background: 'linear-gradient(135deg,#fff7ed,#fffbeb)', borderBottom: '1px solid #fed7aa' }}>
+                <p className="text-sm font-extrabold" style={{ color: '#9a3412' }}>最終裝袋金額計算</p>
+                <p className="text-xs mt-1" style={{ color: '#78716c' }}>系統已套用匯款調整與預留款，請依這個金額裝袋。</p>
+              </div>
+              <div className="p-5 space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span style={{ color: '#71717a' }}>原始實匯入</span>
+                  <span className="font-bold tabular-nums" style={{ color: '#27272a' }}>${fmt(s.actualRemit)}</span>
+                </div>
+                {s.adjustmentTotal !== 0 && (
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: '#71717a' }}>匯款調整</span>
+                    <span className="font-bold tabular-nums" style={{ color: '#2563eb' }}>
+                      {s.adjustmentTotal >= 0 ? '+' : '−'}${fmt(Math.abs(s.adjustmentTotal))}
+                    </span>
+                  </div>
+                )}
+                {s.preReservedExpenseTotal > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: '#71717a' }}>前幾日預留支出加回</span>
+                    <span className="font-bold tabular-nums" style={{ color: '#15803d' }}>+${fmt(s.preReservedExpenseTotal)}</span>
+                  </div>
+                )}
+                {s.totalReserved > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: '#71717a' }}>今日預留款</span>
+                    <span className="font-bold tabular-nums" style={{ color: '#c2410c' }}>−${fmt(s.totalReserved)}</span>
+                  </div>
+                )}
+                <div className="rounded-2xl px-4 py-4 mt-2 flex items-center justify-between gap-4"
+                  style={{ background: 'linear-gradient(135deg,#312e81,#1e1b4b)', border: '2px solid #f59e0b' }}>
+                  <div>
+                    <p className="text-xs font-semibold" style={{ color: '#fde68a' }}>今日最終應裝袋金額</p>
+                    <p className="text-[11px] mt-1" style={{ color: 'rgba(255,255,255,0.7)' }}>請以此金額為準，不要使用原始實匯入</p>
+                  </div>
+                  <p className="text-3xl font-extrabold text-white tabular-nums shrink-0">${fmt(envelopePacking.amount)}</p>
+                </div>
+                {envelopePacking.shortfall > 0 && (
+                  <div className="rounded-xl px-4 py-3 flex items-center justify-between gap-3"
+                    style={{ background: '#fff1f2', border: '1px solid #fecdd3', color: '#be123c' }}>
+                    <span className="text-xs font-semibold">今日無需裝袋，另有待處理差額</span>
+                    <span className="font-extrabold tabular-nums">${fmt(envelopePacking.shortfall)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {requiresEnvelopePhoto ? (
+              <div className="rounded-3xl p-5 space-y-4"
+                style={{ background: '#fff', border: '1px solid #e4e4e7', boxShadow: '0 8px 24px rgba(0,0,0,0.05)' }}>
+                <label className="flex items-start gap-3 rounded-2xl p-4"
+                  style={{ background: envelopePackingConfirmed ? '#ecfdf5' : '#fff7ed', border: `1.5px solid ${envelopePackingConfirmed ? '#6ee7b7' : '#fed7aa'}`, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={envelopePackingConfirmed}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        setEnvelopeConfirmationSignature(envelopePacking.signature)
+                      } else {
+                        setEnvelopeConfirmationSignature(null)
+                        if (envelopePhotoUrl || envelopePhotoPreview) clearEnvelopePhoto()
+                      }
+                    }}
+                    className="mt-0.5 h-5 w-5 shrink-0" style={{ accentColor: '#10b981' }} />
+                  <div>
+                    <p className="text-sm font-extrabold" style={{ color: envelopePackingConfirmed ? '#065f46' : '#9a3412' }}>
+                      我已確認信封內為 ${fmt(envelopePacking.amount)}
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: envelopePackingConfirmed ? '#047857' : '#a16207' }}>
+                      請先清點完成並放入信封，再勾選確認。
+                    </p>
+                  </div>
+                </label>
+
+                {(envelopePhotoPreview || envelopePhotoUrl) ? (
+                  <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #e4e4e7' }}>
+                    <button type="button" onClick={() => setPhotoLightbox((envelopePhotoPreview || envelopePhotoUrl)!)}
+                      className="relative block w-full overflow-hidden" style={{ height: '240px', border: 'none', padding: 0, cursor: 'pointer', background: '#f4f4f5' }}>
+                      <SharedSafePhotoImage src={(envelopePhotoPreview || envelopePhotoUrl)!} alt="信封袋照片" width={1200} height={800}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <div className="absolute inset-x-0 bottom-0 px-4 py-3 flex items-center justify-between"
+                        style={{ background: 'linear-gradient(transparent,rgba(0,0,0,0.7))', color: '#fff' }}>
+                        <span className="text-sm font-bold">信封袋照片已上傳</span>
+                        <span className="text-xs">點擊放大</span>
+                      </div>
+                    </button>
+                    <div className="p-3 flex gap-2">
+                      <button type="button" onClick={() => envelopePhotoInputRef.current?.click()} disabled={envelopePhotoUploading || !envelopePackingConfirmed}
+                        className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                        style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#c2410c', opacity: envelopePhotoUploading ? 0.6 : 1 }}>
+                        {envelopePhotoUploading ? '上傳中…' : '重新拍攝'}
+                      </button>
+                      <button type="button" onClick={clearEnvelopePhoto} disabled={envelopePhotoUploading}
+                        className="px-4 py-2.5 rounded-xl text-sm font-semibold"
+                        style={{ background: '#fff1f2', border: '1px solid #fecdd3', color: '#be123c' }}>刪除</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => envelopePhotoInputRef.current?.click()}
+                    disabled={!envelopePackingConfirmed || envelopePhotoUploading}
+                    className="w-full rounded-2xl py-8 flex flex-col items-center justify-center gap-2"
+                    style={{ background: envelopePackingConfirmed ? '#fffbeb' : '#fafafa', border: `2px dashed ${envelopePackingConfirmed ? '#fcd34d' : '#d4d4d8'}`, color: envelopePackingConfirmed ? '#d97706' : '#a1a1aa', cursor: envelopePackingConfirmed ? 'pointer' : 'not-allowed' }}>
+                    {envelopePhotoUploading ? <Loader2 className="h-7 w-7 animate-spin" /> : <Camera className="h-7 w-7" />}
+                    <span className="text-sm font-bold">
+                      {envelopePhotoUploading ? '信封照片上傳中…' : envelopePackingConfirmed ? '拍攝／上傳信封照片（必填）' : '請先確認裝袋金額'}
+                    </span>
+                  </button>
+                )}
+
+                <p className="text-[11px] text-center" style={{ color: '#a1a1aa' }}>
+                  若返回修改匯款調整或預留款，系統會要求重新確認並拍照，避免照片與金額不一致。
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-3xl p-6 text-center"
+                style={{ background: '#ecfdf5', border: '1.5px solid #6ee7b7' }}>
+                <CheckCircle2 className="h-10 w-10 mx-auto mb-3" style={{ color: '#10b981' }} />
+                <p className="text-lg font-extrabold" style={{ color: '#065f46' }}>今日無需裝袋</p>
+                <p className="text-sm mt-1" style={{ color: '#047857' }}>最終裝袋金額為 $0，不需上傳信封照片。</p>
+                {envelopePacking.shortfall > 0 && (
+                  <p className="text-sm font-bold mt-3" style={{ color: '#be123c' }}>待處理差額 ${fmt(envelopePacking.shortfall)}</p>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
         {/* ── STEP: AI 核對 ────────────────────────────────────────────── */}
         {stepId === 'ai_verify' && (() => {
           const confirmedCount = verifyItems.filter(v => v.confirmed).length
@@ -6264,10 +6401,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             <div className="rounded-3xl p-6 text-center mb-4"
               style={{ background: 'linear-gradient(135deg,#FFFBEB,#f5f3ff)', border: '1.5px solid #FDE68A' }}>
               <p className="text-xs mb-1 font-semibold" style={{ color: '#F59E0B' }}>
-                {hasRemittanceChange ? '實際應包回公司的錢' : '應包進信封的錢'}
+                今日最終應裝袋金額
               </p>
               <p className="text-5xl font-extrabold tabular-nums tracking-tight mb-2" style={{ color: '#92400E' }}>
-                ${fmt(hasRemittanceChange ? s.remitToHQ : s.actualRemit)}
+                ${fmt(envelopePacking.amount)}
               </p>
               {hasRemittanceChange && (
                 <div className="mt-2 mb-1 px-3 py-2 rounded-xl text-xs" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
@@ -6297,9 +6434,15 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     )
                   })}
                   <div className="flex justify-between tabular-nums font-semibold mt-1 pt-1" style={{ borderTop: '1px solid #fed7aa', color: '#9a3412' }}>
-                    <span>原始實匯入 ${fmt(s.actualRemit)} → 實際包回</span>
-                    <span>${fmt(s.remitToHQ)}</span>
+                    <span>原始實匯入 ${fmt(s.actualRemit)} → 最終裝袋</span>
+                    <span>${fmt(envelopePacking.amount)}</span>
                   </div>
+                </div>
+              )}
+              {envelopePacking.shortfall > 0 && (
+                <div className="mt-3 rounded-xl px-3 py-2 text-xs font-semibold"
+                  style={{ background: '#fff1f2', border: '1px solid #fecdd3', color: '#be123c' }}>
+                  今日無需裝袋；另有待處理差額 ${fmt(envelopePacking.shortfall)}
                 </div>
               )}
               <div className="flex justify-center gap-6 text-sm mt-3">
@@ -6321,7 +6464,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         {/* ── STEP 7: 摘要 ─────────────────────────────────────────────── */}
         {stepId === 'result' && (
           <>
-            <GradientTitle step={stepNum} total={totalSteps} title="送出成功" desc="今日結帳已送出至總公司，請依下方資訊準備信封袋。" />
+            <GradientTitle step={stepNum} total={totalSteps} title="送出成功" desc="今日結帳與信封照片已送出至總公司。" />
 
             <div className="rounded-3xl p-8 text-white text-center mb-4 relative overflow-hidden"
               style={{ background: 'linear-gradient(135deg,#10b981,#06b6d4)', boxShadow: '0 20px 50px -10px rgba(16,185,129,0.3)' }}>
@@ -6348,9 +6491,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               </div>
               <div className="rounded-2xl p-5 text-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
                 <p className="text-xs mb-1" style={{ opacity: 0.8 }}>
-                  {hasRemittanceChange ? '今日實際應包回公司' : '請包入信封袋的金額'}
+                  今日最終裝袋金額
                 </p>
-                <p className="text-4xl font-extrabold tabular-nums tracking-tight">${fmt(hasRemittanceChange ? s.remitToHQ : s.actualRemit)}</p>
+                <p className="text-4xl font-extrabold tabular-nums tracking-tight">${fmt(envelopePacking.amount)}</p>
                 {hasRemittanceChange && (
                   <p className="text-xs mt-2" style={{ opacity: 0.7 }}>
                     （{[
@@ -6360,6 +6503,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   </p>
                 )}
               </div>
+              {envelopePacking.shortfall > 0 && (
+                <div className="rounded-xl px-4 py-3 text-center text-sm font-semibold mt-3"
+                  style={{ background: 'rgba(255,255,255,0.12)', color: '#fecdd3' }}>
+                  另有待處理差額 ${fmt(envelopePacking.shortfall)}
+                </div>
+              )}
             </div>
           </>
         )}
@@ -6586,7 +6735,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     opacity: saving && !isDisputed ? 0.7 : 1,
                   }}>
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {stepId === 'ai_verify' ? '確認，進入零用金核對 →' : '繼續 →'}
+                  {stepId === 'summary'
+                    ? '金額正確，前往裝袋 →'
+                    : stepId === 'envelope'
+                      ? '裝袋完成，進入照片核對 →'
+                      : stepId === 'ai_verify'
+                        ? '確認，進入零用金核對 →'
+                        : '繼續 →'}
                 </button>
               </>
             )}
