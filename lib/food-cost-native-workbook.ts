@@ -16,6 +16,7 @@ import { type ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { compareResolvedItemsByMappingOrder, getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
+import { getExcelPlatformColumns } from '@/lib/excel-platform-order'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -125,9 +126,8 @@ function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAcco
 
   // 收入區
   cols.push({ index: idx++, header: '(手動)POS', kind: 'income', incomeKey: 'pos' })
-  if (store.twpay_enabled) cols.push({ index: idx++, header: 'TWPAY', kind: 'income', incomeKey: 'twpay' })
-  for (const acc of store.uber_accounts ?? []) {
-    cols.push({ index: idx++, header: acc, kind: 'income', incomeKey: `uber:${acc}` })
+  for (const platform of getExcelPlatformColumns(store.name, !!store.twpay_enabled, store.uber_accounts ?? [])) {
+    cols.push({ index: idx++, header: platform.label, kind: 'income', incomeKey: platform.key })
   }
   if (store.panda_enabled) cols.push({ index: idx++, header: '熊貓', kind: 'income', incomeKey: 'panda' })
   if (store.online_enabled) cols.push({ index: idx++, header: '線上', kind: 'income', incomeKey: 'online' })
