@@ -928,7 +928,7 @@ function DailyItemDocTypeHint({ docType }: { docType: string | null }) {
     ? { background: '#eff6ff', border: '#bfdbfe', color: '#1d4ed8' }
     : docType === '收據'
       ? { background: '#ecfdf5', border: '#a7f3d0', color: '#047857' }
-      : { background: '#fffbeb', border: '#fde68a', color: '#92400e' }
+      : { background: '#f8fafc', border: '#e2e8f0', color: '#64748b' }
 
   return (
     <div
@@ -950,7 +950,7 @@ function DailyItemDocTypeHint({ docType }: { docType: string | null }) {
       }}
     >
       <FileText size={14} aria-hidden="true" style={{ flex: '0 0 auto' }} />
-      <span>{isConfigured ? `此用品單據類型：${docType}` : '此用品尚未設定單據類型，請詢問總公司'}</span>
+      <span>{isConfigured ? `此用品單據類型：${docType}` : '此用品無單據類型'}</span>
     </div>
   )
 }
