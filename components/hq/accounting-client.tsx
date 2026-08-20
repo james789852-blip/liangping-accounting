@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { toast } from 'sonner'
-import { Loader2, ChevronLeft, ChevronRight, ChevronDown, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays, FileArchive, Check, Square, X } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, ChevronDown, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays, FileArchive, Check, Square, X, Images } from 'lucide-react'
 import { fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
 import { fetchCKDailyDetail } from '@/app/actions/ck-overview'
 import { setManagerStore } from '@/app/actions/store-select'
@@ -286,6 +287,12 @@ export default function AccountingClient({
               title="一次下載全部或部分店家、央廚 Excel">
               <FileArchive className="h-3.5 w-3.5" /> 批次 Excel
             </button>
+            <Link href={`/hq/accounting/documents?from=${encodeURIComponent(date)}&to=${encodeURIComponent(date)}`}
+              className="hidden sm:flex items-center gap-1.5 h-10 px-3 rounded-lg text-xs font-bold"
+              style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fdba74' }}
+              title="依店家、央廚、日期與分類查找照片">
+              <Images className="h-3.5 w-3.5" /> 單據照片
+            </Link>
             <button onClick={() => setShowBatchHolidays(true)}
               className="hidden sm:flex items-center gap-1.5 h-10 px-3 rounded-lg text-xs font-bold"
               style={{ background: '#f3e8ff', color: '#6b21a8', border: '1px solid #d8b4fe' }}
@@ -332,6 +339,11 @@ export default function AccountingClient({
             style={{ background: '#ecfeff', color: '#0e7490', border: '1px solid #a5f3fc' }}>
             <FileArchive className="h-3.5 w-3.5" />批次 Excel
           </button>
+          <Link href={`/hq/accounting/documents?from=${encodeURIComponent(date)}&to=${encodeURIComponent(date)}`}
+            className="sm:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold"
+            style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fdba74' }}>
+            <Images className="h-3.5 w-3.5" />照片
+          </Link>
         </div>
       </div>
       <div className="max-w-4xl mx-auto px-4 pt-4">

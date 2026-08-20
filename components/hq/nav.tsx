@@ -9,7 +9,7 @@ import {
   Store, Users, LogOut,
   ClipboardList, History,
   ArrowRightLeft, Package, BookOpen, Settings, FileBarChart2, ChefHat, ExternalLink,
-  Menu, X, FileText,
+  Menu, X, FileText, Images,
 } from 'lucide-react'
 
 const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
@@ -59,6 +59,7 @@ const hqSections = [
     label: '每日工作',
     items: [
       { href: '/hq/accounting', label: '帳目中心', icon: BookOpen },
+      { href: '/hq/accounting/documents', label: '單據照片', icon: Images },
       { href: '/hq/dashboard',  label: '統計中心', icon: LayoutDashboard },
       { href: '/manager/meeting-report', label: '店務會議', icon: FileText },
     ],
@@ -143,6 +144,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
 
   function isActive(href: string): boolean {
     const [path, query] = href.split('?')
+    if (path === '/hq/accounting') return pathname === path
     if (!pathname.startsWith(path)) return false
     // 模板設定的店面/央廚靠 ?type 區分
     if (path === '/hq/food-cost-preview') {
@@ -197,6 +199,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         ...sec,
         items: sec.items.filter(it => {
           if (it.href === '/hq/accounting') return canSeeReviews
+          if (it.href === '/hq/accounting/documents') return canSeeReviews || canSeeExports
           if (it.href === '/hq/dashboard') return canSeeReviews || canSeeExports
           if (it.href === '/manager/meeting-report') return hasStores
           if (it.href === '/hq/item-mappings') return canSeeItems
@@ -235,7 +238,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   }, [])
 
   useEffect(() => {
-    for (const href of ['/hq/accounting', '/hq/dashboard', '/hq/item-mappings', '/manager/dashboard', '/manager/closing', '/manager/analytics', '/manager/meeting-report', '/manager/settings']) {
+    for (const href of ['/hq/accounting', '/hq/accounting/documents', '/hq/dashboard', '/hq/item-mappings', '/manager/dashboard', '/manager/closing', '/manager/analytics', '/manager/meeting-report', '/manager/settings']) {
       router.prefetch(href)
     }
   }, [router])
