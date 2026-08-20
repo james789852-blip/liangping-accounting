@@ -1,5 +1,6 @@
 export const ACCOUNTING_DOCUMENT_CATEGORIES = [
   'invoice',
+  'company_invoice',
   'receipt',
   'estimate',
   'delivery',
@@ -30,6 +31,7 @@ export type AccountingDocument = {
 
 export const ACCOUNTING_DOCUMENT_CATEGORY_LABELS: Record<AccountingDocumentCategory, string> = {
   invoice: '發票',
+  company_invoice: '公司開',
   receipt: '收據',
   estimate: '估價單',
   delivery: '配送單',
@@ -83,7 +85,8 @@ export function accountingCategoryFromReceiptType(receiptType?: string | null): 
 
 export function accountingCategoryFromDocType(docType?: string | null): AccountingDocumentCategory {
   const normalized = docType?.trim() ?? ''
-  if (normalized === '發票' || normalized === '公司開') return 'invoice'
+  if (normalized === '發票') return 'invoice'
+  if (normalized === '公司開') return 'company_invoice'
   if (normalized === '收據') return 'receipt'
   if (normalized === '估價單') return 'estimate'
   if (normalized === '配送單' || normalized === '送貨單') return 'delivery'

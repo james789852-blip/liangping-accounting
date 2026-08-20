@@ -11,6 +11,7 @@ import {
 
 const CATEGORY_STYLE: Record<AccountingDocumentCategory, { background: string; color: string }> = {
   invoice: { background: '#fee2e2', color: '#b91c1c' },
+  company_invoice: { background: '#fce7f3', color: '#be185d' },
   receipt: { background: '#dbeafe', color: '#1d4ed8' },
   estimate: { background: '#fef3c7', color: '#a16207' },
   delivery: { background: '#ffedd5', color: '#c2410c' },
