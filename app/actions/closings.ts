@@ -537,6 +537,7 @@ export async function savePettyCounts(
   closingId: string,
   counts: Record<string, number>,
   lumps: Record<string, number>,
+  expectedUpdatedAt?: string | null,
 ) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
@@ -546,11 +547,17 @@ export async function savePettyCounts(
   if (!canAccessStore(ctx, meta.storeId)) return { error: '無權限存取此帳目' }
 
   const admin = createAdminClient()
+  const nextUpdatedAt = new Date().toISOString()
   const payload = {
     petty_counts: { counts, lumps, verified_at: new Date().toISOString() },
-    updated_at: new Date().toISOString(),
+    manager_id: ctx.userId,
+    updated_at: nextUpdatedAt,
   }
-  const { error } = await admin.from('daily_closings').update(payload).eq('id', closingId)
+  let updateQuery = admin.from('daily_closings').update(payload).eq('id', closingId)
+  if (expectedUpdatedAt) updateQuery = updateQuery.eq('updated_at', expectedUpdatedAt)
+  const { data: updated, error } = await updateQuery
+    .select('id, updated_at')
+    .maybeSingle()
   if (error) {
     const missingPettyColumn = error.message.includes("'petty_counts' column") ||
       error.message.includes('petty_counts') && error.message.includes('schema cache')
@@ -560,7 +567,18 @@ export async function savePettyCounts(
     }
     return { error: error.message }
   }
-  return { success: true }
+  if (!updated) {
+    const { data: current } = await admin.from('daily_closings')
+      .select('manager_id, updated_at')
+      .eq('id', closingId)
+      .maybeSingle()
+    return {
+      conflict: true as const,
+      managerId: current?.manager_id as string | null | undefined,
+      updatedAt: current?.updated_at as string | null | undefined,
+    }
+  }
+  return { success: true as const, updatedAt: (updated.updated_at as string | null) ?? nextUpdatedAt }
 }
 
 // reSyncMonthToSheets 已停用 — Google Sheets 同步功能移除

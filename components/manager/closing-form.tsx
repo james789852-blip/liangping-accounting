@@ -3,6 +3,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, memo, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
 import { Store, CKPrice } from '@/lib/types'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import ClosingHelp from './closing-help'
@@ -115,6 +116,7 @@ interface TodayReceipt {
   receipt_type: string
   photo_url?: string
   notes?: string
+  updated_at?: string | null
   receipt_items?: { item_name: string; unit: string; quantity: number; unit_price: number; amount: number; item_mapping_id?: string | null; vendor_group_snapshot?: string | null }[]
 }
 
@@ -263,6 +265,8 @@ interface Props {
   ckPrices: CKPrice[]
   existingClosing: any
   userId: string
+  userName: string
+  initialLastEditorName?: string | null
   today: string
   todayReceipts?: TodayReceipt[]
   receiptCategories?: CategoryWithVendors[]
@@ -275,6 +279,32 @@ interface Props {
   calendarToday?: string
   isEarlyMorningBusinessDate?: boolean
   latestBackfillDraftDate?: string
+}
+
+interface ClosingEditorPresence {
+  userId: string
+  userName: string
+  sessionId: string
+  joinedAt: string
+}
+
+interface ClosingEditConflict {
+  editorName: string
+  updatedAt?: string | null
+}
+
+function formatTaipeiEditTime(value?: string | null) {
+  if (!value) return ''
+  const timestamp = new Date(value)
+  if (Number.isNaN(timestamp.getTime())) return ''
+  return timestamp.toLocaleString('zh-TW', {
+    timeZone: 'Asia/Taipei',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
 }
 
 const NEW_ACTUAL_VENDOR_VALUE = '__new_actual_vendor__'
@@ -1060,7 +1090,7 @@ function CategoryPicker({ categories, value, onChange }: {
   )
 }
 
-export default function ClosingForm({ store, ckPrices, existingClosing, userId, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], actualVendors = [], prevDayReserves: initialPrevDayReserves, preReservedExpenseHints: initialPreReservedExpenseHints = [], isBackfill = false, realToday, calendarToday, isEarlyMorningBusinessDate = false, latestBackfillDraftDate }: Props) {
+export default function ClosingForm({ store, ckPrices, existingClosing, userId, userName, initialLastEditorName = null, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], actualVendors = [], prevDayReserves: initialPrevDayReserves, preReservedExpenseHints: initialPreReservedExpenseHints = [], isBackfill = false, realToday, calendarToday, isEarlyMorningBusinessDate = false, latestBackfillDraftDate }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
   const [largeCashExpenses, setLargeCashExpenses] = useState<LargeCashExpense[]>(() => initLargeCashExpenses(existingClosing))
@@ -1746,6 +1776,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [saving, setSaving] = useState(false)
   const [savingPetty, setSavingPetty] = useState(false)
   const savingRef = useRef(false)  // mutex 防止並發 handleSave 衝突（自動存 + 手動下一步）
+  const pettySavePromiseRef = useRef<Promise<unknown> | null>(null)
   const saveWaitersRef = useRef<Array<() => void>>([])
   const backgroundSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 同一份表單在逐步導覽時不需要重複寫入。完整簽章包含明細內容，不能只比總額，
@@ -1756,13 +1787,70 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [])
   const [submitting, setSubmitting] = useState(false)
   const [closingId, setClosingId] = useState<string | null>(existingClosing?.id ?? null)
+  const closingUpdatedAtRef = useRef<string | null>(existingClosing?.updated_at ?? null)
+  const presenceChannelRef = useRef<RealtimeChannel | null>(null)
+  const [activeEditors, setActiveEditors] = useState<ClosingEditorPresence[]>([])
+  const activeEditorsRef = useRef<ClosingEditorPresence[]>([])
+  const [presenceStatus, setPresenceStatus] = useState<'connecting' | 'connected' | 'unavailable'>('connecting')
+  const [lastEditor, setLastEditor] = useState<{ userId: string | null; userName: string; updatedAt: string | null } | null>(() =>
+    existingClosing?.updated_at
+      ? {
+          userId: existingClosing?.manager_id ?? null,
+          userName: initialLastEditorName || (existingClosing?.manager_id === userId ? userName : '其他使用者'),
+          updatedAt: existingClosing.updated_at,
+        }
+      : null,
+  )
+  const [editConflict, setEditConflict] = useState<ClosingEditConflict | null>(null)
+  const editConflictRef = useRef<ClosingEditConflict | null>(null)
+
+  const markEditConflict = useCallback((managerId?: string | null, updatedAt?: string | null) => {
+    const activeEditor = activeEditorsRef.current.find(editor => editor.userId === managerId)
+      ?? activeEditorsRef.current[0]
+    const editorName = managerId === userId
+      ? `${userName}（另一個分頁）`
+      : activeEditor?.userName || '另一位使用者'
+    const conflict = { editorName, updatedAt }
+    editConflictRef.current = conflict
+    setEditConflict(conflict)
+    if (backgroundSaveTimerRef.current) {
+      clearTimeout(backgroundSaveTimerRef.current)
+      backgroundSaveTimerRef.current = null
+    }
+    toast.error(`${editorName} 已先儲存這份帳目，系統已停止覆蓋。請重新整理後再繼續。`, { duration: 10000 })
+  }, [userId, userName])
+
+  const recordSuccessfulSave = useCallback((nextClosingId: string, updatedAt: string) => {
+    closingUpdatedAtRef.current = updatedAt
+    const editor = { userId, userName, updatedAt }
+    setLastEditor(editor)
+    void presenceChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'draft_saved',
+      payload: { closingId: nextClosingId, ...editor },
+    })
+  }, [userId, userName])
+
   // DB 寫入零用金清點：debounced 1.5 秒（放在 closingId 宣告後）
   useEffect(() => {
     const cid = existingClosing?.id ?? closingId
-    if (!cid) return
+    if (!cid || editConflictRef.current) return
     const total = Object.values(pettyCounts).reduce((s, v) => s + v, 0) + Object.values(pettyLumps).reduce((s, v) => s + v, 0)
     if (total === 0) return
-    const t = setTimeout(() => { void savePettyCounts(cid, pettyCounts, pettyLumps) }, 1500)
+    const t = setTimeout(() => {
+      if (savingRef.current || pettySavePromiseRef.current) return
+      const request = savePettyCounts(cid, pettyCounts, pettyLumps, closingUpdatedAtRef.current).then(result => {
+        if ('conflict' in result && result.conflict) {
+          markEditConflict(result.managerId, result.updatedAt)
+        } else if ('updatedAt' in result && result.updatedAt) {
+          recordSuccessfulSave(cid, result.updatedAt)
+        }
+      }).finally(() => {
+        if (pettySavePromiseRef.current === request) pettySavePromiseRef.current = null
+      })
+      pettySavePromiseRef.current = request
+      void request
+    }, 1500)
     return () => clearTimeout(t)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(pettyCounts), JSON.stringify(pettyLumps), closingId])
@@ -1855,6 +1943,66 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const isRemittanceLocked = status === 'submitted' || status === 'verified'
   const isDisputed = status === 'disputed'
   const disputeNote = existingClosing?.dispute_note ?? ''
+
+  // Supabase Presence 只負責提示「誰正在此頁」；真正防止覆蓋的是儲存時的
+  // updated_at 樂觀鎖。Presence 斷線或瀏覽器休眠也不會降低資料安全性。
+  useEffect(() => {
+    if (isLocked || submitDone) return
+    const supabase = createClient()
+    const sessionId = crypto.randomUUID()
+    const channel = supabase.channel(`closing-edit:${store.id}:${today}`, {
+      config: { presence: { key: `${userId}:${sessionId}` } },
+    })
+    presenceChannelRef.current = channel
+
+    const syncEditors = () => {
+      const states = channel.presenceState<{
+        userId: string
+        userName: string
+        sessionId: string
+        joinedAt: string
+      }>()
+      const editors = Object.values(states)
+        .flat()
+        .filter(editor => editor.sessionId !== sessionId)
+        .map(editor => ({
+          userId: editor.userId,
+          userName: editor.userName || '其他使用者',
+          sessionId: editor.sessionId,
+          joinedAt: editor.joinedAt,
+        }))
+      activeEditorsRef.current = editors
+      setActiveEditors(editors)
+    }
+
+    channel
+      .on('presence', { event: 'sync' }, syncEditors)
+      .on('broadcast', { event: 'draft_saved' }, ({ payload }) => {
+        const saved = payload as { closingId?: string; userId?: string; userName?: string; updatedAt?: string }
+        if (!saved.updatedAt || !saved.userId) return
+        setLastEditor({
+          userId: saved.userId,
+          userName: saved.userName || '其他使用者',
+          updatedAt: saved.updatedAt,
+        })
+        markEditConflict(saved.userId, saved.updatedAt)
+      })
+      .subscribe(state => {
+        if (state === 'SUBSCRIBED') {
+          setPresenceStatus('connected')
+          void channel.track({ userId, userName, sessionId, joinedAt: new Date().toISOString() })
+        } else if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT' || state === 'CLOSED') {
+          setPresenceStatus('unavailable')
+        }
+      })
+
+    return () => {
+      if (presenceChannelRef.current === channel) presenceChannelRef.current = null
+      activeEditorsRef.current = []
+      setActiveEditors([])
+      void supabase.removeChannel(channel)
+    }
+  }, [isLocked, markEditConflict, store.id, submitDone, today, userId, userName])
 
   // 確認或拍照後，只要最終匯款、匯款調整或預留款組成再變動，舊照片就失效。
   useEffect(() => {
@@ -2186,7 +2334,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const supabase = createClient()
     const { data: receipts } = await supabase
       .from('receipts')
-      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount, item_mapping_id, vendor_group_snapshot)')
+      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, updated_at, receipt_items(item_name, unit, quantity, unit_price, amount, item_mapping_id, vendor_group_snapshot)')
       .eq('store_id', store.id)
       .eq('business_date', today)
       .order('created_at')
@@ -2206,6 +2354,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }
 
   async function handleSaveReceiptEdit() {
+    if (editConflictRef.current) {
+      toast.error('請先重新整理最新資料，再修改單據。')
+      return
+    }
     if (!editingReceiptId) return
     const editAmountValid = editAmount > 0 || (editAmount < 0 && editReceiptAllowsNegativeTotal(editCategory, editItems))
     if (!editAmountValid) {
@@ -2226,6 +2378,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (!isNoItemMode && !editItems.some(i => i.item_name.trim())) { toast.error('請至少選擇一個品項'); return }
     const oldReceipt = localReceipts.find(r => r.id === editingReceiptId)
     if (!oldReceipt) return
+    if (!await handleSave(true)) return
     setEditUploading(true)
     const supabase = createClient()
 
@@ -2263,6 +2416,31 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return { ...item, item_name: match?.name ?? item.item_name.trim(), item_mapping_id: match?.mapping_id ?? null, vendor_group_hint: match?.vendor_group ?? item.vendor_group_hint }
     })
 
+    const receiptUpdatedAt = new Date().toISOString()
+    let receiptUpdateQuery = supabase.from('receipts').update({
+      vendor_name: editVendor,
+      actual_vendor_name: normalizeActualVendorName(editActualVendor) || null,
+      total_amount: finalTotal,
+      tax_amount: taxAmount,
+      photo_url: newPhotoUrl,
+      notes: editNotes.trim() || null,
+      updated_at: receiptUpdatedAt,
+    }).eq('id', editingReceiptId)
+    if (oldReceipt.updated_at) receiptUpdateQuery = receiptUpdateQuery.eq('updated_at', oldReceipt.updated_at)
+    const { data: updatedReceipt, error: receiptUpdateError } = await receiptUpdateQuery
+      .select('updated_at')
+      .maybeSingle()
+    if (receiptUpdateError) {
+      setEditUploading(false)
+      toast.error('單據更新失敗：' + receiptUpdateError.message)
+      return
+    }
+    if (!updatedReceipt) {
+      setEditUploading(false)
+      markEditConflict(null, null)
+      return
+    }
+
     const updatedReceipts = localReceipts.map(r =>
       r.id === editingReceiptId ? {
         ...r, vendor_name: editVendor, actual_vendor_name: normalizeActualVendorName(editActualVendor) || null, total_amount: finalTotal,
@@ -2270,20 +2448,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         receipt_type: r.receipt_type,
         photo_url: newPhotoUrl,
         notes: editNotes.trim() || undefined,
+        updated_at: updatedReceipt.updated_at ?? receiptUpdatedAt,
         receipt_items: canonicalItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: normalizeItemAmount(i.item_name, i.amount), item_mapping_id: i.item_mapping_id ?? null, vendor_group_snapshot: i.vendor_group_hint ?? editVendor ?? null })),
       } : r
     )
     setLocalReceipts(updatedReceipts)
     setExpenses(receiptsToExpenses(updatedReceipts, ckPrices))
 
-    await supabase.from('receipts').update({
-      vendor_name: editVendor,
-      actual_vendor_name: normalizeActualVendorName(editActualVendor) || null,
-      total_amount: finalTotal,
-      tax_amount: taxAmount,
-      photo_url: newPhotoUrl,
-      notes: editNotes.trim() || null,
-    }).eq('id', editingReceiptId)
     await rememberActualVendor(supabase, editVendor, editActualVendor)
     await supabase.from('receipt_items').delete().eq('receipt_id', editingReceiptId)
     if (canonicalItems.length > 0) {
@@ -2310,6 +2481,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setEditPhotoFile(null)
     revokeLocalPhotoUrl(editPhotoPreview)
     setEditPhotoPreview(null)
+    scheduleBackgroundSave()
     toast.success('已更新')
   }
 
@@ -2541,6 +2713,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }
 
   async function saveReceiptForm(form: ReceiptForm) {
+    if (editConflictRef.current) {
+      toast.error('請先重新整理最新資料，再新增單據。')
+      return
+    }
     const amountValid = isReceiptFormAmountValid(form)
     if (!amountValid) {
       toast.error(form.total_amount < 0 ? '只有「其他」類別的「其他」或「賣給分店食材」可輸入負數' : '請填寫金額')
@@ -2569,6 +2745,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       toast.error('請選廠商')
       return
     }
+    if (!await handleSave(true)) return
     setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: true } : f))
     const supabase = createClient()
     let photo_url = form.uploadedPhotoUrl ?? ''
@@ -2580,6 +2757,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const taxMapping = findTaxAddonMapping(mappingColumns, form.vendor_name, form.category, form.items ?? [])
     const taxAmount = taxMapping && form.has_tax ? Math.max(0, form.tax_amount) : 0
     const finalTotal = form.total_amount + taxAmount
+    const receiptUpdatedAt = new Date().toISOString()
     const { data: saved, error } = await supabase.from('receipts').insert({
       store_id: store.id,
       business_date: today,
@@ -2590,7 +2768,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       tax_amount: taxAmount,
       photo_url: photo_url || null,
       notes: form.notes.trim() || null,
-    }).select('id').single()
+      created_by: userId,
+      updated_at: receiptUpdatedAt,
+    }).select('id, updated_at').single()
     if (error) {
       toast.error('儲存失敗：' + error.message)
       setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: false } : f))
@@ -2644,22 +2824,41 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       receipt_type: 'receipt',
       photo_url,
       notes: form.notes.trim() || undefined,
+      updated_at: saved.updated_at ?? receiptUpdatedAt,
       receipt_items: canonicalItems,
     }
     const updated = [...localReceipts, newR]
     setLocalReceipts(updated)
     setExpenses(receiptsToExpenses(updated, ckPrices))
+    scheduleBackgroundSave()
     if (form.previewUrl) URL.revokeObjectURL(form.previewUrl)
     setReceiptForms(prev => prev.filter(f => f.id !== form.id))
     toast.success(`已儲存：${form.vendor_name} $${fmt(form.total_amount)}`)
   }
 
   async function handleDeleteReceipt(receiptId: string) {
+    if (editConflictRef.current) {
+      toast.error('請先重新整理最新資料，再刪除單據。')
+      return
+    }
+    if (!await handleSave(true)) return
     const supabase = createClient()
-    await supabase.from('receipts').delete().eq('id', receiptId)
+    const receipt = localReceipts.find(item => item.id === receiptId)
+    let deleteQuery = supabase.from('receipts').delete().eq('id', receiptId)
+    if (receipt?.updated_at) deleteQuery = deleteQuery.eq('updated_at', receipt.updated_at)
+    const { data: deleted, error } = await deleteQuery.select('id').maybeSingle()
+    if (error) {
+      toast.error('刪除失敗：' + error.message)
+      return
+    }
+    if (!deleted) {
+      markEditConflict(null, null)
+      return
+    }
     const updated = localReceipts.filter(r => r.id !== receiptId)
     setLocalReceipts(updated)
     setExpenses(receiptsToExpenses(updated, ckPrices))
+    scheduleBackgroundSave()
     toast.success('已刪除')
   }
 
@@ -2920,6 +3119,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   async function handleSave(silent = false) {
     if (statusRef.current === 'submitted' || statusRef.current === 'verified') return null
+    if (editConflictRef.current) {
+      if (!silent) toast.error('這份帳目已被其他頁面更新，請先重新整理，系統不會覆蓋對方資料。')
+      return null
+    }
+    if (pettySavePromiseRef.current) {
+      await pettySavePromiseRef.current
+      if (editConflictRef.current) return null
+    }
     if (savingRef.current) {
       // 送出前必須等正在執行的自動儲存完成，再用最新表單狀態重存一次。
       await new Promise<void>(resolve => saveWaitersRef.current.push(resolve))
@@ -2992,44 +3199,69 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         // 防呆：當日可能已有 closing 但 state 沒同步（page race / refresh / multi-tab），
         // 先查 DB 看 (store_id, business_date) 是否已存在，避免硬 INSERT 撞 unique constraint
         const { data: existing } = await supabase
-          .from('daily_closings').select('id, status')
+          .from('daily_closings').select('id, status, manager_id, updated_at')
           .eq('store_id', store.id).eq('business_date', today).maybeSingle()
         if (existing) {
           if (['submitted', 'verified'].includes(existing.status)) {
             throw new Error('該日帳目已送出，請重新整理頁面')
           }
-          cid = existing.id
-          setClosingId(cid)
+          // 本頁載入時尚無帳目，現在卻出現同店同日資料，表示另一個頁面已先建立。
+          // 不可直接接手更新，否則會把對方剛輸入的內容整份覆蓋。
+          setClosingId(existing.id)
+          markEditConflict(existing.manager_id, existing.updated_at)
+          return null
         }
       }
       if (!cid) {
+        const createdAt = new Date().toISOString()
         const { data: nc, error } = await supabase.from('daily_closings')
-          .insert({ ...payload, status: isDisputed ? 'disputed' : 'draft' })
-          .select('id')
+          .insert({ ...payload, status: isDisputed ? 'disputed' : 'draft', updated_at: createdAt })
+          .select('id, updated_at')
           .single()
-        if (error) throw error
+        if (error) {
+          if (error.code === '23505') {
+            const { data: current } = await supabase.from('daily_closings')
+              .select('id, manager_id, updated_at')
+              .eq('store_id', store.id)
+              .eq('business_date', today)
+              .maybeSingle()
+            if (current) {
+              setClosingId(current.id)
+              markEditConflict(current.manager_id, current.updated_at)
+              return null
+            }
+          }
+          throw error
+        }
         cid = nc.id
         setClosingId(cid)
+        recordSuccessfulSave(nc.id, nc.updated_at ?? createdAt)
       } else {
         // 儲存必須命中目前這一個編輯版本。舊 draft 分頁不可寫入剛被 HQ 退回的
         // disputed 版本；上一次退回留下的分頁也不可寫入下一次退回版本。
         const expectedEditableStatus = statusRef.current === 'disputed' ? 'disputed' : 'draft'
+        const baseUpdatedAt = closingUpdatedAtRef.current
+        if (!baseUpdatedAt) {
+          throw new Error('缺少帳目版本資訊，為避免覆蓋他人資料，請重新整理頁面')
+        }
+        const nextUpdatedAt = new Date().toISOString()
         let updateQuery = supabase.from('daily_closings')
-          .update({ ...payload, updated_at: new Date().toISOString() })
+          .update({ ...payload, updated_at: nextUpdatedAt })
           .eq('id', cid)
           .eq('status', expectedEditableStatus)
+          .eq('updated_at', baseUpdatedAt)
 
         if (expectedEditableStatus === 'disputed' && existingClosing?.disputed_at) {
           updateQuery = updateQuery.eq('disputed_at', existingClosing.disputed_at as string)
         }
 
         const { data: updated, error } = await updateQuery
-          .select('id')
+          .select('id, manager_id, updated_at')
           .maybeSingle()
         if (error) throw error
         if (!updated) {
           const { data: current } = await supabase.from('daily_closings')
-            .select('status')
+            .select('status, manager_id, updated_at')
             .eq('id', cid)
             .maybeSingle()
           if (current?.status === 'submitted' || current?.status === 'verified') {
@@ -3037,8 +3269,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             setStatus(current.status)
             return null
           }
-          throw new Error('帳目已進入新的退回修改版本，為避免舊分頁覆蓋資料，請重新整理頁面')
+          markEditConflict(current?.manager_id, current?.updated_at)
+          return null
         }
+        recordSuccessfulSave(cid, updated.updated_at ?? nextUpdatedAt)
       }
       // Backup full form state before destructive delete-then-insert operations
       try {
@@ -3171,7 +3405,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }
 
   function scheduleBackgroundSave() {
-    if (isLocked || submitDone || status === 'submitted' || status === 'verified') return
+    if (editConflictRef.current || isLocked || submitDone || status === 'submitted' || status === 'verified') return
     if (backgroundSaveTimerRef.current) clearTimeout(backgroundSaveTimerRef.current)
     backgroundSaveTimerRef.current = setTimeout(() => {
       backgroundSaveTimerRef.current = null
@@ -3184,6 +3418,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   async function handleSubmit() {
     // 先擋住雙擊：submitting 標記必須在所有 async 之前
     if (submitting) return
+    if (editConflictRef.current) {
+      toast.error('其他頁面已更新這份帳目，請重新整理確認最新內容後再送出。')
+      return
+    }
     if (status === 'submitted' || status === 'verified') {
       toast.error('此帳目已送出，請勿重複送出')
       return
@@ -3504,6 +3742,35 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
       {/* Sticky header + stepper */}
       <div className="bg-white sticky top-0 z-50" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        {editConflict && (
+          <div role="alert" className="px-4 py-3 flex items-center justify-between gap-3"
+            style={{ background: '#FEF2F2', color: '#991B1B', borderBottom: '2px solid #FCA5A5' }}>
+            <div className="flex items-start gap-2 min-w-0">
+              <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-black">已停止儲存，資料沒有被覆蓋</p>
+                <p className="text-xs mt-0.5 leading-snug">
+                  {editConflict.editorName} 已先更新這份帳目
+                  {editConflict.updatedAt ? `（${formatTaipeiEditTime(editConflict.updatedAt)}）` : ''}，請載入最新內容後再繼續。
+                </p>
+              </div>
+            </div>
+            <button type="button" onClick={() => window.location.reload()}
+              className="shrink-0 px-3 py-2 rounded-xl text-xs font-bold text-white"
+              style={{ background: '#DC2626', border: 'none' }}>
+              重新整理
+            </button>
+          </div>
+        )}
+        {!editConflict && activeEditors.length > 0 && (
+          <div className="px-4 py-2.5 flex items-start gap-2"
+            style={{ background: '#FFFBEB', color: '#92400E', borderBottom: '1px solid #FDE68A' }}>
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <p className="text-xs font-semibold leading-snug">
+              {Array.from(new Set(activeEditors.map(editor => editor.userName))).join('、')} 也正在開啟這份帳目。系統會在儲存時檢查版本，避免彼此覆蓋。
+            </p>
+          </div>
+        )}
         {/* 補做帳目提示橫幅 */}
         {isBackfill && (
           <div className="px-5 py-3 text-sm font-bold flex items-center justify-between gap-3"
@@ -3570,10 +3837,32 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 style={{ border: '1px solid #e4e4e7', color: '#52525b', background: 'white' }}
                 title="切換日期（可補做過往帳目）" />
             </div>
+            {lastEditor && (
+              <p className="text-[11px] mt-1 font-medium" style={{ color: '#71717a' }}>
+                最後修改：{lastEditor.userName}{lastEditor.updatedAt ? ` · ${formatTaipeiEditTime(lastEditor.updatedAt)}` : ''}
+              </p>
+            )}
           </div>
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-full shrink-0" style={{ background: st.bg, color: st.color }}>
-            {st.label}
-          </span>
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: st.bg, color: st.color }}>
+              {st.label}
+            </span>
+            {!isLocked && !submitDone && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                style={{
+                  background: activeEditors.length > 0 || presenceStatus === 'unavailable' ? '#FEF3C7' : presenceStatus === 'connected' ? '#DCFCE7' : '#E2E8F0',
+                  color: activeEditors.length > 0 || presenceStatus === 'unavailable' ? '#92400E' : presenceStatus === 'connected' ? '#047857' : '#475569',
+                }}>
+                {activeEditors.length > 0
+                  ? `同時開啟 ${activeEditors.length + 1} 人`
+                  : presenceStatus === 'connected'
+                    ? '只有你在編輯'
+                    : presenceStatus === 'unavailable'
+                      ? '即時提示離線 · 版本仍受保護'
+                      : '正在確認編輯者'}
+              </span>
+            )}
+          </div>
         </div>
         {!isLocked && (
           <div ref={stepperScrollRef} className="px-4 py-3 overflow-x-auto" style={{ visibility: stepMounted ? 'visible' : 'hidden' }}>
@@ -3614,7 +3903,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         )}
       </div>
 
-      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-32" style={{ visibility: stepMounted ? 'visible' : 'hidden' }}>
+      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-32" style={{
+        visibility: stepMounted ? 'visible' : 'hidden',
+        pointerEvents: editConflict ? 'none' : 'auto',
+        opacity: editConflict ? 0.65 : 1,
+      }}>
 
         {/* HQ 刪除後重做提示 */}
         {hqDeletedReset && (
@@ -6667,8 +6960,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 try {
                   const cid = existingClosing?.id ?? closingId ?? await handleSave(true)
                   if (!cid) throw new Error('找不到今日帳目，請重新整理後再試一次')
-                  const r = await savePettyCounts(cid, pettyCounts, pettyLumps)
+                  const pettyRequest = savePettyCounts(cid, pettyCounts, pettyLumps, closingUpdatedAtRef.current)
+                  pettySavePromiseRef.current = pettyRequest
+                  const r = await pettyRequest.finally(() => {
+                    if (pettySavePromiseRef.current === pettyRequest) pettySavePromiseRef.current = null
+                  })
+                  if ('conflict' in r && r.conflict) {
+                    markEditConflict(r.managerId, r.updatedAt)
+                    throw new Error('其他頁面已先儲存，系統已停止覆蓋')
+                  }
                   if (r && 'error' in r) throw new Error(r.error)
+                  if ('updatedAt' in r && r.updatedAt) recordSuccessfulSave(cid, r.updatedAt)
                   localStorage.setItem(`petty_done_${store.id}_${today}`, '1')
                   setPettyFinished(true)
                   toast.success('零用金核對已完成，請繼續送出帳目')
@@ -6679,9 +6981,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   setSavingPetty(false)
                 }
               }}
-                disabled={savingPetty || saving}
+                disabled={savingPetty || saving || !!editConflict}
                 className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-base font-bold text-white"
-                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 8px 20px rgba(245,158,11,0.3)', opacity: savingPetty || saving ? 0.7 : 1 }}>
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 8px 20px rgba(245,158,11,0.3)', opacity: savingPetty || saving || editConflict ? 0.55 : 1 }}>
                 {savingPetty ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}
                 確認，繼續送出 →
               </button>
@@ -6704,12 +7006,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   style={{ background: '#f4f4f5', color: '#52525b', opacity: submitting ? 0.6 : 1 }}>
                   ← 上一步
                 </button>
-                <button onClick={handleSubmit} disabled={submitting}
+                <button onClick={handleSubmit} disabled={submitting || !!editConflict}
                   className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white"
                   style={{
                     background: isDisputed ? 'linear-gradient(135deg,#f97316,#ea580c)' : 'linear-gradient(135deg,#F59E0B,#F97316)',
                     boxShadow: isDisputed ? '0 4px 12px rgba(249,115,22,0.3)' : '0 4px 12px rgba(245,158,11,0.3)',
-                    opacity: submitting ? 0.7 : 1,
+                    opacity: submitting || editConflict ? 0.55 : 1,
                   }}>
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   {isDisputed ? '確認重新送出' : '確認送出'}
@@ -6727,12 +7029,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     ← 上一步
                   </button>
                 )}
-                <button onClick={goNext} disabled={saving && !isDisputed}
+                <button onClick={goNext} disabled={(saving && !isDisputed) || !!editConflict}
                   className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white"
                   style={{
                     background: 'linear-gradient(135deg,#F59E0B,#F97316)',
                     boxShadow: '0 4px 12px rgba(245,158,11,0.3)',
-                    opacity: saving && !isDisputed ? 0.7 : 1,
+                    opacity: (saving && !isDisputed) || editConflict ? 0.55 : 1,
                   }}>
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {stepId === 'summary'

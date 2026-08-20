@@ -73,7 +73,7 @@ export default async function ClosingPage({
       .maybeSingle(),
     supabase
       .from('receipts')
-      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount, item_mapping_id, vendor_group_snapshot)')
+      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, updated_at, receipt_items(item_name, unit, quantity, unit_price, amount, item_mapping_id, vendor_group_snapshot)')
       .eq('store_id', storeId)
       .eq('business_date', today)
       .order('created_at'),
@@ -118,6 +118,20 @@ export default async function ClosingPage({
       .select('*')
       .eq('closing_id', existingClosing.id)
     ;(existingClosing as any).cash_counts = cashCounts ?? existingClosing.cash_counts ?? []
+  }
+
+  let lastEditorName: string | null = null
+  if (existingClosing?.manager_id) {
+    if (existingClosing.manager_id === user.id) {
+      lastEditorName = profile?.name ?? user.email ?? null
+    } else {
+      const { data: editorProfile } = await admin
+        .from('user_profiles')
+        .select('name')
+        .eq('user_id', existingClosing.manager_id)
+        .maybeSingle()
+      lastEditorName = editorProfile?.name ?? null
+    }
   }
 
   // 央廚店家使用專屬流程
@@ -177,6 +191,8 @@ export default async function ClosingPage({
       ckPrices={(ckPrices ?? []) as CKPrice[]}
       existingClosing={existingClosing}
       userId={user.id}
+      userName={profile?.name ?? user.email ?? '登入使用者'}
+      initialLastEditorName={lastEditorName}
       today={today}
       todayReceipts={todayReceipts ?? []}
       receiptCategories={syncedReceiptCategories}

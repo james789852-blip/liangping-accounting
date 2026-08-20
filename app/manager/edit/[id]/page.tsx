@@ -78,7 +78,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .order('sort_order').order('item_name'),
     supabase
       .from('receipts')
-      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, receipt_items(item_name, unit, quantity, unit_price, amount, item_mapping_id, vendor_group_snapshot)')
+      .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, updated_at, receipt_items(item_name, unit, quantity, unit_price, amount, item_mapping_id, vendor_group_snapshot)')
       .eq('store_id', storeId)
       .eq('business_date', closing.business_date)
       .order('created_at'),
@@ -108,6 +108,18 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
   ])
 
   const { prevDayReserves, preReservedExpenseHints } = buildReserveHistoryContext(prevReserveClosings ?? [])
+
+  let lastEditorName: string | null = null
+  if (closing.manager_id === user.id) {
+    lastEditorName = profile?.name ?? user.email ?? null
+  } else if (closing.manager_id) {
+    const { data: editorProfile } = await admin2
+      .from('user_profiles')
+      .select('name')
+      .eq('user_id', closing.manager_id)
+      .maybeSingle()
+    lastEditorName = editorProfile?.name ?? null
+  }
 
   let itemOrder: string[] = []
   try { if (itemOrderText) itemOrder = JSON.parse(itemOrderText) } catch {}
@@ -158,6 +170,8 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
         ckPrices={(ckPrices ?? []) as CKPrice[]}
         existingClosing={closing}
         userId={user.id}
+        userName={profile?.name ?? user.email ?? '登入使用者'}
+        initialLastEditorName={lastEditorName}
         today={closing.business_date}
         todayReceipts={todayReceipts ?? []}
         receiptCategories={syncedReceiptCategories}
