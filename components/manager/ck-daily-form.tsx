@@ -16,11 +16,16 @@ import SafePhotoImage from '@/components/shared/safe-photo-image'
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
 /** 央廚帳目只記錄央廚自行確認的各店金額。 */
-function MemberAmountRow({ order, value, onChange, disabled }: {
+function MemberAmountRow({ order, value, onChange, disabled, photoUrls, uploading, onUpload, onRemove, onPreview }: {
   order: MemberOrder
   value: string
   onChange: (value: string) => void
   disabled: boolean
+  photoUrls: string[]
+  uploading: boolean
+  onUpload: (files: File[]) => Promise<void>
+  onRemove: (url: string) => void
+  onPreview: (url: string) => void
 }) {
   const hasAmount = value.trim() !== ''
 
@@ -51,13 +56,82 @@ function MemberAmountRow({ order, value, onChange, disabled }: {
           />
         </div>
       </div>
+      <DeliveryPhotoField
+        photoUrls={photoUrls}
+        disabled={disabled}
+        uploading={uploading}
+        onUpload={onUpload}
+        onRemove={onRemove}
+        onPreview={onPreview}
+      />
     </div>
   )
 }
 
-interface MemberOrder { store_id: string; store_name: string; confirmed_amount?: number | null }
+function DeliveryPhotoField({ photoUrls, disabled, uploading, onUpload, onRemove, onPreview }: {
+  photoUrls: string[]
+  disabled: boolean
+  uploading: boolean
+  onUpload: (files: File[]) => Promise<void>
+  onRemove: (url: string) => void
+  onPreview: (url: string) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  return (
+    <div className="mt-2.5 rounded-xl p-2.5" style={{ background: '#f8fafc', border: '1px solid #e4e4e7' }}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div>
+          <p className="text-xs font-bold" style={{ color: '#52525b' }}>配送單照片</p>
+          <p className="text-[10px]" style={{ color: '#a1a1aa' }}>{photoUrls.length ? `${photoUrls.length} 張已上傳` : '有叫貨金額時必須上傳'}</p>
+        </div>
+        {!disabled && (
+          <>
+            <input ref={inputRef} type="file" accept="image/*" multiple className="hidden"
+              onChange={async event => {
+                const files = Array.from(event.target.files ?? [])
+                event.target.value = ''
+                if (files.length) await onUpload(files)
+              }} />
+            <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold disabled:opacity-50"
+              style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
+              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+              {uploading ? '上傳中' : photoUrls.length ? '加照片' : '上傳配送單'}
+            </button>
+          </>
+        )}
+      </div>
+      {photoUrls.length > 0 ? (
+        <div className="grid grid-cols-4 gap-2">
+          {photoUrls.map((url, index) => (
+            <div key={url} className="relative aspect-square overflow-hidden rounded-lg" style={{ background: '#e4e4e7' }}>
+              <button type="button" onClick={() => onPreview(url)} className="h-full w-full">
+                <SafePhotoImage src={url} alt={`配送單 ${index + 1}`} thumb width={180} height={180} className="h-full w-full object-cover" />
+              </button>
+              {!disabled && (
+                <button type="button" onClick={() => onRemove(url)} aria-label={`移除配送單照片 ${index + 1}`}
+                  className="absolute right-1 top-1 h-5 w-5 rounded-full flex items-center justify-center"
+                  style={{ background: 'rgba(0,0,0,.68)', color: 'white' }}>
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-lg px-3 py-2 text-center text-[11px] font-semibold"
+          style={{ background: '#fff', color: '#a1a1aa', border: '1px dashed #d4d4d8' }}>
+          尚未上傳配送單
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface MemberOrder { store_id: string; store_name: string; confirmed_amount?: number | null; delivery_photo_urls?: string[] }
 interface ExternalStore { id: string; name: string }
-interface ExternalOrder { name: string; amount: number }
+interface ExternalOrder { name: string; amount: number; delivery_photo_urls: string[] }
 interface Expense { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string; vendor_group: string; doc_type: string; note: string; receipt_photo_url?: string }
 interface PhotoExpenseItem {
   id: string
@@ -306,11 +380,15 @@ function mergeExternalOrders(configuredStores: ExternalStore[], existingOrders?:
   const byName = new Map<string, ExternalOrder>()
   for (const store of configuredStores) {
     const name = store.name.trim()
-    if (name) byName.set(name, { name, amount: 0 })
+    if (name) byName.set(name, { name, amount: 0, delivery_photo_urls: [] })
   }
   for (const order of existingOrders ?? []) {
     const name = order.name.trim()
-    if (name) byName.set(name, { name, amount: Number(order.amount) || 0 })
+    if (name) byName.set(name, {
+      name,
+      amount: Number(order.amount) || 0,
+      delivery_photo_urls: order.delivery_photo_urls ?? [],
+    })
   }
   return Array.from(byName.values())
 }
@@ -648,7 +726,11 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       o.confirmed_amount != null ? String(o.confirmed_amount) : '',
     ]))
   )
+  const [memberOrderPhotos, setMemberOrderPhotos] = useState<Record<string, string[]>>(
+    () => Object.fromEntries(memberOrders.map(order => [order.store_id, order.delivery_photo_urls ?? []]))
+  )
   const [photoUploading, setPhotoUploading] = useState(false)
+  const [deliveryPhotoUploadsInFlight, setDeliveryPhotoUploadsInFlight] = useState(0)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
@@ -680,6 +762,17 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       }
       return changed ? next : prev
     })
+    setMemberOrderPhotos(prev => {
+      let changed = false
+      const next = { ...prev }
+      for (const order of memberOrders) {
+        if (!(order.store_id in next)) {
+          next[order.store_id] = order.delivery_photo_urls ?? []
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
   }, [memberOrders])
 
   useEffect(() => {
@@ -700,7 +793,12 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         window.localStorage.removeItem(draftKey)
         return
       }
-      if (Array.isArray(draft.extOrders)) setExtOrders(draft.extOrders)
+      if (Array.isArray(draft.extOrders)) {
+        setExtOrders(draft.extOrders.map((order: ExternalOrder) => ({
+          ...order,
+          delivery_photo_urls: Array.isArray(order.delivery_photo_urls) ? order.delivery_photo_urls : [],
+        })))
+      }
       if (Array.isArray(draft.expenses)) setExpenses(draft.expenses)
       if (Array.isArray(draft.photoUrls)) setPhotoUrls(draft.photoUrls)
       if (Array.isArray(draft.photoForms)) setPhotoForms(draft.photoForms.map((form: PhotoExpenseForm) => normalizePhotoExpenseForm(form)))
@@ -708,6 +806,12 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         setMemberOrderInputs(Object.fromEntries(
           Object.entries(draft.memberOrderInputs as Record<string, unknown>)
             .map(([key, value]) => [key, typeof value === 'string' ? value : String(value ?? '')])
+        ))
+      }
+      if (draft.memberOrderPhotos && typeof draft.memberOrderPhotos === 'object') {
+        setMemberOrderPhotos(Object.fromEntries(
+          Object.entries(draft.memberOrderPhotos as Record<string, unknown>)
+            .map(([key, value]) => [key, Array.isArray(value) ? value.filter((url): url is string => typeof url === 'string') : []])
         ))
       }
       if (typeof draft.selectedPhotoUrl === 'string') setSelectedPhotoUrl(draft.selectedPhotoUrl)
@@ -740,6 +844,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
           f.note.trim()
         ) ||
         Object.values(memberOrderInputs).some(v => String(v).trim()) ||
+        Object.values(memberOrderPhotos).some(urls => urls.length > 0) ||
         expenses.length > 0 ||
         extOrders.some(o => Number(o.amount || 0) > 0) ||
         newExpense.item_name.trim() ||
@@ -764,11 +869,12 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         photoUrls: persistedPhotoUrls,
         photoForms: persistedPhotoForms,
         memberOrderInputs,
+        memberOrderPhotos,
         selectedPhotoUrl: persistedSelectedPhotoUrl,
       }))
     }, 300)
     return () => window.clearTimeout(timer)
-  }, [activeCat, activeVendor, ckStoreId, date, draftKey, expenses, extOrders, isLocked, memberOrderInputs, newExpense, note, payerName, photoForms, photoUrls, selectedPhotoUrl])
+  }, [activeCat, activeVendor, ckStoreId, date, draftKey, expenses, extOrders, isLocked, memberOrderInputs, memberOrderPhotos, newExpense, note, payerName, photoForms, photoUrls, selectedPhotoUrl])
 
   const memberTotal = memberOrders.reduce((s, o) => s + (Number(memberOrderInputs[o.store_id]) || 0), 0)
   const extTotal = extOrders.reduce((s, o) => s + (Number(o.amount) || 0), 0)
@@ -777,6 +883,28 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   const expenseTotal = expensesForSave.reduce((s, e) => s + (Number(e.amount) || 0), 0)
   const expenseReviewSections = buildExpenseReviewSections(expensesForSave, photoUrls)
   const balance = revenueTotal - expenseTotal
+  const deliveryPhotoCount = Object.values(memberOrderPhotos).reduce((sum, urls) => sum + urls.length, 0)
+    + extOrders.reduce((sum, order) => sum + order.delivery_photo_urls.length, 0)
+  const deliveryReviewOrders = [
+    ...memberOrders
+      .filter(order => Number(memberOrderInputs[order.store_id] || 0) > 0)
+      .map(order => ({
+        key: `member-${order.store_id}`,
+        name: order.store_name,
+        kind: '體系內',
+        amount: Number(memberOrderInputs[order.store_id]) || 0,
+        photoUrls: memberOrderPhotos[order.store_id] ?? [],
+      })),
+    ...extOrders
+      .filter(order => order.amount > 0)
+      .map(order => ({
+        key: `external-${order.name}`,
+        name: order.name,
+        kind: '體系外',
+        amount: order.amount,
+        photoUrls: order.delivery_photo_urls,
+      })),
+  ]
 
   function getExpensesForSave() {
     const manualExpenses = expenses.filter(e => !e.receipt_photo_url)
@@ -837,6 +965,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       return {
         storeId: order.store_id,
         confirmedAmount: raw.trim() === '' ? null : Number(raw) || 0,
+        deliveryPhotoUrls: memberOrderPhotos[order.store_id] ?? [],
       }
     })
   }
@@ -1091,10 +1220,54 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     }
   }
 
+  async function uploadDeliveryPhotos(files: File[]): Promise<string[]> {
+    if (files.length === 0) return []
+    setDeliveryPhotoUploadsInFlight(count => count + 1)
+    try {
+      const uploaded = await Promise.all(files.map(async rawFile => {
+        try {
+          const file = await compressImage(rawFile)
+          const formData = new FormData()
+          formData.append('file', file)
+          const path = centralKitchenPhotoPath(
+            ckStoreId,
+            date,
+            'delivery-orders',
+            `${Date.now()}-${crypto.randomUUID()}.jpg`,
+          )
+          const result = await uploadToStorage(formData, 'receipts', path)
+          if ('error' in result) throw new Error(result.error)
+          return result.publicUrl
+        } catch (error) {
+          toast.error('配送單上傳失敗：' + ((error as Error).message || '未知錯誤'))
+          return null
+        }
+      }))
+      return uploaded.filter((url): url is string => Boolean(url))
+    } finally {
+      setDeliveryPhotoUploadsInFlight(count => Math.max(0, count - 1))
+    }
+  }
+
   async function handleSave(asSubmit = false, opts: { silent?: boolean } = {}) {
-    if (photoUploading) {
+    if (photoUploading || deliveryPhotoUploadsInFlight > 0) {
       if (!opts.silent) toast.error('照片仍在上傳中，請稍候完成')
       return false
+    }
+
+    if (asSubmit) {
+      const missingMemberOrders = memberOrders
+        .filter(order => Number(memberOrderInputs[order.store_id] || 0) > 0 && (memberOrderPhotos[order.store_id]?.length ?? 0) === 0)
+        .map(order => order.store_name)
+      const missingExternalOrders = extOrders
+        .filter(order => Number(order.amount || 0) > 0 && order.delivery_photo_urls.length === 0)
+        .map(order => order.name)
+      const missingOrders = [...missingMemberOrders, ...missingExternalOrders]
+      if (missingOrders.length > 0) {
+        toast.error(`請先上傳配送單：${missingOrders.join('、')}`)
+        setCurrentStep(2)
+        return false
+      }
     }
 
     if ((asSubmit || !opts.silent) && backgroundSaveTimerRef.current) {
@@ -1112,7 +1285,11 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
       note: note || undefined,
       status: asSubmit ? 'submitted' : 'draft',
       memberOrders: getMemberOrdersForSave(),
-      externalOrders: extOrders.filter(o => o.amount > 0),
+      externalOrders: extOrders.filter(o => o.amount > 0).map(order => ({
+        name: order.name,
+        amount: order.amount,
+        deliveryPhotoUrls: order.delivery_photo_urls,
+      })),
       expenses: expensesForSave.map(e => ({
         category: e.category,
         item_name: e.item_name,
@@ -1341,6 +1518,22 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                   value={memberOrderInputs[o.store_id] ?? ''}
                   onChange={value => setMemberOrderInputs(prev => ({ ...prev, [o.store_id]: value }))}
                   disabled={isLocked}
+                  photoUrls={memberOrderPhotos[o.store_id] ?? []}
+                  uploading={deliveryPhotoUploadsInFlight > 0}
+                  onUpload={async files => {
+                    const uploaded = await uploadDeliveryPhotos(files)
+                    if (uploaded.length) {
+                      setMemberOrderPhotos(prev => ({
+                        ...prev,
+                        [o.store_id]: [...(prev[o.store_id] ?? []), ...uploaded],
+                      }))
+                    }
+                  }}
+                  onRemove={url => setMemberOrderPhotos(prev => ({
+                    ...prev,
+                    [o.store_id]: (prev[o.store_id] ?? []).filter(item => item !== url),
+                  }))}
+                  onPreview={setLightboxUrl}
                 />
               ))
             )}
@@ -1369,19 +1562,38 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         {showExternal && (
           <div style={{ borderTop: '1px solid #f4f4f5' }}>
             {extOrders.map(o => (
-              <div key={o.name} className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: '1px solid #f9f9f9' }}>
-                <span className="flex-1 text-sm font-medium" style={{ color: '#18181b' }}>{o.name}</span>
-                {isLocked ? (
-                  <span className="text-sm font-bold tabular-nums" style={{ color: o.amount > 0 ? '#18181b' : '#a1a1aa' }}>
-                    {o.amount > 0 ? `$${fmt(o.amount)}` : '—'}
-                  </span>
-                ) : (
-                  <input type="number" min="0" placeholder="0"
-                    className={INPUT} style={{ ...INPUT_STYLE, width: '120px', textAlign: 'right' }}
-                    value={o.amount || ''}
-                    onChange={e => updateExtAmount(o.name, e.target.value)}
-                  />
-                )}
+              <div key={o.name} className="px-4 py-3" style={{ borderBottom: '1px solid #f9f9f9' }}>
+                <div className="flex items-center gap-3">
+                  <span className="flex-1 text-sm font-medium" style={{ color: '#18181b' }}>{o.name}</span>
+                  {isLocked ? (
+                    <span className="text-sm font-bold tabular-nums" style={{ color: o.amount > 0 ? '#18181b' : '#a1a1aa' }}>
+                      {o.amount > 0 ? `$${fmt(o.amount)}` : '—'}
+                    </span>
+                  ) : (
+                    <input type="number" min="0" placeholder="0"
+                      className={INPUT} style={{ ...INPUT_STYLE, width: '120px', textAlign: 'right' }}
+                      value={o.amount || ''}
+                      onChange={e => updateExtAmount(o.name, e.target.value)}
+                    />
+                  )}
+                </div>
+                <DeliveryPhotoField
+                  photoUrls={o.delivery_photo_urls}
+                  disabled={isLocked}
+                  uploading={deliveryPhotoUploadsInFlight > 0}
+                  onUpload={async files => {
+                    const uploaded = await uploadDeliveryPhotos(files)
+                    if (uploaded.length) {
+                      setExtOrders(prev => prev.map(order => order.name === o.name
+                        ? { ...order, delivery_photo_urls: [...order.delivery_photo_urls, ...uploaded] }
+                        : order))
+                    }
+                  }}
+                  onRemove={url => setExtOrders(prev => prev.map(order => order.name === o.name
+                    ? { ...order, delivery_photo_urls: order.delivery_photo_urls.filter(item => item !== url) }
+                    : order))}
+                  onPreview={setLightboxUrl}
+                />
               </div>
             ))}
             {!isLocked && (
@@ -1927,14 +2139,46 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="rounded-2xl p-4" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
-                <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>支出單據</p>
-                <p className="font-bold" style={{ color: '#18181b' }}>{expensesForSave.length} 筆 · {photoUrls.length} 張照片</p>
+                <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>單據照片</p>
+                <p className="font-bold" style={{ color: '#18181b' }}>支出 {photoUrls.length} 張 · 配送 {deliveryPhotoCount} 張</p>
               </div>
               <div className="rounded-2xl p-4" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
                 <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>貨款代墊人</p>
                 <p className="font-bold" style={{ color: payerName ? '#18181b' : '#a1a1aa' }}>{payerName || '未填寫'}</p>
               </div>
             </div>
+            {deliveryReviewOrders.length > 0 && (
+              <section className="rounded-2xl overflow-hidden" style={{ border: '1px solid #e4e4e7' }}>
+                <div className="flex items-center justify-between gap-3 px-4 py-3" style={{ background: '#eff6ff', borderBottom: '1px solid #bfdbfe' }}>
+                  <div>
+                    <p className="text-sm font-extrabold" style={{ color: '#1d4ed8' }}>叫貨配送單</p>
+                    <p className="text-[11px]" style={{ color: '#3b82f6' }}>{deliveryReviewOrders.length} 筆叫貨 · {deliveryPhotoCount} 張照片</p>
+                  </div>
+                </div>
+                <div className="divide-y" style={{ borderColor: '#f4f4f5' }}>
+                  {deliveryReviewOrders.map(order => (
+                    <div key={order.key} className="p-3 grid grid-cols-[minmax(0,1fr)_auto] gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold" style={{ color: '#18181b' }}>{order.name}</p>
+                        <p className="text-[11px]" style={{ color: '#a1a1aa' }}>{order.kind} · {order.photoUrls.length} 張配送單</p>
+                        {order.photoUrls.length > 0 ? (
+                          <div className="grid grid-cols-4 gap-2 mt-2">
+                            {order.photoUrls.map((url, index) => (
+                              <button key={url} type="button" onClick={() => setLightboxUrl(url)} className="aspect-square overflow-hidden rounded-lg">
+                                <SafePhotoImage src={url} alt={`${order.name} 配送單 ${index + 1}`} thumb width={180} height={180} className="h-full w-full object-cover" />
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs font-bold mt-2" style={{ color: '#dc2626' }}>尚未上傳配送單</p>
+                        )}
+                      </div>
+                      <span className="text-sm font-extrabold tabular-nums" style={{ color: '#1d4ed8' }}>${fmt(order.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
             {expenseReviewSections.length > 0 && (
               <div className="space-y-4">
                 {expenseReviewSections.map(section => (
@@ -2020,21 +2264,21 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
               上一步
             </button>
           )}
-          <button type="button" onClick={() => handleSave(false)} disabled={saving || photoUploading}
+          <button type="button" onClick={() => handleSave(false)} disabled={saving || photoUploading || deliveryPhotoUploadsInFlight > 0}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold"
             style={{ background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             儲存草稿
           </button>
           {currentStep < 4 ? (
-            <button type="button" onClick={goNext} disabled={saving || photoUploading}
+            <button type="button" onClick={goNext} disabled={saving || photoUploading || deliveryPhotoUploadsInFlight > 0}
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold text-white"
               style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
               下一步
             </button>
           ) : (
-          <button type="button" onClick={() => handleSave(true)} disabled={submitting || photoUploading}
+          <button type="button" onClick={() => handleSave(true)} disabled={submitting || photoUploading || deliveryPhotoUploadsInFlight > 0}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold text-white"
             style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

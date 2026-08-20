@@ -7,6 +7,10 @@ import { getAuthContext, canAccessStore } from '@/lib/permissions'
 import { logAudit } from '@/lib/audit'
 import { recordCKReimbursementAdjustment } from '@/lib/ck-reimbursement-adjustment'
 import {
+  ckOrderNeedsDeliveryPhoto,
+  normalizeCKDeliveryPhotoUrls,
+} from '@/lib/ck-delivery-photos'
+import {
   canManageCKSettings as canManageCKSettingsPermission,
   canReviewClosings,
 } from '@/lib/user-permissions'
@@ -70,8 +74,8 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
   payerName?: string
   note?: string
   status?: 'draft' | 'submitted'
-  memberOrders?: { storeId: string; confirmedAmount: number | null }[]
-  externalOrders?: { name: string; amount: number }[]
+  memberOrders?: { storeId: string; confirmedAmount: number | null; deliveryPhotoUrls?: string[] }[]
+  externalOrders?: { name: string; amount: number; deliveryPhotoUrls?: string[] }[]
   expenses?: { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }[]
   receiptPhotoUrls?: string[]
 }) {
@@ -80,6 +84,26 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
   if (!canAccessStore(ctx, ckStoreId)) return { error: '無權限存取此央廚' }
 
   const admin = createAdminClient()
+  const memberOrders = data.memberOrders?.map(order => ({
+    ...order,
+    deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(order.deliveryPhotoUrls),
+  }))
+  const externalOrders = data.externalOrders?.map(order => ({
+    ...order,
+    deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(order.deliveryPhotoUrls),
+  }))
+
+  if (data.status === 'submitted') {
+    const missingMemberPhotos = memberOrders?.filter(order =>
+      ckOrderNeedsDeliveryPhoto(order.confirmedAmount, order.deliveryPhotoUrls),
+    ).length ?? 0
+    const missingExternalPhotos = externalOrders?.filter(order =>
+      ckOrderNeedsDeliveryPhoto(order.amount, order.deliveryPhotoUrls),
+    ).length ?? 0
+    if (missingMemberPhotos + missingExternalPhotos > 0) {
+      return { error: `有 ${missingMemberPhotos + missingExternalPhotos} 筆叫貨尚未上傳配送單照片` }
+    }
+  }
 
   const { data: record, error } = await admin
     .from('ck_daily_records')
@@ -106,35 +130,42 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
   const recordId = record.id
 
   // 體系外叫貨：全部刪除後重新寫入
-  if (data.externalOrders !== undefined) {
-    await admin.from('ck_store_orders')
+  if (externalOrders !== undefined) {
+    const { error: externalDeleteErr } = await admin.from('ck_store_orders')
       .delete()
       .eq('ck_daily_record_id', recordId)
       .is('store_id', null)
-    if (data.externalOrders.length > 0) {
-      await admin.from('ck_store_orders').insert(
-        data.externalOrders.map(o => ({
+    if (externalDeleteErr) return { error: externalDeleteErr.message }
+
+    if (externalOrders.length > 0) {
+      const { error: externalInsertErr } = await admin.from('ck_store_orders').insert(
+        externalOrders.map(o => ({
           ck_daily_record_id: recordId,
           external_store_name: o.name,
           amount: o.amount,
+          delivery_photo_urls: o.deliveryPhotoUrls,
         }))
       )
+      if (externalInsertErr) return { error: externalInsertErr.message }
     }
   }
 
   // 體系內店家叫貨只保存央廚輸入金額；amount 不再存放店家自報。
-  if (data.memberOrders !== undefined) {
-    const cleaned = data.memberOrders.filter(o => o.storeId)
+  if (memberOrders !== undefined) {
+    const cleaned = memberOrders.filter(o => o.storeId)
 
-    const clearIds = cleaned
-      .filter(o => o.confirmedAmount === null)
-      .map(o => o.storeId)
-    if (clearIds.length > 0) {
+    const clearRows = cleaned.filter(o => o.confirmedAmount === null)
+    for (const order of clearRows) {
       const { error: clearErr } = await admin
         .from('ck_store_orders')
-        .update({ ck_confirmed_amount: null, ck_confirmed_at: null, ck_confirmed_by: null })
+        .update({
+          ck_confirmed_amount: null,
+          ck_confirmed_at: null,
+          ck_confirmed_by: null,
+          delivery_photo_urls: order.deliveryPhotoUrls,
+        })
         .eq('ck_daily_record_id', recordId)
-        .in('store_id', clearIds)
+        .eq('store_id', order.storeId)
       if (clearErr) return { error: clearErr.message }
     }
 
@@ -147,6 +178,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
         ck_confirmed_amount: o.confirmedAmount,
         ck_confirmed_at: new Date().toISOString(),
         ck_confirmed_by: ctx.userId,
+        delivery_photo_urls: o.deliveryPhotoUrls,
       }))
     if (upsertRows.length > 0) {
       const { error: memberErr } = await admin
@@ -184,12 +216,18 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
     metadata: {
       business_date: date,
       status: data.status,
-      has_external: !!data.externalOrders,
+      has_external: !!externalOrders,
       has_expenses: !!data.expenses,
       // 保留央廚實際送出的各店金額，日後可直接核對誰輸入了多少。
-      member_orders: data.memberOrders?.map(order => ({
+      member_orders: memberOrders?.map(order => ({
         store_id: order.storeId,
         confirmed_amount: order.confirmedAmount,
+        delivery_photo_count: order.deliveryPhotoUrls.length,
+      })) ?? null,
+      external_orders: externalOrders?.map(order => ({
+        name: order.name,
+        amount: order.amount,
+        delivery_photo_count: order.deliveryPhotoUrls.length,
       })) ?? null,
     },
   })

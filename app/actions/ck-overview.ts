@@ -5,6 +5,7 @@ import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getCKRangeStats, getCKMonthlyStats, type CKDailyStats, type CKMonthlyStats } from '@/lib/ck-aggregator'
 import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment'
+import { normalizeCKDeliveryPhotoUrls } from '@/lib/ck-delivery-photos'
 
 async function checkHqAuth() {
   const supabase = await createClient()
@@ -53,7 +54,7 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
       ? admin.from('stores').select('id, name').in('id', assignedIds)
       : Promise.resolve({ data: [] }),
     admin.from('ck_external_stores').select('*').eq('ck_store_id', ckStoreId),
-    rec ? admin.from('ck_store_orders').select('store_id, external_store_name, amount, ck_confirmed_amount').eq('ck_daily_record_id', rec.id) : Promise.resolve({ data: [] }),
+    rec ? admin.from('ck_store_orders').select('store_id, external_store_name, amount, ck_confirmed_amount, delivery_photo_urls').eq('ck_daily_record_id', rec.id) : Promise.resolve({ data: [] }),
     rec ? admin.from('ck_expense_items').select('category, item_name, amount, payer_name, vendor_group, doc_type, receipt_photo_url').eq('ck_daily_record_id', rec.id).order('sort_order') : Promise.resolve({ data: [] }),
     assignedIds.length > 0
       ? admin.from('daily_closings')
@@ -71,10 +72,15 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
       store_id: o.store_id,
       store_name: nameMap[o.store_id] ?? o.store_id,
       ck_amount: o.ck_confirmed_amount == null ? null : Number(o.ck_confirmed_amount),
+      deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(o.delivery_photo_urls),
     }))
   const externalOrders = ((orderRes.data ?? []) as any[])
     .filter(o => o.store_id === null)
-    .map(o => ({ name: o.external_store_name, amount: Number(o.amount ?? 0) }))
+    .map(o => ({
+      name: o.external_store_name,
+      amount: Number(o.amount ?? 0),
+      deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(o.delivery_photo_urls),
+    }))
   const expenses = ((expRes.data ?? []) as any[]).map(e => ({
     category: e.category, item_name: e.item_name, amount: Number(e.amount ?? 0), payer_name: e.payer_name ?? undefined,
     vendor_group: e.vendor_group ?? undefined,
@@ -92,6 +98,7 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
       store_name: nameMap[id] ?? id,
       store_amount: managerAmountByStore[id] ?? null,
       ck_amount: existing?.ck_amount ?? null,
+      deliveryPhotoUrls: existing?.deliveryPhotoUrls ?? [],
     }
   })
   const revenueTotal = memberOrders.reduce((sum, order) => sum + (order.ck_amount ?? 0), 0)

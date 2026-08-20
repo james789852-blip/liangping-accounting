@@ -6,6 +6,7 @@ import { getBusinessDate } from '@/lib/business-date'
 import CKOverview from '@/components/hq/ck-overview'
 import { canReviewClosings } from '@/lib/user-permissions'
 import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment'
+import { normalizeCKDeliveryPhotoUrls } from '@/lib/ck-delivery-photos'
 
 export const dynamic = 'force-dynamic'
 
@@ -90,7 +91,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     { data: submitterProfiles },
   ] = await Promise.all([
     recordIds.length > 0
-      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount').in('ck_daily_record_id', recordIds)
+      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount, delivery_photo_urls').in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
       ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type, note, receipt_photo_url').in('ck_daily_record_id', recordIds).order('sort_order')
@@ -120,8 +121,8 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     const assignedIds: string[] = (ckStore.assigned_store_ids as string[] | null) ?? []
     const extStores = (externalStores ?? []).filter((s: any) => s.ck_store_id === ckStore.id)
 
-    let memberOrders: { store_id: string; store_name: string; ck_amount: number | null }[] = []
-    let externalOrders: { name: string; amount: number }[] = []
+    let memberOrders: { store_id: string; store_name: string; ck_amount: number | null; deliveryPhotoUrls: string[] }[] = []
+    let externalOrders: { name: string; amount: number; deliveryPhotoUrls: string[] }[] = []
     let expenses: { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }[] = []
 
     if (record) {
@@ -132,10 +133,15 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
           store_id: o.store_id,
           store_name: assignedStoreMap[o.store_id] ?? o.store_id,
           ck_amount: o.ck_confirmed_amount == null ? null : Number(o.ck_confirmed_amount),
+          deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(o.delivery_photo_urls),
         }))
       externalOrders = orders
         .filter((o: any) => o.store_id === null)
-        .map((o: any) => ({ name: o.external_store_name, amount: Number(o.amount ?? 0) }))
+        .map((o: any) => ({
+          name: o.external_store_name,
+          amount: Number(o.amount ?? 0),
+          deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(o.delivery_photo_urls),
+        }))
       expenses = (expenseItems ?? [])
         .filter((e: any) => e.ck_daily_record_id === record.id)
         .map((e: any) => ({ category: e.category, item_name: e.item_name, amount: Number(e.amount ?? 0), payer_name: e.payer_name ?? undefined, vendor_group: e.vendor_group ?? undefined, doc_type: e.doc_type ?? undefined, note: e.note ?? undefined, receipt_photo_url: e.receipt_photo_url ?? undefined }))
@@ -153,6 +159,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
         store_name: assignedStoreMap[id] ?? id,
         store_amount: managerAmountByStore[id] ?? null,
         ck_amount: existing?.ck_amount ?? null,
+        deliveryPhotoUrls: existing?.deliveryPhotoUrls ?? [],
       }
     })
 

@@ -48,8 +48,9 @@ interface MemberStore {
   store_name: string
   store_amount: number | null
   ck_amount: number | null
+  deliveryPhotoUrls: string[]
 }
-interface ExternalOrder { name: string; amount: number }
+interface ExternalOrder { name: string; amount: number; deliveryPhotoUrls: string[] }
 interface Expense { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }
 
 type ExpenseGroup = {
@@ -637,9 +638,10 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
               {/* 體系內叫貨 */}
               {d.memberStores.length > 0 && (
                 <Section title="體系內叫貨">
-                  <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-3 py-2 text-[10px] font-bold"
+                  <div className="grid grid-cols-[minmax(0,1fr)_52px_auto_auto_auto] gap-2 px-3 py-2 text-[10px] font-bold"
                     style={{ color: '#a1a1aa', borderBottom: '1px solid #f4f4f5' }}>
                     <span>店家</span>
+                    <span className="text-center">配送單</span>
                     <span className="text-right">店面輸入</span>
                     <span className="text-right">央廚輸入</span>
                     <span className="text-right">差額</span>
@@ -650,12 +652,21 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                     const mismatched = diff != null && diff !== 0
                     return (
                       <div key={s.store_id}
-                        className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 px-3 py-2.5 text-sm"
+                        className="grid grid-cols-[minmax(0,1fr)_52px_auto_auto_auto] items-center gap-2 px-3 py-2.5 text-sm"
                         style={{ background: mismatched ? '#fef2f2' : undefined, borderBottom: '1px solid #f4f4f5' }}>
                         <span className="font-medium flex items-center gap-1.5" style={{ color: '#18181b' }}>
                           {mismatched && <AlertTriangle className="h-3.5 w-3.5 shrink-0" style={{ color: '#dc2626' }} />}
                           {s.store_name}
                         </span>
+                        <div className="flex justify-center">
+                          {s.deliveryPhotoUrls[0] ? (
+                            <button type="button" onClick={() => setLightboxUrl(s.deliveryPhotoUrls[0])}
+                              className="relative h-10 w-10 overflow-hidden rounded-lg" style={{ border: '1px solid #e4e4e7' }}>
+                              <SafePhotoImage src={s.deliveryPhotoUrls[0]} alt={`${s.store_name} 配送單`} thumb width={120} height={120} className="h-full w-full object-cover" />
+                              {s.deliveryPhotoUrls.length > 1 && <span className="absolute bottom-0 right-0 px-1 text-[9px] font-bold" style={{ background: 'rgba(0,0,0,.65)', color: 'white' }}>+{s.deliveryPhotoUrls.length - 1}</span>}
+                            </button>
+                          ) : <span className="text-[10px] font-bold" style={{ color: s.ck_amount ? '#dc2626' : '#a1a1aa' }}>無照片</span>}
+                        </div>
                         <span className="font-semibold tabular-nums text-right" style={{ color: s.store_amount == null ? '#a1a1aa' : '#18181b' }}>
                           {s.store_amount == null ? '未輸入' : `$${fmt(s.store_amount)}`}
                         </span>
@@ -668,9 +679,10 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                       </div>
                     )
                   })}
-                  <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 px-3 py-2.5"
+                  <div className="grid grid-cols-[minmax(0,1fr)_52px_auto_auto_auto] items-center gap-2 px-3 py-2.5"
                     style={{ background: '#fff7ed', borderTop: '1px solid #fed7aa' }}>
                     <span className="text-xs font-bold" style={{ color: '#9a3412' }}>體系內合計</span>
+                    <span />
                     <span className="text-sm font-bold tabular-nums text-right">
                       ${fmt(d.memberStores.reduce((sum, store) => sum + (store.store_amount ?? 0), 0))}
                     </span>
@@ -686,7 +698,19 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
               {d.externalOrders.length > 0 && (
                 <Section title="體系外叫貨">
                   {d.externalOrders.map(o => (
-                    <Row key={o.name} left={o.name} right={`$${fmt(o.amount)}`} />
+                    <div key={o.name} className="flex items-center gap-3 px-3 py-2.5" style={{ borderBottom: '1px solid #f4f4f5' }}>
+                      {o.deliveryPhotoUrls[0] ? (
+                        <button type="button" onClick={() => setLightboxUrl(o.deliveryPhotoUrls[0])}
+                          className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg" style={{ border: '1px solid #e4e4e7' }}>
+                          <SafePhotoImage src={o.deliveryPhotoUrls[0]} alt={`${o.name} 配送單`} thumb width={120} height={120} className="h-full w-full object-cover" />
+                          {o.deliveryPhotoUrls.length > 1 && <span className="absolute bottom-0 right-0 px-1 text-[9px] font-bold" style={{ background: 'rgba(0,0,0,.65)', color: 'white' }}>+{o.deliveryPhotoUrls.length - 1}</span>}
+                        </button>
+                      ) : (
+                        <div className="h-11 w-11 shrink-0 rounded-lg flex items-center justify-center text-[9px] font-bold text-center" style={{ background: '#fef2f2', color: '#dc2626', border: '1px dashed #fca5a5' }}>無照片</div>
+                      )}
+                      <span className="flex-1 text-sm font-medium" style={{ color: '#18181b' }}>{o.name}</span>
+                      <span className="text-sm font-bold tabular-nums">${fmt(o.amount)}</span>
+                    </div>
                   ))}
                   <TotalRow label="體系外合計" value={d.externalOrders.reduce((s, o) => s + o.amount, 0)} />
                 </Section>
@@ -848,6 +872,7 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
 
 type CKReviewStep = {
   key: string
+  kind?: 'member' | 'external' | 'expense' | 'summary'
   title: string
   photoUrls?: string[]
   rows: Array<{ label: string; amount?: number; value?: string; storeAmount?: number | null }>
@@ -869,16 +894,26 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
   const unassignedPhotos = (d.receiptPhotoUrls ?? []).filter(url => !expensePhotoSet.has(url))
   const expenseGroups = groupExpensesByVendor(d.expenses)
   const steps: CKReviewStep[] = [
-    ...(d.memberStores.length ? [{
-      key: 'member',
-      title: '體系內叫貨',
-      rows: d.memberStores.map(item => ({ label: item.store_name, amount: item.ck_amount ?? undefined, storeAmount: item.store_amount })),
-      total: d.memberStores.reduce((sum, item) => sum + (item.ck_amount ?? 0), 0),
-      managerTotal: d.memberStores.reduce((sum, item) => sum + (item.store_amount ?? 0), 0),
-    }] : []),
-    ...(d.externalOrders.length ? [{ key: 'external', title: '體系外叫貨', rows: d.externalOrders.map(item => ({ label: item.name, amount: item.amount })), total: d.externalOrders.reduce((sum, item) => sum + item.amount, 0) }] : []),
+    ...d.memberStores.map(item => ({
+      key: `member-${item.store_id}`,
+      kind: 'member' as const,
+      title: `體系內叫貨：${item.store_name}`,
+      photoUrls: item.deliveryPhotoUrls,
+      rows: [{ label: item.store_name, amount: item.ck_amount ?? undefined, storeAmount: item.store_amount }],
+      total: item.ck_amount ?? 0,
+      managerTotal: item.store_amount ?? 0,
+    })),
+    ...d.externalOrders.map(item => ({
+      key: `external-${item.name}`,
+      kind: 'external' as const,
+      title: `體系外叫貨：${item.name}`,
+      photoUrls: item.deliveryPhotoUrls,
+      rows: [{ label: item.name, amount: item.amount }],
+      total: item.amount,
+    })),
     ...expenseGroups.map(group => ({
       key: `expense-${group.key}`,
+      kind: 'expense' as const,
       title: `支出：${group.name}`,
       photoUrls: group.photoUrls,
       rows: [
@@ -890,7 +925,7 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
       total: group.total,
     })),
     ...unassignedPhotos.map((url, i) => ({ key: `photo-${i}`, title: `其他收據照片 ${i + 1}`, photoUrls: [url], rows: [{ label: '照片用途', value: '央廚收據／單據' }] })),
-    { key: 'summary', title: '央廚結算結果', rows: [
+    { key: 'summary', kind: 'summary' as const, title: '央廚結算結果', rows: [
       { label: '營業額', amount: d.revenueTotal },
       { label: '當日支出', amount: d.expenseTotal },
       { label: '結餘', amount: d.balance },
@@ -963,12 +998,12 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
           <div className="space-y-3">
             <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fafafa', border: '1px solid #e4e4e7' }}>
               <p className="text-xs font-bold" style={{ color: '#52525b' }}>央廚輸入內容</p>
-              {step.key === 'member' && (
+              {step.kind === 'member' && (
                 <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 text-[10px] font-bold" style={{ color: '#a1a1aa' }}>
                   <span>店家</span><span>店面輸入</span><span>央廚輸入</span><span>差額</span>
                 </div>
               )}
-              {step.rows.map((row, i) => step.key === 'member' ? (
+              {step.rows.map((row, i) => step.kind === 'member' ? (
                 <div key={i} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 py-2.5 px-3"
                   style={{ background: row.storeAmount != null && row.amount != null && row.storeAmount !== row.amount ? '#fef2f2' : undefined, borderBottom: '1px solid #f4f4f5' }}>
                   <span className="text-sm font-medium">{row.label}</span>
@@ -987,7 +1022,7 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
                   </span>
                 </div>
               ) : <Row key={i} left={row.label} right={row.amount !== undefined ? `$${fmt(row.amount)}` : row.value || '—'} />)}
-              {step.total !== undefined && (step.key === 'member' ? (
+              {step.total !== undefined && (step.kind === 'member' ? (
                 <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 py-2.5 px-3" style={{ background: '#fff7ed', borderTop: '1px solid #fed7aa' }}>
                   <span className="text-xs font-bold" style={{ color: '#9a3412' }}>步驟合計</span>
                   <span className="text-sm font-bold tabular-nums">${fmt(step.managerTotal ?? 0)}</span>

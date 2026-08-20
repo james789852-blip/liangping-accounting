@@ -9,6 +9,7 @@ import { sortStores } from '@/lib/store-order'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
 import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment'
 import { confirmedMemberAmountMap } from '@/lib/ck-member-amounts'
+import { normalizeCKDeliveryPhotoUrls } from '@/lib/ck-delivery-photos'
 
 export const dynamic = 'force-dynamic'
 
@@ -98,6 +99,7 @@ export default async function CKPage({
 
   // 體系內叫貨 + 支出，從 ck_daily_record 載入
   let memberConfirmedMap: Record<string, number | null> = {}  // 央廚輸入金額
+  let memberDeliveryPhotos: Record<string, string[]> = {}
   let existing: {
     id: string
     payer_name?: string
@@ -114,7 +116,7 @@ export default async function CKPage({
     hq_reimbursement_adjustment_note?: string
     ck_reimbursement_confirmed?: boolean
     ck_reimbursement_confirmed_at?: string | null
-    externalOrders: { name: string; amount: number }[]
+    externalOrders: { name: string; amount: number; delivery_photo_urls: string[] }[]
     expenses: { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string; vendor_group: string; doc_type: string; note: string; receipt_photo_url?: string }[]
     receiptPhotoUrls?: string[]
   } | null = null
@@ -125,9 +127,9 @@ export default async function CKPage({
       { data: extOrders },
       { data: expenseItems },
     ] = await Promise.all([
-      admin.from('ck_store_orders').select('store_id, ck_confirmed_amount')
+      admin.from('ck_store_orders').select('store_id, ck_confirmed_amount, delivery_photo_urls')
         .eq('ck_daily_record_id', ckRecord.id).not('store_id', 'is', null),
-      admin.from('ck_store_orders').select('external_store_name, amount')
+      admin.from('ck_store_orders').select('external_store_name, amount, delivery_photo_urls')
         .eq('ck_daily_record_id', ckRecord.id).is('store_id', null),
       admin.from('ck_expense_items').select('id, category, item_name, amount, payer_name, vendor_group, doc_type, note, receipt_photo_url')
         .eq('ck_daily_record_id', ckRecord.id).order('sort_order'),
@@ -137,6 +139,9 @@ export default async function CKPage({
       store_id: string | null
       ck_confirmed_amount: number | null
     }[])
+    memberDeliveryPhotos = Object.fromEntries((storeOrders ?? [])
+      .filter(order => order.store_id)
+      .map(order => [order.store_id as string, normalizeCKDeliveryPhotoUrls(order.delivery_photo_urls)]))
 
     existing = {
       id: ckRecord.id,
@@ -157,6 +162,7 @@ export default async function CKPage({
       externalOrders: (extOrders ?? []).map((o: any) => ({
         name: o.external_store_name as string,
         amount: o.amount as number,
+        delivery_photo_urls: normalizeCKDeliveryPhotoUrls(o.delivery_photo_urls),
       })),
       expenses: (expenseItems ?? []).map((e: any) => ({
         id: e.id as string,
@@ -177,6 +183,7 @@ export default async function CKPage({
     store_id: s.id as string,
     store_name: s.name as string,
     confirmed_amount: memberConfirmedMap[s.id] ?? null,
+    delivery_photo_urls: memberDeliveryPhotos[s.id] ?? [],
   }))
 
   return (
