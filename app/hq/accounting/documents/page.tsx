@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ArrowLeft, CalendarRange, Filter, Images, Search } from 'lucide-react'
 import { redirect } from 'next/navigation'
 import AccountingDocumentsGallery from '@/components/hq/accounting-documents-gallery'
+import AccountingLocationSelect from '@/components/hq/accounting-location-select'
 import { getAuthedUser } from '@/lib/authed-user'
 import {
   ACCOUNTING_DOCUMENT_CATEGORIES,
@@ -467,7 +468,7 @@ export default async function AccountingDocumentsPage({
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             <label className="space-y-1">
               <span className="text-xs font-semibold" style={{ color: '#71717a' }}>店家／央廚</span>
-              <select name="location" defaultValue={location} className="w-full px-3" style={fieldStyle}>
+              <AccountingLocationSelect defaultValue={location} className="w-full px-3" style={fieldStyle}>
                 <option value="all">全部據點</option>
                 <optgroup label="店面">
                   {stores.map(store => <option key={store.id} value={`store:${store.id}`}>{store.name}</option>)}
@@ -475,7 +476,7 @@ export default async function AccountingDocumentsPage({
                 <optgroup label="央廚">
                   {ckStores.map(store => <option key={store.id} value={`ck:${store.id}`}>{store.name}</option>)}
                 </optgroup>
-              </select>
+              </AccountingLocationSelect>
             </label>
             <label className="space-y-1">
               <span className="text-xs font-semibold" style={{ color: '#71717a' }}>開始日期</span>
@@ -496,7 +497,7 @@ export default async function AccountingDocumentsPage({
             </label>
             <label className="space-y-1">
               <span className="text-xs font-semibold" style={{ color: '#71717a' }}>廠商分類</span>
-              <select name="vendor" defaultValue={vendor} className="w-full px-3" style={fieldStyle}>
+              <select key={`vendor:${location}`} name="vendor" defaultValue={vendor} className="w-full px-3" style={fieldStyle}>
                 <option value="all">全部廠商分類</option>
                 {vendorOptions.map(value => <option key={value} value={value}>{value}</option>)}
               </select>

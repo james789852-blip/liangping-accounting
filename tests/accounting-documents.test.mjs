@@ -83,4 +83,8 @@ test('總公司單據頁會彙整店面與央廚所有主要照片來源', () =>
   const gallerySource = fs.readFileSync(new URL('../components/hq/accounting-documents-gallery.tsx', import.meta.url), 'utf8')
   assert.match(gallerySource, /單據：\{document\.documentTypeLabel/)
   assert.match(gallerySource, /廠商：\{document\.vendorGroup/)
+
+  const locationSelectSource = fs.readFileSync(new URL('../components/hq/accounting-location-select.tsx', import.meta.url), 'utf8')
+  assert.match(locationSelectSource, /vendorSelect\.value = 'all'/)
+  assert.match(locationSelectSource, /form\.requestSubmit\(\)/)
 })
