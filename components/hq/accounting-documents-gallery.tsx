@@ -12,6 +12,7 @@ import {
 const CATEGORY_STYLE: Record<AccountingDocumentCategory, { background: string; color: string }> = {
   invoice: { background: '#fee2e2', color: '#b91c1c' },
   receipt: { background: '#dbeafe', color: '#1d4ed8' },
+  estimate: { background: '#fef3c7', color: '#a16207' },
   delivery: { background: '#ffedd5', color: '#c2410c' },
   sales: { background: '#dcfce7', color: '#15803d' },
   remittance: { background: '#fef3c7', color: '#a16207' },
@@ -103,6 +104,18 @@ export default function AccountingDocumentsGallery({ documents }: { documents: A
               <p className="truncate text-xs" style={{ color: '#71717a' }}>
                 {document.locationKind === 'ck' ? '央廚' : '店面'} · {document.locationName}
               </p>
+              {(document.documentTypeLabel || document.vendorGroup) && (
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                    style={{ background: '#fff7ed', color: '#c2410c' }}>
+                    單據：{document.documentTypeLabel || '未設定'}
+                  </span>
+                  <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                    style={{ background: '#f4f4f5', color: '#52525b' }}>
+                    廠商：{document.vendorGroup || '未設定'}
+                  </span>
+                </div>
+              )}
               <p className="truncate text-[11px]" style={{ color: '#a1a1aa' }}>
                 {document.businessDate}{document.subtitle ? ` · ${document.subtitle}` : ''}
               </p>

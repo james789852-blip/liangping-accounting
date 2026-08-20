@@ -28,6 +28,7 @@ type SearchParams = {
   from?: string
   to?: string
   category?: string
+  vendor?: string
   q?: string
 }
 
@@ -270,9 +271,9 @@ export default async function AccountingDocumentsPage({
       .filter(Boolean)
       .slice(0, 3)
       .join('、')
-    const configuredDocTypes = [...new Set(receiptItems.flatMap(item => {
+    const resolvedMappings = receiptItems.flatMap(item => {
       const exactMapping = item.item_mapping_id ? mappingById.get(item.item_mapping_id) : null
-      if (exactMapping?.store_id === receipt.store_id) return exactMapping.doc_type_override ? [exactMapping.doc_type_override] : []
+      if (exactMapping?.store_id === receipt.store_id) return [exactMapping]
 
       const itemName = item.item_name?.trim()
       if (!itemName) return []
@@ -281,11 +282,20 @@ export default async function AccountingDocumentsPage({
       const mapping = candidates.length === 1
         ? candidates[0]
         : candidates.find(candidate => candidate.vendor_group === vendorGroup)
-      return mapping?.doc_type_override ? [mapping.doc_type_override] : []
-    }))]
-    const docTypeSummary = configuredDocTypes.length > 0
-      ? configuredDocTypes.join('／')
-      : '單據類型未設定'
+      return mapping ? [mapping] : []
+    })
+    const configuredDocTypes = [...new Set(resolvedMappings
+      .map(mapping => mapping.doc_type_override?.trim())
+      .filter((value): value is string => !!value))]
+    const configuredVendorGroups = [...new Set(resolvedMappings
+      .map(mapping => mapping.vendor_group?.trim())
+      .filter((value): value is string => !!value))]
+    const vendorGroup = configuredVendorGroups.length === 1
+      ? configuredVendorGroups[0]
+      : configuredVendorGroups.length > 1
+        ? '多廠商分類'
+        : undefined
+    const actualVendorName = receipt.actual_vendor_name?.trim() || undefined
     addDocument({
       id: `receipt:${receipt.id}`,
       url: receipt.photo_url ?? '',
@@ -294,8 +304,11 @@ export default async function AccountingDocumentsPage({
       locationKind: 'store',
       businessDate: receipt.business_date,
       category: accountingCategoryFromConfiguredDocTypes(configuredDocTypes),
-      title: receipt.actual_vendor_name?.trim() || receipt.vendor_name?.trim() || '未填廠商',
-      subtitle: [docTypeSummary, itemNames || receipt.notes?.trim()].filter(Boolean).join(' · '),
+      title: actualVendorName || vendorGroup || '未設定廠商',
+      subtitle: itemNames || receipt.notes?.trim() || undefined,
+      documentTypeLabel: configuredDocTypes.join('／') || '未設定',
+      vendorGroup: vendorGroup || '未設定',
+      actualVendorName,
       amount: Number(receipt.total_amount ?? 0),
     })
   }
@@ -353,6 +366,8 @@ export default async function AccountingDocumentsPage({
       category: accountingCategoryFromDocType(expense.doc_type),
       title,
       subtitle: subtitle || expense.note?.trim() || undefined,
+      documentTypeLabel: expense.doc_type?.trim() || '未設定',
+      vendorGroup: expense.vendor_group?.trim() || '未設定',
       amount: Number(expense.amount ?? 0),
     })
   }
@@ -373,6 +388,8 @@ export default async function AccountingDocumentsPage({
       category: 'delivery',
       title: `${targetName} 配送單`,
       subtitle: order.store_id ? '體系內叫貨' : '體系外叫貨',
+      documentTypeLabel: '配送單',
+      vendorGroup: '央廚配送',
       amount: Number(order.ck_confirmed_amount ?? order.amount ?? 0),
     }))
   }
@@ -394,8 +411,15 @@ export default async function AccountingDocumentsPage({
     }))
   }
 
+  const vendorOptions = [...new Set(documents
+    .map(document => document.vendorGroup)
+    .filter((value): value is string => !!value))]
+    .sort((a, b) => (a === '未設定' ? 1 : b === '未設定' ? -1 : a.localeCompare(b, 'zh-Hant')))
+  const vendor = params.vendor === 'all' || vendorOptions.includes(params.vendor ?? '')
+    ? (params.vendor ?? 'all')
+    : 'all'
   const filteredDocuments = documents
-    .filter(document => matchesAccountingDocument(document, category, keyword))
+    .filter(document => matchesAccountingDocument(document, category, keyword, vendor))
     .sort((a, b) => (
       b.businessDate.localeCompare(a.businessDate)
       || a.locationName.localeCompare(b.locationName, 'zh-Hant')
@@ -440,7 +464,7 @@ export default async function AccountingDocumentsPage({
             <Filter className="h-4 w-4" style={{ color: '#D97706' }} />
             <p className="text-sm font-bold" style={{ color: '#18181b' }}>篩選照片</p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             <label className="space-y-1">
               <span className="text-xs font-semibold" style={{ color: '#71717a' }}>店家／央廚</span>
               <select name="location" defaultValue={location} className="w-full px-3" style={fieldStyle}>
@@ -462,12 +486,19 @@ export default async function AccountingDocumentsPage({
               <input type="date" name="to" defaultValue={to} max={today} className="w-full px-3" style={fieldStyle} />
             </label>
             <label className="space-y-1">
-              <span className="text-xs font-semibold" style={{ color: '#71717a' }}>照片分類</span>
+              <span className="text-xs font-semibold" style={{ color: '#71717a' }}>單據類型／照片</span>
               <select name="category" defaultValue={category} className="w-full px-3" style={fieldStyle}>
                 <option value="all">全部分類</option>
                 {ACCOUNTING_DOCUMENT_CATEGORIES.map(value => (
                   <option key={value} value={value}>{ACCOUNTING_DOCUMENT_CATEGORY_LABELS[value]}</option>
                 ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-semibold" style={{ color: '#71717a' }}>廠商分類</span>
+              <select name="vendor" defaultValue={vendor} className="w-full px-3" style={fieldStyle}>
+                <option value="all">全部廠商分類</option>
+                {vendorOptions.map(value => <option key={value} value={value}>{value}</option>)}
               </select>
             </label>
             <label className="space-y-1">

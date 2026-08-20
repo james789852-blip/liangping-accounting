@@ -15,7 +15,8 @@ test('單據類型會整理成總公司照片分類', () => {
   assert.equal(accountingCategoryFromReceiptType('receipt'), 'receipt')
   assert.equal(accountingCategoryFromReceiptType('delivery_note'), 'delivery')
   assert.equal(accountingCategoryFromDocType('公司開'), 'invoice')
-  assert.equal(accountingCategoryFromDocType('估價單'), 'delivery')
+  assert.equal(accountingCategoryFromDocType('估價單'), 'estimate')
+  assert.equal(accountingCategoryFromDocType('配送單'), 'delivery')
   assert.equal(accountingCategoryFromDocType(''), 'other')
   assert.equal(accountingCategoryFromConfiguredDocTypes(['收據', '收據']), 'receipt')
   assert.equal(accountingCategoryFromConfiguredDocTypes(['發票']), 'invoice')
@@ -55,6 +56,8 @@ test('照片可依分類、店名、廠商與品項關鍵字篩選', () => {
   assert.equal(matchesAccountingDocument(document, 'invoice', '雞肉'), true)
   assert.equal(matchesAccountingDocument(document, 'all', '巷日'), true)
   assert.equal(matchesAccountingDocument(document, 'receipt', ''), false)
+  assert.equal(matchesAccountingDocument({ ...document, vendorGroup: '環南' }, 'all', '', '環南'), true)
+  assert.equal(matchesAccountingDocument({ ...document, vendorGroup: '環南' }, 'all', '', '振源'), false)
 })
 
 test('總公司單據頁會彙整店面與央廚所有主要照片來源', () => {
@@ -70,8 +73,13 @@ test('總公司單據頁會彙整店面與央廚所有主要照片來源', () =>
     'hq_reimbursement_photo_urls',
     'doc_type_override',
     'accountingCategoryFromConfiguredDocTypes(configuredDocTypes)',
+    'name="vendor"',
   ]) {
     assert.match(source, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   }
   assert.doesNotMatch(source, /accountingCategoryFromReceiptType\(receipt\.receipt_type\)/)
+
+  const gallerySource = fs.readFileSync(new URL('../components/hq/accounting-documents-gallery.tsx', import.meta.url), 'utf8')
+  assert.match(gallerySource, /單據：\{document\.documentTypeLabel/)
+  assert.match(gallerySource, /廠商：\{document\.vendorGroup/)
 })

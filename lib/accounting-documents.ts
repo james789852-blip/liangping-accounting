@@ -1,6 +1,7 @@
 export const ACCOUNTING_DOCUMENT_CATEGORIES = [
   'invoice',
   'receipt',
+  'estimate',
   'delivery',
   'sales',
   'remittance',
@@ -21,13 +22,17 @@ export type AccountingDocument = {
   category: AccountingDocumentCategory
   title: string
   subtitle?: string
+  documentTypeLabel?: string
+  vendorGroup?: string
+  actualVendorName?: string
   amount?: number
 }
 
 export const ACCOUNTING_DOCUMENT_CATEGORY_LABELS: Record<AccountingDocumentCategory, string> = {
   invoice: '發票',
   receipt: '收據',
-  delivery: '配送單／估價單',
+  estimate: '估價單',
+  delivery: '配送單',
   sales: '營業額存證',
   remittance: '匯款／補款',
   void_invoice: '作廢發票',
@@ -80,7 +85,8 @@ export function accountingCategoryFromDocType(docType?: string | null): Accounti
   const normalized = docType?.trim() ?? ''
   if (normalized === '發票' || normalized === '公司開') return 'invoice'
   if (normalized === '收據') return 'receipt'
-  if (normalized === '估價單' || normalized === '配送單' || normalized === '送貨單') return 'delivery'
+  if (normalized === '估價單') return 'estimate'
+  if (normalized === '配送單' || normalized === '送貨單') return 'delivery'
   return 'other'
 }
 
@@ -119,8 +125,10 @@ export function matchesAccountingDocument(
   document: AccountingDocument,
   category: string,
   keyword: string,
+  vendorGroup = 'all',
 ) {
   if (category !== 'all' && document.category !== category) return false
+  if (vendorGroup !== 'all' && document.vendorGroup !== vendorGroup) return false
   const query = keyword.trim().toLocaleLowerCase('zh-TW')
   if (!query) return true
   return [
@@ -129,5 +137,8 @@ export function matchesAccountingDocument(
     ACCOUNTING_DOCUMENT_CATEGORY_LABELS[document.category],
     document.title,
     document.subtitle ?? '',
+    document.documentTypeLabel ?? '',
+    document.vendorGroup ?? '',
+    document.actualVendorName ?? '',
   ].some(value => value.toLocaleLowerCase('zh-TW').includes(query))
 }
