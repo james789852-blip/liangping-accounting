@@ -8,6 +8,7 @@ import { BarChart3, Calendar, ChefHat, ChevronDown, LayoutDashboard, Store } fro
 import { getCachedAllStores } from '@/lib/cached-queries'
 import { canExportReports, canReviewClosings } from '@/lib/user-permissions'
 import { getCKRangeStats } from '@/lib/ck-aggregator'
+import { resolveReportingActualVendor } from '@/lib/reporting-actual-vendor'
 
 export const dynamic = 'force-dynamic'
 
@@ -147,7 +148,12 @@ export default async function HQDashboard({
     const amount = Number(receipt.total_amount ?? 0)
     if (amount <= 0) continue
     const group = receipt.vendor_name?.trim() || '未分類'
-    const actualVendor = receipt.actual_vendor_name?.trim() || ''
+    const actualVendor = resolveReportingActualVendor(
+      storeMap[receipt.store_id],
+      group,
+      receipt.actual_vendor_name,
+      '',
+    )
     const key = `${receipt.store_id}|${group}`
     const row = vendorMap.get(key) ?? {
       storeId: receipt.store_id,

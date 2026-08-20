@@ -17,6 +17,7 @@ import { compareResolvedItemsByMappingOrder, getStoreItemsFromMappings } from '@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
 import { getExcelPlatformColumns } from '@/lib/excel-platform-order'
+import { resolveReportingActualVendor } from '@/lib/reporting-actual-vendor'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -328,7 +329,12 @@ interface VendorAnalysisRow {
   total: number
 }
 
-function buildVendorAnalysisRows(monthlies: MonthlyStats[], items: ResolvedStoreItem[], includeMonth: boolean): VendorAnalysisRow[] {
+function buildVendorAnalysisRows(
+  monthlies: MonthlyStats[],
+  items: ResolvedStoreItem[],
+  includeMonth: boolean,
+  storeName: string,
+): VendorAnalysisRow[] {
   const itemMeta = new Map(items.map(item => [item.name, item] as const))
   const itemCandidates = new Map<string, ResolvedStoreItem[]>()
   for (const item of items) {
@@ -371,7 +377,11 @@ function buildVendorAnalysisRows(monthlies: MonthlyStats[], items: ResolvedStore
   for (const monthly of monthlies) {
     for (const day of monthly.daily) {
       for (const receipt of day.receipts) {
-        const actualVendor = receipt.actual_vendor_name?.trim() || '未指定'
+        const actualVendor = resolveReportingActualVendor(
+          storeName,
+          receipt.vendor_name,
+          receipt.actual_vendor_name,
+        )
         const receiptItems = receipt.items.filter(item => item.item_name?.trim())
         const firstMeta = receiptItems[0]
           ? resolveItemMeta(receiptItems[0].item_name, receipt.vendor_name, receipt.actual_vendor_name)
@@ -914,7 +924,7 @@ export async function buildFoodCostNativeWorkbook(
   const { store, items } = await loadStoreContext(storeId)
   await addFoodCostSheet(wb, store, items, year, monthNum)
   const monthly = await getMonthlyStats(storeId, year, monthNum)
-  addVendorAnalysisSheet(wb, store, `${monthNum}月廠商分析`, buildVendorAnalysisRows([monthly], items, false), false)
+  addVendorAnalysisSheet(wb, store, `${monthNum}月廠商分析`, buildVendorAnalysisRows([monthly], items, false, store.name), false)
   return wb
 }
 
@@ -938,7 +948,7 @@ export async function buildAnnualFoodCostWorkbook(
     await addFoodCostSheet(wb, store, items, year, m)
     monthlies.push(await getMonthlyStats(storeId, year, m))
   }
-  addVendorAnalysisSheet(wb, store, '年度廠商分析', buildVendorAnalysisRows(monthlies, items, true), true)
+  addVendorAnalysisSheet(wb, store, '年度廠商分析', buildVendorAnalysisRows(monthlies, items, true, store.name), true)
 
   return wb
 }

@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getCachedStoreFull, getCachedUserProfile } from '@/lib/cached-queries'
 import ActualVendorsManager, { ActualVendorManagerRow } from '@/components/manager/actual-vendors-manager'
+import { resolveReportingActualVendor } from '@/lib/reporting-actual-vendor'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,13 +46,17 @@ export default async function ManagerSettingsPage() {
     admin
       .from('receipts')
       .select('vendor_name, actual_vendor_name, total_amount')
-      .eq('store_id', storeId)
-      .not('actual_vendor_name', 'is', null),
+      .eq('store_id', storeId),
   ] as const)
 
   const stats = new Map<string, { count: number; total: number }>()
   for (const receipt of (receipts ?? []) as ReceiptStatRow[]) {
-    const name = receipt.actual_vendor_name?.trim()
+    const name = resolveReportingActualVendor(
+      store?.name,
+      receipt.vendor_name,
+      receipt.actual_vendor_name,
+      '',
+    )
     if (!name) continue
     const key = statKey(receipt.vendor_name, name)
     const prev = stats.get(key) ?? { count: 0, total: 0 }
@@ -78,6 +83,5 @@ export default async function ManagerSettingsPage() {
     }
   })
 
-  return <ActualVendorsManager storeName={(store as any)?.name ?? '店長端'} vendors={rows} />
+  return <ActualVendorsManager storeName={store?.name ?? '店長端'} vendors={rows} />
 }
-

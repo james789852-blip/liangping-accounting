@@ -8,6 +8,7 @@ import {
   Download, FileSpreadsheet, Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { resolveReportingActualVendor } from '@/lib/reporting-actual-vendor'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -483,7 +484,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
       const map: Record<string, { total: number; items: Record<string, { sum: number; cnt: number }> }> = {}
       for (const r of rows) {
         const group = r.vendor_name?.trim() || '未分類'
-        const actual = r.actual_vendor_name?.trim() || '未指定'
+        const actual = resolveReportingActualVendor(storeName, group, r.actual_vendor_name)
         const v = `${group} · ${actual}`
         if (!map[v]) map[v] = { total: 0, items: {} }
         map[v].total += r.total_amount ?? 0
@@ -501,7 +502,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
       const previous = new Map<string, Map<string, number>>()
       for (const receipt of rows) {
         const group = receipt.vendor_name?.trim() || '未分類'
-        const actual = receipt.actual_vendor_name?.trim() || '未指定'
+        const actual = resolveReportingActualVendor(storeName, group, receipt.actual_vendor_name)
         if (!current.has(group)) current.set(group, new Map())
         const row = current.get(group)!.get(actual) ?? { total: 0, count: 0, notes: new Set<string>() }
         row.total += Number(receipt.total_amount ?? 0)
@@ -512,7 +513,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
       }
       for (const receipt of prevRows) {
         const group = receipt.vendor_name?.trim() || '未分類'
-        const actual = receipt.actual_vendor_name?.trim() || '未指定'
+        const actual = resolveReportingActualVendor(storeName, group, receipt.actual_vendor_name)
         if (!previous.has(group)) previous.set(group, new Map())
         previous.get(group)!.set(actual, (previous.get(group)!.get(actual) ?? 0) + Number(receipt.total_amount ?? 0))
       }
@@ -561,7 +562,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
     setVendorGroups(receiptVendorGroups(curRec.data ?? [], prevRec.data ?? []))
     setDeliveryStores([])
     setLoading(false)
-  }, [storeId, storeType, start, end, ichefUberLinked, memberStoreNames])
+  }, [storeId, storeName, storeType, start, end, ichefUberLinked, memberStoreNames])
 
   useEffect(() => { fetchData() }, [fetchData])
   function applyPreset(p: PresetKey) {
