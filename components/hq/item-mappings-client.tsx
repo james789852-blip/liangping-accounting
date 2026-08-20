@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect, useRef, createContext, useContext } from 'react'
+import { useState, useTransition, useEffect, useMemo, useRef, createContext, useContext } from 'react'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import {
   deleteItemMapping, updateItemMapping, saveItemMapping, reorderItemMappings, setItemDocOverride, reorderStoreVendorGroups,
@@ -20,7 +20,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 
 interface Mapping {
-  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; vg_sort_order?: number
+  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; sort_order?: number; vg_sort_order?: number
 }
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
@@ -201,19 +201,67 @@ export default function ItemMappingsClient({
       .catch(e => toast.error('排序儲存失敗：' + (e instanceof Error ? e.message : String(e))))
   }
 
-  // 各店完全獨立：品項對應頁與 Excel 匯出都只讀目前店家的 mapping。
-  const sortByOrder = (a: Mapping, b: Mapping) =>
-    ((a as any).sort_order ?? 999999) - ((b as any).sort_order ?? 999999)
-  const displayMappings = mappings
-    .filter(m => m.store_id === activeStoreId)
-    .sort(sortByOrder)
+  // 各店完全獨立：一次整理目前店家的顯示資料，避免 80+ 列在每次互動時反覆掃描。
+  const { displayMappings, grouped, groupOrder, groupDocMap, taxItemOptionsByGroup } = useMemo(() => {
+    const activeMappings = mappings
+      .filter(mapping => mapping.store_id === activeStoreId)
+      .sort((a, b) => (a.sort_order ?? 999999) - (b.sort_order ?? 999999))
+    const nextGrouped = activeMappings.reduce<Record<string, Mapping[]>>((acc, mapping) => {
+      const vendorGroup = mapping.vendor_group?.trim() || '未分類'
+      if (!acc[vendorGroup]) acc[vendorGroup] = []
+      acc[vendorGroup].push(mapping)
+      return acc
+    }, {})
+    for (const vendorGroup of pendingVgs) {
+      if (!nextGrouped[vendorGroup]) nextGrouped[vendorGroup] = []
+    }
+
+    const groupSortMap = new Map<string, number>()
+    const nextGroupDocMap = new Map<string, string | null>()
+    const nextTaxItemOptions = new Map<string, string[]>()
+    for (const mapping of activeMappings) {
+      const vendorGroup = mapping.vendor_group?.trim() || '未分類'
+      const currentSort = groupSortMap.get(vendorGroup)
+      const nextSort = mapping.vg_sort_order ?? 99999
+      groupSortMap.set(vendorGroup, currentSort == null ? nextSort : Math.min(currentSort, nextSort))
+      if (!mapping.is_tax_addon) {
+        const options = nextTaxItemOptions.get(vendorGroup) ?? []
+        options.push(mapping.item_name)
+        nextTaxItemOptions.set(vendorGroup, options)
+      }
+    }
+    for (const vendorGroup of Object.keys(nextGrouped)) {
+      const groupItems = nextGrouped[vendorGroup] ?? []
+      const docs = new Set(groupItems.map(mapping => mapping.doc_type_override ?? '').filter(Boolean))
+      const allItemsUseSameDoc = groupItems.length > 0
+        && docs.size === 1
+        && groupItems.every(mapping => !!mapping.doc_type_override)
+      nextGroupDocMap.set(vendorGroup, allItemsUseSameDoc ? [...docs][0] : null)
+    }
+    const nextGroupOrder = Object.keys(nextGrouped).sort((a, b) => {
+      const rank = (group: string) => group === '未分類' ? 2 : DOC_TYPES.has(group) ? 1 : 0
+      const rankA = rank(a), rankB = rank(b)
+      if (rankA !== rankB) return rankA - rankB
+      const sortA = groupSortMap.get(a) ?? 99999
+      const sortB = groupSortMap.get(b) ?? 99999
+      if (sortA !== sortB) return sortA - sortB
+      return a.localeCompare(b, 'zh-Hant')
+    })
+    return {
+      displayMappings: activeMappings,
+      grouped: nextGrouped,
+      groupOrder: nextGroupOrder,
+      groupDocMap: nextGroupDocMap,
+      taxItemOptionsByGroup: nextTaxItemOptions,
+    }
+  }, [activeStoreId, mappings, pendingVgs])
 
   const isStorePage = true
-  const docTypeOptions = Array.from(new Set([
+  const docTypeOptions = useMemo(() => Array.from(new Set([
     ...BUILTIN_DOC_TYPES,
     ...vgsState.map(v => v.doc_type).filter((v): v is string => !!v),
     ...mappings.map(m => m.doc_type_override).filter((v): v is string => !!v),
-  ]))
+  ])), [mappings, vgsState])
 
   function startEdit(m: Mapping) { setEditId(m.id); setEditCol(m.excel_column); setEditCat(m.item_category); setEditVendorGroup(m.vendor_group ?? '') }
 
@@ -312,45 +360,6 @@ export default function ItemMappingsClient({
     return m.item_name
   }
 
-  // 以 vendor_group 為主分類（無則歸「未分類」），分組內依 item_name 排序
-  const grouped = displayMappings.reduce<Record<string, Mapping[]>>((acc, m) => {
-    const vg = (m.vendor_group?.trim() || '未分類')
-    if (!acc[vg]) acc[vg] = []
-    acc[vg].push(m)
-    return acc
-  }, {})
-  // 新增後尚無品項的空類別也要顯示
-  for (const vg of pendingVgs) {
-    if (!grouped[vg]) grouped[vg] = []
-  }
-
-  const groupSortMap = new Map<string, number>()
-  const groupDocMap = new Map<string, string | null>()
-  for (const m of displayMappings) {
-    const vg = (m.vendor_group?.trim() || '未分類')
-    const currentSort = groupSortMap.get(vg)
-    const nextSort = m.vg_sort_order ?? 99999
-    groupSortMap.set(vg, currentSort == null ? nextSort : Math.min(currentSort, nextSort))
-  }
-  for (const vg of Object.keys(grouped)) {
-    const groupItems = grouped[vg] ?? []
-    const docs = new Set(groupItems.map(m => m.doc_type_override ?? '').filter(Boolean))
-    const allItemsUseSameDoc = groupItems.length > 0
-      && docs.size === 1
-      && groupItems.every(m => !!m.doc_type_override)
-    groupDocMap.set(vg, allItemsUseSameDoc ? [...docs][0] : null)
-  }
-  const groupOrder = Object.keys(grouped).sort((a, b) => {
-    // 未分類固定最後，避免它的 sort_order 影響其他黃色分類與 Excel 欄位順序。
-    const rank = (g: string) => g === '未分類' ? 2 : DOC_TYPES.has(g) ? 1 : 0
-    const ra = rank(a), rb = rank(b)
-    if (ra !== rb) return ra - rb
-    const sa = groupSortMap.get(a) ?? 99999
-    const sb = groupSortMap.get(b) ?? 99999
-    if (sa !== sb) return sa - sb
-    return a.localeCompare(b, 'zh-Hant')
-  })
-
   function handleAddVendorGroup() {
     const name = newVgName.trim()
     if (!name) return
@@ -414,7 +423,7 @@ export default function ItemMappingsClient({
   }
 
   return (
-    <div className="flex flex-col" style={{ background: '#fafafa', height: '100dvh' }}>
+    <div className="flex min-h-[100dvh] flex-col" style={{ background: '#fafafa' }}>
 
       {/* 浮動選取工具列 */}
       {selectMode && selectedIds.size > 0 && (
@@ -476,7 +485,7 @@ export default function ItemMappingsClient({
         </div>
       )}
 
-      {/* Header (固定不滑動) */}
+      {/* Header */}
       <div className="bg-white px-4 md:px-6 py-4 md:py-5 shrink-0" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', zIndex: 40 }}>
         <div className="max-w-2xl mx-auto">
           <button onClick={() => router.back()}
@@ -560,7 +569,7 @@ export default function ItemMappingsClient({
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-2 md:px-4 py-3 md:py-5 space-y-4 md:space-y-5 pb-28 flex-1 overflow-y-auto w-full" id="mappings-scroll">
+      <div className="max-w-2xl mx-auto px-2 md:px-4 py-3 md:py-5 space-y-4 md:space-y-5 pb-28 w-full" id="mappings-scroll">
 
         {false && (
         <HelpBox title="📖 這頁怎麼用？（直接決定 Excel 匯出）">
@@ -730,7 +739,7 @@ export default function ItemMappingsClient({
         ) : null}
 
         {/* Mapping list — 以 vendor_group 為主分類 */}
-        <DndContext sensors={sensors}
+        <DndContext sensors={sortMode ? sensors : []}
           collisionDetection={(args) => {
             // rectIntersection 找出所有跟拖曳矩形重疊的目標
             // 再從中選 y 座標最接近的（拖到哪就對到哪）
@@ -759,7 +768,10 @@ export default function ItemMappingsClient({
           // 每店獨立：所有真實類別（非「未分類」）都可改名/排序，不再依賴全域 system_vendor_groups record
           const hasVgRecord = vg !== '未分類'
           return (
-            <div key={vg}>
+            <div key={vg} style={sortMode ? undefined : {
+              contentVisibility: 'auto',
+              containIntrinsicSize: `auto ${Math.max(96, items.length * 58 + 56)}px`,
+            }}>
               <div className="flex flex-wrap items-center gap-2 mb-2 px-1">
                 {sortMode && hasVgRecord && (
                   <div className="flex flex-col" style={{ width: 20, background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, padding: 2 }}>
@@ -859,7 +871,7 @@ export default function ItemMappingsClient({
                 </div>
               )}
               <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                <SortableContext items={items.map(m => m.id)} strategy={verticalListSortingStrategy}>
+                <SortableContext items={items.map(m => m.id)} strategy={verticalListSortingStrategy} disabled={!sortMode}>
                 {(() => {
                   // 「退稅」vg 特別處理：依品項名稱的「稅金/稅」前綴推導原廠商，拆子區塊
                   const isRefund = vg === '退稅'
@@ -890,13 +902,11 @@ export default function ItemMappingsClient({
                       ? mappings.filter(x => x.item_name === m.item_name && x.store_id).map(x => x.store_id as string)
                       : []
                     rendered.push(
-                      <SortableItemRow
+                      <ItemMappingRow
                         key={m.id}
                         m={m}
-                        vg={vg}
                         isLast={idx === items.length - 1}
                         isStorePage={isStorePage}
-                        activeStoreId={activeStoreId}
                         sortMode={sortMode}
                         selectMode={selectMode}
                         isSelected={selectedIds.has(m.id)}
@@ -907,7 +917,7 @@ export default function ItemMappingsClient({
                         })}
                         storesUsingIds={storesUsingIds}
                         allStores={stores}
-                        allMappings={mappings}
+                        itemOptions={taxItemOptionsByGroup.get(vg) ?? []}
                         editId={editId}
                         editCol={editCol}
                         editCat={editCat}
@@ -969,47 +979,63 @@ function VgDragHandle() {
   )
 }
 
-/** 可拖曳的品項 row（同 vg 內拖曳排序） */
-function SortableItemRow({
-  m, vg, isLast, isStorePage, activeStoreId, sortMode, selectMode, isSelected, onToggleSelect, storesUsingIds, allStores, allMappings, editId, editCol, editCat, editVendorGroup,
-  setEditCol, setEditCat, setEditVendorGroup, startEdit, handleUpdate, setEditId, handleDelete, displayName,
-}: {
-  m: Mapping; vg: string; isLast: boolean; isStorePage: boolean; activeStoreId: string; sortMode: boolean
+type ItemRowProps = {
+  m: Mapping; isLast: boolean; isStorePage: boolean
   selectMode: boolean; isSelected: boolean; onToggleSelect: () => void
   storesUsingIds: string[]; allStores: { id: string; name: string }[]
-  allMappings: Mapping[]
+  itemOptions: string[]
   editId: string | null; editCol: string; editCat: string; editVendorGroup: string
   setEditCol: (v: string) => void; setEditCat: (v: string) => void; setEditVendorGroup: (v: string) => void
   startEdit: (m: Mapping) => void; handleUpdate: (id: string) => void; setEditId: (v: string | null) => void
   handleDelete: (id: string) => void; displayName: (m: Mapping) => string
-}) {
-  const [showStores, setShowStores] = useState(false)
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: m.id })
-  const catSt = CAT_STYLE[m.item_category] ?? CAT_STYLE['雜項']
+}
+
+/** 一般瀏覽完全不掛 dnd-kit；只有使用者按下「排序」才建立拖曳節點。 */
+function ItemMappingRow({ sortMode, ...props }: ItemRowProps & { sortMode: boolean }) {
+  return sortMode ? <SortableItemRow {...props} /> : <ItemRowContent {...props} />
+}
+
+function SortableItemRow(props: ItemRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.m.id })
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
-    borderBottom: isLast ? 'none' : '1px solid #f4f4f5',
+    borderBottom: props.isLast ? 'none' : '1px solid #f4f4f5',
     background: isDragging ? '#fef3c7' : undefined,
   }
+  const dragHandle = (
+    <button {...attributes} {...listeners}
+      className="shrink-0"
+      style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, cursor: 'grab', color: '#92400e', padding: '4px', touchAction: 'none' }}
+      title="拖曳排序"
+      aria-label="拖曳排序">
+      <GripVertical className="h-4 w-4" />
+    </button>
+  )
+  return <ItemRowContent {...props} rowRef={setNodeRef} rowStyle={style} dragHandle={dragHandle} />
+}
+
+function ItemRowContent({
+  m, isLast, isStorePage, selectMode, isSelected, onToggleSelect, storesUsingIds, allStores, itemOptions, editId, editCol, editCat, editVendorGroup,
+  setEditCol, setEditCat, setEditVendorGroup, startEdit, handleUpdate, setEditId, handleDelete, displayName,
+  rowRef, rowStyle, dragHandle,
+}: ItemRowProps & {
+  rowRef?: (node: HTMLElement | null) => void
+  rowStyle?: React.CSSProperties
+  dragHandle?: React.ReactNode
+}) {
+  const [showStores, setShowStores] = useState(false)
+  const catSt = CAT_STYLE[m.item_category] ?? CAT_STYLE['雜項']
+  const style: React.CSSProperties = rowStyle ?? { borderBottom: isLast ? 'none' : '1px solid #f4f4f5' }
   return (
-    <div ref={setNodeRef} style={style} className="flex flex-wrap items-center gap-1.5 md:gap-2 px-2 md:px-3 py-2 md:py-2.5">
+    <div ref={rowRef} style={style} className="flex flex-wrap items-center gap-1.5 md:gap-2 px-2 md:px-3 py-2 md:py-2.5">
       {/* 選取模式：checkbox */}
       {selectMode && (
         <input type="checkbox" checked={isSelected} onChange={onToggleSelect}
           className="shrink-0 cursor-pointer" style={{ width: 18, height: 18, accentColor: '#dc2626' }} />
       )}
-      {/* Drag handle — 只在排序模式時可見可操作，避免手機誤觸 */}
-      {sortMode && (
-        <button {...attributes} {...listeners}
-          className="shrink-0"
-          style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, cursor: 'grab', color: '#92400e', padding: '4px', touchAction: 'none' }}
-          title="拖曳排序"
-          aria-label="拖曳排序">
-          <GripVertical className="h-4 w-4" />
-        </button>
-      )}
+      {dragHandle}
       <span className="min-w-0 flex-1 basis-full text-sm font-semibold flex flex-wrap items-center gap-1.5 sm:basis-auto" style={{ color: '#18181b' }}>
         <InlineItemNameEditor mappingId={m.id} currentName={displayName(m)} fullName={m.item_name} excelColumn={m.excel_column} />
         {false && (
@@ -1063,9 +1089,7 @@ function SortableItemRow({
             enabled={!!m.is_tax_addon}
             scope={m.tax_scope ?? 'category'}
             targetItem={m.tax_target_item ?? null}
-            itemOptions={allMappings
-              .filter(item => !item.is_tax_addon && item.vendor_group === m.vendor_group && (item.store_id ?? null) === (m.store_id ?? null))
-              .map(item => item.item_name)}
+            itemOptions={itemOptions}
           />
           <span className="hidden md:inline text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
           <button onClick={() => startEdit(m)} className="min-h-10 min-w-10 flex items-center justify-center rounded-lg" style={{ color: '#d4d4d8' }}
