@@ -32,7 +32,7 @@ export const ACCOUNTING_DOCUMENT_CATEGORY_LABELS: Record<AccountingDocumentCateg
   remittance: '匯款／補款',
   void_invoice: '作廢發票',
   note: '備註照片',
-  other: '其他照片',
+  other: '未設定／其他',
 }
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
@@ -82,6 +82,14 @@ export function accountingCategoryFromDocType(docType?: string | null): Accounti
   if (normalized === '收據') return 'receipt'
   if (normalized === '估價單' || normalized === '配送單' || normalized === '送貨單') return 'delivery'
   return 'other'
+}
+
+export function accountingCategoryFromConfiguredDocTypes(docTypes: Array<string | null | undefined>): AccountingDocumentCategory {
+  const categories = [...new Set(docTypes
+    .map(docType => docType?.trim())
+    .filter((docType): docType is string => !!docType)
+    .map(accountingCategoryFromDocType))]
+  return categories.length === 1 ? categories[0] : 'other'
 }
 
 const CHANNEL_LABELS: Record<string, string> = {

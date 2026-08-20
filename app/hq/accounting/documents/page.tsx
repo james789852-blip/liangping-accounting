@@ -6,8 +6,8 @@ import { getAuthedUser } from '@/lib/authed-user'
 import {
   ACCOUNTING_DOCUMENT_CATEGORIES,
   ACCOUNTING_DOCUMENT_CATEGORY_LABELS,
+  accountingCategoryFromConfiguredDocTypes,
   accountingCategoryFromDocType,
-  accountingCategoryFromReceiptType,
   accountingChannelLabel,
   matchesAccountingDocument,
   normalizeAccountingDateRange,
@@ -38,11 +38,21 @@ type StoreReceiptPhotoRow = {
   business_date: string
   vendor_name: string | null
   actual_vendor_name: string | null
-  receipt_type: string | null
   total_amount: number | string | null
   photo_url: string | null
   notes: string | null
-  receipt_items: { item_name: string | null }[] | null
+  receipt_items: {
+    item_name: string | null
+    item_mapping_id: string | null
+    vendor_group_snapshot: string | null
+  }[] | null
+}
+type ItemMappingDocRow = {
+  id: string
+  store_id: string
+  item_name: string
+  vendor_group: string | null
+  doc_type_override: string | null
 }
 type ClosingPhotoRow = {
   id: string
@@ -149,10 +159,14 @@ export default async function AccountingDocumentsPage({
   const includeCK = locationKind === 'all' || locationKind === 'ck'
 
   async function loadStoreDocuments() {
-    if (!includeStores) return { receipts: [] as StoreReceiptPhotoRow[], closings: [] as ClosingPhotoRow[] }
+    if (!includeStores) return {
+      receipts: [] as StoreReceiptPhotoRow[],
+      closings: [] as ClosingPhotoRow[],
+      mappings: [] as ItemMappingDocRow[],
+    }
     let receiptsQuery = admin
       .from('receipts')
-      .select('id, store_id, business_date, vendor_name, actual_vendor_name, receipt_type, total_amount, photo_url, notes, receipt_items(item_name)')
+      .select('id, store_id, business_date, vendor_name, actual_vendor_name, total_amount, photo_url, notes, receipt_items(item_name, item_mapping_id, vendor_group_snapshot)')
       .gte('business_date', from)
       .lte('business_date', to)
       .not('photo_url', 'is', null)
@@ -163,16 +177,26 @@ export default async function AccountingDocumentsPage({
       .gte('business_date', from)
       .lte('business_date', to)
       .order('business_date', { ascending: false })
+    let mappingsQuery = admin
+      .from('item_column_mappings')
+      .select('id, store_id, item_name, vendor_group, doc_type_override')
     if (locationKind === 'store' && locationId) {
       receiptsQuery = receiptsQuery.eq('store_id', locationId)
       closingsQuery = closingsQuery.eq('store_id', locationId)
+      mappingsQuery = mappingsQuery.eq('store_id', locationId)
     }
-    const [receiptsResult, closingsResult] = await Promise.all([receiptsQuery, closingsQuery])
+    const [receiptsResult, closingsResult, mappingsResult] = await Promise.all([
+      receiptsQuery,
+      closingsQuery,
+      mappingsQuery,
+    ])
     if (receiptsResult.error) throw new Error(`無法載入店面單據：${receiptsResult.error.message}`)
     if (closingsResult.error) throw new Error(`無法載入店面照片：${closingsResult.error.message}`)
+    if (mappingsResult.error) throw new Error(`無法載入品項單據類型：${mappingsResult.error.message}`)
     return {
       receipts: (receiptsResult.data ?? []) as StoreReceiptPhotoRow[],
       closings: (closingsResult.data ?? []) as ClosingPhotoRow[],
+      mappings: (mappingsResult.data ?? []) as ItemMappingDocRow[],
     }
   }
 
@@ -219,6 +243,14 @@ export default async function AccountingDocumentsPage({
   const [storeData, ckData] = await Promise.all([loadStoreDocuments(), loadCKDocuments()])
   const storeNameById = Object.fromEntries(allStores.map(store => [store.id, store.name]))
   const ckRecordById = Object.fromEntries(ckData.records.map(record => [record.id, record]))
+  const mappingById = new Map(storeData.mappings.map(mapping => [mapping.id, mapping]))
+  const mappingsByStoreAndItem = new Map<string, ItemMappingDocRow[]>()
+  for (const mapping of storeData.mappings) {
+    const key = `${mapping.store_id}|${mapping.item_name}`
+    const list = mappingsByStoreAndItem.get(key) ?? []
+    list.push(mapping)
+    mappingsByStoreAndItem.set(key, list)
+  }
   const documents: AccountingDocument[] = []
   const usedPhotos = new Set<string>()
 
@@ -232,11 +264,28 @@ export default async function AccountingDocumentsPage({
   }
 
   for (const receipt of storeData.receipts) {
-    const itemNames = (receipt.receipt_items ?? [])
+    const receiptItems = receipt.receipt_items ?? []
+    const itemNames = receiptItems
       .map(item => item.item_name?.trim())
       .filter(Boolean)
       .slice(0, 3)
       .join('、')
+    const configuredDocTypes = [...new Set(receiptItems.flatMap(item => {
+      const exactMapping = item.item_mapping_id ? mappingById.get(item.item_mapping_id) : null
+      if (exactMapping?.store_id === receipt.store_id) return exactMapping.doc_type_override ? [exactMapping.doc_type_override] : []
+
+      const itemName = item.item_name?.trim()
+      if (!itemName) return []
+      const candidates = mappingsByStoreAndItem.get(`${receipt.store_id}|${itemName}`) ?? []
+      const vendorGroup = item.vendor_group_snapshot?.trim() || receipt.vendor_name?.trim() || ''
+      const mapping = candidates.length === 1
+        ? candidates[0]
+        : candidates.find(candidate => candidate.vendor_group === vendorGroup)
+      return mapping?.doc_type_override ? [mapping.doc_type_override] : []
+    }))]
+    const docTypeSummary = configuredDocTypes.length > 0
+      ? configuredDocTypes.join('／')
+      : '單據類型未設定'
     addDocument({
       id: `receipt:${receipt.id}`,
       url: receipt.photo_url ?? '',
@@ -244,9 +293,9 @@ export default async function AccountingDocumentsPage({
       locationName: storeNameById[receipt.store_id] ?? '未知店家',
       locationKind: 'store',
       businessDate: receipt.business_date,
-      category: accountingCategoryFromReceiptType(receipt.receipt_type),
+      category: accountingCategoryFromConfiguredDocTypes(configuredDocTypes),
       title: receipt.actual_vendor_name?.trim() || receipt.vendor_name?.trim() || '未填廠商',
-      subtitle: itemNames || receipt.notes?.trim() || undefined,
+      subtitle: [docTypeSummary, itemNames || receipt.notes?.trim()].filter(Boolean).join(' · '),
       amount: Number(receipt.total_amount ?? 0),
     })
   }

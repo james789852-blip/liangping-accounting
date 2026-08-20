@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {
+  accountingCategoryFromConfiguredDocTypes,
   accountingCategoryFromDocType,
   accountingCategoryFromReceiptType,
   matchesAccountingDocument,
@@ -16,6 +17,10 @@ test('單據類型會整理成總公司照片分類', () => {
   assert.equal(accountingCategoryFromDocType('公司開'), 'invoice')
   assert.equal(accountingCategoryFromDocType('估價單'), 'delivery')
   assert.equal(accountingCategoryFromDocType(''), 'other')
+  assert.equal(accountingCategoryFromConfiguredDocTypes(['收據', '收據']), 'receipt')
+  assert.equal(accountingCategoryFromConfiguredDocTypes(['發票']), 'invoice')
+  assert.equal(accountingCategoryFromConfiguredDocTypes([]), 'other')
+  assert.equal(accountingCategoryFromConfiguredDocTypes(['發票', '收據']), 'other')
 })
 
 test('照片查詢一次限制在 31 天且會交換反向日期', () => {
@@ -57,12 +62,16 @@ test('總公司單據頁會彙整店面與央廚所有主要照片來源', () =>
   for (const expected of [
     "from('receipts')",
     "from('daily_closings')",
+    "from('item_column_mappings')",
     "from('ck_daily_records')",
     "from('ck_expense_items')",
     "from('ck_store_orders')",
     'delivery_photo_urls',
     'hq_reimbursement_photo_urls',
+    'doc_type_override',
+    'accountingCategoryFromConfiguredDocTypes(configuredDocTypes)',
   ]) {
     assert.match(source, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   }
+  assert.doesNotMatch(source, /accountingCategoryFromReceiptType\(receipt\.receipt_type\)/)
 })
