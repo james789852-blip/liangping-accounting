@@ -59,8 +59,9 @@ test('照片可依分類、店名、廠商與品項關鍵字篩選', () => {
   assert.equal(matchesAccountingDocument(document, 'receipt', ''), false)
   assert.equal(matchesAccountingDocument({ ...document, vendorGroup: '環南' }, 'all', '', '環南'), true)
   assert.equal(matchesAccountingDocument({ ...document, vendorGroup: '環南' }, 'all', '', '振源'), false)
-  assert.equal(matchesAccountingDocument({ ...document, itemCategory: '雜項' }, 'all', '', 'all', '雜項'), true)
-  assert.equal(matchesAccountingDocument({ ...document, itemCategory: '雜項' }, 'all', '', 'all', '食材'), false)
+  assert.equal(matchesAccountingDocument({ ...document, itemCategories: ['食材', '雜項'] }, 'all', '', 'all', '雜項'), true)
+  assert.equal(matchesAccountingDocument({ ...document, itemCategories: ['食材', '雜項'] }, 'all', '', 'all', '食材'), true)
+  assert.equal(matchesAccountingDocument({ ...document, itemCategories: ['食材', '雜項'] }, 'all', '', 'all', '耗材'), false)
 })
 
 test('總公司單據頁會彙整店面與央廚所有主要照片來源', () => {
@@ -86,7 +87,7 @@ test('總公司單據頁會彙整店面與央廚所有主要照片來源', () =>
   const gallerySource = fs.readFileSync(new URL('../components/hq/accounting-documents-gallery.tsx', import.meta.url), 'utf8')
   assert.match(gallerySource, /單據：\{document\.documentTypeLabel/)
   assert.match(gallerySource, /廠商：\{document\.vendorGroup/)
-  assert.match(gallerySource, /品項：\{document\.itemCategory/)
+  assert.match(gallerySource, /品項：\{document\.itemCategories\?\.join/)
 
   const locationSelectSource = fs.readFileSync(new URL('../components/hq/accounting-location-select.tsx', import.meta.url), 'utf8')
   assert.match(locationSelectSource, /vendorSelect\.value = 'all'/)

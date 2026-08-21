@@ -25,7 +25,7 @@ export type AccountingDocument = {
   subtitle?: string
   documentTypeLabel?: string
   vendorGroup?: string
-  itemCategory?: string
+  itemCategories?: string[]
   actualVendorName?: string
   amount?: number
 }
@@ -134,7 +134,7 @@ export function matchesAccountingDocument(
 ) {
   if (category !== 'all' && document.category !== category) return false
   if (vendorGroup !== 'all' && document.vendorGroup !== vendorGroup) return false
-  if (itemCategory !== 'all' && document.itemCategory !== itemCategory) return false
+  if (itemCategory !== 'all' && !(document.itemCategories ?? []).includes(itemCategory)) return false
   const query = keyword.trim().toLocaleLowerCase('zh-TW')
   if (!query) return true
   return [
@@ -145,7 +145,7 @@ export function matchesAccountingDocument(
     document.subtitle ?? '',
     document.documentTypeLabel ?? '',
     document.vendorGroup ?? '',
-    document.itemCategory ?? '',
+    (document.itemCategories ?? []).join('／'),
     document.actualVendorName ?? '',
   ].some(value => value.toLocaleLowerCase('zh-TW').includes(query))
 }

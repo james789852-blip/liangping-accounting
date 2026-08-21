@@ -303,11 +303,9 @@ export default async function AccountingDocumentsPage({
         ? '多廠商分類'
         : undefined
     const actualVendorName = receipt.actual_vendor_name?.trim() || undefined
-    const itemCategory = configuredItemCategories.length === 1
-      ? configuredItemCategories[0]
-      : configuredItemCategories.length > 1
-        ? '多分類'
-        : '未設定'
+    const itemCategories = configuredItemCategories.length > 0
+      ? configuredItemCategories
+      : ['未設定']
     addDocument({
       id: `receipt:${receipt.id}`,
       url: receipt.photo_url ?? '',
@@ -320,7 +318,7 @@ export default async function AccountingDocumentsPage({
       subtitle: itemNames || receipt.notes?.trim() || undefined,
       documentTypeLabel: configuredDocTypes.join('／') || '未設定',
       vendorGroup: vendorGroup || '未設定',
-      itemCategory,
+      itemCategories,
       actualVendorName,
       amount: Number(receipt.total_amount ?? 0),
     })
@@ -381,7 +379,7 @@ export default async function AccountingDocumentsPage({
       subtitle: subtitle || expense.note?.trim() || undefined,
       documentTypeLabel: expense.doc_type?.trim() || '未設定',
       vendorGroup: expense.vendor_group?.trim() || '未設定',
-      itemCategory: expense.category?.trim() || '未設定',
+      itemCategories: [expense.category?.trim() || '未設定'],
       amount: Number(expense.amount ?? 0),
     })
   }
@@ -432,7 +430,7 @@ export default async function AccountingDocumentsPage({
   const vendor = params.vendor === 'all' || vendorOptions.includes(params.vendor ?? '')
     ? (params.vendor ?? 'all')
     : 'all'
-  const itemCategoryOptions = ['食材', '耗材', '雜項', '多分類', '未設定']
+  const itemCategoryOptions = ['食材', '耗材', '雜項', '未設定']
   const itemCategory = params.itemCategory === 'all' || itemCategoryOptions.includes(params.itemCategory ?? '')
     ? (params.itemCategory ?? 'all')
     : 'all'
