@@ -30,6 +30,7 @@ type SearchParams = {
   to?: string
   category?: string
   vendor?: string
+  itemCategory?: string
   q?: string
 }
 
@@ -53,6 +54,7 @@ type ItemMappingDocRow = {
   id: string
   store_id: string
   item_name: string
+  item_category: string | null
   vendor_group: string | null
   doc_type_override: string | null
 }
@@ -77,6 +79,7 @@ type CKRecordPhotoRow = {
 type CKExpensePhotoRow = {
   id: string
   ck_daily_record_id: string
+  category: string | null
   item_name: string | null
   amount: number | string | null
   payer_name: string | null
@@ -181,7 +184,7 @@ export default async function AccountingDocumentsPage({
       .order('business_date', { ascending: false })
     let mappingsQuery = admin
       .from('item_column_mappings')
-      .select('id, store_id, item_name, vendor_group, doc_type_override')
+      .select('id, store_id, item_name, item_category, vendor_group, doc_type_override')
     if (locationKind === 'store' && locationId) {
       receiptsQuery = receiptsQuery.eq('store_id', locationId)
       closingsQuery = closingsQuery.eq('store_id', locationId)
@@ -291,12 +294,20 @@ export default async function AccountingDocumentsPage({
     const configuredVendorGroups = [...new Set(resolvedMappings
       .map(mapping => mapping.vendor_group?.trim())
       .filter((value): value is string => !!value))]
+    const configuredItemCategories = [...new Set(resolvedMappings
+      .map(mapping => mapping.item_category?.trim())
+      .filter((value): value is string => !!value))]
     const vendorGroup = configuredVendorGroups.length === 1
       ? configuredVendorGroups[0]
       : configuredVendorGroups.length > 1
         ? '多廠商分類'
         : undefined
     const actualVendorName = receipt.actual_vendor_name?.trim() || undefined
+    const itemCategory = configuredItemCategories.length === 1
+      ? configuredItemCategories[0]
+      : configuredItemCategories.length > 1
+        ? '多分類'
+        : '未設定'
     addDocument({
       id: `receipt:${receipt.id}`,
       url: receipt.photo_url ?? '',
@@ -309,6 +320,7 @@ export default async function AccountingDocumentsPage({
       subtitle: itemNames || receipt.notes?.trim() || undefined,
       documentTypeLabel: configuredDocTypes.join('／') || '未設定',
       vendorGroup: vendorGroup || '未設定',
+      itemCategory,
       actualVendorName,
       amount: Number(receipt.total_amount ?? 0),
     })
@@ -369,6 +381,7 @@ export default async function AccountingDocumentsPage({
       subtitle: subtitle || expense.note?.trim() || undefined,
       documentTypeLabel: expense.doc_type?.trim() || '未設定',
       vendorGroup: expense.vendor_group?.trim() || '未設定',
+      itemCategory: expense.category?.trim() || '未設定',
       amount: Number(expense.amount ?? 0),
     })
   }
@@ -419,8 +432,12 @@ export default async function AccountingDocumentsPage({
   const vendor = params.vendor === 'all' || vendorOptions.includes(params.vendor ?? '')
     ? (params.vendor ?? 'all')
     : 'all'
+  const itemCategoryOptions = ['食材', '耗材', '雜項', '多分類', '未設定']
+  const itemCategory = params.itemCategory === 'all' || itemCategoryOptions.includes(params.itemCategory ?? '')
+    ? (params.itemCategory ?? 'all')
+    : 'all'
   const filteredDocuments = documents
-    .filter(document => matchesAccountingDocument(document, category, keyword, vendor))
+    .filter(document => matchesAccountingDocument(document, category, keyword, vendor, itemCategory))
     .sort((a, b) => (
       b.businessDate.localeCompare(a.businessDate)
       || a.locationName.localeCompare(b.locationName, 'zh-Hant')
@@ -465,7 +482,7 @@ export default async function AccountingDocumentsPage({
             <Filter className="h-4 w-4" style={{ color: '#D97706' }} />
             <p className="text-sm font-bold" style={{ color: '#18181b' }}>篩選照片</p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
             <label className="space-y-1">
               <span className="text-xs font-semibold" style={{ color: '#71717a' }}>店家／央廚</span>
               <AccountingLocationSelect defaultValue={location} className="w-full px-3" style={fieldStyle}>
@@ -500,6 +517,13 @@ export default async function AccountingDocumentsPage({
               <select key={`vendor:${location}`} name="vendor" defaultValue={vendor} className="w-full px-3" style={fieldStyle}>
                 <option value="all">全部廠商分類</option>
                 {vendorOptions.map(value => <option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-semibold" style={{ color: '#71717a' }}>品項分類</span>
+              <select name="itemCategory" defaultValue={itemCategory} className="w-full px-3" style={fieldStyle}>
+                <option value="all">全部品項分類</option>
+                {itemCategoryOptions.map(value => <option key={value} value={value}>{value}</option>)}
               </select>
             </label>
             <label className="space-y-1">

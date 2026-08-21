@@ -105,7 +105,7 @@ export default function AccountingDocumentsGallery({ documents }: { documents: A
               <p className="truncate text-xs" style={{ color: '#71717a' }}>
                 {document.locationKind === 'ck' ? '央廚' : '店面'} · {document.locationName}
               </p>
-              {(document.documentTypeLabel || document.vendorGroup) && (
+              {(document.documentTypeLabel || document.vendorGroup || document.itemCategory) && (
                 <div className="flex flex-wrap gap-1 pt-0.5">
                   <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
                     style={{ background: '#fff7ed', color: '#c2410c' }}>
@@ -114,6 +114,10 @@ export default function AccountingDocumentsGallery({ documents }: { documents: A
                   <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
                     style={{ background: '#f4f4f5', color: '#52525b' }}>
                     廠商：{document.vendorGroup || '未設定'}
+                  </span>
+                  <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                    style={{ background: '#ecfdf5', color: '#047857' }}>
+                    品項：{document.itemCategory || '未設定'}
                   </span>
                 </div>
               )}
