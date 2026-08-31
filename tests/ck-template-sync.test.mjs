@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import ExcelJS from 'exceljs'
-import { ckTemplateHasStoreColumns, fillCKWorksheet, prepareCKTemplateStoreColumns } from '../lib/ck-template.ts'
+import { ckTemplateHasStoreColumns, clearCKCrossSheetFormulas, fillCKWorksheet, prepareCKTemplateStoreColumns } from '../lib/ck-template.ts'
 
 test('央廚模板缺少目前店家欄位時會判定為過期', () => {
   const workbook = new ExcelJS.Workbook()
@@ -27,6 +27,18 @@ test('央廚舊模板會沿用既有欄位排版並替換為目前店家', () =>
     ['府中', '幸福', '福城', '心惦', '景新', '海山', '土城', '沐香'],
   )
   assert.equal(worksheet.getCell('F3').fill.fgColor.argb, 'FFFF0000')
+})
+
+test('Google 只同步月分頁時會移除跨分頁公式並保留同分頁公式', () => {
+  const workbook = new ExcelJS.Workbook()
+  const worksheet = workbook.addWorksheet('8月食耗成本')
+  worksheet.getCell('A1').value = { formula: "SUM('統計'!A1:A3)" }
+  worksheet.getCell('A2').value = { formula: 'SUM(B2:C2)' }
+
+  clearCKCrossSheetFormulas(worksheet)
+
+  assert.equal(worksheet.getCell('A1').value, null)
+  assert.deepEqual(worksheet.getCell('A2').value, { formula: 'SUM(B2:C2)' })
 })
 
 test('央廚舊月份模板會更新日期並以資料庫金額取代跨分頁公式', () => {

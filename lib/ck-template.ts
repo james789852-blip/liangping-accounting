@@ -79,6 +79,20 @@ export interface CKDayData {
   totalExpense: number
 }
 
+/** Google Sheets receives only the monthly tab, so formulas that reference a
+ * helper worksheet would become #REF!. Remove only those cross-sheet formulas;
+ * same-sheet formulas and the uploaded Excel workbook remain untouched. */
+export function clearCKCrossSheetFormulas(ws: ExcelJS.Worksheet): void {
+  ws.eachRow({ includeEmpty: false }, row => {
+    row.eachCell({ includeEmpty: false }, cell => {
+      const value = cell.value
+      if (!value || typeof value !== 'object') return
+      const formula = 'formula' in value ? value.formula : null
+      if (typeof formula === 'string' && formula.includes('!')) cell.value = null
+    })
+  })
+}
+
 export function getDaysInMonth(year: number, month: number): string[] {
   const count = new Date(year, month, 0).getDate()
   return Array.from({ length: count }, (_, i) =>

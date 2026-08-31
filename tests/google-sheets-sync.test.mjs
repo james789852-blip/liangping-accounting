@@ -36,6 +36,7 @@ test('央廚模板會保留原排版並將預留欄位更新為目前店家', ()
   assert.match(sheetsModule, /buildCKGeneratedWorkbook\(monthNum, days, dataMap, assignedStoreNames\)/)
   assert.match(sheetsModule, /Apply formatting for both template and generated workbooks/)
   assert.match(sheetsModule, /gridProperties: \{ rowCount: gridRowCount, columnCount: gridColumnCount \}/)
+  assert.match(sheetsModule, /clearCKCrossSheetFormulas\(ws\)/)
 })
 
 test('總公司介面可綁定試算表並手動重同步', () => {

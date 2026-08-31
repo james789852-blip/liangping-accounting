@@ -5,7 +5,7 @@ import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { extractValues, extractColWidths, extractMerges } from '@/lib/food-cost-template'
 import { buildFoodCostNativeWorkbook } from '@/lib/food-cost-native-workbook'
-import { type CKDayData, fillCKWorksheet, buildCKGeneratedWorkbook, prepareCKTemplateStoreColumns, getDaysInMonth } from '@/lib/ck-template'
+import { type CKDayData, fillCKWorksheet, buildCKGeneratedWorkbook, clearCKCrossSheetFormulas, prepareCKTemplateStoreColumns, getDaysInMonth } from '@/lib/ck-template'
 import { getMonthLastDay } from '@/lib/business-date'
 
 function getAuth() {
@@ -555,6 +555,8 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
     ws = wb.worksheets[0]
   }
   if (!ws) throw new Error('無法建立工作表')
+
+  clearCKCrossSheetFormulas(ws)
 
   const wsValues = extractValues(ws)
   const wsWidths = extractColWidths(ws)
