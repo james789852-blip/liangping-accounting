@@ -7,6 +7,7 @@ import UserEditDialog from '@/components/hq/user-edit-dialog'
 import { Users, Building2, ChefHat, Store as StoreIcon } from 'lucide-react'
 import { sortStores } from '@/lib/store-order'
 import { canManageUsers } from '@/lib/user-permissions'
+import { sortUsersByTitle } from '@/lib/user-title-order'
 
 const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
   '老闆':   { bg: '#fef3c7', color: '#b45309' },
@@ -106,6 +107,7 @@ function UserGroup({ name, type, storeId, users, stores, storeMap, accountMap }:
   const Icon = isHq ? Building2 : isCk ? ChefHat : StoreIcon
   const accent = isHq ? '#92400E' : isCk ? '#7c3aed' : '#047857'
   const tint = isHq ? '#FFFBEB' : isCk ? '#f3e8ff' : '#d1fae5'
+  const sortedUsers = sortUsersByTitle(users)
 
   return (
     <section className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
@@ -122,7 +124,7 @@ function UserGroup({ name, type, storeId, users, stores, storeMap, accountMap }:
         </div>
       </div>
       <div className="divide-y" style={{ borderColor: '#f4f4f5' }}>
-        {users.map(user => (
+        {sortedUsers.map(user => (
           <UserRow key={`${name}-${user.user_id}`} user={user} stores={stores} storeMap={storeMap} account={accountMap[user.user_id] ?? ''} />
         ))}
         {users.length === 0 && (
