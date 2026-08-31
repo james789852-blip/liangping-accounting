@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { canManageUsers } from '@/lib/user-permissions'
 import { inferSystemRole } from '@/lib/account-access'
+import { resolvePrimaryStoreId } from '@/lib/user-primary-store'
 
 function getAdminClient() {
   return createAdminClient(
@@ -170,7 +171,7 @@ export async function updateUser(userId: string, formData: {
   if (formData.title !== undefined) patch.title = formData.title
   if (formData.employee_id !== undefined) patch.employee_id = formData.employee_id
   if (formData.store_ids !== undefined) {
-    const primary = formData.is_hq ? null : (formData.primary_store_id ?? null)
+    const primary = formData.is_hq ? null : resolvePrimaryStoreId(formData)
     const storeIds = [...new Set([...(primary ? [primary] : []), ...formData.store_ids])]
     patch.store_ids = storeIds
     patch.primary_store_id = primary

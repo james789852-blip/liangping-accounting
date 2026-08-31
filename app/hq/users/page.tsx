@@ -8,6 +8,7 @@ import { Users, Building2, ChefHat, Store as StoreIcon } from 'lucide-react'
 import { sortStores } from '@/lib/store-order'
 import { canManageUsers } from '@/lib/user-permissions'
 import { sortUsersByTitle } from '@/lib/user-title-order'
+import { resolvePrimaryStoreId } from '@/lib/user-primary-store'
 
 const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
   '老闆':   { bg: '#fef3c7', color: '#b45309' },
@@ -173,6 +174,7 @@ export default async function UsersPage() {
   )
 
   const allUsers = (users ?? []) as UserProfile[]
+  const activeStoreIds = stores.map(store => store.id)
   const storeUsers = new Map<string, UserProfile[]>()
   const hqUsers: UserProfile[] = []
   const unassignedUsers: UserProfile[] = []
@@ -182,7 +184,7 @@ export default async function UsersPage() {
       hqUsers.push(account)
       continue
     }
-    const primaryStoreId = account.primary_store_id
+    const primaryStoreId = resolvePrimaryStoreId(account, activeStoreIds)
     if (!primaryStoreId || !storeMap[primaryStoreId]) {
       unassignedUsers.push(account)
       continue

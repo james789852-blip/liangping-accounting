@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Loader2, X, Pencil, Trash2, Eye, EyeOff } from 'lucide-react'
 import { updateUser, updateUserPassword, deleteUser } from '@/app/actions/users'
 import { getTitleOptions, inferSystemRole, type AccountUnitType } from '@/lib/account-access'
+import { resolvePrimaryStoreId } from '@/lib/user-primary-store'
 
 interface Store { id: string; name: string; type?: string }
 interface UserData {
@@ -64,7 +65,8 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showPw, setShowPw] = useState(false)
   const [newPassword, setNewPassword] = useState('')
-  const initialUnitId = user.role === '老闆' || user.is_hq ? 'hq' : (user.primary_store_id ?? '')
+  const activeStoreIds = stores.map(store => store.id)
+  const initialUnitId = user.role === '老闆' || user.is_hq ? 'hq' : (resolvePrimaryStoreId(user, activeStoreIds) ?? '')
   const initialStore = stores.find(store => store.id === initialUnitId)
   const initialUnitType: AccountUnitType = initialUnitId === 'hq' ? 'hq' : initialStore?.type === '央廚' ? 'ck' : 'store'
   const initialTitle = user.title ?? user.role ?? getTitleOptions(initialUnitType)[0]
@@ -89,7 +91,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
     can_export_reports: user.can_export_reports ?? false,
   })
   const [selectedStores, setSelectedStores] = useState<string[]>(
-    [...new Set(user.store_ids ?? [])]
+    [...new Set(user.store_ids ?? [])].filter(id => activeStoreIds.includes(id))
   )
   const primaryStore = stores.find(store => store.id === unitId)
   const unitType: AccountUnitType = unitId === 'hq' ? 'hq' : primaryStore?.type === '央廚' ? 'ck' : 'store'

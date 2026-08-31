@@ -27,3 +27,11 @@ test('店家管理保留已停用店家並清楚標示狀態', () => {
   assert.match(storeEditor, /已停用/)
   assert.match(storeEditor, /disabled=\{!isActive\}/)
 })
+
+test('已停用店家可以重新啟用並沿用既有資料', () => {
+  assert.match(storeEditor, /handleActivate/)
+  assert.match(storeEditor, /重新啟用/)
+  assert.match(storeActions, /export async function activateStore\(storeId: string\)/)
+  assert.match(storeActions, /\.update\(\{ active: true \}\)/)
+  assert.match(storeActions, /if \(!activated\)/)
+})

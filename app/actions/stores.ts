@@ -136,3 +136,40 @@ export async function deactivateStore(storeId: string) {
   revalidateTag('stores', 'default')
   return { success: true, name: store.name }
 }
+
+export async function activateStore(storeId: string) {
+  const { profile, error } = await requireManager()
+  if (error) return { error }
+
+  const admin = createAdminClient()
+  const { data: store, error: loadError } = await admin
+    .from('stores')
+    .select('id, name, type, active')
+    .eq('id', storeId)
+    .maybeSingle()
+
+  if (loadError) return { error: loadError.message }
+  if (!store || store.active !== false) return { error: '找不到這間已停用店家，可能已經重新啟用' }
+  if (!canManageStoreType(profile, store.type)) {
+    return { error: store.type === '央廚' ? '權限不足，無法重新啟用央廚店家' : '權限不足，無法重新啟用店面店家' }
+  }
+
+  const { data: activated, error: dbErr } = await admin
+    .from('stores')
+    .update({ active: true })
+    .eq('id', storeId)
+    .eq('active', false)
+    .select('id')
+    .maybeSingle()
+
+  if (dbErr) return { error: dbErr.message }
+  if (!activated) return { error: '重新啟用失敗，店家狀態沒有更新，請重新整理後再試一次' }
+
+  revalidatePath('/hq/stores')
+  revalidatePath('/hq/users')
+  revalidatePath('/hq/dashboard')
+  revalidatePath('/manager', 'layout')
+  revalidatePath('/manager/closing')
+  revalidateTag('stores', 'default')
+  return { success: true, name: store.name }
+}

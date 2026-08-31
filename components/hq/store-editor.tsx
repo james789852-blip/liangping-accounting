@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { deactivateStore, updateStoreSettings } from '@/app/actions/stores'
+import { activateStore, deactivateStore, updateStoreSettings } from '@/app/actions/stores'
 import { updateCKAssignedStores, addCKExternalStore, deleteCKExternalStore, updateCKExternalStore, updateCKExternalStoreDeduction } from '@/app/actions/ck'
 import { toast } from 'sonner'
-import { ChevronDown, ChevronUp, Plus, X, Loader2, Check, Pencil, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Plus, X, Loader2, Check, Pencil, RotateCcw, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface Store {
@@ -51,6 +51,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [activating, setActivating] = useState(false)
   const [storeName, setStoreName] = useState(store.name)
   const [editingName, setEditingName] = useState(false)
   const [mode, setMode] = useState(store.mode)
@@ -179,12 +180,27 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
     router.refresh()
   }
 
+  async function handleActivate() {
+    const confirmed = window.confirm(`確定要重新啟用「${storeName}」嗎？\n\n重新啟用後會恢復出現在日常操作清單；既有帳號、帳務與歷史資料都會繼續沿用。`)
+    if (!confirmed) return
+    setActivating(true)
+    const result = await activateStore(store.id)
+    if (result.error) {
+      toast.error(result.error)
+      setActivating(false)
+      return
+    }
+    toast.success(`已重新啟用「${storeName}」`)
+    router.refresh()
+  }
+
   const modeLabel: Record<string, string> = { ichef: 'iChef', handwrite: '手寫菜單', mixed: '混合模式' }
 
   return (
     <div className="bg-white rounded-2xl overflow-hidden" style={{ border: isActive ? '1px solid #f4f4f5' : '1px solid #e4e4e7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', opacity: isActive ? 1 : 0.72 }}>
+      <div className="flex items-stretch">
       <button type="button" onClick={() => isActive && setOpen(v => !v)} disabled={!isActive}
-        className="w-full flex items-center justify-between px-4 py-4" style={{ cursor: isActive ? 'pointer' : 'default' }}>
+        className="flex-1 flex items-center justify-between px-4 py-4" style={{ cursor: isActive ? 'pointer' : 'default' }}>
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-xl flex items-center justify-center text-white font-bold shrink-0"
             style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', fontSize: storeName.length > 2 ? '10px' : '13px' }}>
@@ -219,6 +235,17 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
           ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />
           : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />}
       </button>
+      {!isActive && canEdit && (
+        <div className="flex items-center pr-4">
+          <button type="button" onClick={handleActivate} disabled={activating}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold"
+            style={{ color: '#047857', background: '#ecfdf5', border: '1px solid #a7f3d0', opacity: activating ? 0.65 : 1 }}>
+            {activating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+            重新啟用
+          </button>
+        </div>
+      )}
+      </div>
 
       {open && (
         <div className="px-4 pb-4 space-y-5" style={{ borderTop: '1px solid #f4f4f5', background: '#fafafa', paddingTop: '16px' }}>
