@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { updateStoreSettings } from '@/app/actions/stores'
+import { deleteStore, updateStoreSettings } from '@/app/actions/stores'
 import { updateCKAssignedStores, addCKExternalStore, deleteCKExternalStore, updateCKExternalStore, updateCKExternalStoreDeduction } from '@/app/actions/ck'
 import { toast } from 'sonner'
 import { ChevronDown, ChevronUp, Plus, X, Loader2, Check, Pencil, Trash2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 interface Store {
   id: string; name: string; mode: string; ichef_uber_linked: boolean
@@ -46,8 +47,10 @@ function Toggle({ label, checked, onChange, disabled }: { label: string; checked
 }
 
 export default function StoreEditor({ store, canEdit, canEditCKRelations = canEdit, memberStoreOptions = [], externalStores: initExternal = [] }: Props) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [storeName, setStoreName] = useState(store.name)
   const [editingName, setEditingName] = useState(false)
   const [mode, setMode] = useState(store.mode)
@@ -63,6 +66,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
   const [pettyCash, setPettyCash] = useState(store.petty_cash)
   const [storeType, setStoreType] = useState(store.type ?? '店面')
   const [assignedStoreIds, setAssignedStoreIds] = useState<string[]>(store.assigned_store_ids ?? [])
+  const [googleSheetsId, setGoogleSheetsId] = useState(store.google_sheets_id ?? '')
   const [extStores, setExtStores] = useState<{ id: string; name: string; deductFromReimbursement: boolean }[]>(
     initExternal.map(s => ({ ...s, deductFromReimbursement: s.deductFromReimbursement ?? false }))
   )
@@ -146,6 +150,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
             panda_enabled: pandaEnabled, twpay_enabled: twpayEnabled,
             online_enabled: onlineEnabled, online_cash_enabled: onlineCashEnabled,
             petty_cash: pettyCash,
+            google_sheets_id: googleSheetsId.trim() || null,
           })
         : Promise.resolve({ success: true }),
       storeType === '央廚' && canEditCKRelations
@@ -157,6 +162,20 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
     if (baseErr || ckErr) { toast.error(baseErr ?? ckErr) }
     else { toast.success(`${storeName} 設定已儲存`); setEditingName(false); setOpen(false) }
     setSaving(false)
+  }
+
+  async function handleDelete() {
+    const confirmed = window.confirm(`確定要刪除「${storeName}」嗎？\n\n店家會從操作清單移除，但既有帳務與歷史報表仍會保留。`)
+    if (!confirmed) return
+    setDeleting(true)
+    const result = await deleteStore(store.id)
+    if (result.error) {
+      toast.error(result.error)
+      setDeleting(false)
+      return
+    }
+    toast.success(`已刪除「${storeName}」`)
+    router.refresh()
   }
 
   const modeLabel: Record<string, string> = { ichef: 'iChef', handwrite: '手寫菜單', mixed: '混合模式' }
@@ -491,13 +510,39 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
             </>
           )}
 
+          {/* Google Sheets 試算表 ID */}
+          {canEdit && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>Google Sheets 試算表 ID</p>
+              <input
+                value={googleSheetsId}
+                onChange={event => setGoogleSheetsId(event.target.value)}
+                placeholder={storeType === '央廚' ? '貼上央廚試算表 ID' : '貼上試算表 ID（帳目審核後會自動同步）'}
+                style={{ width: '100%', height: '36px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
+              />
+              <p className="text-xs" style={{ color: '#a1a1aa' }}>
+                請填入網址 /d/<strong style={{ color: '#52525b' }}>試算表ID</strong>/edit 中間的字串，並將試算表分享給系統的 Google Service Account。
+              </p>
+            </div>
+          )}
+
           {(canEdit || canEditCKRelations) && (
-            <button type="button" onClick={handleSave} disabled={saving}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
-              style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)', opacity: saving ? 0.7 : 1 }}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              儲存設定
-            </button>
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <button type="button" onClick={handleSave} disabled={saving || deleting}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
+                style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)', opacity: saving || deleting ? 0.7 : 1 }}>
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                儲存設定
+              </button>
+              {canEdit && (
+                <button type="button" onClick={handleDelete} disabled={saving || deleting}
+                  className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold"
+                  style={{ color: '#be123c', background: '#fff1f2', border: '1px solid #fecdd3', opacity: saving || deleting ? 0.6 : 1 }}>
+                  {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  刪除店家
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}

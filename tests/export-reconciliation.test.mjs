@@ -91,6 +91,19 @@ test('same-name items resolve by mapping id and never by candidate order', () =>
   )
 })
 
+test('historical item follows its mapping id after the mapping is moved to a new vendor group', () => {
+  const movedItem = { id: 'a-yi-id', name: '阿一蔬果', vendor_group: '阿一蔬果', category: '耗材' }
+
+  assert.deepEqual(
+    resolveScopedItemIdentity(
+      { mappingId: 'a-yi-id', vendorGroup: '日常用品', itemName: '阿一蔬果' },
+      [movedItem],
+      itemNameCompatibilityKey,
+    ),
+    movedItem,
+  )
+})
+
 test('external vendor rename cannot rewrite central-kitchen order history', () => {
   assert.deepEqual(historicalItemSyncTargets('上逸'), {
     receiptItems: true,

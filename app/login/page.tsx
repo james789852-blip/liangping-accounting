@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
-import { getDefaultHQHref } from '@/lib/user-permissions'
+import { getDefaultHQHref, hasAnyHQPermission } from '@/lib/user-permissions'
 import { resetStoreSelectionForLogin } from '@/app/actions/store-select'
 
 export default function LoginPage() {
@@ -52,12 +52,15 @@ export default function LoginPage() {
       .eq('user_id', user.id)
       .single()
 
-    const isHQ = profile?.role === '老闆' || profile?.is_hq === true
+    // 總公司入口以實際功能權限判定，不要求一定是 is_hq。
+    // 這讓唯讀報表帳號能進入統計頁，同時避免為了看報表而取得
+    // Supabase RLS 中等同完整總公司人員的 is_hq 資料寫入權限。
+    const hasHQAccess = hasAnyHQPermission(profile)
     const hasAssignedStore = Array.isArray(profile?.store_ids) && profile.store_ids.length > 0
     // 清理店面角色的舊切店狀態不應阻塞登入導向；背景完成即可。
     void resetStoreSelectionForLogin().catch(() => {})
     toast.success('登入成功')
-    const nextPath = isHQ ? getDefaultHQHref(profile) : (hasAssignedStore ? '/manager/dashboard' : '/manager/dashboard')
+    const nextPath = hasHQAccess ? getDefaultHQHref(profile) : (hasAssignedStore ? '/manager/dashboard' : '/manager/dashboard')
     // 使用完整導向，確保瀏覽器立即帶上 Supabase 最新 session cookie。
     window.location.assign(nextPath)
   }

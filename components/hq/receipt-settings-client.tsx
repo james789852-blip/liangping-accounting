@@ -16,7 +16,7 @@ import HelpBox from './help-box'
 interface Store { id: string; name: string }
 
 export default function ReceiptSettingsClient({
-  type, allowStoreType = true, allowCKType = true, stores, currentStoreId, initialCategories, initialCKGroups,
+  type, allowStoreType = true, allowCKType = true, stores, currentStoreId, initialCategories, linkedCategoryNames = [], linkableItemGroups = [], initialCKGroups,
 }: {
   type: 'store' | 'ck'
   allowStoreType?: boolean
@@ -24,6 +24,8 @@ export default function ReceiptSettingsClient({
   stores: Store[]
   currentStoreId: string
   initialCategories: CategoryWithVendors[]
+  linkedCategoryNames?: string[]
+  linkableItemGroups?: string[]
   initialCKGroups: CKVendorGroup[]
 }) {
   const router = useRouter()
@@ -55,7 +57,7 @@ export default function ReceiptSettingsClient({
       </select>
 
       {currentStoreId && (
-        <ReceiptSettings storeId={currentStoreId} initialCategories={initialCategories} />
+        <ReceiptSettings storeId={currentStoreId} initialCategories={initialCategories} linkedCategoryNames={linkedCategoryNames} linkableItemGroups={linkableItemGroups} />
       )}
     </div>
   )

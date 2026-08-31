@@ -1,7 +1,9 @@
 import { getAuthedUser } from '@/lib/authed-user'
+import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import HQNav from '@/components/hq/nav'
+import NavigationSkeleton from '@/components/navigation-skeleton'
 import { getCachedUserProfile, getCachedAllStores } from '@/lib/cached-queries'
 import {
   canManageCKItems,
@@ -16,15 +18,32 @@ import {
   canManageUsers,
   canReviewClosings,
   canExportReports,
+  hasAnyHQPermission,
 } from '@/lib/user-permissions'
 
-export default async function HQLayout({ children }: { children: React.ReactNode }) {
+export default function HQLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex min-h-screen bg-slate-50">
+      <Suspense fallback={<NavigationSkeleton variant="hq" />}>
+        <HQNavigation />
+      </Suspense>
+      <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
+        {children}
+      </main>
+    </div>
+  )
+}
+
+async function HQNavigation() {
   const user = await getAuthedUser()
   if (!user) redirect('/login')
 
   const profile = await getCachedUserProfile(user.id)
 
-  if (!profile || (profile.role !== '老闆' && profile.is_hq !== true)) {
+  // 依細分權限開放後台，不以 is_hq 當成唯一入口條件。
+  // is_hq 在 Supabase RLS 中代表完整總公司資料權限；唯讀報表帳號
+  // 應只靠 can_export_reports 進入，不應被迫取得 is_hq。
+  if (!profile || !hasAnyHQPermission(profile)) {
     redirect('/manager')
   }
 
@@ -57,8 +76,7 @@ export default async function HQLayout({ children }: { children: React.ReactNode
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <HQNav
+    <HQNav
         userName={profile?.name ?? user.email ?? ''}
         role={profile?.title ?? profile?.role ?? ''}
         allStores={allStores}
@@ -77,10 +95,6 @@ export default async function HQLayout({ children }: { children: React.ReactNode
           canReviewClosings: canReviewClosings(profile),
           canExportReports: canExportReports(profile),
         }}
-      />
-      <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
-        {children}
-      </main>
-    </div>
+    />
   )
 }

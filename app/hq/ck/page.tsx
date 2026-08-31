@@ -1,12 +1,16 @@
-import { createClient } from '@/lib/supabase/server'
 import { getAuthedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getCachedUserProfile } from '@/lib/cached-queries'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { getBusinessDate } from '@/lib/business-date'
 import CKOverview from '@/components/hq/ck-overview'
 import { canReviewClosings } from '@/lib/user-permissions'
 import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment'
-import { normalizeCKDeliveryPhotoUrls } from '@/lib/ck-delivery-photos'
+import {
+  memberDeliveryPhotosFromStoreClosings,
+  normalizeCKDeliveryPhotoUrls,
+} from '@/lib/ck-delivery-photos'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,12 +27,10 @@ function nextDay(date: string) {
 }
 
 export default async function HQCKPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
-  const supabase = await createClient()
   const user = await getAuthedUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
-    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  const profile = await getCachedUserProfile(user.id)
   if (!canReviewClosings(profile)) redirect('/manager/dashboard')
 
   const admin = createAdminClient()
@@ -98,7 +100,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       : Promise.resolve({ data: [] }),
     uniqueAssignedIds.length > 0
       ? admin.from('daily_closings')
-          .select('store_id, total_cost')
+          .select('store_id, total_cost, ck_delivery_photo_url')
           .in('store_id', uniqueAssignedIds)
           .eq('business_date', date)
           .in('status', ['submitted', 'verified', 'disputed'])
@@ -115,6 +117,8 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     amounts[closing.store_id] = (amounts[closing.store_id] ?? 0) + Number(closing.total_cost ?? 0)
     return amounts
   }, {})
+  // 體系內配送單以店面做帳上傳的照片為唯一來源；央廚端不再維護第二份照片。
+  const memberDeliveryPhotosByStore = memberDeliveryPhotosFromStoreClosings(managerClosings ?? [])
 
   const ckData = ckStores.map(ckStore => {
     const record = (ckRecords ?? []).find(r => r.ck_store_id === ckStore.id) ?? null
@@ -133,7 +137,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
           store_id: o.store_id,
           store_name: assignedStoreMap[o.store_id] ?? o.store_id,
           ck_amount: o.ck_confirmed_amount == null ? null : Number(o.ck_confirmed_amount),
-          deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(o.delivery_photo_urls),
+          deliveryPhotoUrls: [],
         }))
       externalOrders = orders
         .filter((o: any) => o.store_id === null)
@@ -159,7 +163,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
         store_name: assignedStoreMap[id] ?? id,
         store_amount: managerAmountByStore[id] ?? null,
         ck_amount: existing?.ck_amount ?? null,
-        deliveryPhotoUrls: existing?.deliveryPhotoUrls ?? [],
+        deliveryPhotoUrls: memberDeliveryPhotosByStore[id] ?? [],
       }
     })
 
@@ -253,19 +257,19 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
           </div>
           {/* 日期導覽 */}
           <div className="flex items-center gap-2">
-            <a href={`/hq/ck?date=${prevDay(date)}`}
+            <Link href={`/hq/ck?date=${prevDay(date)}`}
               className="flex items-center justify-center h-8 w-8 rounded-xl text-sm font-semibold transition-colors hover:bg-slate-50"
-              style={{ border: '1px solid #e4e4e7', color: '#52525b' }}>‹</a>
+              style={{ border: '1px solid #e4e4e7', color: '#52525b' }}>‹</Link>
             <span className="text-sm font-semibold tabular-nums px-1" style={{ color: '#18181b', minWidth: '86px', textAlign: 'center' }}>{date}</span>
-            <a href={`/hq/ck?date=${nextDay(date)}`}
+            <Link href={`/hq/ck?date=${nextDay(date)}`}
               className={`flex items-center justify-center h-8 w-8 rounded-xl text-sm font-semibold transition-colors ${isToday ? 'opacity-30 pointer-events-none' : 'hover:bg-slate-50'}`}
-              style={{ border: '1px solid #e4e4e7', color: '#52525b' }}>›</a>
+              style={{ border: '1px solid #e4e4e7', color: '#52525b' }}>›</Link>
             {!isToday && (
-              <a href="/hq/ck"
+              <Link href="/hq/ck"
                 className="text-xs font-semibold px-2.5 py-1.5 rounded-xl transition-colors hover:opacity-80"
                 style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
                 今日
-              </a>
+              </Link>
             )}
           </div>
         </div>

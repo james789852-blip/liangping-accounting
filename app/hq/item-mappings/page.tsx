@@ -7,6 +7,8 @@ import { sortStores } from '@/lib/store-order'
 import { fetchAllPaged } from '@/lib/supabase-paged'
 import { resolveHQStoreId } from '@/lib/hq-store-selection'
 import { canManageCKItems, canManageStoreItems } from '@/lib/user-permissions'
+import { isMiscVendorGroup, normalizeVendorGroupName } from '@/lib/linked-receipt-category'
+import { isVendorOnlyMapping } from '@/lib/vendor-only-mapping'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,9 +28,11 @@ export default async function ItemMappingsPage({
   if (!canStoreItems && !canCKItems) redirect('/manager/dashboard')
 
   const admin = createAdminClient()
-  const [{ data: stores }, { data: vgsInitial }] = await Promise.all([
+  const [{ data: stores }, { data: vgsInitial }, { data: receiptCategories }, { data: receiptVendors }] = await Promise.all([
     admin.from('stores').select('id, name, type').eq('active', true).order('name'),
     admin.from('system_vendor_groups').select('id, name, sort_order, doc_type').eq('active', true).order('sort_order'),
+    admin.from('receipt_categories').select('id, store_id, name, sort_order'),
+    admin.from('receipt_vendors').select('store_id, category_id, name, sort_order').order('sort_order'),
   ])
 
   const params = await searchParams
@@ -50,7 +54,7 @@ export default async function ItemMappingsPage({
   const orphanVgs = new Set<string>()
   for (const m of mappings ?? []) {
     const vg = (m.vendor_group ?? '').trim()
-    if (vg && vg !== '未分類' && !knownVgNames.has(vg)) orphanVgs.add(vg)
+    if (vg && !isMiscVendorGroup(vg) && !knownVgNames.has(vg)) orphanVgs.add(vg)
   }
   let vgs = vgsInitial
   if (orphanVgs.size > 0) {
@@ -67,17 +71,46 @@ export default async function ItemMappingsPage({
     vgs = refetched
   }
   const storeMappingCounts = (mappings ?? []).reduce<Record<string, number>>((acc, row) => {
+    if (isVendorOnlyMapping(row)) return acc
     if (row.store_id) acc[row.store_id] = (acc[row.store_id] ?? 0) + 1
+    return acc
+  }, {})
+  const displayMappings = (mappings ?? []).map(mapping => ({
+    ...mapping,
+    vendor_group: normalizeVendorGroupName(mapping.vendor_group),
+  }))
+  const activeGroupNames = new Set((vgs ?? []).map(group => group.name as string))
+  const linkedCategoryNamesByStore = (receiptCategories ?? []).reduce<Record<string, string[]>>((acc, category) => {
+    if (!activeGroupNames.has(category.name)) return acc
+    // 正數是已啟用的獨立類別；-2 是品項管理建立、等待收據管理啟用的獨立類別。
+    // 舊版 -1 廠商候選不可再誤判為獨立大類別。
+    if ((category.sort_order ?? 0) < 0 && category.sort_order !== -2) return acc
+    if (category.name === '廠商') return acc
+    const names = acc[category.store_id] ?? []
+    if (!names.includes(category.name)) names.push(category.name)
+    acc[category.store_id] = names
+    return acc
+  }, {})
+  const vendorParentIds = new Set((receiptCategories ?? [])
+    .filter(category => category.name === '廠商')
+    .map(category => category.id as string))
+  const vendorChildNamesByStore = (receiptVendors ?? []).reduce<Record<string, string[]>>((acc, vendor) => {
+    if (!vendorParentIds.has(vendor.category_id)) return acc
+    const names = acc[vendor.store_id] ?? []
+    if (!names.includes(vendor.name)) names.push(vendor.name)
+    acc[vendor.store_id] = names
     return acc
   }, {})
 
   return (
     <ItemMappingsClient
-      mappings={mappings ?? []}
+      mappings={displayMappings}
       stores={sortedStores}
       vendorGroups={vgs ?? []}
       selectedStoreId={storeId}
       storeMappingCounts={storeMappingCounts}
+      linkedCategoryNamesByStore={linkedCategoryNamesByStore}
+      vendorChildNamesByStore={vendorChildNamesByStore}
     />
   )
 }

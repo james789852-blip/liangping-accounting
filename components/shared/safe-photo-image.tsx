@@ -2,46 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEventHandler } from 'react'
 import { FileText } from 'lucide-react'
+import { fallbackPhotoUrl, supabaseResizedImageUrl, supabaseThumbUrl } from '@/lib/photo-image-url'
 
 function isHttpUrl(src: string) {
   return /^https?:\/\//.test(src)
 }
 
-function isSupabasePublicObjectUrl(src: string) {
-  try {
-    const url = new URL(src)
-    return url.pathname.includes('/storage/v1/object/public/') || url.pathname.includes('/storage/v1/render/image/public/')
-  } catch {
-    return false
-  }
-}
-
-function supabaseImageUrl(src: string, width: number, height: number, resize: 'cover' | 'contain', quality: number) {
-  try {
-    const url = new URL(src)
-    if (url.pathname.includes('/storage/v1/object/public/')) {
-      url.pathname = url.pathname.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/')
-    } else if (!url.pathname.includes('/storage/v1/render/image/public/')) {
-      return src
-    }
-    url.searchParams.set('width', String(width))
-    url.searchParams.set('height', String(height))
-    url.searchParams.set('resize', resize)
-    url.searchParams.set('quality', String(quality))
-    return url.toString()
-  } catch {
-    return src
-  }
-}
-
-/** Fast thumbnail URL for Supabase Storage public objects. */
-export function supabaseThumbUrl(src: string, width: number, height: number) {
-  return supabaseImageUrl(src, width, height, 'cover', 55)
-}
-
-function fallbackImageUrl(src: string) {
-  return isSupabasePublicObjectUrl(src) ? supabaseImageUrl(src, 1600, 1600, 'contain', 78) : src
-}
+export { supabaseThumbUrl } from '@/lib/photo-image-url'
 
 function Placeholder({
   className,
@@ -81,6 +48,8 @@ export default function SafePhotoImage({
   thumb = false,
   width = 180,
   height = 180,
+  resize = 'cover',
+  quality = 55,
   loading = 'lazy',
   fallbackText = '照片',
   onClick,
@@ -92,6 +61,8 @@ export default function SafePhotoImage({
   thumb?: boolean
   width?: number
   height?: number
+  resize?: 'cover' | 'contain'
+  quality?: number
   loading?: 'eager' | 'lazy'
   fallbackText?: string
   onClick?: MouseEventHandler<HTMLElement>
@@ -99,8 +70,8 @@ export default function SafePhotoImage({
   const nodeRef = useRef<HTMLImageElement | HTMLDivElement | null>(null)
   const primarySrc = useMemo(() => {
     if (!src) return ''
-    return thumb ? supabaseThumbUrl(src, width, height) : src
-  }, [height, src, thumb, width])
+    return thumb ? supabaseResizedImageUrl(src, width, height, resize, quality) : src
+  }, [height, quality, resize, src, thumb, width])
   const [currentSrc, setCurrentSrc] = useState(primarySrc)
   const [step, setStep] = useState(0)
   const [failed, setFailed] = useState(false)
@@ -144,7 +115,7 @@ export default function SafePhotoImage({
           setCurrentSrc(src)
           return
         }
-        const renderUrl = fallbackImageUrl(src)
+        const renderUrl = fallbackPhotoUrl(src)
         if (step <= 1 && renderUrl !== currentSrc) {
           setStep(2)
           setCurrentSrc(renderUrl)

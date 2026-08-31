@@ -1,4 +1,3 @@
-import { createClient } from '@/lib/supabase/server'
 import { getAuthedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
@@ -10,6 +9,8 @@ import { getReceiptSettings } from '@/app/actions/receipt-settings'
 import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment'
 import { confirmedMemberAmountMap } from '@/lib/ck-member-amounts'
 import { normalizeCKDeliveryPhotoUrls } from '@/lib/ck-delivery-photos'
+import { getCachedStoreFull, getCachedUserProfile } from '@/lib/cached-queries'
+import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,15 +19,10 @@ export default async function CKPage({
 }: {
   searchParams: Promise<{ date?: string }>
 }) {
-  const supabase = await createClient()
   const user = await getAuthedUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('user_id, name, role, store_ids, is_hq, primary_store_id')
-    .eq('user_id', user.id)
-    .single()
+  const profile = await getCachedUserProfile(user.id)
 
   const storeId = await getEffectiveStoreId(profile as any)
   if (!storeId) {
@@ -39,11 +35,7 @@ export default async function CKPage({
 
   const admin = createAdminClient()
 
-  const { data: store } = await admin
-    .from('stores')
-    .select('id, name, type, assigned_store_ids')
-    .eq('id', storeId)
-    .single()
+  const store = await getCachedStoreFull(storeId)
 
   if (!store || store.type !== '央廚') {
     redirect('/manager/closing')
@@ -63,8 +55,9 @@ export default async function CKPage({
     { data: externalStores },
     { data: ckRecord },
     { data: ckVendorGroups },
-    { data: rawMappings },
+    mappingItems,
     reimbursementAdjustments,
+    receiptCategories,
   ] = await Promise.all([
     assignedStoreIds.length > 0
       ? admin.from('stores').select('id, name').in('id', assignedStoreIds)
@@ -78,28 +71,25 @@ export default async function CKPage({
     admin.from('ck_vendor_groups')
       .select('id, name, doc_type').eq('ck_store_id', storeId).eq('active', true)
       .order('sort_order').order('name'),
-    // 央廚品項對應（跟店面版一樣，xlsx 匯出對應 excel_column）
-    admin.from('item_column_mappings')
-      .select('store_id, item_name, vendor_group, item_category, excel_column, sort_order, is_tax_addon, tax_scope, tax_target_item')
-      .eq('store_id', storeId)
-      .order('sort_order'),
+    getStoreItemsFromMappings(storeId),
     getCKReimbursementAdjustments([storeId], today),
+    getReceiptSettings(storeId),
   ])
 
-  const mappingMap = new Map<string, any>()
-  for (const item of (rawMappings ?? []) as any[]) {
-    const key = `${item.vendor_group ?? ''}||${item.item_name}`
-    mappingMap.set(key, item)
-  }
-  const mappings = Array.from(mappingMap.values())
-    .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999) || String(a.item_name).localeCompare(String(b.item_name), 'zh-Hant'))
-
-  // 收據類別（跟店面版一致的 UI）
-  const receiptCategories = await getReceiptSettings(storeId)
+  const mappings = mappingItems.map(item => ({
+    item_name: item.name,
+    vendor_group: item.vendor_group,
+    item_category: item.category,
+    excel_column: item.name,
+    doc_type_override: item.doc_type,
+    sort_order: item.sort_order,
+    is_tax_addon: item.is_tax_addon,
+    tax_scope: item.tax_scope,
+    tax_target_item: item.tax_target_item,
+  }))
 
   // 體系內叫貨 + 支出，從 ck_daily_record 載入
   let memberConfirmedMap: Record<string, number | null> = {}  // 央廚輸入金額
-  let memberDeliveryPhotos: Record<string, string[]> = {}
   let existing: {
     id: string
     payer_name?: string
@@ -127,7 +117,7 @@ export default async function CKPage({
       { data: extOrders },
       { data: expenseItems },
     ] = await Promise.all([
-      admin.from('ck_store_orders').select('store_id, ck_confirmed_amount, delivery_photo_urls')
+      admin.from('ck_store_orders').select('store_id, ck_confirmed_amount')
         .eq('ck_daily_record_id', ckRecord.id).not('store_id', 'is', null),
       admin.from('ck_store_orders').select('external_store_name, amount, delivery_photo_urls')
         .eq('ck_daily_record_id', ckRecord.id).is('store_id', null),
@@ -139,10 +129,6 @@ export default async function CKPage({
       store_id: string | null
       ck_confirmed_amount: number | null
     }[])
-    memberDeliveryPhotos = Object.fromEntries((storeOrders ?? [])
-      .filter(order => order.store_id)
-      .map(order => [order.store_id as string, normalizeCKDeliveryPhotoUrls(order.delivery_photo_urls)]))
-
     existing = {
       id: ckRecord.id,
       payer_name: ckRecord.payer_name ?? undefined,
@@ -183,7 +169,6 @@ export default async function CKPage({
     store_id: s.id as string,
     store_name: s.name as string,
     confirmed_amount: memberConfirmedMap[s.id] ?? null,
-    delivery_photo_urls: memberDeliveryPhotos[s.id] ?? [],
   }))
 
   return (
@@ -220,6 +205,7 @@ export default async function CKPage({
           vendor_group: string | null
           item_category: string
           excel_column: string
+          doc_type_override?: string | null
           sort_order: number | null
           is_tax_addon?: boolean
           tax_scope?: 'category' | 'item' | null

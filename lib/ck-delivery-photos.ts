@@ -12,3 +12,18 @@ export function ckOrderNeedsDeliveryPhoto(
 ): boolean {
   return Number(amount ?? 0) > 0 && normalizeCKDeliveryPhotoUrls(photoUrls).length === 0
 }
+
+export function memberDeliveryPhotosFromStoreClosings(
+  closings: Array<{ store_id?: string | null; ck_delivery_photo_url?: string | null }>,
+): Record<string, string[]> {
+  const photosByStore: Record<string, string[]> = {}
+  for (const closing of closings) {
+    const storeId = closing.store_id?.trim()
+    const photoUrl = closing.ck_delivery_photo_url?.trim()
+    if (!storeId || !photoUrl) continue
+    const current = photosByStore[storeId] ?? []
+    if (!current.includes(photoUrl)) current.push(photoUrl)
+    photosByStore[storeId] = current
+  }
+  return photosByStore
+}

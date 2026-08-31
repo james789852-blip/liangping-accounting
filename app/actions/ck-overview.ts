@@ -5,7 +5,10 @@ import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getCKRangeStats, getCKMonthlyStats, type CKDailyStats, type CKMonthlyStats } from '@/lib/ck-aggregator'
 import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment'
-import { normalizeCKDeliveryPhotoUrls } from '@/lib/ck-delivery-photos'
+import {
+  memberDeliveryPhotosFromStoreClosings,
+  normalizeCKDeliveryPhotoUrls,
+} from '@/lib/ck-delivery-photos'
 
 async function checkHqAuth() {
   const supabase = await createClient()
@@ -58,7 +61,7 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
     rec ? admin.from('ck_expense_items').select('category, item_name, amount, payer_name, vendor_group, doc_type, receipt_photo_url').eq('ck_daily_record_id', rec.id).order('sort_order') : Promise.resolve({ data: [] }),
     assignedIds.length > 0
       ? admin.from('daily_closings')
-          .select('store_id, total_cost')
+          .select('store_id, total_cost, ck_delivery_photo_url')
           .in('store_id', assignedIds)
           .eq('business_date', date)
           .in('status', ['submitted', 'verified', 'disputed'])
@@ -72,7 +75,8 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
       store_id: o.store_id,
       store_name: nameMap[o.store_id] ?? o.store_id,
       ck_amount: o.ck_confirmed_amount == null ? null : Number(o.ck_confirmed_amount),
-      deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(o.delivery_photo_urls),
+      // 體系內配送單只使用店面每日帳目上傳的照片，避免央廚舊欄位與店面不同步。
+      deliveryPhotoUrls: [],
     }))
   const externalOrders = ((orderRes.data ?? []) as any[])
     .filter(o => o.store_id === null)
@@ -91,6 +95,9 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
     amounts[closing.store_id] = (amounts[closing.store_id] ?? 0) + Number(closing.total_cost ?? 0)
     return amounts
   }, {})
+  const memberDeliveryPhotosByStore = memberDeliveryPhotosFromStoreClosings(
+    (closingRes.data ?? []) as any[],
+  )
   const memberStores = assignedIds.map(id => {
     const existing = memberOrders.find(o => o.store_id === id)
     return {
@@ -98,7 +105,7 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
       store_name: nameMap[id] ?? id,
       store_amount: managerAmountByStore[id] ?? null,
       ck_amount: existing?.ck_amount ?? null,
-      deliveryPhotoUrls: existing?.deliveryPhotoUrls ?? [],
+      deliveryPhotoUrls: memberDeliveryPhotosByStore[id] ?? [],
     }
   })
   const revenueTotal = memberOrders.reduce((sum, order) => sum + (order.ck_amount ?? 0), 0)

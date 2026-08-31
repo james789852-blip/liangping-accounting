@@ -3,11 +3,20 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getVerifiedUser } from '@/lib/authed-user'
 import { createClient } from '@/lib/supabase/server'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag, unstable_cache } from 'next/cache'
 import { canManageCKReceipts, canManageStoreReceipts } from '@/lib/user-permissions'
+import {
+  applyLinkedReceiptCategories,
+  CK_LINKED_RECEIPT_CATEGORY_NAMES,
+  resolveReceiptVendorGroupNames,
+  resolveDefaultLinkableReceiptCategoryNames,
+  resolveLinkedReceiptCategoryNames,
+  STORE_LINKED_RECEIPT_CATEGORY_NAMES,
+} from '@/lib/linked-receipt-category'
 
 /** 精準 revalidate 只清跟收據設定相關的頁面（不 nuke 整站） */
 function revalidateReceipt() {
+  revalidateTag('receipt-settings', 'default')
   revalidatePath('/manager/settings')
   revalidatePath('/manager/closing')
   revalidatePath('/manager/edit', 'layout')
@@ -18,6 +27,8 @@ export interface CategoryWithVendors {
   id: string
   name: string
   vendors: { id: string; name: string }[]
+  linked?: boolean
+  linkedMode?: 'items' | 'vendors'
 }
 
 async function requireAuth(storeId: string) {
@@ -50,18 +61,31 @@ async function storeIdByVendor(vendorId: string) {
   return data?.store_id as string | undefined
 }
 
-export async function getReceiptSettings(storeId: string): Promise<CategoryWithVendors[]> {
+async function loadReceiptSettings(storeId: string): Promise<CategoryWithVendors[]> {
   const admin = createAdminClient()
-  const { data } = await admin
-    .from('receipt_categories')
-    .select(`
-      id, name, sort_order,
-      receipt_vendors(id, name, sort_order, created_at)
-    `)
-    .eq('store_id', storeId)
-    .order('sort_order')
+  const [{ data }, { data: store }, { data: mappings }, { data: configuredGroups }] = await Promise.all([
+    admin
+      .from('receipt_categories')
+      .select(`
+        id, name, sort_order,
+        receipt_vendors(id, name, sort_order, created_at)
+      `)
+      .eq('store_id', storeId)
+      .order('sort_order'),
+    admin.from('stores').select('type').eq('id', storeId).maybeSingle(),
+    admin.from('item_column_mappings')
+      .select('item_name, vendor_group, is_tax_addon, vg_sort_order, sort_order')
+      .eq('store_id', storeId)
+      .order('vg_sort_order')
+      .order('sort_order'),
+    admin.from('system_vendor_groups')
+      .select('name')
+      .eq('active', true),
+  ])
   // 廠商按 sort_order 排（NULL 排最後 fallback 到 created_at）
-  return (data ?? []).map((c: any) => ({
+  const categories = (data ?? [])
+    .filter((c: any) => (c.sort_order ?? 0) >= 0)
+    .map((c: any) => ({
     id: c.id,
     name: c.name,
     vendors: (c.receipt_vendors ?? [])
@@ -73,6 +97,125 @@ export async function getReceiptSettings(storeId: string): Promise<CategoryWithV
       })
       .map((v: any) => ({ id: v.id, name: v.name })),
   }))
+  const defaultLinkedCategoryNames = store?.type === '央廚'
+    ? CK_LINKED_RECEIPT_CATEGORY_NAMES
+    : STORE_LINKED_RECEIPT_CATEGORY_NAMES
+  const parentVendorNames = new Set<string>(
+    categories.find(category => category.name === '廠商')?.vendors
+      .map((vendor: { id: string; name: string }) => String(vendor.name ?? '').trim())
+      .filter(Boolean) ?? [],
+  )
+  const linkedCategoryNames = resolveLinkedReceiptCategoryNames(
+    categories,
+    defaultLinkedCategoryNames,
+    mappings ?? [],
+    (configuredGroups ?? []).map(group => group.name),
+  ).filter(name => name !== '廠商' && !parentVendorNames.has(name))
+  const vendorGroupNames: string[] = Array.from(new Set<string>([
+    ...parentVendorNames,
+    ...resolveReceiptVendorGroupNames(mappings ?? [], linkedCategoryNames),
+  ]))
+  const vendorGroupSet = new Set(vendorGroupNames)
+  const linkedNames = new Set(linkedCategoryNames)
+  return applyLinkedReceiptCategories(
+    categories.filter(category => category.name === '廠商' || !vendorGroupSet.has(category.name)),
+    linkedCategoryNames,
+    mappings ?? [],
+  ).map(category => {
+    if (category.name === '廠商') {
+      return {
+        ...category,
+        vendors: vendorGroupNames.map((name, index) => ({
+          id: `linked-vendor:${index}:${name}`,
+          name,
+        })),
+        linked: true,
+        linkedMode: 'vendors' as const,
+      }
+    }
+    const linked = linkedNames.has(category.name)
+    return { ...category, linked, linkedMode: linked ? 'items' as const : undefined }
+  })
+}
+
+export async function getReceiptSettings(storeId: string): Promise<CategoryWithVendors[]> {
+  return unstable_cache(
+    () => loadReceiptSettings(storeId),
+    ['receipt-settings', storeId],
+    { revalidate: 300, tags: ['receipt-settings', 'item-mappings', 'stores'] },
+  )()
+}
+
+/** 取得該店品項管理已有、但尚未加入收據管理的分類。 */
+export async function getLinkableReceiptItemGroups(storeId: string): Promise<string[]> {
+  await requireAuth(storeId)
+  const admin = createAdminClient()
+  const [{ data: mappings }, { data: categories }, { data: store }] = await Promise.all([
+    admin.from('item_column_mappings')
+      .select('vendor_group, vg_sort_order, is_tax_addon')
+      .eq('store_id', storeId)
+      .order('vg_sort_order'),
+    admin.from('receipt_categories')
+      .select('name, sort_order')
+      .eq('store_id', storeId),
+    admin.from('stores').select('type').eq('id', storeId).maybeSingle(),
+  ])
+
+  const visibleNames = new Set(
+    (categories ?? [])
+      .filter(category => (category.sort_order ?? 0) >= 0)
+      .map(category => category.name),
+  )
+  const defaultDirectNames = new Set(store?.type === '央廚'
+    ? CK_LINKED_RECEIPT_CATEGORY_NAMES
+    : STORE_LINKED_RECEIPT_CATEGORY_NAMES)
+  const pendingNames = (categories ?? [])
+    .filter(category => (category.sort_order ?? 0) <= -2 || (
+      (category.sort_order ?? 0) < 0 && defaultDirectNames.has(category.name as any)
+    ))
+    .map(category => category.name)
+  const visibleDirectNames = [...visibleNames].filter(name => name !== '廠商')
+  const vendorGroupNames = resolveReceiptVendorGroupNames(mappings ?? [], visibleDirectNames)
+  const missingVendorParent = vendorGroupNames.length > 0 && !visibleNames.has('廠商')
+  const inferredLegacyDirectNames = resolveDefaultLinkableReceiptCategoryNames(
+    mappings ?? [],
+    [...defaultDirectNames],
+    [...visibleNames],
+  )
+
+  return Array.from(new Set([
+    ...(missingVendorParent ? ['廠商'] : []),
+    ...inferredLegacyDirectNames,
+    ...pendingNames,
+  ]))
+    .filter(name => !visibleNames.has(name))
+}
+
+/** 將下拉選到的品項管理分類正式加入收據管理並啟用同步。 */
+export async function linkReceiptCategoryFromItems(storeId: string, groupName: string) {
+  await requireAuth(storeId)
+  const name = groupName.trim()
+  if (!name) return { error: '請先選擇品項管理類別' }
+
+  const available = await getLinkableReceiptItemGroups(storeId)
+  if (!available.includes(name)) return { error: '此品項類別已同步，或已不存在' }
+
+  const admin = createAdminClient()
+  const sortOrder = await nextCatSort(storeId)
+  const { data: existing, error: existingError } = await admin.from('receipt_categories')
+    .select('id, sort_order')
+    .eq('store_id', storeId)
+    .eq('name', name)
+    .maybeSingle()
+  if (existingError) return { error: existingError.message }
+
+  const { error } = existing
+    ? await admin.from('receipt_categories').update({ sort_order: sortOrder }).eq('id', existing.id)
+    : await admin.from('receipt_categories').insert({ store_id: storeId, name, sort_order: sortOrder })
+  if (error) return { error: error.message }
+
+  revalidateReceipt()
+  return { success: true as const }
 }
 
 async function nextCatSort(storeId: string): Promise<number> {

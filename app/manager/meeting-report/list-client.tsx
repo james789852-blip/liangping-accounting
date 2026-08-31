@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
@@ -71,6 +71,7 @@ export default function MeetingReportListClient({
   openActionCount,
 }: Props) {
   const router = useRouter()
+  const creatingRef = useRef(false)
   const [creating, setCreating] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [yearFilter, setYearFilter] = useState('all')
@@ -111,12 +112,15 @@ export default function MeetingReportListClient({
   }
 
   async function handleCreate() {
+    if (creatingRef.current) return
+    creatingRef.current = true
     setCreating(true)
     try {
       const result = await createMeetingReport(storeId, meetingDate)
       if ('error' in result) return toast.error(result.error)
       router.push(`/manager/meeting-report/${result.id}`)
     } finally {
+      creatingRef.current = false
       setCreating(false)
     }
   }
@@ -137,9 +141,9 @@ export default function MeetingReportListClient({
   const metrics = dashboardComparison ? [
     { label: '總營業額', current: dashboardComparison.current.total, previous: dashboardComparison.previous.total, icon: BarChart3 },
     { label: '現場', current: dashboardComparison.current.onsite, previous: dashboardComparison.previous.onsite, icon: Store },
-    { label: 'Uber Eats', current: dashboardComparison.current.uber, previous: dashboardComparison.previous.uber, icon: ArrowRight },
-    { label: 'foodpanda', current: dashboardComparison.current.panda, previous: dashboardComparison.previous.panda, icon: ArrowRight },
-    { label: '線上點餐', current: dashboardComparison.current.online, previous: dashboardComparison.previous.online, icon: ArrowRight },
+    ...(dashboardComparison.channels.uber ? [{ label: '優步外送', current: dashboardComparison.current.uber, previous: dashboardComparison.previous.uber, icon: ArrowRight }] : []),
+    ...(dashboardComparison.channels.panda ? [{ label: '熊貓外送', current: dashboardComparison.current.panda, previous: dashboardComparison.previous.panda, icon: ArrowRight }] : []),
+    ...(dashboardComparison.channels.online ? [{ label: '線上點餐', current: dashboardComparison.current.online, previous: dashboardComparison.previous.online, icon: ArrowRight }] : []),
   ] : []
 
   const draftCount = reports.filter(report => report.status === 'draft').length

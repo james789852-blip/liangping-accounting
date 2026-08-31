@@ -76,6 +76,8 @@ test('總公司單據頁會彙整店面與央廚所有主要照片來源', () =>
     'delivery_photo_urls',
     'hq_reimbursement_photo_urls',
     'doc_type_override',
+    'resolveCentralKitchenExpenseDocType',
+    'configuredDocType',
     'accountingCategoryFromConfiguredDocTypes(configuredDocTypes)',
     'name="vendor"',
     'name="itemCategory"',
@@ -83,6 +85,7 @@ test('總公司單據頁會彙整店面與央廚所有主要照片來源', () =>
     assert.match(source, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   }
   assert.doesNotMatch(source, /accountingCategoryFromReceiptType\(receipt\.receipt_type\)/)
+  assert.match(source, /if \(order\.store_id\) continue/)
 
   const gallerySource = fs.readFileSync(new URL('../components/hq/accounting-documents-gallery.tsx', import.meta.url), 'utf8')
   assert.match(gallerySource, /單據：\{document\.documentTypeLabel/)

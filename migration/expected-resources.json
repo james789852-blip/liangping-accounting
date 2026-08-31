@@ -1,0 +1,61 @@
+{
+  "capturedAt": "2026-08-04",
+  "source": "Supabase REST OpenAPI plus repository storage usage",
+  "publicTables": [
+    "audit_logs",
+    "cash_counts",
+    "central_kitchen_price_history",
+    "central_kitchen_prices",
+    "ck_daily_records",
+    "ck_expense_items",
+    "ck_external_stores",
+    "ck_store_orders",
+    "companies",
+    "daily_closings",
+    "expense_categories",
+    "expense_items",
+    "handwrite_orders",
+    "item_column_mappings",
+    "meeting_action_items",
+    "meeting_reports",
+    "menu_videos",
+    "order_items",
+    "payout_details",
+    "petty_cash_counts",
+    "platform_payouts",
+    "platform_screenshots",
+    "receipt_categories",
+    "receipt_items",
+    "receipt_vendors",
+    "receipts",
+    "revenue_items",
+    "review_logs",
+    "role_settings",
+    "store_actual_vendors",
+    "store_holidays",
+    "store_items",
+    "stores",
+    "system_items",
+    "system_vendor_groups",
+    "user_profiles",
+    "vendor_item_templates"
+  ],
+  "storageBuckets": [
+    "excel-templates",
+    "meeting-reports",
+    "menu-videos",
+    "receipts"
+  ],
+  "identitySources": [
+    "auth.users",
+    "public.user_profiles"
+  ],
+  "criticalRelationships": [
+    "auth.users.id = user_profiles.user_id",
+    "stores.id = daily_closings.store_id",
+    "daily_closings.id = child closing_id fields",
+    "ck_daily_records.id = ck_store_orders.ck_daily_record_id",
+    "ck_daily_records.id = ck_expense_items.ck_daily_record_id"
+  ]
+}
+

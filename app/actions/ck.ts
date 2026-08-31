@@ -14,6 +14,10 @@ import {
   canManageCKSettings as canManageCKSettingsPermission,
   canReviewClosings,
 } from '@/lib/user-permissions'
+import { normalizeItemAmount } from '@/lib/negative-items'
+import { syncCKMonthToSheets as syncCKMonthToSheetsImpl } from '@/lib/google-sheets'
+
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
 
 async function getUserPermissionProfile(userId: string) {
   const supabase = await createClient()
@@ -30,9 +34,34 @@ async function canManageCKStoreSettings(ctx: NonNullable<Awaited<ReturnType<type
   return canManageCKSettingsPermission(profile)
 }
 
-// Google Sheets 同步已停用；保留 stub 讓可能存在的舊 client 收到明確錯誤
-export async function syncCKMonthToSheets(_ckStoreId: string, _month: string) {
-  return { error: 'Google Sheets 同步已停用' as const }
+// 同步央廚月份資料到 Google 試算表（內容與央廚 Excel 匯出一致）。
+export async function syncCKMonthToSheets(ckStoreId: string, month: string) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+  if (!ckStoreId?.trim()) return { error: '請選擇央廚' }
+  if (!MONTH_PATTERN.test(month)) return { error: '月份格式錯誤' }
+
+  const profile = await getUserPermissionProfile(ctx.userId)
+  if (!canReviewClosings(profile) && !canManageCKSettingsPermission(profile)) {
+    return { error: '權限不足，請先開啟央廚店家管理或帳目審核權限' }
+  }
+
+  try {
+    await syncCKMonthToSheetsImpl(ckStoreId, month)
+    return { success: true as const }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('[syncCKMonthToSheets] failed:', error)
+    await logAudit({
+      eventType: 'sheets_sync_failed',
+      severity: 'warn',
+      storeId: ckStoreId,
+      userId: ctx.userId,
+      description: `央廚 ${month} 試算表同步失敗`,
+      metadata: { error: message, month },
+    })
+    return { error: message }
+  }
 }
 
 // 央廚管理人員輸入各店配送金額。
@@ -74,7 +103,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
   payerName?: string
   note?: string
   status?: 'draft' | 'submitted'
-  memberOrders?: { storeId: string; confirmedAmount: number | null; deliveryPhotoUrls?: string[] }[]
+  memberOrders?: { storeId: string; confirmedAmount: number | null }[]
   externalOrders?: { name: string; amount: number; deliveryPhotoUrls?: string[] }[]
   expenses?: { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }[]
   receiptPhotoUrls?: string[]
@@ -84,24 +113,18 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
   if (!canAccessStore(ctx, ckStoreId)) return { error: '無權限存取此央廚' }
 
   const admin = createAdminClient()
-  const memberOrders = data.memberOrders?.map(order => ({
-    ...order,
-    deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(order.deliveryPhotoUrls),
-  }))
+  const memberOrders = data.memberOrders
   const externalOrders = data.externalOrders?.map(order => ({
     ...order,
     deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(order.deliveryPhotoUrls),
   }))
 
   if (data.status === 'submitted') {
-    const missingMemberPhotos = memberOrders?.filter(order =>
-      ckOrderNeedsDeliveryPhoto(order.confirmedAmount, order.deliveryPhotoUrls),
-    ).length ?? 0
     const missingExternalPhotos = externalOrders?.filter(order =>
       ckOrderNeedsDeliveryPhoto(order.amount, order.deliveryPhotoUrls),
     ).length ?? 0
-    if (missingMemberPhotos + missingExternalPhotos > 0) {
-      return { error: `有 ${missingMemberPhotos + missingExternalPhotos} 筆叫貨尚未上傳配送單照片` }
+    if (missingExternalPhotos > 0) {
+      return { error: `有 ${missingExternalPhotos} 筆體系外叫貨尚未上傳配送單照片` }
     }
   }
 
@@ -162,7 +185,6 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
           ck_confirmed_amount: null,
           ck_confirmed_at: null,
           ck_confirmed_by: null,
-          delivery_photo_urls: order.deliveryPhotoUrls,
         })
         .eq('ck_daily_record_id', recordId)
         .eq('store_id', order.storeId)
@@ -178,7 +200,6 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
         ck_confirmed_amount: o.confirmedAmount,
         ck_confirmed_at: new Date().toISOString(),
         ck_confirmed_by: ctx.userId,
-        delivery_photo_urls: o.deliveryPhotoUrls,
       }))
     if (upsertRows.length > 0) {
       const { error: memberErr } = await admin
@@ -197,7 +218,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
           ck_daily_record_id: recordId,
           category: e.category,
           item_name: e.item_name,
-          amount: e.amount,
+          amount: normalizeItemAmount(e.item_name, e.amount),
           payer_name: e.payer_name ?? null,
           vendor_group: e.vendor_group ?? null,
           doc_type: e.doc_type ?? null,
@@ -222,7 +243,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
       member_orders: memberOrders?.map(order => ({
         store_id: order.storeId,
         confirmed_amount: order.confirmedAmount,
-        delivery_photo_count: order.deliveryPhotoUrls.length,
+        delivery_photo_source: 'store_closing',
       })) ?? null,
       external_orders: externalOrders?.map(order => ({
         name: order.name,

@@ -1,12 +1,13 @@
-import { createClient } from '@/lib/supabase/server'
 import { getAuthedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getCachedUserProfile } from '@/lib/cached-queries'
 import { redirect } from 'next/navigation'
 import { sortStores } from '@/lib/store-order'
 import AccountingClient from '@/components/hq/accounting-client'
 import { resolveHQStoreId } from '@/lib/hq-store-selection'
 import { canReviewClosings } from '@/lib/user-permissions'
 import { getBusinessDate } from '@/lib/business-date'
+import { fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,10 +18,7 @@ export default async function AccountingPage({
 }) {
   const user = await getAuthedUser()
   if (!user) redirect('/login')
-  const supabase = await createClient()
-
-  const { data: profile } = await supabase
-    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  const profile = await getCachedUserProfile(user.id)
   if (!canReviewClosings(profile)) redirect('/manager/dashboard')
 
   const admin = createAdminClient()
@@ -39,62 +37,31 @@ export default async function AccountingPage({
   const initialStoreId = await resolveHQStoreId(stores, params.storeId)
   const initialCkStoreId = await resolveHQStoreId(ckStores, params.ckStoreId)
 
-  // 一次準備狀態卡與當日審核資料。切換店家時直接使用這份資料，避免每次點擊才重新查詢。
-  const [{ data: closings }, { data: ckRecords }, { data: holidays }, { data: receipts }] = await Promise.all([
+  // 首屏只準備所有據點的「狀態摘要」及目前選中店家的完整明細。
+  // 過去會把所有店家的單據、品項與照片一次送到瀏覽器，資料愈多首屏愈慢。
+  const [{ data: closings }, { data: ckRecords }, { data: holidays }, initialStoreDetail] = await Promise.all([
     admin.from('daily_closings')
-      .select(`
-        id, store_id, business_date, status, note, dispute_note, submitted_by, updated_at,
-        total_revenue, total_cost, total_expenses, expected_remit,
-        actual_remit, should_include_delivery, variance, remittance_adjustments, reserve_items,
-        cash_counts(large_expenses),
-        ck_delivery_photo_url, channel_photo_urls,
-        envelope_photo_url, void_invoice_photo_urls, note_photo_url, extra_photo_urls,
-        stores(id, name),
-        revenue_items(channel, account_name, gross_amount),
-        order_items(item_name, quantity, unit_price, total_amount),
-        handwrite_orders(order_number, amount, voided, void_reason),
-        expense_items(description, amount)
-      `)
+      .select('id, store_id, business_date, status, dispute_note, total_revenue, total_cost, total_expenses, expected_remit, actual_remit, should_include_delivery, variance, remittance_adjustments, reserve_items, cash_counts(large_expenses)')
       .eq('business_date', date),
     admin.from('ck_daily_records')
       .select('ck_store_id, status, hq_paid, ck_reimbursement_confirmed, updated_at')
       .eq('business_date', date),
     admin.from('store_holidays').select('store_id').eq('holiday_date', date),
-    admin.from('receipts')
-      .select('id, store_id, business_date, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
-      .eq('business_date', date)
-      .order('created_at'),
+    initialStoreId
+      ? fetchDailyClosingWithReceipts(initialStoreId, date)
+      : Promise.resolve({ success: true as const, closing: null, receipts: [], submitterName: null }),
   ])
 
   const holidayIds = new Set((holidays ?? []).map((h: any) => h.store_id as string))
-  // 帳目中心初次載入使用的是同一批 closing 資料；在此先補上送出者姓名，
-  // 避免明明已有 submitted_by，畫面卻因沒有查 user_profiles 而顯示「未記錄」。
-  const submitterIds = [...new Set((closings ?? []).map((closing: any) => closing.submitted_by).filter(Boolean))]
-  const submitterNames: Record<string, string> = {}
-  if (submitterIds.length > 0) {
-    const { data: submitters } = await admin
-      .from('user_profiles')
-      .select('user_id, name')
-      .in('user_id', submitterIds)
-    submitters?.forEach((submitter: any) => {
-      if (submitter.name) submitterNames[submitter.user_id] = submitter.name
-    })
+  const initialDetailByStore: Record<string, { closing: any; receipts: any[] }> = {}
+  if (initialStoreId && 'success' in initialStoreDetail) {
+    initialDetailByStore[initialStoreId] = {
+      closing: initialStoreDetail.closing
+        ? { ...initialStoreDetail.closing, submitter_name: initialStoreDetail.submitterName }
+        : null,
+      receipts: initialStoreDetail.receipts ?? [],
+    }
   }
-  const closingsWithSubmitter = (closings ?? []).map((closing: any) => ({
-    ...closing,
-    submitter_name: closing.submitted_by ? (submitterNames[closing.submitted_by] ?? null) : null,
-  }))
-  const receiptsByStore: Record<string, any[]> = {}
-  for (const receipt of (receipts ?? []) as any[]) {
-    if (!receiptsByStore[receipt.store_id]) receiptsByStore[receipt.store_id] = []
-    receiptsByStore[receipt.store_id].push(receipt)
-  }
-  const initialDetailByStore = Object.fromEntries(
-    closingsWithSubmitter.map((closing: any) => [closing.store_id, {
-      closing,
-      receipts: receiptsByStore[closing.store_id] ?? [],
-    }]),
-  )
 
   return (
     <AccountingClient
@@ -104,7 +71,7 @@ export default async function AccountingPage({
       initialStoreId={initialStoreId}
       initialCkStoreId={initialCkStoreId}
       initialTab={(params.tab as 'store' | 'ck') ?? 'store'}
-      closings={closingsWithSubmitter as any[]}
+      closings={(closings ?? []) as any[]}
       ckRecords={(ckRecords ?? []) as any[]}
       holidayStoreIds={[...holidayIds]}
       initialDetailByStore={initialDetailByStore}

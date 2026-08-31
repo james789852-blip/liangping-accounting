@@ -164,7 +164,7 @@ export default async function HistoryPage({
                 </label>
                 <button type="submit" className="rounded-xl text-sm font-semibold text-white lg:mt-[18px]" style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)', height: '40px', minWidth: '64px' }}>搜尋</button>
                 {(searchDate || searchMonth) && (
-                  <a href="/manager/history" className="rounded-xl text-sm font-medium flex items-center justify-center lg:mt-[18px]" style={{ border: '1.5px solid #e4e4e7', color: '#71717a', height: '40px', minWidth: '56px', background: 'white' }}>清除</a>
+                  <Link href="/manager/history" className="rounded-xl text-sm font-medium flex items-center justify-center lg:mt-[18px]" style={{ border: '1.5px solid #e4e4e7', color: '#71717a', height: '40px', minWidth: '56px', background: 'white' }}>清除</Link>
                 )}
               </div>
               <p className="mt-2 text-[11px]" style={{ color: '#a1a1aa' }}>單日與月份只能擇一查詢；可查單日帳目，也可選月份查看整月紀錄。</p>
@@ -297,11 +297,11 @@ export default async function HistoryPage({
                 搜尋
               </button>
               {(searchDate || searchMonth) && (
-                <a href="/manager/history"
+                <Link href="/manager/history"
                   className="rounded-xl text-sm font-medium flex items-center justify-center lg:mt-[18px]"
                   style={{ border: '1.5px solid #e4e4e7', color: '#71717a', height: '40px', minWidth: '56px', background: 'white' }}>
                   清除
-                </a>
+                </Link>
               )}
             </div>
             <p className="mt-2 text-[11px]" style={{ color: '#a1a1aa' }}>單日與月份只能擇一查詢；可查單日帳目，也可選月份查看整月紀錄。</p>

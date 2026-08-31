@@ -4,6 +4,10 @@ import { createClient } from '@/lib/supabase/server'
 import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getBusinessDate } from '@/lib/business-date'
+import {
+  shouldTrackStoreAccountingDate,
+  SYSTEM_OVERDUE_TRACKING_START,
+} from '@/lib/overdue-accounting'
 
 async function checkHqAuth() {
   const supabase = await createClient()
@@ -64,7 +68,7 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
 
   // 所有 active 店家 / 央廚
   const { data: allStores } = await admin.from('stores')
-    .select('id, name, type').eq('active', true)
+    .select('id, name, type, created_at').eq('active', true)
   const storeList = (allStores ?? []).filter((s: any) => s.type !== '央廚')
   const ckList = (allStores ?? []).filter((s: any) => s.type === '央廚')
 
@@ -90,6 +94,7 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
   const storeInDispute: HQAlerts['storeInDispute'] = []
   let storeCompleted = 0
   for (const s of storeList) {
+    if (!shouldTrackStoreAccountingDate(today, s.created_at)) continue
     if (closedTodayStores.has(s.id as string)) continue // 公休不算
     const status = closingByStore.get(s.id as string)
     if (!status) storeNotClosed.push({ id: s.id, name: s.name })
@@ -111,6 +116,7 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
   const ckHandoffPending: HQAlerts['ckHandoffPending'] = []
   let ckCompleted = 0
   for (const s of ckList) {
+    if (!shouldTrackStoreAccountingDate(today, s.created_at)) continue
     if (closedTodayStores.has(s.id as string)) continue // 央廚公休不算未送出
     const record = ckByStore.get(s.id as string)
     const status = record?.status as string | undefined
@@ -123,7 +129,7 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
 
   // 系統自 2026/07/12 起正式使用；只追蹤這天之後的歷史帳目，之前不提醒。
   // 公休日不列入「未送出」，但已建立的草稿／待審核／待點交仍會保留提醒。
-  const overdueStart = '2026-07-12'
+  const overdueStart = SYSTEM_OVERDUE_TRACKING_START
   const [{ data: recentClosings }, { data: recentCK }, { data: recentHolidays }] = await Promise.all([
     admin.from('daily_closings')
       .select('store_id, business_date, status, updated_at')
@@ -164,12 +170,14 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
     const date = addCalendarDays(overdueStart, offset)
     const ageDays = daysSince(date, today)
     for (const s of storeList) {
+      if (!shouldTrackStoreAccountingDate(date, s.created_at, overdueStart)) continue
       const key = `${s.id}|${date}`
       if (holidayKeys.has(key)) continue
       const status = overdueStatus(storeStatusByDate.get(key))
       if (status) overdue.push({ id: `store-${s.id}-${date}`, storeId: s.id, entity: 'store', name: s.name, date, ageDays, status })
     }
     for (const s of ckList) {
+      if (!shouldTrackStoreAccountingDate(date, s.created_at, overdueStart)) continue
       const key = `${s.id}|${date}`
       if (holidayKeys.has(key)) continue
       const record = ckRecordByDate.get(key)

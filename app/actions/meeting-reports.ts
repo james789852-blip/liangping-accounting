@@ -3,11 +3,20 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canAccessStore, getAuthContext, type AuthContext } from '@/lib/permissions'
 import { revalidatePath } from 'next/cache'
+import type { GoogleReviewEntry } from '@/lib/meeting-google-reviews'
+import type { ComplaintEntry } from '@/lib/meeting-complaints'
+import { isProgressConfirmedForReport, progressForTrackingStatus, trackingStatusForProgress } from '@/lib/meeting-action-progress'
+import { normalizeStoreDeliveryEntries, storeDeliveryMap, type StoreDeliveryEntry } from '@/lib/meeting-store-delivery'
+
+export type { GoogleReviewEntry } from '@/lib/meeting-google-reviews'
+export type { ComplaintEntry } from '@/lib/meeting-complaints'
+export type { StoreDeliveryEntry } from '@/lib/meeting-store-delivery'
 
 export interface GoogleReviewData {
   new_reviews: number
   average_rating: number | null
   summary: string
+  reviews: GoogleReviewEntry[]
 }
 
 export interface ComplaintData {
@@ -15,6 +24,7 @@ export interface ComplaintData {
   category: string
   description: string
   resolution: string
+  complaints: ComplaintEntry[]
 }
 
 export interface VendorIssue {
@@ -56,6 +66,7 @@ export interface MeetingReport {
   comparison_period_end: string
   meeting_date: string | null
   revenue_difference_note: string | null
+  store_delivery_data: StoreDeliveryEntry[]
   google_review_data: GoogleReviewData
   complaint_data: ComplaintData
   vendor_issues: VendorIssue[]
@@ -85,6 +96,8 @@ export interface ActionItemDetails {
   cause: string
   solution: string
   verification_method: string
+  progress_confirmed_report_id?: string
+  is_initial_tracking?: boolean
 }
 
 export interface ActionItem {
@@ -115,6 +128,8 @@ export interface RevenuePeriodSummary {
   uber: number
   panda: number
   online: number
+  storeDelivery: number
+  deliveryTotal: number
   operatingDays: number
   daily: DailyRevenueSummary[]
 }
@@ -126,6 +141,9 @@ export interface DailyRevenueSummary {
   uber: number
   panda: number
   online: number
+  storeDelivery: number
+  deliveryTotal: number
+  hasSystemData: boolean
   hasData: boolean
 }
 
@@ -134,6 +152,11 @@ export interface MeetingRevenueComparison {
   previous: RevenuePeriodSummary
   previousStart: string
   previousEnd: string
+  channels: {
+    uber: boolean
+    panda: boolean
+    online: boolean
+  }
 }
 
 interface ClosingRevenueRow {
@@ -151,6 +174,7 @@ type MeetingReportPatch = Partial<Pick<MeetingReport,
   | 'comparison_period_end'
   | 'meeting_date'
   | 'revenue_difference_note'
+  | 'store_delivery_data'
   | 'google_review_data'
   | 'complaint_data'
   | 'vendor_issues'
@@ -268,6 +292,17 @@ export async function createMeetingReport(storeId: string, requestedMeetingDate?
   const comparisonPeriodStart = addDays(comparisonPeriodEnd, -13)
 
   const admin = createAdminClient()
+  const { data: existingDraft, error: existingDraftError } = await admin.from('meeting_reports')
+    .select('id')
+    .eq('store_id', storeId)
+    .eq('meeting_date', meetingDate)
+    .eq('status', 'draft')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (existingDraftError) return { error: existingDraftError.message }
+  if (existingDraft) return { id: existingDraft.id as string }
+
   const { data, error } = await admin.from('meeting_reports').insert({
     store_id: storeId,
     period_start: periodStart,
@@ -300,6 +335,7 @@ export async function updateMeetingReport(reportId: string, patch: MeetingReport
   if (patch.comparison_period_start && !isIsoDate(patch.comparison_period_start)) return { error: '比較區間 B 起始日期格式不正確' as const }
   if (patch.comparison_period_end && !isIsoDate(patch.comparison_period_end)) return { error: '比較區間 B 結束日期格式不正確' as const }
   if (patch.meeting_date && !isIsoDate(patch.meeting_date)) return { error: '會議日期格式不正確' as const }
+  if (patch.store_delivery_data) patch.store_delivery_data = normalizeStoreDeliveryEntries(patch.store_delivery_data)
 
   const admin = createAdminClient()
   const { error } = await admin.from('meeting_reports').update(patch).eq('id', reportId)
@@ -318,10 +354,18 @@ export async function submitMeetingReport(reportId: string) {
 
   const admin = createAdminClient()
   const { report } = authorized
-  const { data: items, error } = await admin.from('meeting_action_items')
-    .select('*').eq('raised_in_report_id', reportId).order('order_index')
-  if (error) return { error: error.message }
-  const proposals = (items ?? []) as ActionItem[]
+  const [proposalResult, carryResult] = await Promise.all([
+    admin.from('meeting_action_items').select('*').eq('raised_in_report_id', reportId).order('order_index'),
+    admin.from('meeting_action_items').select('id, details')
+      .eq('store_id', report.store_id)
+      .neq('raised_in_report_id', reportId)
+      .or(`resolved_in_report_id.eq.${reportId},and(status.eq.open,resolved_in_report_id.is.null)`),
+  ])
+  if (proposalResult.error) return { error: proposalResult.error.message }
+  if (carryResult.error) return { error: carryResult.error.message }
+  const currentItems = (proposalResult.data ?? []) as ActionItem[]
+  const proposals = currentItems.filter(item => !item.details?.is_initial_tracking)
+  const initialTrackingItems = currentItems.filter(item => item.details?.is_initial_tracking)
 
   if (!(report.revenue_difference_note ?? '').trim() && !(report.operations_review_html ?? '').trim()) {
     return { error: '請先填寫營業額差異說明' as const }
@@ -330,15 +374,21 @@ export async function submitMeetingReport(reportId: string) {
 
   for (const item of proposals) {
     const details = item.details ?? ({} as ActionItemDetails)
-    if (!details.proposer_name?.trim() || !details.observation?.trim() || !details.solution?.trim() || !details.verification_method?.trim()) {
-      return { error: '每項提案都要填寫提出人、觀察問題、處理方式及成效確認方式' as const }
+    if (!details.proposer_name?.trim() || !details.observation?.trim() || !details.solution?.trim()) {
+      return { error: '每項提案都要填寫提出人、觀察到的問題及預計處理方式' as const }
     }
   }
 
-  const presenters = (report.presenters ?? []).filter(p => p.name?.trim() && (p.role === '店長' || p.role === '副店長'))
-  if (presenters.length === 0) return { error: '請至少加入一位店長或副店長作為本次報告人員' as const }
-  const missingPresenter = presenters.find(p => !proposals.some(item => item.details?.proposer_name?.trim() === p.name.trim()))
-  if (missingPresenter) return { error: `${missingPresenter.name} 尚未提出本次問題與解法` as const }
+  for (const item of initialTrackingItems) {
+    const details = item.details ?? ({} as ActionItemDetails)
+    if (!details.observation?.trim() || !details.solution?.trim()) {
+      return { error: '首次追蹤事項都要填寫觀察到的問題及預計處理方式' as const }
+    }
+  }
+
+  const unconfirmedCarry = [...(carryResult.data ?? []), ...initialTrackingItems]
+    .find(item => !isProgressConfirmedForReport(item.details, reportId))
+  if (unconfirmedCarry) return { error: '請先確認每一項上次改善追蹤的本次進度' as const }
 
   const { error: updateError } = await admin.from('meeting_reports')
     .update({ status: 'submitted', current_step: 5 }).eq('id', reportId)
@@ -406,6 +456,7 @@ export async function addActionItem(
       cause: details?.cause ?? '',
       solution: details?.solution ?? '',
       verification_method: details?.verification_method ?? '',
+      is_initial_tracking: details?.is_initial_tracking ?? false,
     },
     status: 'open',
     order_index: orderIndex,
@@ -434,6 +485,36 @@ export async function updateActionItemDescription(itemId: string, description: s
   return updateActionItem(itemId, { description })
 }
 
+export async function updateActionItemProgress(
+  itemId: string,
+  reportId: string,
+  progressPercent: number,
+) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' as const }
+  if (progressPercent < 0 || progressPercent > 100) return { error: '改善進度必須介於 0 到 100' as const }
+  const [itemAuthorized, reportAuthorized] = await Promise.all([
+    getAuthorizedItem(itemId, ctx),
+    getAuthorizedReport(reportId, ctx),
+  ])
+  if ('error' in itemAuthorized) return itemAuthorized
+  if ('error' in reportAuthorized) return reportAuthorized
+  if (itemAuthorized.item.store_id !== reportAuthorized.report.store_id) return { error: '店家資料不一致' as const }
+
+  const status = trackingStatusForProgress(progressPercent)
+  const completed = status === 'resolved'
+  const { error } = await createAdminClient().from('meeting_action_items').update({
+    progress_percent: progressPercent,
+    status,
+    resolved_in_report_id: completed ? reportId : null,
+    resolved_at: completed ? isoToday() : null,
+    details: { ...itemAuthorized.item.details, progress_confirmed_report_id: reportId },
+  }).eq('id', itemId)
+  if (error) return { error: error.message }
+  revalidatePath(`/manager/meeting-report/${reportId}`)
+  return { ok: true as const }
+}
+
 export async function resolveActionItem(
   itemId: string,
   resolvedInReportId: string,
@@ -450,7 +531,11 @@ export async function resolveActionItem(
   if ('error' in reportAuthorized) return reportAuthorized
   if (itemAuthorized.item.store_id !== reportAuthorized.report.store_id) return { error: '店家資料不一致' as const }
 
-  const patch: Record<string, unknown> = { status, resolution_note: note }
+  const patch: Record<string, unknown> = {
+    status,
+    resolution_note: note,
+    details: { ...itemAuthorized.item.details, progress_confirmed_report_id: resolvedInReportId },
+  }
   if (status === 'resolved' || status === 'dropped') {
     patch.resolved_in_report_id = resolvedInReportId
     patch.resolved_at = isoToday()
@@ -458,6 +543,7 @@ export async function resolveActionItem(
   } else {
     patch.resolved_in_report_id = null
     patch.resolved_at = null
+    patch.progress_percent = progressForTrackingStatus('open', itemAuthorized.item.progress_percent)
   }
   const admin = createAdminClient()
   const { error } = await admin.from('meeting_action_items').update(patch).eq('id', itemId)
@@ -486,6 +572,7 @@ export async function getMeetingRevenueComparison(
   periodEnd: string,
   requestedComparisonStart?: string,
   requestedComparisonEnd?: string,
+  requestedStoreDeliveryData: StoreDeliveryEntry[] = [],
 ) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' as const }
@@ -501,8 +588,16 @@ export async function getMeetingRevenueComparison(
     return { error: '比較區間 B 日期不正確' as const }
   }
   const admin = createAdminClient()
-  const { data: store } = await admin.from('stores').select('ichef_uber_linked').eq('id', storeId).single()
+  const deliveryByDate = storeDeliveryMap(requestedStoreDeliveryData)
+  const { data: store } = await admin.from('stores')
+    .select('ichef_uber_linked, uber_enabled, panda_enabled, online_enabled, online_cash_enabled')
+    .eq('id', storeId).single()
   const ichefUberLinked = Boolean(store?.ichef_uber_linked)
+  const channels = {
+    uber: Boolean(store?.uber_enabled || store?.ichef_uber_linked),
+    panda: Boolean(store?.panda_enabled),
+    online: Boolean(store?.online_enabled || store?.online_cash_enabled),
+  }
 
   async function fetchRange(start: string, end: string): Promise<RevenuePeriodSummary> {
     const { data, error } = await admin.from('daily_closings')
@@ -518,7 +613,7 @@ export async function getMeetingRevenueComparison(
       if (!current || (priority[row.status] ?? 0) >= (priority[current.status] ?? 0)) byDate.set(row.business_date, row)
     }
 
-    const result: RevenuePeriodSummary = { total: 0, onsite: 0, uber: 0, panda: 0, online: 0, operatingDays: 0, daily: [] }
+    const result: RevenuePeriodSummary = { total: 0, onsite: 0, uber: 0, panda: 0, online: 0, storeDelivery: 0, deliveryTotal: 0, operatingDays: 0, daily: [] }
     for (let date = start; date <= end; date = addDays(date, 1)) {
       const row = byDate.get(date)
       let pos = 0
@@ -542,17 +637,22 @@ export async function getMeetingRevenueComparison(
         ? Math.max(0, reportedTotal - uber - panda - online)
         : rawOnsite
       const channelTotal = onsite + uber + panda + online
-      const total = ichefUberLinked
+      const systemTotal = ichefUberLinked
         ? (reportedTotal || channelTotal)
         : Math.max(reportedTotal, channelTotal)
+      const storeDelivery = deliveryByDate.get(date) ?? 0
+      const deliveryTotal = uber + panda + storeDelivery
+      const total = systemTotal + storeDelivery
 
       result.total += total
       result.onsite += onsite
       result.uber += uber
       result.panda += panda
       result.online += online
-      if (row) result.operatingDays += 1
-      result.daily.push({ date, total, onsite, uber, panda, online, hasData: Boolean(row) })
+      result.storeDelivery += storeDelivery
+      result.deliveryTotal += deliveryTotal
+      if (row || storeDelivery > 0) result.operatingDays += 1
+      result.daily.push({ date, total, onsite, uber, panda, online, storeDelivery, deliveryTotal, hasSystemData: Boolean(row), hasData: Boolean(row) || storeDelivery > 0 })
     }
     return result
   }
@@ -562,7 +662,7 @@ export async function getMeetingRevenueComparison(
       fetchRange(periodStart, periodEnd),
       fetchRange(previousStart, previousEnd),
     ])
-    return { current, previous, previousStart, previousEnd } satisfies MeetingRevenueComparison
+    return { current, previous, previousStart, previousEnd, channels } satisfies MeetingRevenueComparison
   } catch (error) {
     return { error: error instanceof Error ? error.message : '營業額讀取失敗' }
   }
@@ -588,13 +688,15 @@ export async function generateOperationsReview(
   const { current, previous, previousStart, previousEnd } = result
   const html = `
 <h2>主要營運回顧</h2>
-<p><strong>比較區間 A：</strong>${periodStart} ~ ${periodEnd}<br/><strong>比較區間 B：</strong>${previousStart} ~ ${previousEnd}</p>
+<p><strong>本期：</strong>${periodStart} ~ ${periodEnd}<br/><strong>前期：</strong>${previousStart} ~ ${previousEnd}</p>
 <ul>
-  <li>總營業額：A <strong>$${fmt(current.total)}</strong>，B $${fmt(previous.total)}（${pct(current.total, previous.total)}）</li>
-  <li>現場：A $${fmt(current.onsite)}，B $${fmt(previous.onsite)}（${pct(current.onsite, previous.onsite)}）</li>
-  <li>Uber Eats：A $${fmt(current.uber)}，B $${fmt(previous.uber)}（${pct(current.uber, previous.uber)}）</li>
-  <li>foodpanda：A $${fmt(current.panda)}，B $${fmt(previous.panda)}（${pct(current.panda, previous.panda)}）</li>
-  <li>線上點餐：A $${fmt(current.online)}，B $${fmt(previous.online)}（${pct(current.online, previous.online)}）</li>
+  <li>總營業額：本期 <strong>$${fmt(current.total)}</strong>，前期 $${fmt(previous.total)}（${pct(current.total, previous.total)}）</li>
+  <li>現場：本期 $${fmt(current.onsite)}，前期 $${fmt(previous.onsite)}（${pct(current.onsite, previous.onsite)}）</li>
+  ${result.channels.uber ? `<li>優步外送：本期 $${fmt(current.uber)}，前期 $${fmt(previous.uber)}（${pct(current.uber, previous.uber)}）</li>` : ''}
+  ${result.channels.panda ? `<li>熊貓外送：本期 $${fmt(current.panda)}，前期 $${fmt(previous.panda)}（${pct(current.panda, previous.panda)}）</li>` : ''}
+  <li>店內外送：本期 $${fmt(current.storeDelivery)}，前期 $${fmt(previous.storeDelivery)}（${pct(current.storeDelivery, previous.storeDelivery)}）</li>
+  <li>外送合計：本期 $${fmt(current.deliveryTotal)}，前期 $${fmt(previous.deliveryTotal)}（${pct(current.deliveryTotal, previous.deliveryTotal)}）</li>
+  ${result.channels.online ? `<li>線上點餐：本期 $${fmt(current.online)}，前期 $${fmt(previous.online)}（${pct(current.online, previous.online)}）</li>` : ''}
 </ul>`.trim()
   return { html, cur: current, prev: previous, prevStart: previousStart, prevEnd: previousEnd }
 }

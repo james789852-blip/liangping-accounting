@@ -5,11 +5,35 @@ import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-// Google Sheets 同步功能已停用（2026-07）
-// 保留 import 註解讓 refactor 時容易找回：syncClosingToSheets, syncMonthToSheets from '@/lib/google-sheets'
+import { syncClosingToSheets, syncMonthToSheets } from '@/lib/google-sheets'
 import { logAudit } from '@/lib/audit'
 import { getAuthContext, canAccessStore, getClosingMeta } from '@/lib/permissions'
 import { canReviewClosings } from '@/lib/user-permissions'
+
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
+
+async function syncVerifiedClosingToSheets(input: {
+  closingId: string
+  storeId: string
+  businessDate: string
+  userId: string
+}) {
+  try {
+    await syncClosingToSheets(input.closingId)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('[syncVerifiedClosingToSheets] failed:', error)
+    await logAudit({
+      eventType: 'sheets_sync_failed',
+      severity: 'warn',
+      storeId: input.storeId,
+      userId: input.userId,
+      closingId: input.closingId,
+      description: `${input.businessDate} 試算表同步失敗`,
+      metadata: { error: message },
+    })
+  }
+}
 
 interface CashCountsPayload {
   bills_1000: number; bills_500: number; bills_100: number
@@ -197,11 +221,21 @@ export async function verifyClosing(closingId: string) {
     description: `${profile.name ?? user.email ?? '未知'} 審核 ${closing.business_date} 帳目`,
   })
 
-  // Google Sheets sync 已停用
+  // 同步失敗不回滾審核；錯誤會記錄在操作軌跡，供總公司後續手動重同步。
+  await syncVerifiedClosingToSheets({
+    closingId,
+    storeId: closing.store_id,
+    businessDate: closing.business_date,
+    userId: user.id,
+  })
 
   revalidatePath('/hq/reviews')
   revalidatePath('/hq/closings')
+  revalidatePath('/hq/accounting')
   revalidatePath('/hq/audit')
+  revalidatePath('/manager/dashboard')
+  revalidatePath('/manager/history')
+  revalidatePath(`/manager/history/${closingId}`)
   return { success: true }
 }
 
@@ -247,8 +281,26 @@ export async function verifyClosingsBatch(closingIds: string[]) {
     })
   }))
 
+  // 一次核准可能包含同店同月份的多筆帳目；每個月份只需重建一次分頁。
+  const monthlySyncTargets = new Map<string, (typeof closings)[number]>()
+  updatedIds.forEach(id => {
+    const closing = closings.find(item => item.id === id)
+    if (!closing) return
+    const month = String(closing.business_date).slice(0, 7)
+    monthlySyncTargets.set(`${closing.store_id}:${month}`, closing)
+  })
+  await Promise.all(Array.from(monthlySyncTargets.values()).map(closing =>
+    syncVerifiedClosingToSheets({
+      closingId: closing.id,
+      storeId: closing.store_id,
+      businessDate: closing.business_date,
+      userId: user.id,
+    }),
+  ))
+
   revalidatePath('/hq/reviews')
   revalidatePath('/hq/closings')
+  revalidatePath('/hq/accounting')
   revalidatePath('/hq/audit')
   return {
     success: true,
@@ -380,6 +432,9 @@ export async function disputeClosing(closingId: string, note: string) {
   revalidatePath('/hq/reviews')
   revalidatePath('/hq/closings')
   revalidatePath('/hq/audit')
+  revalidatePath('/manager/dashboard')
+  revalidatePath('/manager/history')
+  revalidatePath(`/manager/history/${closingId}`)
   return { success: true }
 }
 
@@ -481,6 +536,11 @@ export async function submitClosing(closingId: string) {
     metadata: { variance: c.variance, total_revenue: c.total_revenue, previous_status: meta.status },
   })
 
+  revalidatePath('/manager/dashboard')
+  revalidatePath('/manager/history')
+  revalidatePath(`/manager/history/${closingId}`)
+  revalidatePath('/hq/reviews')
+  revalidatePath('/hq/closings')
   return { success: true }
 }
 
@@ -581,7 +641,34 @@ export async function savePettyCounts(
   return { success: true as const, updatedAt: (updated.updated_at as string | null) ?? nextUpdatedAt }
 }
 
-// reSyncMonthToSheets 已停用 — Google Sheets 同步功能移除
-export async function reSyncMonthToSheets(_storeId: string, _month: string) {
-  return { error: 'Google Sheets 同步已停用' as const }
+export async function reSyncMonthToSheets(storeId: string, month: string) {
+  const user = await getVerifiedUser()
+  if (!user) return { error: '未登入' }
+  if (!storeId?.trim()) return { error: '請選擇店家' }
+  if (!MONTH_PATTERN.test(month)) return { error: '月份格式錯誤' }
+
+  const supabase = await createClient()
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('*')
+    .eq('user_id', user.id)
+    .single()
+  if (!canReviewClosings(profile)) return { error: '權限不足' }
+
+  try {
+    await syncMonthToSheets(storeId, month)
+    return { success: true as const }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('[reSyncMonthToSheets] failed:', error)
+    await logAudit({
+      eventType: 'sheets_sync_failed',
+      severity: 'warn',
+      storeId,
+      userId: user.id,
+      description: `${month} 試算表手動同步失敗`,
+      metadata: { error: message, month },
+    })
+    return { error: message }
+  }
 }

@@ -2,14 +2,55 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Loader2, Banknote, Camera, X, Upload, RotateCcw, Trash2 } from 'lucide-react'
-import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord, saveCKHQReimbursementAdjustment, saveCKHQReimbursementPhotoDraft } from '@/app/actions/ck'
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Loader2, Banknote, Camera, X, Upload, RotateCcw, Trash2, FileSpreadsheet } from 'lucide-react'
+import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord, saveCKHQReimbursementAdjustment, saveCKHQReimbursementPhotoDraft, syncCKMonthToSheets } from '@/app/actions/ck'
 import { uploadToStorage } from '@/app/actions/upload'
 import { toast } from 'sonner'
 import { centralKitchenPhotoPath } from '@/lib/storage-paths'
 import SafePhotoImage from './safe-photo-image'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
+
+function SyncSection({ ckStoreId, initialMonth }: { ckStoreId: string; initialMonth: string }) {
+  const [month, setMonth] = useState(initialMonth)
+  const [syncing, setSyncing] = useState(false)
+
+  async function handleSync() {
+    setSyncing(true)
+    try {
+      const result = await syncCKMonthToSheets(ckStoreId, month)
+      if ('error' in result && result.error) toast.error('同步失敗：' + result.error)
+      else toast.success(`已同步 ${month} 到 Google 試算表`)
+    } catch (error) {
+      toast.error('同步失敗：' + (error instanceof Error ? error.message : '未知錯誤'))
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  return (
+    <div>
+      <p className="text-xs font-semibold mb-2" style={{ color: '#a1a1aa' }}>同步試算表</p>
+      <div className="rounded-2xl p-4" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
+        <div className="flex items-center gap-2">
+          <input type="month" value={month} onChange={event => setMonth(event.target.value)}
+            className="flex-1 text-sm px-3 py-2 rounded-xl outline-none border transition-colors"
+            style={{ border: '1.5px solid #e4e4e7', background: 'white', color: '#18181b', fontFamily: 'inherit' }}
+          />
+          <button type="button" onClick={handleSync} disabled={syncing || !month}
+            className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl text-white shrink-0 transition-opacity disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
+            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+            同步試算表
+          </button>
+        </div>
+        <p className="text-[11px] mt-2" style={{ color: '#a1a1aa' }}>
+          將該月份的央廚 Excel 內容寫入店家設定中綁定的 Google 試算表。
+        </p>
+      </div>
+    </div>
+  )
+}
 
 // 依店家管理設定，計算要從央廚補款／點交金額扣除的體系外收入。
 function deductibleExternalRevenue(d: Pick<CKStoreData, 'externalStores' | 'externalOrders'>) {
@@ -534,6 +575,12 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
       && store.ck_amount != null
       && store.store_amount !== store.ck_amount,
   )
+  const memberStoreInputTotal = d.memberStores.reduce((sum, store) => sum + (store.store_amount ?? 0), 0)
+  const memberCKInputTotal = d.memberStores.reduce((sum, store) => sum + (store.ck_amount ?? 0), 0)
+  const memberTotalsComparable = d.memberStores.every(
+    store => store.store_amount != null && store.ck_amount != null,
+  )
+  const memberTotalDiff = memberCKInputTotal - memberStoreInputTotal
 
   return (
     <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
@@ -638,58 +685,60 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
               {/* 體系內叫貨 */}
               {d.memberStores.length > 0 && (
                 <Section title="體系內叫貨">
-                  <div className="grid grid-cols-[minmax(0,1fr)_52px_auto_auto_auto] gap-2 px-3 py-2 text-[10px] font-bold"
-                    style={{ color: '#a1a1aa', borderBottom: '1px solid #f4f4f5' }}>
-                    <span>店家</span>
-                    <span className="text-center">配送單</span>
-                    <span className="text-right">店面輸入</span>
-                    <span className="text-right">央廚輸入</span>
-                    <span className="text-right">差額</span>
-                  </div>
-                  {d.memberStores.map(s => {
-                    const comparable = s.store_amount != null && s.ck_amount != null
-                    const diff = comparable ? s.ck_amount! - s.store_amount! : null
-                    const mismatched = diff != null && diff !== 0
-                    return (
-                      <div key={s.store_id}
-                        className="grid grid-cols-[minmax(0,1fr)_52px_auto_auto_auto] items-center gap-2 px-3 py-2.5 text-sm"
-                        style={{ background: mismatched ? '#fef2f2' : undefined, borderBottom: '1px solid #f4f4f5' }}>
-                        <span className="font-medium flex items-center gap-1.5" style={{ color: '#18181b' }}>
-                          {mismatched && <AlertTriangle className="h-3.5 w-3.5 shrink-0" style={{ color: '#dc2626' }} />}
-                          {s.store_name}
-                        </span>
-                        <div className="flex justify-center">
-                          {s.deliveryPhotoUrls[0] ? (
-                            <button type="button" onClick={() => setLightboxUrl(s.deliveryPhotoUrls[0])}
-                              className="relative h-10 w-10 overflow-hidden rounded-lg" style={{ border: '1px solid #e4e4e7' }}>
-                              <SafePhotoImage src={s.deliveryPhotoUrls[0]} alt={`${s.store_name} 配送單`} thumb width={120} height={120} className="h-full w-full object-cover" />
-                              {s.deliveryPhotoUrls.length > 1 && <span className="absolute bottom-0 right-0 px-1 text-[9px] font-bold" style={{ background: 'rgba(0,0,0,.65)', color: 'white' }}>+{s.deliveryPhotoUrls.length - 1}</span>}
-                            </button>
-                          ) : <span className="text-[10px] font-bold" style={{ color: s.ck_amount ? '#dc2626' : '#a1a1aa' }}>無照片</span>}
-                        </div>
-                        <span className="font-semibold tabular-nums text-right" style={{ color: s.store_amount == null ? '#a1a1aa' : '#18181b' }}>
-                          {s.store_amount == null ? '未輸入' : `$${fmt(s.store_amount)}`}
-                        </span>
-                        <span className="font-semibold tabular-nums text-right" style={{ color: s.ck_amount == null ? '#a1a1aa' : '#18181b' }}>
-                          {s.ck_amount == null ? '未輸入' : `$${fmt(s.ck_amount)}`}
-                        </span>
-                        <span className="font-bold tabular-nums text-right" style={{ color: mismatched ? '#dc2626' : comparable ? '#059669' : '#a1a1aa' }}>
-                          {diff == null ? '待核對' : diff === 0 ? '相符' : `${diff > 0 ? '+' : ''}${fmt(diff)}`}
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[720px]">
+                      <div className="grid grid-cols-[minmax(180px,1fr)_84px_136px_136px_92px] items-center px-3 py-2 text-[11px] font-bold"
+                        style={{ color: '#71717a', borderBottom: '1px solid #e4e4e7', background: '#fafafa' }}>
+                        <span>店家</span>
+                        <span className="text-center">配送單</span>
+                        <span className="rounded-md px-2 py-1 text-right" style={{ color: '#1d4ed8', background: '#eff6ff' }}>店面輸入</span>
+                        <span className="rounded-md px-2 py-1 text-right" style={{ color: '#c2410c', background: '#fff7ed' }}>央廚輸入</span>
+                        <span className="px-2 text-right">差額</span>
+                      </div>
+                      {d.memberStores.map(s => {
+                        const comparable = s.store_amount != null && s.ck_amount != null
+                        const diff = comparable ? s.ck_amount! - s.store_amount! : null
+                        const mismatched = diff != null && diff !== 0
+                        return (
+                          <div key={s.store_id}
+                            className="grid grid-cols-[minmax(180px,1fr)_84px_136px_136px_92px] items-center px-3 py-2.5 text-sm"
+                            style={{ background: mismatched ? '#fef2f2' : undefined, borderBottom: '1px solid #f4f4f5' }}>
+                            <span className="font-medium flex items-center gap-1.5" style={{ color: '#18181b' }}>
+                              {mismatched && <AlertTriangle className="h-3.5 w-3.5 shrink-0" style={{ color: '#dc2626' }} />}
+                              {s.store_name}
+                            </span>
+                            <div className="flex justify-center">
+                              {s.deliveryPhotoUrls[0] ? (
+                                <button type="button" onClick={() => setLightboxUrl(s.deliveryPhotoUrls[0])}
+                                  className="relative h-10 w-10 overflow-hidden rounded-lg" style={{ border: '1px solid #e4e4e7' }}>
+                                  <SafePhotoImage src={s.deliveryPhotoUrls[0]} alt={`${s.store_name} 配送單`} thumb width={120} height={120} className="h-full w-full object-cover" />
+                                  {s.deliveryPhotoUrls.length > 1 && <span className="absolute bottom-0 right-0 px-1 text-[9px] font-bold" style={{ background: 'rgba(0,0,0,.65)', color: 'white' }}>+{s.deliveryPhotoUrls.length - 1}</span>}
+                                </button>
+                              ) : <span className="text-[10px] font-bold" style={{ color: s.ck_amount ? '#dc2626' : '#a1a1aa' }}>無照片</span>}
+                            </div>
+                            <span className="px-2 font-bold tabular-nums text-right" style={{ color: s.store_amount == null ? '#a1a1aa' : '#1d4ed8' }}>
+                              {s.store_amount == null ? '未輸入' : `$${fmt(s.store_amount)}`}
+                            </span>
+                            <span className="px-2 font-bold tabular-nums text-right" style={{ color: s.ck_amount == null ? '#a1a1aa' : '#c2410c' }}>
+                              {s.ck_amount == null ? '未輸入' : `$${fmt(s.ck_amount)}`}
+                            </span>
+                            <span className="px-2 font-bold tabular-nums text-right" style={{ color: mismatched ? '#dc2626' : comparable ? '#059669' : '#a1a1aa' }}>
+                              {diff == null ? '待核對' : diff === 0 ? '相符' : `${diff > 0 ? '+' : ''}${fmt(diff)}`}
+                            </span>
+                          </div>
+                        )
+                      })}
+                      <div className="grid grid-cols-[minmax(180px,1fr)_84px_136px_136px_92px] items-center px-3 py-2.5"
+                        style={{ background: '#fff7ed', borderTop: '1px solid #fed7aa' }}>
+                        <span className="text-xs font-bold" style={{ color: '#9a3412' }}>體系內合計</span>
+                        <span />
+                        <span className="px-2 text-sm font-bold tabular-nums text-right" style={{ color: '#1d4ed8' }}>${fmt(memberStoreInputTotal)}</span>
+                        <span className="px-2 text-sm font-bold tabular-nums text-right" style={{ color: '#c2410c' }}>${fmt(memberCKInputTotal)}</span>
+                        <span className="px-2 text-sm font-bold tabular-nums text-right" style={{ color: !memberTotalsComparable ? '#a1a1aa' : memberTotalDiff === 0 ? '#059669' : '#dc2626' }}>
+                          {!memberTotalsComparable ? '待核對' : memberTotalDiff === 0 ? '相符' : `${memberTotalDiff > 0 ? '+' : ''}${fmt(memberTotalDiff)}`}
                         </span>
                       </div>
-                    )
-                  })}
-                  <div className="grid grid-cols-[minmax(0,1fr)_52px_auto_auto_auto] items-center gap-2 px-3 py-2.5"
-                    style={{ background: '#fff7ed', borderTop: '1px solid #fed7aa' }}>
-                    <span className="text-xs font-bold" style={{ color: '#9a3412' }}>體系內合計</span>
-                    <span />
-                    <span className="text-sm font-bold tabular-nums text-right">
-                      ${fmt(d.memberStores.reduce((sum, store) => sum + (store.store_amount ?? 0), 0))}
-                    </span>
-                    <span className="text-sm font-bold tabular-nums text-right">
-                      ${fmt(d.memberStores.reduce((sum, store) => sum + (store.ck_amount ?? 0), 0))}
-                    </span>
-                    <span />
+                    </div>
                   </div>
                 </Section>
               )}
@@ -841,11 +890,12 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                 <ReviewActions ckStoreId={d.ckStore.id} date={date} status={displayStatus} />
               )}
 
-              {/* 匯出 Excel */}
+              <SyncSection key={`${d.ckStore.id}:${date.slice(0, 7)}`} ckStoreId={d.ckStore.id} initialMonth={date.slice(0, 7)} />
             </>
           ) : (
             <>
               <p className="text-sm text-center py-4" style={{ color: '#a1a1aa' }}>今日尚未填寫帳目</p>
+              <SyncSection key={`${d.ckStore.id}:${date.slice(0, 7)}`} ckStoreId={d.ckStore.id} initialMonth={date.slice(0, 7)} />
             </>
           )}
         </div>
@@ -999,21 +1049,21 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
             <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fafafa', border: '1px solid #e4e4e7' }}>
               <p className="text-xs font-bold" style={{ color: '#52525b' }}>央廚輸入內容</p>
               {step.kind === 'member' && (
-                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 text-[10px] font-bold" style={{ color: '#a1a1aa' }}>
-                  <span>店家</span><span>店面輸入</span><span>央廚輸入</span><span>差額</span>
+                <div className="grid grid-cols-[minmax(80px,1fr)_100px_100px_70px] items-center gap-1 px-3 text-[10px] font-bold" style={{ color: '#71717a' }}>
+                  <span>店家</span><span className="text-right" style={{ color: '#1d4ed8' }}>店面輸入</span><span className="text-right" style={{ color: '#c2410c' }}>央廚輸入</span><span className="text-right">差額</span>
                 </div>
               )}
               {step.rows.map((row, i) => step.kind === 'member' ? (
-                <div key={i} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 py-2.5 px-3"
+                <div key={i} className="grid grid-cols-[minmax(80px,1fr)_100px_100px_70px] items-center gap-1 py-2.5 px-3"
                   style={{ background: row.storeAmount != null && row.amount != null && row.storeAmount !== row.amount ? '#fef2f2' : undefined, borderBottom: '1px solid #f4f4f5' }}>
                   <span className="text-sm font-medium">{row.label}</span>
-                  <span className="text-sm font-bold tabular-nums" style={{ color: row.storeAmount == null ? '#a1a1aa' : '#18181b' }}>
+                  <span className="text-sm font-bold tabular-nums text-right" style={{ color: row.storeAmount == null ? '#a1a1aa' : '#1d4ed8' }}>
                     {row.storeAmount == null ? '未輸入' : `$${fmt(row.storeAmount)}`}
                   </span>
-                  <span className="text-sm font-bold tabular-nums" style={{ color: row.amount == null ? '#a1a1aa' : '#18181b' }}>
+                  <span className="text-sm font-bold tabular-nums text-right" style={{ color: row.amount == null ? '#a1a1aa' : '#c2410c' }}>
                     {row.amount == null ? '未輸入' : `$${fmt(row.amount)}`}
                   </span>
-                  <span className="text-sm font-bold tabular-nums" style={{ color: row.storeAmount == null || row.amount == null ? '#a1a1aa' : row.storeAmount === row.amount ? '#059669' : '#dc2626' }}>
+                  <span className="text-sm font-bold tabular-nums text-right" style={{ color: row.storeAmount == null || row.amount == null ? '#a1a1aa' : row.storeAmount === row.amount ? '#059669' : '#dc2626' }}>
                     {row.storeAmount == null || row.amount == null
                       ? '待核對'
                       : row.storeAmount === row.amount
@@ -1023,11 +1073,11 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
                 </div>
               ) : <Row key={i} left={row.label} right={row.amount !== undefined ? `$${fmt(row.amount)}` : row.value || '—'} />)}
               {step.total !== undefined && (step.kind === 'member' ? (
-                <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 py-2.5 px-3" style={{ background: '#fff7ed', borderTop: '1px solid #fed7aa' }}>
+                <div className="grid grid-cols-[minmax(80px,1fr)_100px_100px_70px] items-center gap-1 py-2.5 px-3" style={{ background: '#fff7ed', borderTop: '1px solid #fed7aa' }}>
                   <span className="text-xs font-bold" style={{ color: '#9a3412' }}>步驟合計</span>
-                  <span className="text-sm font-bold tabular-nums">${fmt(step.managerTotal ?? 0)}</span>
-                  <span className="text-sm font-bold tabular-nums" style={{ color: '#92400e' }}>${fmt(step.total)}</span>
-                  <span className="text-sm font-bold tabular-nums" style={{ color: step.managerTotal === step.total ? '#059669' : '#dc2626' }}>
+                  <span className="text-sm font-bold tabular-nums text-right" style={{ color: '#1d4ed8' }}>${fmt(step.managerTotal ?? 0)}</span>
+                  <span className="text-sm font-bold tabular-nums text-right" style={{ color: '#c2410c' }}>${fmt(step.total)}</span>
+                  <span className="text-sm font-bold tabular-nums text-right" style={{ color: step.managerTotal === step.total ? '#059669' : '#dc2626' }}>
                     {step.managerTotal === step.total ? '相符' : `${step.total - (step.managerTotal ?? 0) > 0 ? '+' : ''}${fmt(step.total - (step.managerTotal ?? 0))}`}
                   </span>
                 </div>

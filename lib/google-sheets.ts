@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { google } from 'googleapis'
 import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -781,6 +783,16 @@ export async function syncMonthToSheets(storeId: string, month: string): Promise
   const [yearStr, monthStr] = month.split('-')
   const firstDay = `${month}-01`
   const lastDay = getMonthLastDay(parseInt(yearStr), parseInt(monthStr))
+
+  const { data: store } = await admin
+    .from('stores')
+    .select('google_sheets_id')
+    .eq('id', storeId)
+    .maybeSingle()
+  if (!store) throw new Error('找不到店家')
+  if (!store.google_sheets_id) {
+    throw new Error('此店家尚未綁定 Google 試算表（請至「店家管理」設定試算表 ID）')
+  }
 
   const { data: closing } = await admin
     .from('daily_closings')

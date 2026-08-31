@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect, useMemo, useRef, createContext, useContext } from 'react'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import {
-  deleteItemMapping, updateItemMapping, saveItemMapping, reorderItemMappings, setItemDocOverride, reorderStoreVendorGroups,
+  createStoreVendorGroup, deleteItemMapping, updateItemMapping, saveItemMapping, reorderItemMappings, setItemDocOverride, reorderStoreVendorGroups, setStoreVendorGroupMode,
 } from '@/app/actions/item-mappings'
 import { setManagerStore } from '@/app/actions/store-select'
 import { useRouter } from 'next/navigation'
@@ -18,6 +18,13 @@ import {
   SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import {
+  isMiscVendorGroup,
+  MISC_VENDOR_GROUP,
+  normalizeVendorGroupName,
+  RECEIPT_VENDOR_GROUP_EXCLUDED_NAMES,
+} from '@/lib/linked-receipt-category'
+import { isVendorOnlyMapping } from '@/lib/vendor-only-mapping'
 
 interface Mapping {
   id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; sort_order?: number; vg_sort_order?: number
@@ -55,12 +62,16 @@ export default function ItemMappingsClient({
   vendorGroups = [],
   selectedStoreId: initStoreId,
   storeMappingCounts = {},
+  linkedCategoryNamesByStore = {},
+  vendorChildNamesByStore = {},
 }: {
   mappings: Mapping[]
   stores: { id: string; name: string }[]
   vendorGroups?: { id: string; name: string; sort_order: number; doc_type?: string | null }[]
   selectedStoreId: string
   storeMappingCounts?: Record<string, number>
+  linkedCategoryNamesByStore?: Record<string, string[]>
+  vendorChildNamesByStore?: Record<string, string[]>
 }) {
   const [mappings, setMappings] = useState(initial)
   const [activeStoreId, setActiveStoreId] = useState(initStoreId)
@@ -84,6 +95,8 @@ export default function ItemMappingsClient({
   const [inlineAddCat, setInlineAddCat] = useState('食材')
   const [inlineAddDocType, setInlineAddDocType] = useState('')
   const [newVgName, setNewVgName] = useState('')
+  const [newVgMode, setNewVgMode] = useState<'vendor' | 'direct'>('vendor')
+  const [newVgCategory, setNewVgCategory] = useState('雜項')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const storeTabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
@@ -92,7 +105,8 @@ export default function ItemMappingsClient({
   // 用 state 保存 vendorGroups，允許 optimistic update
   const [vgsState, setVgsState] = useState(vendorGroups)
   // 剛新增、尚無品項的空類別（不在 displayMappings 裡），用來讓 UI 立即顯示空分類
-  const [pendingVgs, setPendingVgs] = useState<string[]>([])
+  const [pendingVgsByStore, setPendingVgsByStore] = useState<Record<string, string[]>>({})
+  const [pendingDirectVgsByStore, setPendingDirectVgsByStore] = useState<Record<string, string[]>>({})
 
   // Sync from server after direct entry or router.refresh()
   useEffect(() => {
@@ -121,6 +135,8 @@ export default function ItemMappingsClient({
     setInlineAddCat('食材')
     setInlineAddDocType('')
     setNewVgName('')
+    setNewVgMode('vendor')
+    setNewVgCategory('雜項')
   }
 
   useEffect(() => {
@@ -168,12 +184,12 @@ export default function ItemMappingsClient({
     // 品項排序
     const activeItem = displayMappings.find(m => m.id === active.id)
     if (!activeItem) return
-    const activeVg = activeItem.vendor_group ?? '未分類'
+    const activeVg = normalizeVendorGroupName(activeItem.vendor_group)
     // 判斷 over 是別的 item 還是 vg group header
     const overIsVg = String(over.id).startsWith('vg-')
     const overVg = overIsVg
       ? String(over.id).slice(3)
-      : (displayMappings.find(m => m.id === over.id)?.vendor_group ?? '未分類')
+      : normalizeVendorGroupName(displayMappings.find(m => m.id === over.id)?.vendor_group)
 
     // 跨 vg：把 item 的 vendor_group 改為 overVg
     if (activeVg !== overVg) {
@@ -202,44 +218,63 @@ export default function ItemMappingsClient({
   }
 
   // 各店完全獨立：一次整理目前店家的顯示資料，避免 80+ 列在每次互動時反覆掃描。
-  const { displayMappings, grouped, groupOrder, groupDocMap, taxItemOptionsByGroup } = useMemo(() => {
+  const { displayMappings, grouped, groupOrder, groupDocMap, groupCategoryMap, taxItemOptionsByGroup } = useMemo(() => {
     const activeMappings = mappings
       .filter(mapping => mapping.store_id === activeStoreId)
       .sort((a, b) => (a.sort_order ?? 999999) - (b.sort_order ?? 999999))
-    const nextGrouped = activeMappings.reduce<Record<string, Mapping[]>>((acc, mapping) => {
-      const vendorGroup = mapping.vendor_group?.trim() || '未分類'
+    const visibleMappings = activeMappings.filter(mapping => !isVendorOnlyMapping(mapping))
+    const allMappingsByGroup = activeMappings.reduce<Record<string, Mapping[]>>((acc, mapping) => {
+      const vendorGroup = normalizeVendorGroupName(mapping.vendor_group)
       if (!acc[vendorGroup]) acc[vendorGroup] = []
       acc[vendorGroup].push(mapping)
       return acc
     }, {})
-    for (const vendorGroup of pendingVgs) {
+    const nextGrouped = activeMappings.reduce<Record<string, Mapping[]>>((acc, mapping) => {
+      const vendorGroup = normalizeVendorGroupName(mapping.vendor_group)
+      if (!acc[vendorGroup]) acc[vendorGroup] = []
+      if (!isVendorOnlyMapping(mapping)) acc[vendorGroup].push(mapping)
+      return acc
+    }, {})
+    for (const vendorGroup of pendingVgsByStore[activeStoreId] ?? []) {
+      if (!nextGrouped[vendorGroup]) nextGrouped[vendorGroup] = []
+    }
+    for (const vendorGroup of vendorChildNamesByStore[activeStoreId] ?? []) {
+      if (!nextGrouped[vendorGroup]) nextGrouped[vendorGroup] = []
+    }
+    for (const vendorGroup of linkedCategoryNamesByStore[activeStoreId] ?? []) {
       if (!nextGrouped[vendorGroup]) nextGrouped[vendorGroup] = []
     }
 
     const groupSortMap = new Map<string, number>()
     const nextGroupDocMap = new Map<string, string | null>()
+    const nextGroupCategoryMap = new Map<string, string | null>()
     const nextTaxItemOptions = new Map<string, string[]>()
     for (const mapping of activeMappings) {
-      const vendorGroup = mapping.vendor_group?.trim() || '未分類'
+      const vendorGroup = normalizeVendorGroupName(mapping.vendor_group)
       const currentSort = groupSortMap.get(vendorGroup)
       const nextSort = mapping.vg_sort_order ?? 99999
       groupSortMap.set(vendorGroup, currentSort == null ? nextSort : Math.min(currentSort, nextSort))
-      if (!mapping.is_tax_addon) {
+      if (!mapping.is_tax_addon && !isVendorOnlyMapping(mapping)) {
         const options = nextTaxItemOptions.get(vendorGroup) ?? []
         options.push(mapping.item_name)
         nextTaxItemOptions.set(vendorGroup, options)
       }
     }
     for (const vendorGroup of Object.keys(nextGrouped)) {
-      const groupItems = nextGrouped[vendorGroup] ?? []
+      const groupItems = allMappingsByGroup[vendorGroup] ?? []
       const docs = new Set(groupItems.map(mapping => mapping.doc_type_override ?? '').filter(Boolean))
       const allItemsUseSameDoc = groupItems.length > 0
         && docs.size === 1
         && groupItems.every(mapping => !!mapping.doc_type_override)
       nextGroupDocMap.set(vendorGroup, allItemsUseSameDoc ? [...docs][0] : null)
+      const categories = new Set(groupItems
+        .filter(mapping => !mapping.is_tax_addon)
+        .map(mapping => mapping.item_category)
+        .filter(Boolean))
+      nextGroupCategoryMap.set(vendorGroup, categories.size === 1 ? [...categories][0] : null)
     }
     const nextGroupOrder = Object.keys(nextGrouped).sort((a, b) => {
-      const rank = (group: string) => group === '未分類' ? 2 : DOC_TYPES.has(group) ? 1 : 0
+      const rank = (group: string) => isMiscVendorGroup(group) ? 2 : DOC_TYPES.has(group) ? 1 : 0
       const rankA = rank(a), rankB = rank(b)
       if (rankA !== rankB) return rankA - rankB
       const sortA = groupSortMap.get(a) ?? 99999
@@ -248,13 +283,14 @@ export default function ItemMappingsClient({
       return a.localeCompare(b, 'zh-Hant')
     })
     return {
-      displayMappings: activeMappings,
+      displayMappings: visibleMappings,
       grouped: nextGrouped,
       groupOrder: nextGroupOrder,
       groupDocMap: nextGroupDocMap,
+      groupCategoryMap: nextGroupCategoryMap,
       taxItemOptionsByGroup: nextTaxItemOptions,
     }
-  }, [activeStoreId, mappings, pendingVgs])
+  }, [activeStoreId, linkedCategoryNamesByStore, mappings, pendingVgsByStore, vendorChildNamesByStore])
 
   const isStorePage = true
   const docTypeOptions = useMemo(() => Array.from(new Set([
@@ -262,6 +298,18 @@ export default function ItemMappingsClient({
     ...vgsState.map(v => v.doc_type).filter((v): v is string => !!v),
     ...mappings.map(m => m.doc_type_override).filter((v): v is string => !!v),
   ])), [mappings, vgsState])
+  const directGroupNames = useMemo(() => new Set([
+    ...(linkedCategoryNamesByStore[activeStoreId] ?? []),
+    ...(pendingDirectVgsByStore[activeStoreId] ?? []),
+  ]), [activeStoreId, linkedCategoryNamesByStore, pendingDirectVgsByStore])
+  const excludedVendorGroupNames = useMemo(() => new Set<string>(RECEIPT_VENDOR_GROUP_EXCLUDED_NAMES), [])
+  const vendorChildGroups = useMemo(() => groupOrder.filter(group => (
+    !isMiscVendorGroup(group)
+    && !DOC_TYPES.has(group)
+    && !excludedVendorGroupNames.has(group)
+    && !directGroupNames.has(group)
+  )), [directGroupNames, excludedVendorGroupNames, groupOrder])
+  const vendorChildGroupSet = useMemo(() => new Set(vendorChildGroups), [vendorChildGroups])
 
   function startEdit(m: Mapping) { setEditId(m.id); setEditCol(m.excel_column); setEditCat(m.item_category); setEditVendorGroup(m.vendor_group ?? '') }
 
@@ -364,24 +412,38 @@ export default function ItemMappingsClient({
     const name = newVgName.trim()
     if (!name) return
     startTransition(async () => {
-      const { createVendorGroup } = await import('@/app/actions/system-config')
       const maxSort = Math.max(0, ...vgsState.map(v => v.sort_order ?? 0))
       const sort = maxSort + 10
-      const r = await createVendorGroup({ name, kind: 'vendor', sort_order: sort })
+      const r = await createStoreVendorGroup(activeStoreId, name, sort, newVgMode, newVgCategory)
       if ('error' in r && r.error) {
         toast.error(r.error)
         return
       }
       // Optimistic：立即把新 vg 加入 local state，UI 立刻有排序 / 單據下拉 / rename
       if ('id' in r && r.id) {
-        setVgsState(prev => prev.some(v => v.name === name) ? prev : [...prev, { id: r.id!, name, sort_order: sort, doc_type: null }])
+        setVgsState(prev => prev.some(v => v.name === name) ? prev : [...prev, { id: r.id!, name, sort_order: r.sort_order ?? sort, doc_type: null }])
       }
       // 讓這個「還沒品項」的空類別在該店立即顯示，使用者才能在底下加品項
-      setPendingVgs(prev => prev.includes(name) ? prev : [...prev, name])
-      toast.success(`已新增分類「${name}」，可在底下「加品項」`)
+      setPendingVgsByStore(prev => {
+        const names = prev[activeStoreId] ?? []
+        return names.includes(name)
+          ? prev
+          : { ...prev, [activeStoreId]: [...names, name] }
+      })
+      if (newVgMode === 'direct') {
+        setPendingDirectVgsByStore(prev => ({
+          ...prev,
+          [activeStoreId]: [...new Set([...(prev[activeStoreId] ?? []), name])],
+        }))
+        toast.success(`已新增獨立類別「${name}」，可至收據管理啟用`)
+      } else {
+        toast.success(`已新增廠商「${name}」，並同步到收據管理的「廠商」`)
+      }
       setShowAddVg(false)
       setNewVgName('')
-      // 不 router.refresh()：避免整頁重載造成畫面亂跳；空類別已由 pendingVgs 即時顯示
+      setNewVgCategory('雜項')
+      // 若同名品項由舊類別搬成獨立廠商，立即刷新以移除舊位置的重複顯示。
+      router.refresh()
     })
   }
 
@@ -394,7 +456,7 @@ export default function ItemMappingsClient({
     ;[reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]]
     setMappings(prev => prev.map(m => {
       if (m.store_id !== activeStoreId) return m
-      const group = m.vendor_group?.trim() || '未分類'
+      const group = normalizeVendorGroupName(m.vendor_group)
       const orderIdx = reordered.indexOf(group)
       return orderIdx >= 0 ? { ...m, vg_sort_order: (orderIdx + 1) * 10 } : m
     }))
@@ -449,16 +511,34 @@ export default function ItemMappingsClient({
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 space-y-3"
             style={{ boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}>
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold" style={{ color: '#18181b' }}>新增廠商分類</h2>
+              <h2 className="text-base font-bold" style={{ color: '#18181b' }}>新增廠商或獨立類別</h2>
               <button onClick={() => setShowAddVg(false)} className="p-1.5 rounded-lg"
                 style={{ color: '#a1a1aa', background: '#f4f4f5', border: 'none', cursor: 'pointer' }}>
                 <X className="h-4 w-4" />
               </button>
             </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setNewVgMode('vendor')}
+                className="rounded-xl px-3 py-2.5 text-left"
+                style={newVgMode === 'vendor'
+                  ? { background: '#FEF3C7', border: '1.5px solid #F59E0B', color: '#92400E' }
+                  : { background: '#fafafa', border: '1px solid #e4e4e7', color: '#71717a' }}>
+                <span className="block text-sm font-bold">廠商</span>
+                <span className="mt-0.5 block text-[10px] leading-4">菜商、雜貨、免洗</span>
+              </button>
+              <button type="button" onClick={() => setNewVgMode('direct')}
+                className="rounded-xl px-3 py-2.5 text-left"
+                style={newVgMode === 'direct'
+                  ? { background: '#E0F2FE', border: '1.5px solid #0284C7', color: '#075985' }
+                  : { background: '#fafafa', border: '1px solid #e4e4e7', color: '#71717a' }}>
+                <span className="block text-sm font-bold">獨立類別</span>
+                <span className="mt-0.5 block text-[10px] leading-4">日常用品、貨車保養</span>
+              </button>
+            </div>
             <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>分類名稱</label>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>{newVgMode === 'vendor' ? '廠商名稱' : '類別名稱'}</label>
               <input value={newVgName} onChange={e => setNewVgName(e.target.value)} autoFocus
-                placeholder="例：豆腐商 / 滷肉廠商 / 蛋商"
+                placeholder={newVgMode === 'vendor' ? '例：菜商 / 雜貨 / 免洗' : '例：日常用品 / 貨車相關保養'}
                 style={INPUT_STYLE}
                 onKeyDown={e => {
                   // 中文 IME 組字期間 Enter 是選字用，不能觸發提交
@@ -467,8 +547,25 @@ export default function ItemMappingsClient({
                     handleAddVendorGroup()
                   }
                 }} />
-              <p className="text-[11px] mt-1.5" style={{ color: '#a1a1aa' }}>新增後可在分類列表用上下箭頭調整位置（影響 Excel 匯出順序）</p>
+              <p className="text-[11px] mt-1.5" style={{ color: '#047857' }}>
+                {newVgMode === 'vendor'
+                  ? '新增後會收進收據管理的「廠商」底下，品項與名稱由這裡同步。'
+                  : '新增後可在收據管理選擇啟用，啟用後會成為獨立大類別。'}
+              </p>
             </div>
+            {newVgMode === 'vendor' && (
+              <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: '#52525b' }}>金額歸類</label>
+                <select value={newVgCategory} onChange={e => setNewVgCategory(e.target.value)} style={SELECT_ADD_STYLE}>
+                  <option value="食材">食材</option>
+                  <option value="耗材">耗材</option>
+                  <option value="雜項">雜項</option>
+                </select>
+                <p className="text-[11px] mt-1.5" style={{ color: '#71717a' }}>
+                  即使不建立品項，也會依此分類計入報表。
+                </p>
+              </div>
+            )}
             <div className="flex gap-2 pt-1">
               <button onClick={() => setShowAddVg(false)}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
@@ -522,10 +619,10 @@ export default function ItemMappingsClient({
                 {selectMode ? <><X className="h-3.5 w-3.5" /> 取消</> : <><Check className="h-3.5 w-3.5" /> 選取</>}
               </button>
               <CopyToStoreButton fromStoreId={activeStoreId} stores={stores} />
-              <button onClick={() => setShowAddVg(true)}
+              <button onClick={() => { setNewVgMode('vendor'); setNewVgCategory('雜項'); setShowAddVg(true) }}
                 className="flex w-full items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold sm:w-auto"
                 style={{ background: 'white', border: '1.5px solid #E0F2FE', color: '#0369A1' }}>
-                <Tag className="h-3.5 w-3.5" /> 新增分類
+                <Tag className="h-3.5 w-3.5" /> 新增廠商／類別
               </button>
               <button onClick={() => {
                 const opening = !showAdd
@@ -731,12 +828,40 @@ export default function ItemMappingsClient({
         )}
 
         {/* Empty state for store tab */}
-        {isStorePage && displayMappings.length === 0 && !showAdd ? (
+        {isStorePage && groupOrder.length === 0 && !showAdd ? (
           <div className="text-center py-16">
             <p className="text-sm font-medium" style={{ color: '#a1a1aa' }}>此店尚無自訂品項對應</p>
             <p className="text-xs mt-1" style={{ color: '#d4d4d8' }}>請新增品項，或從其他店手動複製一次性設定</p>
           </div>
         ) : null}
+
+        <div className="rounded-2xl p-4" style={{ background: '#FFFBEB', border: '1.5px solid #FDE68A' }}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-lg px-2.5 py-1 text-sm font-bold" style={{ background: '#F59E0B', color: 'white' }}>廠商</span>
+                <span className="text-xs font-semibold" style={{ color: '#92400E' }}>{vendorChildGroups.length} 個廠商分類</span>
+              </div>
+              <p className="mt-1.5 text-[11px] leading-5" style={{ color: '#78716c' }}>
+                菜商、雜貨、免洗等都整理在此層，收據管理會同步顯示在「廠商」底下。
+              </p>
+            </div>
+            <button type="button" onClick={() => { setNewVgMode('vendor'); setNewVgName(''); setShowAddVg(true) }}
+              className="flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold"
+              style={{ background: 'white', border: '1.5px solid #F59E0B', color: '#92400E' }}>
+              <Plus className="h-4 w-4" />新增廠商
+            </button>
+          </div>
+          {vendorChildGroups.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {vendorChildGroups.map(name => (
+                <span key={name} className="rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: 'white', border: '1px solid #FDE68A', color: '#92400E' }}>
+                  {name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Mapping list — 以 vendor_group 為主分類 */}
         <DndContext sensors={sortMode ? sensors : []}
@@ -762,16 +887,20 @@ export default function ItemMappingsClient({
           onDragEnd={handleDragEnd}>
         {groupOrder.map((vg, vgIdx) => {
           const items = grouped[vg]
-          const vgSt = vg === '未分類' ? VG_STYLE_UNCAT : DOC_TYPES.has(vg) ? VG_STYLE_DOC : VG_STYLE
+          const isVendorChild = vendorChildGroupSet.has(vg)
+          const vgSt = isMiscVendorGroup(vg) ? VG_STYLE_UNCAT : DOC_TYPES.has(vg) ? VG_STYLE_DOC : VG_STYLE
           const isVgFirst = vgIdx === 0
           const isVgLast = vgIdx === groupOrder.length - 1
-          // 每店獨立：所有真實類別（非「未分類」）都可改名/排序，不再依賴全域 system_vendor_groups record
-          const hasVgRecord = vg !== '未分類'
+          // 每店獨立：雜項是舊空值／未分類的統一保留分類，不提供改名或刪除。
+          const hasVgRecord = !isMiscVendorGroup(vg)
           return (
-            <div key={vg} style={sortMode ? undefined : {
-              contentVisibility: 'auto',
-              containIntrinsicSize: `auto ${Math.max(96, items.length * 58 + 56)}px`,
-            }}>
+            <div key={vg} style={sortMode
+              ? (isVendorChild ? { borderLeft: '3px solid #FDE68A', paddingLeft: 8 } : undefined)
+              : {
+                  contentVisibility: 'auto',
+                  containIntrinsicSize: `auto ${Math.max(96, items.length * 58 + 56)}px`,
+                  ...(isVendorChild ? { borderLeft: '3px solid #FDE68A', paddingLeft: 8 } : {}),
+                }}>
               <div className="flex flex-wrap items-center gap-2 mb-2 px-1">
                 {sortMode && hasVgRecord && (
                   <div className="flex flex-col" style={{ width: 20, background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, padding: 2 }}>
@@ -785,21 +914,36 @@ export default function ItemMappingsClient({
                     </button>
                   </div>
                 )}
-                {sortMode && vg === '未分類' && (
+                {sortMode && isMiscVendorGroup(vg) && (
                   <span className="text-[11px] font-medium" style={{ color: '#a1a1aa' }}>固定最後</span>
                 )}
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                   style={{ background: vgSt.bg, color: vgSt.color }}>
-                  {vg}
+                  {isVendorChild ? `廠商 / ${vg}` : vg}
                 </span>
                 <span className="text-xs" style={{ color: '#a1a1aa' }}>{items.length} 項</span>
-                {/* 單據類型（doc_type）— 非未分類才提供分類層級批次設定；未分類常是混合項目，只保留品項列設定 */}
-                {vg !== '未分類' && (
+                {/* 雜項常混合多種單據，只保留品項列自己的單據設定。 */}
+                {!isMiscVendorGroup(vg) && (
                   <VgDocTypeSelector storeId={activeStoreId} vgName={vg} currentDoc={groupDocMap.get(vg) ?? null} />
                 )}
+                {isVendorChild && (
+                  <VgItemCategorySelector
+                    storeId={activeStoreId}
+                    vgName={vg}
+                    currentCategory={groupCategoryMap.get(vg) ?? '雜項'}
+                    onDone={() => router.refresh()}
+                  />
+                )}
                 {/* Rename / 刪除 */}
-                {hasVgRecord && vg !== '未分類' && (
-                  <VgActions vgName={vg} storeId={activeStoreId || null} itemCount={items.length} onDone={() => router.refresh()} />
+                {hasVgRecord && (
+                  <VgActions
+                    vgName={vg}
+                    storeId={activeStoreId || null}
+                    itemCount={items.length}
+                    currentMode={isVendorChild ? 'vendor' : 'direct'}
+                    allowModeChange={!DOC_TYPES.has(vg)}
+                    onDone={() => router.refresh()}
+                  />
                 )}
                 {/* 分類內快速新增品項（inline，就地展開輸入框） */}
                 <button onClick={() => {
@@ -843,7 +987,7 @@ export default function ItemMappingsClient({
                       const name = inlineAddName.trim()
                       if (!name) return
                       startTransition(async () => {
-                        const targetVg = vg === '未分類' ? undefined : vg
+                        const targetVg = isMiscVendorGroup(vg) ? MISC_VENDOR_GROUP : vg
                         const storeParam = activeStoreId || undefined
                         const r = await saveItemMapping(name, name, inlineAddCat, storeParam, targetVg)
                         if (r && 'error' in r) { toast.error('新增失敗：' + r.error); return }
@@ -1403,19 +1547,45 @@ function TaxAddonToggle({
 }
 
 /** vg 修改名稱 / 刪除 */
-function VgActions({ vgName, storeId, itemCount, onDone }: { vgName: string; storeId: string | null; itemCount: number; onDone: () => void }) {
+function VgActions({
+  vgName,
+  storeId,
+  itemCount,
+  currentMode,
+  allowModeChange,
+  onDone,
+}: {
+  vgName: string
+  storeId: string | null
+  itemCount: number
+  currentMode: 'vendor' | 'direct'
+  allowModeChange: boolean
+  onDone: () => void
+}) {
   const [editing, setEditing] = useState(false)
   const [newName, setNewName] = useState(vgName)
+  const [mode, setMode] = useState<'vendor' | 'direct'>(currentMode)
   const [saving, setSaving] = useState(false)
 
-  async function handleRename() {
-    if (!newName.trim() || newName.trim() === vgName) { setEditing(false); return }
+  async function handleSave() {
+    const targetName = newName.trim()
+    if (!targetName) return
+    if (targetName === vgName && (mode === currentMode || !storeId || !allowModeChange)) {
+      setEditing(false)
+      return
+    }
     setSaving(true)
     try {
-      const { renameVendorGroup } = await import('@/app/actions/item-mappings')
-      const r = await renameVendorGroup(vgName, newName.trim(), storeId ?? undefined)
-      if ('error' in r) { toast.error(String(r.error)); return }
-      toast.success('已改名')
+      if (targetName !== vgName) {
+        const { renameVendorGroup } = await import('@/app/actions/item-mappings')
+        const renameResult = await renameVendorGroup(vgName, targetName, storeId ?? undefined)
+        if ('error' in renameResult) { toast.error(String(renameResult.error)); return }
+      }
+      if (storeId && allowModeChange && mode !== currentMode) {
+        const modeResult = await setStoreVendorGroupMode(storeId, targetName, mode)
+        if ('error' in modeResult) { toast.error(String(modeResult.error)); return }
+      }
+      toast.success(mode !== currentMode ? '分類方式已更新，品項完整保留' : '已改名')
       onDone()
     } finally { setSaving(false); setEditing(false) }
   }
@@ -1435,16 +1605,23 @@ function VgActions({ vgName, storeId, itemCount, onDone }: { vgName: string; sto
 
   if (editing) {
     return (
-      <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center gap-1">
         <input value={newName} onChange={e => setNewName(e.target.value)}
           onKeyDown={e => {
             // 中文 IME 組字期間 Enter 是選字用，不能觸發提交
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); handleRename() }
             if (e.key === 'Escape') setEditing(false)
           }}
           autoFocus
           style={{ height: 22, padding: '0 6px', fontSize: 11, borderRadius: 4, border: '1.5px solid #F59E0B', outline: 'none' }} />
-        <button onClick={handleRename} disabled={saving}
+        {storeId && allowModeChange && (
+          <select value={mode} onChange={event => setMode(event.target.value as 'vendor' | 'direct')}
+            aria-label="分類方式"
+            style={{ height: 24, padding: '0 5px', fontSize: 11, borderRadius: 4, border: '1.5px solid #F59E0B', background: 'white' }}>
+            <option value="vendor">廠商子類別</option>
+            <option value="direct">獨立收據類別</option>
+          </select>
+        )}
+        <button onClick={handleSave} disabled={saving}
           style={{ background: 'none', border: 'none', color: '#047857', cursor: 'pointer', padding: 2 }}>
           <Check className="h-3 w-3" />
         </button>
@@ -1457,8 +1634,8 @@ function VgActions({ vgName, storeId, itemCount, onDone }: { vgName: string; sto
   }
   return (
     <>
-      <button onClick={() => setEditing(true)}
-        title="改名"
+      <button onClick={() => { setNewName(vgName); setMode(currentMode); setEditing(true) }}
+        title="編輯名稱與分類方式"
         style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: 2 }}>
         <Edit2 className="h-3 w-3" />
       </button>
@@ -1588,6 +1765,56 @@ function CopyToStoreButton({ fromStoreId, stores }: { fromStoreId: string; store
         </div>
       )}
     </div>
+  )
+}
+
+/** 廠商即使沒有明細品項，也能指定整筆金額要歸入食材／耗材／雜項。 */
+function VgItemCategorySelector({
+  storeId,
+  vgName,
+  currentCategory,
+  onDone,
+}: {
+  storeId: string
+  vgName: string
+  currentCategory: string
+  onDone?: () => void
+}) {
+  const [category, setCategory] = useState(currentCategory || '雜項')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setCategory(currentCategory || '雜項') }, [currentCategory])
+
+  async function save(next: string) {
+    setCategory(next)
+    setSaving(true)
+    try {
+      const { setStoreVendorGroupItemCategory } = await import('@/app/actions/item-mappings')
+      const result = await setStoreVendorGroupItemCategory(storeId, vgName, next)
+      if ('error' in result) {
+        toast.error(String(result.error))
+        return
+      }
+      toast.success(`「${vgName}」已歸類為${next}`)
+      onDone?.()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <select value={category} onChange={event => save(event.target.value)} disabled={saving}
+      title={`「${vgName}」的報表金額分類`}
+      style={{
+        height: 22, padding: '0 4px', fontSize: 11, borderRadius: 4,
+        border: `1px solid ${CAT_STYLE[category]?.color ?? '#d4d4d8'}`,
+        background: CAT_STYLE[category]?.bg ?? 'white',
+        color: CAT_STYLE[category]?.color ?? '#52525b',
+        fontFamily: 'inherit', outline: 'none', fontWeight: 600,
+      }}>
+      <option value="食材">食材</option>
+      <option value="耗材">耗材</option>
+      <option value="雜項">雜項</option>
+    </select>
   )
 }
 

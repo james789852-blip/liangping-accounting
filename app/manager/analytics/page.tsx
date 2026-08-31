@@ -1,22 +1,17 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
 import { getAuthedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getCachedUserProfile } from '@/lib/cached-queries'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import AnalyticsClient from './client'
 
 export const dynamic = 'force-dynamic'
 
 export default async function ManagerAnalyticsPage() {
-  const supabase = await createClient()
   const user = await getAuthedUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('*')
-    .eq('user_id', user.id)
-    .single()
+  const profile = await getCachedUserProfile(user.id)
 
   const storeId = await getEffectiveStoreId(profile)
   if (!storeId) redirect('/manager/dashboard')

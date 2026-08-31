@@ -58,7 +58,6 @@ export default function AddStoreForm({ allowedTypes = ['店面', '央廚'] }: { 
           placeholder="例：鑫營"
           value={name}
           onChange={e => setName(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
           style={{ width: '100%', height: '40px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', outline: 'none', fontFamily: 'inherit' }}
         />
       </div>
@@ -98,7 +97,7 @@ export default function AddStoreForm({ allowedTypes = ['店面', '央廚'] }: { 
         </div>
       </div>
 
-      <button onClick={handleSubmit} disabled={pending || !name.trim()}
+      <button type="button" onClick={handleSubmit} disabled={pending || !name.trim()}
         className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
         style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', opacity: pending || !name.trim() ? 0.6 : 1, boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
         {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}

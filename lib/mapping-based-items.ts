@@ -10,6 +10,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { fetchAllPaged } from '@/lib/supabase-paged'
+import { unstable_cache } from 'next/cache'
 
 export function compareResolvedItemsByMappingOrder(a: ResolvedStoreItem, b: ResolvedStoreItem): number {
   const groupRank = (name?: string | null) => {
@@ -84,6 +85,10 @@ async function loadStoreItemsFromMappings(storeId: string): Promise<ResolvedStor
 }
 
 export async function getStoreItemsFromMappings(storeId: string): Promise<ResolvedStoreItem[]> {
-  // Excel 匯出必須立即反映「品項對應管理」排序；避免 server cache 留住舊欄位順序。
-  return loadStoreItemsFromMappings(storeId)
+  // 品項異動會統一 revalidateTag('item-mappings')；一般切頁不必重複撈相同設定。
+  return unstable_cache(
+    () => loadStoreItemsFromMappings(storeId),
+    ['store-items-from-mappings', storeId],
+    { revalidate: 300, tags: ['item-mappings'] },
+  )()
 }

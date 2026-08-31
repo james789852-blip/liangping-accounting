@@ -1,6 +1,7 @@
 import { cache } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import { getCachedUserProfile } from '@/lib/cached-queries'
 
 // 用 getClaims() 做「本地 JWT 驗證」：
 // 專案現用簽章金鑰為非對稱金鑰（ECC / P-256），getClaims 會抓取並快取公鑰(JWKS)，
@@ -15,14 +16,11 @@ async function resolveAuthedUser(): Promise<User | null> {
   const claims = data?.claims
   if (error || !claims?.sub) return null
 
-  // Auth token 有效不代表帳號仍可使用。每個請求都重新確認 profile，
-  // 避免已停用帳號靠尚未過期的 JWT 繼續呼叫 Server Action / Route Handler。
-  const { data: profile, error: profileError } = await supabase
-    .from('user_profiles')
-    .select('active')
-    .eq('user_id', claims.sub)
-    .maybeSingle()
-  if (profileError || !profile || profile.active === false) return null
+  // Auth token 有效不代表帳號仍可使用。帳號設定沿用可主動失效的短快取：
+  // 管理員停用帳號時會 revalidateTag('user-profile')，一般切頁則不必反覆往返資料庫。
+  // layout / page 後續讀取相同 profile 也會命中同一份資料，少一次重複查詢。
+  const profile = await getCachedUserProfile(claims.sub)
+  if (!profile || profile.active === false) return null
 
   return {
     id: claims.sub,

@@ -1,0 +1,19 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
+
+const addStoreForm = await readFile(new URL('../components/hq/add-store-form.tsx', import.meta.url), 'utf8')
+const storeEditor = await readFile(new URL('../components/hq/store-editor.tsx', import.meta.url), 'utf8')
+const storeActions = await readFile(new URL('../app/actions/stores.ts', import.meta.url), 'utf8')
+
+test('新增店家只能按建立按鈕，不會由 Enter 鍵送出', () => {
+  assert.doesNotMatch(addStoreForm, /onKeyDown=\{[^\n]*handleSubmit/)
+  assert.match(addStoreForm, /<button type="button" onClick=\{handleSubmit\}/)
+})
+
+test('刪除店家會先確認並停用店家以保留歷史帳務', () => {
+  assert.match(storeEditor, /window\.confirm\(/)
+  assert.match(storeEditor, /刪除店家/)
+  assert.match(storeActions, /export async function deleteStore\(storeId: string\)/)
+  assert.match(storeActions, /\.update\(\{ active: false \}\)/)
+})

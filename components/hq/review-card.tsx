@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState, useTransition } from 'react'
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image, FileText, AlertTriangle, Check, CheckCircle2, X, Camera } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image, FileText, AlertTriangle, Check, CheckCircle2, X, Camera, Loader2 } from 'lucide-react'
 import ReviewActions from './review-actions'
 import PhotoLightbox from './photo-lightbox'
 import SafePhotoImage from './safe-photo-image'
 import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 import { disputeClosing } from '@/app/actions/closings'
 import { toast } from 'sonner'
+import { supabasePreviewUrl } from '@/lib/photo-image-url'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -200,9 +201,26 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
 
   function openReview() {
     const firstPending = allPhotos.findIndex((_, index) => !confirmedPhotos.has(index) && !photoIssues[index])
-    setReviewIndex(firstPending >= 0 ? firstPending : 0)
+    const startIndex = firstPending >= 0 ? firstPending : 0
+    preloadReviewPhotos(startIndex)
+    setReviewIndex(startIndex)
     setReviewOpen(true)
   }
+
+  function preloadReviewPhotos(startIndex: number) {
+    const indexes = [startIndex, startIndex + 1, startIndex + 2, startIndex - 1]
+    for (const url of new Set(indexes.map(index => allPhotos[index]?.url).filter((url): url is string => !!url))) {
+      const image = new window.Image()
+      image.decoding = 'async'
+      image.src = supabasePreviewUrl(url)
+    }
+  }
+
+  // 核對視窗只載入足以閱讀單據的版本，並預抓前後照片，避免每按一次才下載下一張原始大圖。
+  useEffect(() => {
+    if (!reviewOpen || allPhotos.length === 0) return
+    preloadReviewPhotos(reviewIndex)
+  }, [photoSignature, reviewIndex, reviewOpen])
 
   function confirmCurrentPhoto() {
     setConfirmedPhotos(prev => new Set(prev).add(reviewIndex))
@@ -305,9 +323,25 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
           </div>
 
           <div className="overflow-y-auto p-4 grid sm:grid-cols-2 gap-4">
-            <div className="min-h-64 rounded-2xl overflow-hidden flex items-center justify-center" style={{ background: '#18181b' }}>
+            <div className="relative min-h-64 rounded-2xl overflow-hidden flex items-center justify-center" style={{ background: '#18181b' }}>
               {currentPhoto ? (
-                <SafePhotoImage src={currentPhoto.url} alt={currentPhoto.label} className="w-full h-full max-h-[55dvh] object-contain" />
+                <>
+                  <div className="absolute inset-0 flex items-center justify-center gap-2 text-xs" style={{ color: '#a1a1aa' }}>
+                    <Loader2 className="h-4 w-4 animate-spin" />照片載入中
+                  </div>
+                  <SafePhotoImage
+                    key={currentPhoto.url}
+                    src={currentPhoto.url}
+                    alt={currentPhoto.label}
+                    loading="eager"
+                    thumb
+                    width={1400}
+                    height={1800}
+                    resize="contain"
+                    quality={72}
+                    className="relative z-[1] w-full h-full max-h-[55dvh] object-contain"
+                  />
+                </>
               ) : (
                 <div className="text-center p-8" style={{ color: '#d4d4d8' }}><FileText className="h-10 w-10 mx-auto mb-2" /><p className="text-sm">沒有照片需要核對</p></div>
               )}
@@ -727,7 +761,10 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
 
         {/* 操作按鈕 */}
         {canReview && closing.status === 'submitted' && (
-          <button type="button" onClick={openReview} className="w-full py-3 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg,#f59e0b,#f97316)', boxShadow: '0 3px 10px rgba(245,158,11,0.22)' }}>
+          <button type="button" onClick={openReview}
+            onPointerEnter={() => preloadReviewPhotos(Math.max(0, allPhotos.findIndex((_, index) => !confirmedPhotos.has(index) && !photoIssues[index])))}
+            onFocus={() => preloadReviewPhotos(Math.max(0, allPhotos.findIndex((_, index) => !confirmedPhotos.has(index) && !photoIssues[index])))}
+            className="w-full py-3 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg,#f59e0b,#f97316)', boxShadow: '0 3px 10px rgba(245,158,11,0.22)' }}>
             <Camera className="h-4 w-4" />{reviewedCount > 0 && !reviewComplete ? `繼續核對（剩 ${allPhotos.length - reviewedCount} 張）` : '開始核對'}
           </button>
         )}

@@ -99,3 +99,37 @@ export async function createStore(name: string, mode: string, type = '店面') {
   revalidateTag('stores', 'default')
   return { success: true, id: data.id }
 }
+
+export async function deleteStore(storeId: string) {
+  const { profile, error } = await requireManager()
+  if (error) return { error }
+
+  const admin = createAdminClient()
+  const { data: store, error: loadError } = await admin
+    .from('stores')
+    .select('id, name, type, active')
+    .eq('id', storeId)
+    .maybeSingle()
+
+  if (loadError) return { error: loadError.message }
+  if (!store || store.active === false) return { error: '找不到這間店家，可能已經被刪除' }
+  if (!canManageStoreType(profile, store.type)) {
+    return { error: store.type === '央廚' ? '權限不足，無法刪除央廚店家' : '權限不足，無法刪除店面店家' }
+  }
+
+  const { error: dbErr } = await admin
+    .from('stores')
+    .update({ active: false })
+    .eq('id', storeId)
+    .eq('active', true)
+
+  if (dbErr) return { error: dbErr.message }
+
+  revalidatePath('/hq/stores')
+  revalidatePath('/hq/users')
+  revalidatePath('/hq/dashboard')
+  revalidatePath('/manager', 'layout')
+  revalidatePath('/manager/closing')
+  revalidateTag('stores', 'default')
+  return { success: true, name: store.name }
+}

@@ -86,8 +86,9 @@ export function resolveScopedItemIdentity<T extends ExportItemCandidate>(
     const byId = candidates.find(candidate =>
       candidate.mapping_id === input.mappingId || candidate.id === input.mappingId,
     )
-    if (byId && (!input.vendorGroup || byId.vendor_group === input.vendorGroup)) return byId
-    return undefined
+    // mapping id 是帳目建立時保存的唯一識別。管理者日後把同一品項搬到新分類時，
+    // 舊快照仍保留原名稱，但報表必須跟隨目前設定；不可因快照不同而丟失金額。
+    return byId
   }
 
   const compatible = candidates.filter(candidate =>

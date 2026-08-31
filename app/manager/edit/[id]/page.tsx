@@ -141,21 +141,8 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
         doc_type: r.doc_type_override ?? null,
       })).sort((a, b) => (orderMap.get(a.name) ?? 9999) - (orderMap.get(b.name) ?? 9999))
 
-  // 退回修改頁也必須和一般結帳頁相同：廠商下拉以該店最新的
-  // item_column_mappings 為準，不能繼續顯示 receipt_vendors 的舊分類。
-  // 系統類別只供結帳流程使用，不能當成廠商顯示在此下拉選單。
-  const systemReceiptGroupNames = new Set(['未分類', '央廚配送', '日常用品', '買東西或維修', '其他', '退稅'])
-  const mappingVendorGroups = Array.from(new Set(
-    mappingColumns
-      .map(item => item.vendor_group?.trim())
-      .filter((name): name is string => !!name && !systemReceiptGroupNames.has(name)),
-  ))
-  const syncedReceiptCategories = receiptCategories.map(category => category.name !== '廠商' || mappingVendorGroups.length === 0
-    ? category
-    : {
-        ...category,
-        vendors: mappingVendorGroups.map((name, index) => ({ id: `mapping-vendor-${index}`, name })),
-      })
+  // getReceiptSettings 已依「獨立類別」與「廠商子類別」完成同步分類。
+  const syncedReceiptCategories = receiptCategories
 
   return (
     <>

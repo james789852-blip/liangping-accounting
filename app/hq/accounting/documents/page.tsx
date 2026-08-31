@@ -17,6 +17,7 @@ import {
   type AccountingDocumentCategory,
 } from '@/lib/accounting-documents'
 import { getBusinessDate } from '@/lib/business-date'
+import { resolveCentralKitchenExpenseDocType } from '@/lib/ck-expense-doc-type'
 import { sortStores } from '@/lib/store-order'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
@@ -210,6 +211,7 @@ export default async function AccountingDocumentsPage({
       records: [] as CKRecordPhotoRow[],
       expenses: [] as CKExpensePhotoRow[],
       orders: [] as CKOrderPhotoRow[],
+      mappings: [] as ItemMappingDocRow[],
     }
     let recordsQuery = admin
       .from('ck_daily_records')
@@ -218,14 +220,23 @@ export default async function AccountingDocumentsPage({
       .lte('business_date', to)
       .order('business_date', { ascending: false })
     if (locationKind === 'ck' && locationId) recordsQuery = recordsQuery.eq('ck_store_id', locationId)
-    const recordsResult = await recordsQuery
+    let mappingsQuery = admin
+      .from('item_column_mappings')
+      .select('id, store_id, item_name, item_category, vendor_group, doc_type_override')
+    if (locationKind === 'ck' && locationId) mappingsQuery = mappingsQuery.eq('store_id', locationId)
+    else if (ckStores.length > 0) mappingsQuery = mappingsQuery.in('store_id', ckStores.map(store => store.id))
+
+    const [recordsResult, mappingsResult] = await Promise.all([recordsQuery, mappingsQuery])
     if (recordsResult.error) throw new Error(`無法載入央廚照片：${recordsResult.error.message}`)
+    if (mappingsResult.error) throw new Error(`無法載入央廚品項單據設定：${mappingsResult.error.message}`)
     const records = (recordsResult.data ?? []) as CKRecordPhotoRow[]
+    const mappings = (mappingsResult.data ?? []) as ItemMappingDocRow[]
     const recordIds = records.map(record => record.id)
     if (recordIds.length === 0) return {
       records,
       expenses: [] as CKExpensePhotoRow[],
       orders: [] as CKOrderPhotoRow[],
+      mappings,
     }
     const [expensesResult, ordersResult] = await Promise.all([
       admin.from('ck_expense_items')
@@ -242,6 +253,7 @@ export default async function AccountingDocumentsPage({
       records,
       expenses: (expensesResult.data ?? []) as CKExpensePhotoRow[],
       orders: (ordersResult.data ?? []) as CKOrderPhotoRow[],
+      mappings,
     }
   }
 
@@ -363,8 +375,14 @@ export default async function AccountingDocumentsPage({
   for (const expense of ckData.expenses) {
     const record = ckRecordById[expense.ck_daily_record_id]
     if (!record) continue
+    const configuredDocType = resolveCentralKitchenExpenseDocType({
+      vendorGroup: expense.vendor_group,
+      itemName: expense.item_name,
+      storedDocType: expense.doc_type,
+      mappings: ckData.mappings.filter(mapping => mapping.store_id === record.ck_store_id),
+    })
     const title = expense.vendor_group?.trim() || expense.item_name?.trim() || '央廚支出單據'
-    const subtitle = [expense.doc_type, expense.item_name !== title ? expense.item_name : '', expense.payer_name ? `代墊：${expense.payer_name}` : '']
+    const subtitle = [configuredDocType, expense.item_name !== title ? expense.item_name : '', expense.payer_name ? `代墊：${expense.payer_name}` : '']
       .filter(Boolean)
       .join(' · ')
     addDocument({
@@ -374,10 +392,10 @@ export default async function AccountingDocumentsPage({
       locationName: storeNameById[record.ck_store_id] ?? '央廚',
       locationKind: 'ck',
       businessDate: record.business_date,
-      category: accountingCategoryFromDocType(expense.doc_type),
+      category: accountingCategoryFromDocType(configuredDocType),
       title,
       subtitle: subtitle || expense.note?.trim() || undefined,
-      documentTypeLabel: expense.doc_type?.trim() || '未設定',
+      documentTypeLabel: configuredDocType || '未設定',
       vendorGroup: expense.vendor_group?.trim() || '未設定',
       itemCategories: [expense.category?.trim() || '未設定'],
       amount: Number(expense.amount ?? 0),
@@ -385,11 +403,11 @@ export default async function AccountingDocumentsPage({
   }
 
   for (const order of ckData.orders) {
+    // 體系內配送單由店面每日結帳照片提供；這裡只保留央廚上傳的體系外配送單。
+    if (order.store_id) continue
     const record = ckRecordById[order.ck_daily_record_id]
     if (!record) continue
-    const targetName = order.store_id
-      ? (storeNameById[order.store_id] ?? '體系內店家')
-      : (order.external_store_name?.trim() || '體系外叫貨')
+    const targetName = order.external_store_name?.trim() || '體系外叫貨'
     normalizeAccountingPhotoUrls(order.delivery_photo_urls).forEach((url, index) => addDocument({
       id: `ck-order:${order.id}:${index}`,
       url,
@@ -399,7 +417,7 @@ export default async function AccountingDocumentsPage({
       businessDate: record.business_date,
       category: 'delivery',
       title: `${targetName} 配送單`,
-      subtitle: order.store_id ? '體系內叫貨' : '體系外叫貨',
+      subtitle: '體系外叫貨',
       documentTypeLabel: '配送單',
       vendorGroup: '央廚配送',
       amount: Number(order.ck_confirmed_amount ?? order.amount ?? 0),

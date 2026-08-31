@@ -20,7 +20,7 @@ export default async function ManagerMeetingReportDetailPage({
 
   const { report, actionItems } = result
   const admin = createAdminClient()
-  const [storeResult, comparisonResult] = await Promise.all([
+  const [storeResult, comparisonResult, earlierSubmittedReportsResult] = await Promise.all([
     admin.from('stores').select('name').eq('id', report.store_id).single(),
     getMeetingRevenueComparison(
       report.store_id,
@@ -28,15 +28,23 @@ export default async function ManagerMeetingReportDetailPage({
       report.period_end,
       report.comparison_period_start,
       report.comparison_period_end,
+      report.store_delivery_data,
     ),
+    admin.from('meeting_reports')
+      .select('id', { count: 'exact', head: true })
+      .eq('store_id', report.store_id)
+      .eq('status', 'submitted')
+      .lt('created_at', report.created_at),
   ])
+  const isInitialTracking = (item: (typeof actionItems)[number]) => Boolean(item.details?.is_initial_tracking)
 
   return (
     <EditClient
       report={report}
       storeName={(storeResult.data?.name as string | null) ?? '我的店'}
-      thisReportItems={actionItems.filter(item => item.raised_in_report_id === report.id)}
-      carryOverItems={actionItems.filter(item => item.raised_in_report_id !== report.id)}
+      isFirstReport={!earlierSubmittedReportsResult.error && (earlierSubmittedReportsResult.count ?? 0) === 0}
+      thisReportItems={actionItems.filter(item => item.raised_in_report_id === report.id && !isInitialTracking(item))}
+      carryOverItems={actionItems.filter(item => item.raised_in_report_id !== report.id || isInitialTracking(item))}
       initialComparison={'error' in comparisonResult ? null : comparisonResult}
     />
   )

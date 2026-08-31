@@ -136,16 +136,17 @@ export default function AccountingClient({
   useEffect(() => { setSelectedStoreId(initialStoreId) }, [initialStoreId])
   useEffect(() => { setSelectedCkStoreId(initialCkStoreId) }, [initialCkStoreId])
 
-  // 帳目中心常會長時間停留在手機分頁；定時與重新回到頁面時更新狀態卡和明細。
+  // 帳目中心常會長時間停留在手機分頁；降低整頁更新頻率，避免每 15 秒重抓
+  // 所有據點資料，並在使用者快速切換視窗時重複刷新。
   useEffect(() => {
     let lastRefreshAt = Date.now()
     const refresh = () => {
       const now = Date.now()
-      if (now - lastRefreshAt < 3_000) return
+      if (now - lastRefreshAt < 30_000) return
       lastRefreshAt = now
       router.refresh()
     }
-    const intervalId = window.setInterval(refresh, 15_000)
+    const intervalId = window.setInterval(refresh, 60_000)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') refresh()
     }
@@ -174,32 +175,20 @@ export default function AccountingClient({
     r.status === 'submitted'
     || (r.hq_paid && !r.ck_reimbursement_confirmed)
   )).length
+  const alertsRefreshKey = useMemo(() => JSON.stringify({
+    date,
+    stores: closings.map(closing => [closing.store_id, closing.status, closing.id]),
+    centralKitchens: ckRecords.map(record => [
+      record.ck_store_id,
+      record.status,
+      record.hq_paid,
+      record.ck_reimbursement_confirmed,
+    ]),
+  }), [ckRecords, closings, date])
 
   useEffect(() => {
     setStoreDetailCache(buildInitialStoreCache())
   }, [buildInitialStoreCache, date])
-
-  // 央廚明細比店家需要更多關聯查詢；進入央廚頁籤後在背景預載，切換時直接使用快取。
-  useEffect(() => {
-    if (tab !== 'ck') return
-    let cancelled = false
-    const timer = window.setTimeout(() => {
-      for (const store of ckStores) {
-        const key = `${store.id}:${date}`
-        if (ckDetailCacheRef.current.has(key)) continue
-        fetchCKDailyDetail(store.id, date)
-          .then(result => {
-            if (cancelled || !('success' in result)) return
-            ckDetailCacheRef.current.set(key, { detail: result.detail })
-          })
-          .catch(() => {})
-      }
-    }, 150)
-    return () => {
-      cancelled = true
-      window.clearTimeout(timer)
-    }
-  }, [ckStores, date, tab])
 
   const rememberStoreDetail = useCallback((storeId: string, detail: StoreDetailState) => {
     setStoreDetailCache(prev => ({ ...prev, [storeId]: detail }))
@@ -347,7 +336,7 @@ export default function AccountingClient({
         </div>
       </div>
       <div className="max-w-4xl mx-auto px-4 pt-4">
-        <HQAlertsCard />
+        <HQAlertsCard refreshKey={alertsRefreshKey} />
       </div>
       {showBatchHolidays && (
         <BatchHolidaysDialog

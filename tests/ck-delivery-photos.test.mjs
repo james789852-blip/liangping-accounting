@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import test from 'node:test'
 
 import {
   ckOrderNeedsDeliveryPhoto,
+  memberDeliveryPhotosFromStoreClosings,
   normalizeCKDeliveryPhotoUrls,
 } from '../lib/ck-delivery-photos.ts'
 
@@ -22,4 +24,52 @@ test('配送單網址會去除空白、空值與重複項目', () => {
     normalizeCKDeliveryPhotoUrls([' a.jpg ', '', null, 'a.jpg', 'b.jpg']),
     ['a.jpg', 'b.jpg'],
   )
+})
+
+test('體系內配送單照片只取店面結帳上傳並依店家整理', () => {
+  assert.deepEqual(
+    memberDeliveryPhotosFromStoreClosings([
+      { store_id: 'store-a', ck_delivery_photo_url: ' https://example.com/a.jpg ' },
+      { store_id: 'store-a', ck_delivery_photo_url: 'https://example.com/a.jpg' },
+      { store_id: 'store-b', ck_delivery_photo_url: 'https://example.com/b.jpg' },
+      { store_id: 'store-c', ck_delivery_photo_url: ' ' },
+      { store_id: null, ck_delivery_photo_url: 'https://example.com/ignored.jpg' },
+    ]),
+    {
+      'store-a': ['https://example.com/a.jpg'],
+      'store-b': ['https://example.com/b.jpg'],
+    },
+  )
+})
+
+test('央廚體系內叫貨不再要求或儲存配送照片，體系外仍需照片', () => {
+  const actionSource = fs.readFileSync(new URL('../app/actions/ck.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(actionSource, /missingMemberPhotos/)
+  assert.match(actionSource, /missingExternalPhotos/)
+  assert.match(actionSource, /體系外叫貨尚未上傳配送單照片/)
+
+  const formSource = fs.readFileSync(new URL('../components/manager/ck-daily-form.tsx', import.meta.url), 'utf8')
+  assert.match(formSource, /央廚不需重複上傳/)
+  assert.match(formSource, /體系外叫貨配送單/)
+
+  const overviewSource = fs.readFileSync(new URL('../app/hq/ck/page.tsx', import.meta.url), 'utf8')
+  assert.match(overviewSource, /ck_delivery_photo_url/)
+  assert.match(overviewSource, /memberDeliveryPhotosFromStoreClosings/)
+})
+
+test('總公司切換央廚對帳日期後仍從店面帳目同步配送單照片', () => {
+  const actionSource = fs.readFileSync(new URL('../app/actions/ck-overview.ts', import.meta.url), 'utf8')
+
+  assert.match(actionSource, /select\('store_id, total_cost, ck_delivery_photo_url'\)/)
+  assert.match(actionSource, /memberDeliveryPhotosFromStoreClosings/)
+  assert.match(actionSource, /deliveryPhotoUrls: memberDeliveryPhotosByStore\[id\] \?\? \[\]/)
+})
+
+test('總公司央廚對帳表使用固定欄寬並明確區分兩邊輸入', () => {
+  const overviewSource = fs.readFileSync(new URL('../components/hq/ck-overview.tsx', import.meta.url), 'utf8')
+
+  assert.match(overviewSource, /grid-cols-\[minmax\(180px,1fr\)_84px_136px_136px_92px\]/)
+  assert.match(overviewSource, /店面輸入<\/span>/)
+  assert.match(overviewSource, /央廚輸入<\/span>/)
+  assert.match(overviewSource, /memberTotalDiff === 0 \? '相符'/)
 })

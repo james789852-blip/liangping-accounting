@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getAuthedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
-import { getReceiptSettings } from '@/app/actions/receipt-settings'
+import { getLinkableReceiptItemGroups, getReceiptSettings } from '@/app/actions/receipt-settings'
 import { sortStores } from '@/lib/store-order'
 import { Settings } from 'lucide-react'
 import ReceiptSettingsClient from '@/components/hq/receipt-settings-client'
@@ -46,9 +46,15 @@ export default async function HQReceiptSettingsPage({
     : { data: null }
 
   // 央廚也用兩層 receipt_categories/receipt_vendors（跟店面版一致）
-  const initialData = storeId
-    ? await getReceiptSettings(storeId)
-    : []
+  const [initialData, linkableItemGroups] = storeId
+    ? await Promise.all([
+        getReceiptSettings(storeId),
+        getLinkableReceiptItemGroups(storeId),
+      ])
+    : [[], []]
+  const linkedCategoryNames = initialData
+    .filter(category => category.linked)
+    .map(category => category.name)
   const initialCKGroups: any[] = []
 
   return (
@@ -73,6 +79,8 @@ export default async function HQReceiptSettingsPage({
           stores={stores}
           currentStoreId={storeId}
           initialCategories={initialData}
+          linkedCategoryNames={linkedCategoryNames}
+          linkableItemGroups={linkableItemGroups}
           initialCKGroups={initialCKGroups as any}
         />
       </div>

@@ -1,21 +1,44 @@
 import type { ReactNode } from 'react'
-import { createClient } from '@/lib/supabase/server'
 import { getAuthedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { getBusinessDate } from '@/lib/business-date'
 import { BarChart3, Calendar, ChefHat, ChevronDown, LayoutDashboard, Store } from 'lucide-react'
-import { getCachedAllStores } from '@/lib/cached-queries'
+import { getCachedAllStores, getCachedUserProfile } from '@/lib/cached-queries'
 import { canExportReports, canReviewClosings } from '@/lib/user-permissions'
 import { getCKRangeStats } from '@/lib/ck-aggregator'
 import { resolveReportingActualVendor } from '@/lib/reporting-actual-vendor'
+import { fetchAllPaged } from '@/lib/supabase-paged'
+import {
+  buildReceiptStatisticsHierarchy,
+  receiptStatisticsCategoryOrder,
+  resolveReceiptStatisticsCategory,
+} from '@/lib/receipt-statistics-hierarchy'
 
 export const dynamic = 'force-dynamic'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
 type VendorDetail = { name: string; total: number; count: number }
-type VendorStat = { storeId: string; storeName: string; group: string; total: number; count: number; vendors: VendorDetail[] }
+type ReceiptDetail = {
+  id: string
+  date: string
+  total: number
+  actualVendor: string
+  note: string
+  items: string[]
+}
+type VendorStat = {
+  storeId: string
+  storeName: string
+  category: string
+  group: string
+  total: number
+  count: number
+  vendors: VendorDetail[]
+  details: ReceiptDetail[]
+}
+type ReceiptCategoryStat = { name: string; total: number; count: number; groups: VendorStat[] }
 type DeliveryStoreStat = { name: string; total: number; count: number }
 type StoreSummary = {
   id: string
@@ -25,7 +48,7 @@ type StoreSummary = {
   taxRefund: number
   cost: number
   costRate: number
-  vendors: VendorStat[]
+  receiptCategories: ReceiptCategoryStat[]
   deliveryStores: DeliveryStoreStat[]
 }
 
@@ -34,12 +57,10 @@ export default async function HQDashboard({
 }: {
   searchParams: Promise<{ year?: string; month?: string }>
 }) {
-  const supabase = await createClient()
   const user = await getAuthedUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
-    .from('user_profiles').select('*').eq('user_id', user.id).single()
+  const profile = await getCachedUserProfile(user.id)
   if (!canReviewClosings(profile) && !canExportReports(profile)) redirect('/manager/dashboard')
 
   const admin = createAdminClient()
@@ -62,16 +83,32 @@ export default async function HQDashboard({
     ? today
     : `${year}-${month}-${String(lastDay).padStart(2, '0')}`
 
-  const [stores, { data: monthClosings }, { data: monthReceipts }] = await Promise.all([
+  const [stores, { data: monthClosings }, { data: monthReceipts }, receiptCategories, receiptVendors, itemMappings] = await Promise.all([
     getCachedAllStores(),
     admin.from('daily_closings')
       .select('store_id, total_revenue, status')
       .gte('business_date', firstOfMonth).lte('business_date', selectedEnd)
       .in('status', ['submitted', 'verified']),
     admin.from('receipts')
-      .select('store_id, vendor_name, actual_vendor_name, total_amount')
+      .select('id, store_id, business_date, vendor_name, actual_vendor_name, total_amount, notes, receipt_items(item_name)')
       .gte('business_date', firstOfMonth).lte('business_date', selectedEnd),
+    fetchAllPaged<any>(() => admin.from('receipt_categories')
+      .select('id, store_id, name, sort_order')
+      .gte('sort_order', 0)
+      .order('sort_order')),
+    fetchAllPaged<any>(() => admin.from('receipt_vendors')
+      .select('store_id, category_id, name, sort_order')
+      .order('sort_order')),
+    fetchAllPaged<any>(() => admin.from('item_column_mappings')
+      .select('store_id, item_name, vendor_group, is_tax_addon')
+      .order('sort_order')),
   ])
+
+  const receiptHierarchy = buildReceiptStatisticsHierarchy(
+    receiptCategories ?? [],
+    receiptVendors ?? [],
+    itemMappings ?? [],
+  )
 
   const storeMap = Object.fromEntries(stores.map(store => [store.id, store.name]))
   const revenueByStore: Record<string, number> = {}
@@ -85,11 +122,11 @@ export default async function HQDashboard({
   const ckRefundByStore: Record<string, number> = {}
   const ckCostByStore: Record<string, number> = {}
   const ckDeliveryStoresByKitchen = new Map<string, Map<string, DeliveryStoreStat>>()
-  const ckExpenseRows: { storeId: string; group: string; amount: number }[] = []
+  const ckExpenseRows: { id: string; storeId: string; date: string; group: string; amount: number; note: string; items: string[] }[] = []
   if (ckIds.length > 0) {
     const [{ data: ckRecords }, refundEntries] = await Promise.all([
       admin.from('ck_daily_records')
-        .select('id, ck_store_id')
+        .select('id, ck_store_id, business_date')
         .in('ck_store_id', ckIds)
         .gte('business_date', firstOfMonth).lte('business_date', selectedEnd),
       Promise.all(ckIds.map(async ckId => {
@@ -105,10 +142,11 @@ export default async function HQDashboard({
           .select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount')
           .in('ck_daily_record_id', recordIds),
         admin.from('ck_expense_items')
-          .select('ck_daily_record_id, vendor_group, amount')
+          .select('id, ck_daily_record_id, vendor_group, item_name, amount, note')
           .in('ck_daily_record_id', recordIds),
       ])
       const ckIdByRecord = new Map((ckRecords ?? []).map(record => [record.id as string, record.ck_store_id as string]))
+      const ckDateByRecord = new Map((ckRecords ?? []).map(record => [record.id as string, String(record.business_date ?? '')]))
       for (const order of ckOrders ?? []) {
         const ckId = ckIdByRecord.get(order.ck_daily_record_id as string)
         if (!ckId) continue
@@ -131,8 +169,17 @@ export default async function HQDashboard({
         const amount = Number(expense.amount ?? 0)
         if (!ckId || amount <= 0) continue
         const group = String(expense.vendor_group ?? '').trim() || '未分類'
+        const itemName = String(expense.item_name ?? '').trim()
         ckCostByStore[ckId] = (ckCostByStore[ckId] || 0) + amount
-        ckExpenseRows.push({ storeId: ckId, group, amount })
+        ckExpenseRows.push({
+          id: String(expense.id),
+          storeId: ckId,
+          date: ckDateByRecord.get(expense.ck_daily_record_id as string) ?? '',
+          group,
+          amount,
+          note: String(expense.note ?? '').trim(),
+          items: itemName ? [itemName] : [],
+        })
       }
     }
     // 退稅只在月營業額加一次，不改動各店每日叫貨明細。
@@ -148,20 +195,23 @@ export default async function HQDashboard({
     const amount = Number(receipt.total_amount ?? 0)
     if (amount <= 0) continue
     const group = receipt.vendor_name?.trim() || '未分類'
+    const category = resolveReceiptStatisticsCategory(receiptHierarchy, receipt.store_id, group)
     const actualVendor = resolveReportingActualVendor(
       storeMap[receipt.store_id],
       group,
       receipt.actual_vendor_name,
       '',
     )
-    const key = `${receipt.store_id}|${group}`
-    const row = vendorMap.get(key) ?? {
+    const key = `${receipt.store_id}|${category}|${group}`
+    const row: VendorGroupDraft = vendorMap.get(key) ?? {
       storeId: receipt.store_id,
       storeName: storeMap[receipt.store_id] ?? '未知店家',
+      category,
       group,
       total: 0,
       count: 0,
       vendors: [],
+      details: [],
       vendorMap: new Map<string, VendorDetail>(),
     }
     row.total += amount
@@ -172,34 +222,77 @@ export default async function HQDashboard({
       detail.count += 1
       row.vendorMap.set(actualVendor, detail)
     }
+    const itemNames = Array.from(new Set(
+      (Array.isArray(receipt.receipt_items) ? receipt.receipt_items : [])
+        .map((item: { item_name?: string | null }) => String(item.item_name ?? '').trim())
+        .filter(Boolean),
+    ))
+    row.details.push({
+      id: String(receipt.id),
+      date: String(receipt.business_date ?? ''),
+      total: amount,
+      actualVendor,
+      note: String(receipt.notes ?? '').trim(),
+      items: itemNames,
+    })
     vendorMap.set(key, row)
     costByStore[receipt.store_id] = (costByStore[receipt.store_id] || 0) + amount
   }
   // 央廚採購支出記在 ck_expense_items，不在店面收據表；補入同一份廠商明細。
   for (const expense of ckExpenseRows) {
-    const key = `${expense.storeId}|${expense.group}`
-    const row = vendorMap.get(key) ?? {
+    const category = resolveReceiptStatisticsCategory(receiptHierarchy, expense.storeId, expense.group)
+    const key = `${expense.storeId}|${category}|${expense.group}`
+    const row: VendorGroupDraft = vendorMap.get(key) ?? {
       storeId: expense.storeId,
       storeName: storeMap[expense.storeId] ?? '未知央廚',
+      category,
       group: expense.group,
       total: 0,
       count: 0,
       vendors: [],
+      details: [],
       vendorMap: new Map<string, VendorDetail>(),
     }
     row.total += expense.amount
     row.count += 1
+    row.details.push({
+      id: expense.id,
+      date: expense.date,
+      total: expense.amount,
+      actualVendor: '',
+      note: expense.note,
+      items: expense.items,
+    })
     vendorMap.set(key, row)
   }
 
   const vendorStats: VendorStat[] = [...vendorMap.values()]
-    .map(({ vendorMap: _vendorMap, ...row }) => ({ ...row, vendors: [..._vendorMap.values()].sort((a, b) => b.total - a.total) }))
+    .map(({ vendorMap: _vendorMap, ...row }) => ({
+      ...row,
+      vendors: [..._vendorMap.values()].sort((a, b) => b.total - a.total),
+      details: row.details.sort((a, b) => b.date.localeCompare(a.date) || b.total - a.total),
+    }))
     .sort((a, b) => b.total - a.total)
-  const vendorsByStore = new Map<string, VendorStat[]>()
+  const categoriesByStore = new Map<string, ReceiptCategoryStat[]>()
   for (const vendor of vendorStats) {
-    const rows = vendorsByStore.get(vendor.storeId) ?? []
-    rows.push(vendor)
-    vendorsByStore.set(vendor.storeId, rows)
+    const categories = categoriesByStore.get(vendor.storeId) ?? []
+    let category = categories.find(row => row.name === vendor.category)
+    if (!category) {
+      category = { name: vendor.category, total: 0, count: 0, groups: [] }
+      categories.push(category)
+    }
+    category.total += vendor.total
+    category.count += vendor.count
+    category.groups.push(vendor)
+    categoriesByStore.set(vendor.storeId, categories)
+  }
+  for (const [storeId, categories] of categoriesByStore) {
+    for (const category of categories) category.groups.sort((a, b) => b.total - a.total)
+    categories.sort((a, b) => {
+      const orderDiff = receiptStatisticsCategoryOrder(receiptHierarchy, storeId, a.name)
+        - receiptStatisticsCategoryOrder(receiptHierarchy, storeId, b.name)
+      return orderDiff || b.total - a.total || a.name.localeCompare(b.name, 'zh-Hant')
+    })
   }
   const storeStats: StoreSummary[] = stores.map(store => {
     const revenue = store.type === '央廚'
@@ -214,7 +307,7 @@ export default async function HQDashboard({
       taxRefund: store.type === '央廚' ? (ckRefundByStore[store.id] || 0) : 0,
       cost,
       costRate: revenue > 0 ? (cost / revenue) * 100 : 0,
-      vendors: vendorsByStore.get(store.id) ?? [],
+      receiptCategories: categoriesByStore.get(store.id) ?? [],
       deliveryStores: Array.from(ckDeliveryStoresByKitchen.get(store.id)?.values() ?? [])
         .filter(row => row.total !== 0)
         .sort((a, b) => b.total - a.total),
@@ -375,7 +468,7 @@ function StoreStatsCard({ store, rank, isKitchen }: { store: StoreSummary; rank:
             label={isKitchen ? '叫貨店數／支出率' : '單據／支出率'}
             value={isKitchen
               ? `${store.deliveryStores.length} 家 · ${store.revenue ? store.costRate.toFixed(1) : '—'}%`
-              : `${store.vendors.reduce((sum, v) => sum + v.count, 0)} 筆 · ${store.revenue ? store.costRate.toFixed(1) : '—'}%`}
+              : `${store.receiptCategories.reduce((sum, category) => sum + category.count, 0)} 筆 · ${store.revenue ? store.costRate.toFixed(1) : '—'}%`}
           />
         </div>
         <div className="p-3">
@@ -402,22 +495,67 @@ function StoreStatsCard({ store, rank, isKitchen }: { store: StoreSummary; rank:
               )}
             </div>
           )}
-          {store.vendors.length === 0 ? <p className="text-xs text-center py-3" style={{ color: '#a1a1aa' }}>{isKitchen ? '本月尚無央廚採購支出' : '本月尚無廠商叫貨'}</p> : <div className="space-y-1.5">
-            {isKitchen && <p className="px-1 pb-0.5 text-xs font-semibold" style={{ color: '#71717a' }}>央廚採購／支出明細</p>}
-            {store.vendors.map(group => <div key={`${group.storeId}-${group.group}`} className="rounded-lg overflow-hidden" style={{ background: '#f8fafc' }}>
-              <div className="grid grid-cols-[1fr_55px_95px] gap-2 items-center px-2.5 py-2">
-                <span className="text-sm font-semibold truncate" style={{ color: '#52525b' }}>{group.group}</span>
-                <span className="text-xs text-center tabular-nums" style={{ color: '#a1a1aa' }}>{group.count} 筆</span>
-                <span className="text-sm text-right font-bold tabular-nums" style={{ color: '#c2410c' }}>${fmt(group.total)}</span>
+          {store.receiptCategories.length === 0 ? <p className="text-xs text-center py-3" style={{ color: '#a1a1aa' }}>{isKitchen ? '本月尚無央廚採購支出' : '本月尚無廠商叫貨'}</p> : <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-3 px-1 pb-0.5">
+              <p className="text-xs font-semibold" style={{ color: '#71717a' }}>{isKitchen ? '央廚採購／支出明細' : '依收據管理分類'}</p>
+              <p className="text-[10px]" style={{ color: '#a1a1aa' }}>大類別 → 子類別 → 每筆備註</p>
+            </div>
+            {store.receiptCategories.map(category => (
+              <div key={`${store.id}-${category.name}`} className="rounded-xl overflow-hidden"
+                style={{ background: '#f8fafc', border: `1px solid ${category.name === '未分類' ? '#fecaca' : '#e2e8f0'}` }}>
+                <div className="grid grid-cols-[1fr_55px_95px] gap-2 items-center px-3 py-2.5"
+                  style={{ background: category.name === '未分類' ? '#fff7ed' : '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                  <span className="text-sm font-bold truncate" style={{ color: category.name === '未分類' ? '#9a3412' : '#334155' }}>
+                    {category.name === '未分類' ? '未分類（收據管理尚未設定）' : category.name}
+                  </span>
+                  <span className="text-xs text-center tabular-nums" style={{ color: '#94a3b8' }}>{category.count} 筆</span>
+                  <span className="text-sm text-right font-extrabold tabular-nums" style={{ color: '#c2410c' }}>${fmt(category.total)}</span>
+                </div>
+                <div className="space-y-1.5 p-2">
+                  {category.groups.map(group => (
+                    <div key={`${group.storeId}-${category.name}-${group.group}`} className="rounded-lg overflow-hidden" style={{ background: 'white', border: '1px solid #f1f5f9' }}>
+                      <div className="grid grid-cols-[1fr_55px_95px] gap-2 items-center px-2.5 py-2">
+                        <span className="text-sm font-semibold truncate" style={{ color: '#52525b' }}>↳ {group.group}</span>
+                        <span className="text-xs text-center tabular-nums" style={{ color: '#a1a1aa' }}>{group.count} 筆</span>
+                        <span className="text-sm text-right font-bold tabular-nums" style={{ color: '#c2410c' }}>${fmt(group.total)}</span>
+                      </div>
+                      {group.vendors.length > 0 && <div className="mx-2 mb-2 ml-5 space-y-1 pl-2.5" style={{ borderLeft: '2px solid #fed7aa' }}>
+                        {group.vendors.map(actual => <div key={actual.name} className="grid grid-cols-[1fr_55px_95px] gap-2 items-center px-2 py-1.5 rounded-md" style={{ background: '#fffbeb' }}>
+                          <span className="text-xs truncate" style={{ color: '#71717a' }}>• {actual.name}</span>
+                          <span className="text-[11px] text-center tabular-nums" style={{ color: '#a1a1aa' }}>{actual.count} 筆</span>
+                          <span className="text-xs text-right font-semibold tabular-nums" style={{ color: '#c2410c' }}>${fmt(actual.total)}</span>
+                        </div>)}
+                      </div>}
+                      <details className="group/receipts mx-2 mb-2 overflow-hidden rounded-lg" style={{ border: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                        <summary className="list-none cursor-pointer select-none px-3 py-2 flex items-center justify-between gap-3">
+                          <span className="text-xs font-bold" style={{ color: '#475569' }}>查看每筆購買內容與備註</span>
+                          <span className="text-[11px] shrink-0" style={{ color: '#ea580c' }}>{group.details.length} 筆＋</span>
+                        </summary>
+                        <div className="space-y-2 p-2 pt-0" style={{ borderTop: '1px solid #e2e8f0' }}>
+                          {group.details.map(detail => (
+                            <div key={detail.id} className="rounded-lg p-2.5" style={{ background: 'white', border: '1px solid #f1f5f9' }}>
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-[11px] font-semibold tabular-nums" style={{ color: '#64748b' }}>{detail.date || '日期未填'}</span>
+                                <span className="text-sm font-extrabold tabular-nums" style={{ color: '#c2410c' }}>${fmt(detail.total)}</span>
+                              </div>
+                              <div className="mt-2 grid gap-1 text-xs leading-relaxed">
+                                {detail.actualVendor && (
+                                  <p style={{ color: '#52525b' }}><span className="font-semibold" style={{ color: '#334155' }}>實際廠商：</span>{detail.actualVendor}</p>
+                                )}
+                                <p style={{ color: '#52525b' }}><span className="font-semibold" style={{ color: '#334155' }}>購買品項：</span>{detail.items.length > 0 ? detail.items.join('、') : '未填品項'}</p>
+                                <p className="whitespace-pre-wrap break-words" style={{ color: detail.note ? '#18181b' : '#a1a1aa' }}>
+                                  <span className="font-semibold" style={{ color: '#334155' }}>備註：</span>{detail.note || '未填備註'}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    </div>
+                  ))}
+                </div>
               </div>
-              {group.vendors.length > 0 ? <div className="ml-3 mr-2 mb-2 pl-3 space-y-1" style={{ borderLeft: '2px solid #e2e8f0' }}>
-                {group.vendors.map(actual => <div key={actual.name} className="grid grid-cols-[1fr_55px_95px] gap-2 items-center px-2 py-1.5 rounded-md" style={{ background: 'white' }}>
-                  <span className="text-xs truncate" style={{ color: '#71717a' }}>↳ {actual.name}</span>
-                  <span className="text-[11px] text-center tabular-nums" style={{ color: '#a1a1aa' }}>{actual.count} 筆</span>
-                  <span className="text-xs text-right font-semibold tabular-nums" style={{ color: '#c2410c' }}>${fmt(actual.total)}</span>
-                </div>)}
-              </div> : <p className="px-3 pb-2 text-[11px]" style={{ color: '#a1a1aa' }}>未填實際廠商</p>}
-            </div>)}
+            ))}
           </div>}
         </div>
       </div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, memo, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Store, CKPrice } from '@/lib/types'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { toast } from 'sonner'
@@ -21,11 +22,13 @@ import { calculateClosingSummary } from '@/lib/closing-summary'
 import { findTaxAddonMapping as findTaxAddonByContext, taxAddonBaseName } from '@/lib/tax-addon'
 import type { CategoryWithVendors } from '@/app/actions/receipt-settings'
 import SharedSafePhotoImage from '@/components/shared/safe-photo-image'
+import { supabasePreviewUrl } from '@/lib/photo-image-url'
 import { storePhotoPath } from '@/lib/storage-paths'
 import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
 import { shouldRestoreRemittanceAdjustmentDraft } from '@/lib/remittance-adjustment-draft'
 import { prepareReserveDraftItems } from '@/lib/reserve-draft'
 import { getEnvelopePackingState } from '@/lib/envelope-packing'
+import { hasSelectableVendorItems } from '@/lib/vendor-only-mapping'
 
 interface RemittanceAdjustment {
   id: string
@@ -140,7 +143,7 @@ function SafeImage({
   style?: CSSProperties
   fallbackText?: string
 }) {
-  return <SharedSafePhotoImage src={src} alt={alt} className={className} style={style} fallbackText={fallbackText} thumb width={900} height={600} />
+  return <SharedSafePhotoImage src={src} alt={alt} className={className} style={style} fallbackText={fallbackText} thumb width={160} height={160} />
 }
 
 async function uploadReceiptPhoto(path: string, rawFile: File): Promise<{ publicUrl: string } | { error: string }> {
@@ -2373,7 +2376,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       toast.error('請輸入稅外加金額')
       return
     }
-    const vendorHasSubItems = !!editVendor && mappingColumns.some(c => c.vendor_group === editVendor)
+    const vendorHasSubItems = hasSelectableVendorItems(editVendor, mappingColumns)
     const isNoItemMode = !!editVendor && !vendorHasSubItems
     if (!isNoItemMode && !editItems.some(i => i.item_name.trim())) { toast.error('請至少選擇一個品項'); return }
     const oldReceipt = localReceipts.find(r => r.id === editingReceiptId)
@@ -2732,7 +2735,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return
     }
     // 判別「無品項模式」：廠商下沒有子品項（廠商本身即品項，例：瓦斯 / 水費 / 電費）
-    const vendorHasSubItems = !!form.vendor_name && mappingColumns.some(c => c.vendor_group === form.vendor_name)
+    const vendorHasSubItems = hasSelectableVendorItems(form.vendor_name, mappingColumns)
     const isNoItemMode = !!form.vendor_name && !vendorHasSubItems
     if (!isNoItemMode) {
       const hasValidItem = (form.items ?? []).some(i => i.item_name.trim())
@@ -3529,6 +3532,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const stepNum = step + 1
   const previousStepIdRef = useRef<string | undefined>(undefined)
 
+  // 進入照片核對後先抓目前與後兩張的閱讀版圖片；切換時通常可直接從快取顯示。
+  useEffect(() => {
+    if (stepId !== 'ai_verify' || verifyItems.length === 0) return
+    const firstUnconfirmed = verifyItems.findIndex(item => !item.confirmed)
+    const startIndex = reviewIndex ?? (firstUnconfirmed >= 0 ? firstUnconfirmed : 0)
+    const urls = Array.from({ length: Math.min(3, verifyItems.length) }, (_, offset) =>
+      verifyItems[(startIndex + offset) % verifyItems.length]?.photoUrl,
+    ).filter((url): url is string => !!url)
+
+    for (const url of new Set(urls)) {
+      const image = new window.Image()
+      image.decoding = 'async'
+      image.src = supabasePreviewUrl(url)
+    }
+  }, [reviewIndex, stepId, verifyItems])
+
   useEffect(() => {
     if (!stepMounted) return
     const button = stepButtonRefs.current[step]
@@ -3779,10 +3798,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               注意：目前正在做 <b className="text-base">{today}</b> 的帳目，不是今天 <b>{realToday ?? '今日'}</b>
             </span>
             {realToday && (
-              <a href={`/manager/closing?date=${encodeURIComponent(realToday)}`} className="font-bold shrink-0 px-3 py-1.5 rounded-full"
+              <Link href={`/manager/closing?date=${encodeURIComponent(realToday)}`} className="font-bold shrink-0 px-3 py-1.5 rounded-full"
                 style={{ color: '#fff', background: '#EA580C' }}>
                 切回今日
-              </a>
+              </Link>
             )}
           </div>
         )}
@@ -3790,9 +3809,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           <div className="px-5 py-2 text-xs font-medium flex items-center justify-between gap-2"
             style={{ background: '#FFFBEB', color: '#92400E', borderBottom: '1px solid #FDE68A' }}>
             <span>有未完成的補做草稿：{latestBackfillDraftDate}。今日結帳不會自動切過去。</span>
-            <a href={`/manager/closing?date=${encodeURIComponent(latestBackfillDraftDate)}`} className="font-semibold underline shrink-0" style={{ color: '#78350F' }}>
+            <Link href={`/manager/closing?date=${encodeURIComponent(latestBackfillDraftDate)}`} className="font-semibold underline shrink-0" style={{ color: '#78350F' }}>
               前往補做
-            </a>
+            </Link>
           </div>
         )}
         <div className="px-5 py-2.5 flex items-center justify-between gap-3"
@@ -4242,7 +4261,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                         {/* 品項 — 若廠商下沒子品項（廠商本身就是品項，例：瓦斯/水費/電費）→ 隱藏 */}
                         {!isDirectReceiptCategory(form.category) && !isItemOnlyReceiptCategory(form.category) && ((() => {
-                          const vendorHasSubItems = !!form.vendor_name && mappingColumns.some(c => c.vendor_group === form.vendor_name)
+                          const vendorHasSubItems = hasSelectableVendorItems(form.vendor_name, mappingColumns)
                           const isNoItemMode = !!form.vendor_name && !vendorHasSubItems
                           return isNoItemMode
                         })() ? (
@@ -4725,7 +4744,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                             {/* 品項 — 若廠商下沒子品項（廠商本身就是品項）→ 隱藏 */}
                             {!isDirectReceiptCategory(editCategory) && !isItemOnlyReceiptCategory(editCategory) && ((() => {
-                              const vendorHasSubItems = !!editVendor && mappingColumns.some(c => c.vendor_group === editVendor)
+                              const vendorHasSubItems = hasSelectableVendorItems(editVendor, mappingColumns)
                               return !!editVendor && !vendorHasSubItems
                             })() ? (
                               <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
@@ -6496,12 +6515,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   </div>
 
                   {/* 照片區域 */}
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: '8px' }}>
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: '8px', position: 'relative' }}>
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'rgba(255,255,255,0.55)', fontSize: '13px' }}>
+                      <Loader2 className="h-5 w-5 animate-spin" />載入照片中
+                    </div>
                     <SharedSafePhotoImage
+                      key={reviewItem.key}
                       src={reviewItem.photoUrl}
                       alt="receipt"
                       loading="eager"
-                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px', display: 'block' }}
+                      thumb
+                      width={1400}
+                      height={1800}
+                      resize="contain"
+                      quality={72}
+                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px', display: 'block', position: 'relative', zIndex: 1, background: '#0a0a0a' }}
                     />
                   </div>
 

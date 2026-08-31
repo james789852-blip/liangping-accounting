@@ -46,3 +46,7 @@ next-env.d.ts
 
 # 資料庫備份（含營運資料，絕不進 repo）
 /backups/
+
+# 本機交付檔（可能包含登入資訊，不進 repo）
+/output/
+/tmp/pdfs/

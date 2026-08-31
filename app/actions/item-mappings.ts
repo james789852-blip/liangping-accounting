@@ -8,6 +8,106 @@ import { after } from 'next/server'
 import { syncMiscVendorsFromMappingChange } from '@/lib/misc-sync'
 import { canManageCKItems, canManageStoreItems } from '@/lib/user-permissions'
 import { historicalItemSyncTargets } from '@/lib/item-history-scope'
+import { isMiscVendorGroup, MISC_VENDOR_GROUP, normalizeVendorGroupName } from '@/lib/linked-receipt-category'
+
+const ITEM_CATEGORIES = ['食材', '耗材', '雜項'] as const
+type ItemCategory = typeof ITEM_CATEGORIES[number]
+
+function normalizeItemCategory(value?: string | null): ItemCategory {
+  return ITEM_CATEGORIES.includes(value as ItemCategory) ? value as ItemCategory : '雜項'
+}
+
+async function upsertVendorOnlyMapping(
+  admin: ReturnType<typeof createAdminClient>,
+  storeId: string,
+  vendorGroup: string,
+  itemCategory: string,
+  vgSortOrder?: number,
+) {
+  const group = vendorGroup.trim()
+  const category = normalizeItemCategory(itemCategory)
+  const { data: groupMappings, error: mappingError } = await admin.from('item_column_mappings')
+    .select('id, item_name, excel_column, item_category, vendor_group, doc_type_override, vg_sort_order, is_tax_addon')
+    .eq('store_id', storeId)
+    .eq('vendor_group', group)
+  if (mappingError) return { error: mappingError.message }
+
+  const selfMapping = (groupMappings ?? []).find(mapping => (
+    mapping.item_name?.trim() === group && mapping.excel_column?.trim() === group
+  ))
+  const realMappings = (groupMappings ?? []).filter(mapping => (
+    mapping.id !== selfMapping?.id && !mapping.is_tax_addon
+  ))
+
+  // 舊流程可能把「阿一蔬果」建立成日常用品／雜項內的一個同名品項。
+  // 當管理者現在把它拉成獨立廠商時，應沿用舊 mapping id，而不是另建一筆，
+  // 這樣歷史帳目的金額、照片與品項連結都能完整保留。
+  if (realMappings.length === 0) {
+    const { data: sameNameMappings, error: sameNameError } = await admin.from('item_column_mappings')
+      .select('id, item_name, excel_column, item_category, vendor_group, doc_type_override, vg_sort_order, is_tax_addon')
+      .eq('store_id', storeId)
+      .eq('item_name', group)
+      .eq('excel_column', group)
+    if (sameNameError) return { error: sameNameError.message }
+
+    const legacyCandidates = (sameNameMappings ?? []).filter(mapping => (
+      mapping.id !== selfMapping?.id
+      && !mapping.is_tax_addon
+      && normalizeVendorGroupName(mapping.vendor_group) !== group
+    ))
+
+    // 只有唯一候選才自動搬移；若有多筆同名資料就不猜，以免搬錯廠商。
+    if (legacyCandidates.length === 1) {
+      const legacy = legacyCandidates[0]
+
+      if (selfMapping && selfMapping.id !== legacy.id) {
+        const { error: deleteSelfError } = await admin.from('item_column_mappings')
+          .delete().eq('id', selfMapping.id)
+        if (deleteSelfError) return { error: deleteSelfError.message }
+      }
+
+      const { error: moveError } = await admin.from('item_column_mappings')
+        .update({
+          item_category: category,
+          vendor_group: group,
+          vg_sort_order: vgSortOrder ?? legacy.vg_sort_order ?? 99999,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', legacy.id)
+      return moveError
+        ? { error: moveError.message }
+        : { success: true as const, migratedMappingId: legacy.id }
+    }
+  }
+
+  // 已有真正品項時，群組分類套用到群組內所有明細。
+  if (realMappings.length > 0) {
+    const { error } = await admin.from('item_column_mappings')
+      .update({ item_category: category, updated_at: new Date().toISOString() })
+      .eq('store_id', storeId)
+      .eq('vendor_group', group)
+    return error ? { error: error.message } : { success: true as const }
+  }
+
+  if (selfMapping) {
+    const { error } = await admin.from('item_column_mappings')
+      .update({ item_category: category, updated_at: new Date().toISOString() })
+      .eq('id', selfMapping.id)
+    return error ? { error: error.message } : { success: true as const }
+  }
+
+  const { error } = await admin.from('item_column_mappings').insert({
+    item_name: group,
+    excel_column: group,
+    item_category: category,
+    vendor_group: group,
+    store_id: storeId,
+    sort_order: 10,
+    vg_sort_order: vgSortOrder ?? 99999,
+    updated_at: new Date().toISOString(),
+  })
+  return error ? { error: error.message } : { success: true as const }
+}
 
 // 用 defer 執行 sync：response 送回 client 後才跑，不阻塞使用者
 function deferSyncMisc(storeId: string | null | undefined) {
@@ -32,6 +132,238 @@ function revalidate() {
 function revalidateLight() {
   revalidatePath('/hq/item-mappings')
   revalidateTag('item-mappings', 'default')
+}
+
+/**
+ * 新增品項群組：
+ * - vendor：收進收據管理的「廠商」底下（菜商、雜貨、免洗等）。
+ * - direct：建立成可由收據管理選擇啟用的獨立大類別（日常用品、貨車保養等）。
+ */
+export async function createStoreVendorGroup(
+  storeId: string,
+  name: string,
+  sortOrder: number,
+  mode: 'vendor' | 'direct' = 'vendor',
+  itemCategory: string = '雜項',
+) {
+  const auth = await requireCanManageItems(storeId)
+  if (auth.error) return { error: auth.error }
+  const trimmed = name.trim()
+  if (!trimmed) return { error: '請輸入分類名稱' }
+  if (mode === 'vendor' && trimmed === '廠商') return { error: '「廠商」是上層名稱，請輸入實際廠商分類' }
+
+  const admin = createAdminClient()
+  const { data: existingGroup, error: existingGroupError } = await admin.from('system_vendor_groups')
+    .select('id, sort_order, active')
+    .eq('name', trimmed)
+    .maybeSingle()
+  if (existingGroupError) return { error: existingGroupError.message }
+
+  let groupId = existingGroup?.id as string | undefined
+  if (existingGroup) {
+    if (!existingGroup.active) {
+      const { error } = await admin.from('system_vendor_groups')
+        .update({ active: true, kind: 'vendor', updated_at: new Date().toISOString() })
+        .eq('id', existingGroup.id)
+      if (error) return { error: error.message }
+    }
+  } else {
+    const { data: createdGroup, error } = await admin.from('system_vendor_groups').insert({
+      name: trimmed,
+      kind: 'vendor',
+      sort_order: sortOrder,
+      active: true,
+    }).select('id').single()
+    if (error) return { error: error.message }
+    groupId = createdGroup.id
+  }
+
+  if (mode === 'vendor') {
+    const { data: existingParent, error: parentError } = await admin.from('receipt_categories')
+      .select('id, sort_order')
+      .eq('store_id', storeId)
+      .eq('name', '廠商')
+      .maybeSingle()
+    if (parentError) return { error: parentError.message }
+
+    let parentId = existingParent?.id as string | undefined
+    if (!parentId) {
+      const { data: categoryRows } = await admin.from('receipt_categories')
+        .select('sort_order').eq('store_id', storeId).gte('sort_order', 0)
+      const nextSort = Math.max(0, ...(categoryRows ?? []).map(row => row.sort_order ?? 0)) + 10
+      const { data: parent, error } = await admin.from('receipt_categories').insert({
+        store_id: storeId,
+        name: '廠商',
+        sort_order: nextSort,
+      }).select('id').single()
+      if (error) return { error: error.message }
+      parentId = parent.id
+    } else if ((existingParent?.sort_order ?? 0) < 0) {
+      const { data: categoryRows } = await admin.from('receipt_categories')
+        .select('sort_order').eq('store_id', storeId).gte('sort_order', 0)
+      const nextSort = Math.max(0, ...(categoryRows ?? []).map(row => row.sort_order ?? 0)) + 10
+      const { error } = await admin.from('receipt_categories')
+        .update({ sort_order: nextSort }).eq('id', existingParent!.id)
+      if (error) return { error: error.message }
+    }
+
+    const { data: existingVendor, error: vendorError } = await admin.from('receipt_vendors')
+      .select('id')
+      .eq('store_id', storeId)
+      .eq('category_id', parentId)
+      .eq('name', trimmed)
+      .maybeSingle()
+    if (vendorError) return { error: vendorError.message }
+    if (!existingVendor) {
+      const { data: vendorRows } = await admin.from('receipt_vendors')
+        .select('sort_order').eq('category_id', parentId)
+      const nextVendorSort = Math.max(0, ...(vendorRows ?? []).map(row => row.sort_order ?? 0)) + 10
+      const { error } = await admin.from('receipt_vendors').insert({
+        store_id: storeId,
+        category_id: parentId,
+        name: trimmed,
+        sort_order: nextVendorSort,
+      })
+      if (error) return { error: error.message }
+    }
+
+    // 舊版曾把每個廠商先建立成隱藏的大類別；改用「廠商 → 子類別」後移除候選資料。
+    await admin.from('receipt_categories')
+      .delete()
+      .eq('store_id', storeId)
+      .eq('name', trimmed)
+      .lt('sort_order', 0)
+
+    const mapped = await upsertVendorOnlyMapping(admin, storeId, trimmed, itemCategory, sortOrder)
+    if ('error' in mapped) return { error: mapped.error }
+  } else {
+    const { data: existingCategory, error: existingCategoryError } = await admin.from('receipt_categories')
+      .select('id, sort_order')
+      .eq('store_id', storeId)
+      .eq('name', trimmed)
+      .maybeSingle()
+    if (existingCategoryError) return { error: existingCategoryError.message }
+
+    if (!existingCategory) {
+      const { error } = await admin.from('receipt_categories').insert({
+        store_id: storeId,
+        name: trimmed,
+        // -2 代表「獨立大類別，尚未由收據管理選擇加入」。
+        sort_order: -2,
+      })
+      if (error) return { error: error.message }
+    } else if ((existingCategory.sort_order ?? 0) < 0 && existingCategory.sort_order !== -2) {
+      const { error } = await admin.from('receipt_categories')
+        .update({ sort_order: -2 }).eq('id', existingCategory.id)
+      if (error) return { error: error.message }
+    }
+  }
+
+  revalidate()
+  return { success: true as const, id: groupId, sort_order: existingGroup?.sort_order ?? sortOrder, mode }
+}
+
+/**
+ * 修改單一據點的分類層級，不移動或刪除底下品項：
+ * - vendor：顯示在「廠商」底下。
+ * - direct：成為收據管理可選擇啟用的獨立大類別。
+ */
+export async function setStoreVendorGroupMode(
+  storeId: string,
+  name: string,
+  mode: 'vendor' | 'direct',
+) {
+  const auth = await requireCanManageItems(storeId)
+  if (auth.error) return { error: auth.error }
+  const group = name.trim()
+  if (!group || group === '廠商') return { error: '分類名稱不正確' }
+
+  const admin = createAdminClient()
+  const [{ data: category }, { data: parent }, { data: groupMappings }] = await Promise.all([
+    admin.from('receipt_categories')
+      .select('id, sort_order').eq('store_id', storeId).eq('name', group).maybeSingle(),
+    admin.from('receipt_categories')
+      .select('id, sort_order').eq('store_id', storeId).eq('name', '廠商').maybeSingle(),
+    admin.from('item_column_mappings')
+      .select('id, item_name, excel_column, item_category, vendor_group, is_tax_addon, vg_sort_order')
+      .eq('store_id', storeId).eq('vendor_group', group),
+  ])
+
+  if (mode === 'direct') {
+    const { error: categoryError } = category
+      ? await admin.from('receipt_categories').update({ sort_order: -2 }).eq('id', category.id)
+      : await admin.from('receipt_categories').insert({ store_id: storeId, name: group, sort_order: -2 })
+    if (categoryError) return { error: categoryError.message }
+
+    if (parent) {
+      const { error } = await admin.from('receipt_vendors')
+        .delete().eq('store_id', storeId).eq('category_id', parent.id).eq('name', group)
+      if (error) return { error: error.message }
+    }
+
+    // 廠商沒有明細時會有一筆內部占位 mapping；改成獨立類別後不再需要。
+    const markerIds = (groupMappings ?? [])
+      .filter(mapping => !mapping.is_tax_addon
+        && mapping.item_name?.trim() === group
+        && mapping.excel_column?.trim() === group)
+      .map(mapping => mapping.id)
+    if (markerIds.length > 0) {
+      const { error } = await admin.from('item_column_mappings').delete().in('id', markerIds)
+      if (error) return { error: error.message }
+    }
+  } else {
+    let parentId = parent?.id as string | undefined
+    if (!parentId) {
+      const { data: rows } = await admin.from('receipt_categories')
+        .select('sort_order').eq('store_id', storeId).gte('sort_order', 0)
+      const sortOrder = Math.max(0, ...(rows ?? []).map(row => row.sort_order ?? 0)) + 10
+      const { data: createdParent, error } = await admin.from('receipt_categories').insert({
+        store_id: storeId,
+        name: '廠商',
+        sort_order: sortOrder,
+      }).select('id').single()
+      if (error) return { error: error.message }
+      parentId = createdParent.id
+    }
+
+    const { data: existingVendor, error: existingVendorError } = await admin.from('receipt_vendors')
+      .select('id').eq('store_id', storeId).eq('category_id', parentId).eq('name', group).maybeSingle()
+    if (existingVendorError) return { error: existingVendorError.message }
+    if (!existingVendor) {
+      const { data: vendorRows } = await admin.from('receipt_vendors')
+        .select('sort_order').eq('category_id', parentId)
+      const sortOrder = Math.max(0, ...(vendorRows ?? []).map(row => row.sort_order ?? 0)) + 10
+      const { error } = await admin.from('receipt_vendors').insert({
+        store_id: storeId,
+        category_id: parentId,
+        name: group,
+        sort_order: sortOrder,
+      })
+      if (error) return { error: error.message }
+    }
+
+    if (category) {
+      const { error } = await admin.from('receipt_categories').delete().eq('id', category.id)
+      if (error) return { error: error.message }
+    }
+
+    const realMappings = (groupMappings ?? []).filter(mapping => !mapping.is_tax_addon && !(
+      mapping.item_name?.trim() === group && mapping.excel_column?.trim() === group
+    ))
+    if (realMappings.length === 0) {
+      const marker = await upsertVendorOnlyMapping(
+        admin,
+        storeId,
+        group,
+        normalizeItemCategory(groupMappings?.[0]?.item_category),
+        groupMappings?.[0]?.vg_sort_order ?? undefined,
+      )
+      if ('error' in marker) return { error: marker.error }
+    }
+  }
+
+  revalidate()
+  return { success: true as const, mode }
 }
 
 function canManageStoreType(profile: any, type?: string | null) {
@@ -76,6 +408,19 @@ async function findActiveSystemItem(
   vendorGroup: string | null | undefined,
 ) {
   const groupName = normalizedVendorGroup(vendorGroup)
+  if (isMiscVendorGroup(groupName)) {
+    const { data: miscGroups } = await admin.from('system_vendor_groups')
+      .select('id').in('name', ['未分類', MISC_VENDOR_GROUP]).eq('active', true)
+    const groupFilters = (miscGroups ?? []).map(group => `vendor_group_id.eq.${group.id}`)
+    const { data } = await admin.from('system_items')
+      .select('id')
+      .eq('name', itemName)
+      .eq('active', true)
+      .or(['vendor_group_id.is.null', ...groupFilters].join(','))
+      .limit(1)
+      .maybeSingle()
+    return data
+  }
   let groupId: string | null = null
   if (groupName) {
     const { data: group } = await admin.from('system_vendor_groups')
@@ -101,21 +446,39 @@ export async function saveItemMapping(
   if (storeId) query = query.eq('store_id', storeId)
   else query = query.is('store_id', null)
   const { data: candidates } = await query
-  const requestedGroup = normalizedVendorGroup(vendorGroup)
-  const existing = (candidates ?? []).find(item => normalizedVendorGroup(item.vendor_group) === requestedGroup)
+  const requestedGroup = normalizeVendorGroupName(vendorGroup)
+  const existing = (candidates ?? []).find(item => normalizeVendorGroupName(item.vendor_group) === requestedGroup)
   if (existing) {
-    const existingGroup = normalizedVendorGroup(existing.vendor_group)
-    if (existingGroup === requestedGroup) {
-      return { success: true as const, alreadyExists: true as const }
+    return { success: true as const, alreadyExists: true as const }
+  }
+
+  // 從「只有廠商、沒有品項」轉成真正品項時，移除內部佔位對應。
+  // 單據類型先帶到第一個真正品項，避免既有設定消失。
+  let vendorOnlyDocType: string | null = null
+  let vendorOnlyVgSort: number | null = null
+  if (storeId && requestedGroup && itemName.trim() !== requestedGroup) {
+    const { data: vendorOnly } = await admin.from('item_column_mappings')
+      .select('id, doc_type_override, vg_sort_order')
+      .eq('store_id', storeId)
+      .eq('vendor_group', requestedGroup)
+      .eq('item_name', requestedGroup)
+      .eq('excel_column', requestedGroup)
+      .maybeSingle()
+    if (vendorOnly) {
+      vendorOnlyDocType = vendorOnly.doc_type_override ?? null
+      vendorOnlyVgSort = vendorOnly.vg_sort_order ?? null
+      const { error } = await admin.from('item_column_mappings').delete().eq('id', vendorOnly.id)
+      if (error) return { error: `新增失敗：${error.message}` }
     }
-    return { error: `品項「${itemName}」已存在於「${existingGroup || '未分類'}」，請先確認分類` }
   }
 
   // 1. 寫 item_column_mappings
   //    sort_order 排到該 vg 內現有最大值 +10 → 新品項永遠在該分類最下方
   let peerQuery = admin.from('item_column_mappings').select('sort_order, vg_sort_order')
   peerQuery = storeId ? peerQuery.eq('store_id', storeId) : peerQuery.is('store_id', null)
-  peerQuery = vendorGroup ? peerQuery.eq('vendor_group', vendorGroup) : peerQuery.is('vendor_group', null)
+  peerQuery = isMiscVendorGroup(vendorGroup)
+    ? peerQuery.or('vendor_group.is.null,vendor_group.eq.未分類,vendor_group.eq.雜項')
+    : peerQuery.eq('vendor_group', requestedGroup)
   const { data: peers } = await peerQuery
   const maxSort = Math.max(0, ...(peers ?? []).map((p: any) => p.sort_order ?? 0))
   const newSort = maxSort + 10
@@ -123,7 +486,8 @@ export async function saveItemMapping(
   // 每店獨立：vg_sort_order（類別排序）繼承該店該類別現有品項的值（同類別須一致）；
   //           若是全新類別，排到該店所有類別的最後。
   let vgSort: number
-  const existingVgSort = (peers ?? []).map((p: any) => p.vg_sort_order).find((v: any) => v != null)
+  const existingVgSort = vendorOnlyVgSort
+    ?? (peers ?? []).map((p: any) => p.vg_sort_order).find((v: any) => v != null)
   if (existingVgSort != null) {
     vgSort = existingVgSort
   } else {
@@ -135,17 +499,18 @@ export async function saveItemMapping(
 
   const { error: insertErr } = await admin.from('item_column_mappings').insert({
     item_name: itemName, excel_column: excelColumn, item_category: itemCategory,
-    vendor_group: vendorGroup ?? null,
+    vendor_group: requestedGroup,
     store_id: storeId ?? null, sort_order: newSort, vg_sort_order: vgSort,
+    doc_type_override: vendorOnlyDocType,
     updated_at: new Date().toISOString(),
   })
   if (insertErr) return { error: `新增失敗：${insertErr.message}` }
 
   // 2. 確保 system_items + store_items 也有這品項
-  const ensured = await ensureSystemItemAndEnable(itemName, itemCategory, vendorGroup, storeId)
+  const ensured = await ensureSystemItemAndEnable(itemName, itemCategory, requestedGroup, storeId)
 
   // 3. 若品項屬「未分類/雜項」→ 同步到收據雜項下拉
-  if (!vendorGroup || vendorGroup === '雜項' || vendorGroup === '未分類') {
+  if (isMiscVendorGroup(vendorGroup)) {
     deferSyncMisc(storeId ?? null)
   }
 
@@ -254,7 +619,7 @@ export async function deleteItemMapping(id: string) {
 
   // 若原本屬「未分類/雜項」→ 同步移除收據雜項下拉
   const oldVg = mapping?.vendor_group
-  if (!oldVg || oldVg === '雜項' || oldVg === '未分類') {
+  if (isMiscVendorGroup(oldVg)) {
     deferSyncMisc(mapping?.store_id ?? null)
   }
 
@@ -271,20 +636,20 @@ export async function updateItemMapping(id: string, excelColumn: string, itemCat
   const auth = await requireCanManageItems(mapping?.store_id ?? null)
   if (auth.error) return { error: auth.error }
   const oldVg = mapping?.vendor_group ?? null
-  const newVg = vendorGroup !== undefined ? (vendorGroup || null) : oldVg
+  const newVg = vendorGroup !== undefined ? normalizeVendorGroupName(vendorGroup) : oldVg
 
   await admin.from('item_column_mappings').update({
     excel_column: excelColumn, item_category: itemCategory,
-    vendor_group: vendorGroup !== undefined ? (vendorGroup || null) : undefined,
+    vendor_group: vendorGroup !== undefined ? newVg : undefined,
     updated_at: new Date().toISOString(),
   }).eq('id', id)
 
   // 同步 store_items.custom_vendor_group_id（xlsx 匯出讀這個）
   if (mapping?.store_id && mapping.item_name && vendorGroup !== undefined) {
     let vgId: string | null = null
-    if (vendorGroup?.trim()) {
+    if (newVg?.trim()) {
       const { data: vg } = await admin.from('system_vendor_groups')
-        .select('id').eq('name', vendorGroup.trim()).eq('active', true).maybeSingle()
+        .select('id').eq('name', newVg.trim()).eq('active', true).maybeSingle()
       vgId = vg?.id ?? null
     }
     const sys = await findActiveSystemItem(admin, mapping.item_name, oldVg)
@@ -297,8 +662,8 @@ export async function updateItemMapping(id: string, excelColumn: string, itemCat
   }
 
   // 若 vg 涉及「未分類/雜項」（進或出）→ 同步收據雜項下拉
-  const wasMisc = !oldVg || oldVg === '雜項' || oldVg === '未分類'
-  const isMisc = !newVg || newVg === '雜項' || newVg === '未分類'
+  const wasMisc = isMiscVendorGroup(oldVg)
+  const isMisc = isMiscVendorGroup(newVg)
   if (wasMisc || isMisc) {
     deferSyncMisc(mapping?.store_id ?? null)
   }
@@ -354,7 +719,7 @@ export async function batchDeleteItemMappings(ids: string[]) {
   const affectedStores = new Set<string | null>()
   for (const m of mappings ?? []) {
     const vg = (m as any).vendor_group
-    if (!vg || vg === '雜項' || vg === '未分類') affectedStores.add(m.store_id ?? null)
+    if (isMiscVendorGroup(vg)) affectedStores.add(m.store_id ?? null)
   }
   for (const sid of affectedStores) deferSyncMisc(sid)
 
@@ -414,7 +779,7 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
 
   // 若品項屬「未分類/雜項」→ 同步 receipt_vendors 名稱（先刪舊 + 加新 = full re-sync）
   const vg = (mapping as any).vendor_group
-  if (!vg || vg === '雜項' || vg === '未分類') {
+  if (isMiscVendorGroup(vg)) {
     deferSyncMisc(mapping.store_id ?? null)
   }
 
@@ -532,7 +897,7 @@ export async function reorderItemMappings(ids: string[]) {
   const affectedStores = new Set<string | null>()
   for (const m of mappings ?? []) {
     const vg = (m as any).vendor_group
-    if (!vg || vg === '雜項' || vg === '未分類') affectedStores.add(m.store_id ?? null)
+    if (isMiscVendorGroup(vg)) affectedStores.add(m.store_id ?? null)
   }
   for (const sid of affectedStores) deferSyncMisc(sid)
 
@@ -554,11 +919,24 @@ export async function reorderStoreVendorGroups(storeId: string, vendorGroups: st
         .from('item_column_mappings')
         .update({ vg_sort_order: order, updated_at: new Date().toISOString() })
         .eq('store_id', storeId)
-      return vgName === '未分類'
-        ? query.or('vendor_group.is.null,vendor_group.eq.未分類')
+      return isMiscVendorGroup(vgName)
+        ? query.or('vendor_group.is.null,vendor_group.eq.未分類,vendor_group.eq.雜項')
         : query.eq('vendor_group', vgName)
     })
   )
+
+  // 收據管理中同名的連動類別使用相同順序，兩個管理畫面不再各排一次。
+  const { data: linkedCategories } = await admin.from('receipt_categories')
+    .select('id, name')
+    .eq('store_id', storeId)
+    .gte('sort_order', 0)
+    .in('name', vendorGroups)
+  await Promise.all((linkedCategories ?? []).map(category => {
+    const index = vendorGroups.indexOf(category.name)
+    return admin.from('receipt_categories')
+      .update({ sort_order: (index + 1) * 10 })
+      .eq('id', category.id)
+  }))
 
   revalidate()
   return { success: true as const }
@@ -595,13 +973,34 @@ export async function setStoreVendorGroupDocType(storeId: string, vendorGroup: s
     .update({ doc_type_override: docOverride || null, updated_at: new Date().toISOString() })
     .eq('store_id', storeId)
 
-  const { error } = vendorGroup === '未分類'
-    ? await query.or('vendor_group.is.null,vendor_group.eq.未分類')
+  const { error } = isMiscVendorGroup(vendorGroup)
+    ? await query.or('vendor_group.is.null,vendor_group.eq.未分類,vendor_group.eq.雜項')
     : await query.eq('vendor_group', vendorGroup)
 
   if (error) return { error: error.message }
   revalidateLight()
   return { success: true as const }
+}
+
+/**
+ * 設定廠商群組的食材／耗材／雜項分類。
+ * 沒有明細品項時會建立一筆不顯示於 UI 的群組對應，讓店長可直接輸入總額。
+ */
+export async function setStoreVendorGroupItemCategory(
+  storeId: string,
+  vendorGroup: string,
+  itemCategory: string,
+) {
+  const auth = await requireCanManageItems(storeId)
+  if (auth.error) return { error: auth.error }
+  const group = vendorGroup.trim()
+  if (!storeId || !group) return { error: '缺少店家或廠商名稱' }
+
+  const admin = createAdminClient()
+  const result = await upsertVendorOnlyMapping(admin, storeId, group, itemCategory)
+  if ('error' in result) return { error: result.error }
+  revalidate()
+  return { success: true as const, itemCategory: normalizeItemCategory(itemCategory) }
 }
 
 /** 設定該 mapping 是否納入「梁平退稅」總額 */
@@ -676,7 +1075,7 @@ export async function setItemTaxAddonScope(
   return { success: true as const }
 }
 
-/** 修改廠商群組名稱（同步更新 system_vendor_groups + item_column_mappings） */
+/** 修改廠商群組名稱（同步更新品項對應與同名的收據管理類別） */
 export async function renameVendorGroup(oldName: string, newName: string, storeId?: string) {
   const auth = await requireCanManageItems(storeId)
   if (auth.error) return { error: auth.error }
@@ -686,14 +1085,35 @@ export async function renameVendorGroup(oldName: string, newName: string, storeI
 
   const admin = createAdminClient()
 
+  // 品項管理中的同名分類是收據管理的資料來源；改名時兩邊必須一起更新。
+  let oldReceiptCategoriesQuery = admin.from('receipt_categories')
+    .select('id, store_id').eq('name', oldName)
+  if (storeId) oldReceiptCategoriesQuery = oldReceiptCategoriesQuery.eq('store_id', storeId)
+  const { data: oldReceiptCategories, error: oldReceiptCategoriesError } = await oldReceiptCategoriesQuery
+  if (oldReceiptCategoriesError) return { error: oldReceiptCategoriesError.message }
+
+  const receiptStoreIds = [...new Set((oldReceiptCategories ?? []).map(category => category.store_id as string))]
+  if (receiptStoreIds.length > 0) {
+    const { data: duplicateReceiptCategories, error: duplicateReceiptCategoriesError } = await admin
+      .from('receipt_categories')
+      .select('store_id')
+      .in('store_id', receiptStoreIds)
+      .eq('name', trimmed)
+    if (duplicateReceiptCategoriesError) return { error: duplicateReceiptCategoriesError.message }
+    if ((duplicateReceiptCategories ?? []).length > 0) {
+      return { error: `收據管理已有類別叫「${trimmed}」，請先合併或刪除重複類別` }
+    }
+  }
+
   if (storeId) {
     // 各店獨立：只改該店的 item_column_mappings，不動全域 system_vendor_groups
     const { data: dup } = await admin.from('item_column_mappings')
       .select('id').eq('store_id', storeId).eq('vendor_group', trimmed).limit(1).maybeSingle()
     if (dup) return { error: `本店已有類別叫「${trimmed}」` }
-    await admin.from('item_column_mappings')
+    const { error: mappingRenameError } = await admin.from('item_column_mappings')
       .update({ vendor_group: trimmed, updated_at: new Date().toISOString() })
       .eq('store_id', storeId).eq('vendor_group', oldName)
+    if (mappingRenameError) return { error: mappingRenameError.message }
 
     // 舊版店面單據下拉另存於 receipt_vendors；一併改名，避免其他仍讀舊表的頁面不同步。
     const { data: receiptCategory } = await admin.from('receipt_categories')
@@ -714,8 +1134,20 @@ export async function renameVendorGroup(oldName: string, newName: string, storeI
     // 全域模式（無 storeId）：維持舊行為，改全域 system_vendor_groups + 所有 mappings
     const { data: dup } = await admin.from('system_vendor_groups').select('id').eq('name', trimmed).eq('active', true).maybeSingle()
     if (dup) return { error: `已有廠商群組叫「${trimmed}」` }
-    await admin.from('system_vendor_groups').update({ name: trimmed, updated_at: new Date().toISOString() }).eq('name', oldName)
-    await admin.from('item_column_mappings').update({ vendor_group: trimmed, updated_at: new Date().toISOString() }).eq('vendor_group', oldName)
+    const { error: systemRenameError } = await admin.from('system_vendor_groups')
+      .update({ name: trimmed, updated_at: new Date().toISOString() }).eq('name', oldName)
+    if (systemRenameError) return { error: systemRenameError.message }
+    const { error: mappingRenameError } = await admin.from('item_column_mappings')
+      .update({ vendor_group: trimmed, updated_at: new Date().toISOString() }).eq('vendor_group', oldName)
+    if (mappingRenameError) return { error: mappingRenameError.message }
+  }
+
+  const receiptCategoryIds = (oldReceiptCategories ?? []).map(category => category.id as string)
+  if (receiptCategoryIds.length > 0) {
+    const { error: receiptCategoryRenameError } = await admin.from('receipt_categories')
+      .update({ name: trimmed })
+      .in('id', receiptCategoryIds)
+    if (receiptCategoryRenameError) return { error: receiptCategoryRenameError.message }
   }
 
   revalidate()
@@ -760,6 +1192,22 @@ export async function deleteVendorGroupWithItems(vgName: string, storeId?: strin
   // 4. 若沒指定 store（全域刪除）→ deactivate system_vendor_group
   if (!storeId) {
     await admin.from('system_vendor_groups').update({ active: false }).eq('name', vgName)
+  } else {
+    // 每店分類由品項管理建立時，刪除分類也同步移除收據管理的同名連動類別。
+    await admin.from('receipt_categories')
+      .delete()
+      .eq('store_id', storeId)
+      .eq('name', vgName)
+
+    const { data: vendorParent } = await admin.from('receipt_categories')
+      .select('id').eq('store_id', storeId).eq('name', '廠商').maybeSingle()
+    if (vendorParent) {
+      await admin.from('receipt_vendors')
+        .delete()
+        .eq('store_id', storeId)
+        .eq('category_id', vendorParent.id)
+        .eq('name', vgName)
+    }
   }
 
   revalidate()

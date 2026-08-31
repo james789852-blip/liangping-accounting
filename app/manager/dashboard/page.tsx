@@ -9,6 +9,7 @@ import { getCachedUserProfile, getCachedStoreById } from '@/lib/cached-queries'
 import { ArrowRight, CalendarDays, ClipboardList, CheckCircle2 } from 'lucide-react'
 import RecentClosingsList from '@/components/manager/recent-closings'
 import CKReimbursementHandoffCard from '@/components/manager/ck-reimbursement-handoff-card'
+import ReturnedAccountingAlert, { type ReturnedAccountingItem } from '@/components/manager/returned-accounting-alert'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,11 +53,12 @@ export default async function ManagerDashboard() {
 
   let todayClosing: any = null
   let recentClosings: any[] = []
+  let returnedClosings: ReturnedAccountingItem[] = []
   let storeName = ''
 
   if (storeId) {
     const admin = createAdminClient()
-    const [storeData, closingRes, recentRes] = await Promise.all([
+    const [storeData, closingRes, recentRes, returnedClosingsRes] = await Promise.all([
       getCachedStoreById(storeId),
       supabase.from('daily_closings')
         .select('id, status, petty_counts, total_revenue, should_include_delivery, actual_remit, total_cost, variance')
@@ -64,6 +66,11 @@ export default async function ManagerDashboard() {
       supabase.from('daily_closings')
         .select('id, business_date, status, total_revenue, should_include_delivery, variance')
         .eq('store_id', storeId).order('business_date', { ascending: false }).limit(8),
+      admin.from('daily_closings')
+        .select('id, business_date, dispute_note, disputed_at, updated_at')
+        .eq('store_id', storeId)
+        .eq('status', 'disputed')
+        .order('business_date', { ascending: false }),
     ])
     storeName = (storeData as any)?.name ?? ''
     if ((storeData as any)?.type === '央廚') {
@@ -99,8 +106,7 @@ export default async function ManagerDashboard() {
           .select('id, business_date, status, review_note, reviewed_at, updated_at')
           .eq('ck_store_id', storeId)
           .eq('status', 'disputed')
-          .order('business_date', { ascending: false })
-          .limit(6),
+          .order('business_date', { ascending: false }),
       ])
       const ckRecord = ckRecordRes.data as any
       const [{ data: ckOrders }, { data: ckExpenses }] = ckRecord
@@ -142,11 +148,12 @@ export default async function ManagerDashboard() {
           sent_at: (r.hq_reimbursement_sent_at ?? null) as string | null,
           photos: ((r.hq_reimbursement_photo_urls as string[] | null) ?? []),
         }))
-      const returnedRecords = ((returnedRecordsRes.data ?? []) as any[])
+      const returnedRecords: ReturnedAccountingItem[] = ((returnedRecordsRes.data ?? []) as any[])
         .map(r => ({
           id: r.id as string,
-          business_date: r.business_date as string,
+          businessDate: r.business_date as string,
           note: ((r.review_note as string | null) || '').trim() || '總公司已退回，請修正後重新送出',
+          href: `/manager/ck?date=${encodeURIComponent(r.business_date as string)}`,
         }))
       const reimbursementNeedsConfirm = pendingReimbursements.length > 0
       const statusLabel = ckRecord?.status === 'submitted' ? '已送出，等待總公司審核'
@@ -219,36 +226,7 @@ export default async function ManagerDashboard() {
               </div>
             </div>
 
-            {returnedRecords.length > 0 && (
-              <div className="rounded-3xl p-5 mb-4" style={{ background: '#FFF1F2', border: '1.5px solid #FDA4AF' }}>
-                <div className="flex items-start justify-between gap-3 mb-4">
-                  <div>
-                    <p className="text-xl font-black" style={{ color: '#BE123C' }}>有帳目被總公司退回</p>
-                    <p className="text-sm font-bold mt-1" style={{ color: '#9F1239' }}>請先修正退回日期的帳目，再重新送出。</p>
-                  </div>
-                  <span className="px-3 py-1 rounded-full text-sm font-black" style={{ background: '#FFE4E6', color: '#BE123C' }}>
-                    {returnedRecords.length} 筆
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {returnedRecords.map(item => (
-                    <div key={item.id} className="rounded-2xl bg-white p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3" style={{ border: '1px solid #FECDD3' }}>
-                      <div>
-                        <p className="text-lg font-black text-gray-900">{item.business_date}</p>
-                        <p className="text-sm font-bold mt-1" style={{ color: '#BE123C' }}>{item.note}</p>
-                      </div>
-                      <Link
-                        href={`/manager/ck?date=${item.business_date}`}
-                        className="inline-flex items-center justify-center rounded-full px-5 py-2 text-sm font-black text-white"
-                        style={{ background: '#E11D48' }}
-                      >
-                        去修正
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <ReturnedAccountingAlert items={returnedRecords} entityLabel="央廚帳目" />
 
             {reimbursementNeedsConfirm && (
               <CKReimbursementHandoffCard ckStoreId={storeId} items={pendingReimbursements} />
@@ -328,6 +306,12 @@ export default async function ManagerDashboard() {
     }
     todayClosing = closingRes.data
     recentClosings = (recentRes.data ?? []).filter((c: any) => c.business_date !== today).slice(0, 7)
+    returnedClosings = ((returnedClosingsRes.data ?? []) as any[]).map(item => ({
+      id: item.id as string,
+      businessDate: item.business_date as string,
+      note: ((item.dispute_note as string | null) || '').trim() || '總公司已退回，請修正後重新送出',
+      href: `/manager/edit/${item.id}`,
+    }))
   }
 
   const pettyVerified = !!(todayClosing?.petty_counts as { verified_at?: string } | null | undefined)?.verified_at
@@ -370,6 +354,8 @@ export default async function ManagerDashboard() {
           </span>
           <ArrowRight className="h-4 w-4 shrink-0" />
         </Link>
+
+        <ReturnedAccountingAlert items={returnedClosings} entityLabel="店面帳目" />
 
         {/* ── 大 CTA 卡片 ── */}
         <Link href={actionHref}>

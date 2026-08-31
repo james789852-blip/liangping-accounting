@@ -1,8 +1,10 @@
 import { getAuthedUser } from '@/lib/authed-user'
+import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import ManagerNav from '@/components/manager/nav'
 import HQNav from '@/components/hq/nav'
+import NavigationSkeleton from '@/components/navigation-skeleton'
 import { getCachedUserProfile, getCachedAllStores, getCachedStoreById } from '@/lib/cached-queries'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import {
@@ -22,7 +24,20 @@ import {
   isStoreRole,
 } from '@/lib/user-permissions'
 
-export default async function ManagerLayout({ children }: { children: React.ReactNode }) {
+export default function ManagerLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex min-h-screen bg-slate-50">
+      <Suspense fallback={<NavigationSkeleton variant="manager" />}>
+        <ManagerNavigation />
+      </Suspense>
+      <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
+        {children}
+      </main>
+    </div>
+  )
+}
+
+async function ManagerNavigation() {
   const user = await getAuthedUser()
   if (!user) redirect('/login')
 
@@ -89,8 +104,7 @@ export default async function ManagerLayout({ children }: { children: React.Reac
 
   if (isHQ) {
     return (
-      <div className="flex min-h-screen bg-slate-50">
-        <HQNav
+      <HQNav
           userName={profile?.name ?? user.email ?? ''}
           role={profile?.role ?? ''}
           allStores={allStores}
@@ -109,17 +123,12 @@ export default async function ManagerLayout({ children }: { children: React.Reac
             canReviewClosings: canReviewClosings(profile),
             canExportReports: canExportReports(profile),
           }}
-        />
-        <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
-          {children}
-        </main>
-      </div>
+      />
     )
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <ManagerNav
+    <ManagerNav
         userName={profile?.name ?? user.email ?? ''}
         storeName={storeName}
         identityStoreName={identityStoreName}
@@ -129,10 +138,6 @@ export default async function ManagerLayout({ children }: { children: React.Reac
         currentStoreId={storeId ?? ''}
         canAccessHQ={belongsToHQ}
         hqHref={getDefaultHQHref(profile)}
-      />
-      <main className="flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
-        {children}
-      </main>
-    </div>
+    />
   )
 }

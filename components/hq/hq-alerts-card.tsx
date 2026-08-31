@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, CalendarClock, ChefHat, Store as StoreIcon } from 'lucide-react'
 import { fetchHQAlerts, type HQAlerts, type OverdueAlert } from '@/app/actions/hq-alerts'
@@ -23,16 +23,32 @@ const overdueStatusLabel: Record<OverdueAlert['status'], string> = {
   handoff: '未點交',
 }
 
-export default function HQAlertsCard() {
+export default function HQAlertsCard({ refreshKey = '' }: { refreshKey?: string }) {
   const [alerts, setAlerts] = useState<HQAlerts | null>(null)
+  const requestIdRef = useRef(0)
+
+  const refreshAlerts = useCallback(async () => {
+    const requestId = ++requestIdRef.current
+    const result = await fetchHQAlerts()
+    if (requestId !== requestIdRef.current || 'error' in result) return
+    setAlerts(result.alerts)
+  }, [])
 
   useEffect(() => {
-    fetchHQAlerts()
-      .then(r => {
-        if ('error' in r) return
-        setAlerts(r.alerts)
-      })
-  }, [])
+    void refreshAlerts()
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refreshAlerts()
+    }
+    const intervalId = window.setInterval(() => void refreshAlerts(), 15_000)
+    window.addEventListener('focus', refreshAlerts)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', refreshAlerts)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [refreshAlerts, refreshKey])
 
   if (!alerts || alerts.overdue.length === 0) return null
 
@@ -70,12 +86,29 @@ function OverdueSection({ items }: { items: OverdueAlert[] }) {
       <div className="mb-3 grid grid-cols-3 gap-2">
         {groups.map(group => {
           const meta = overdueStatusStyle[group.status]
-          return (
-            <div key={group.status} className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-2" style={{ background: meta.bg }}>
+          const oldestItem = group.items[0]
+          const content = <>
               <span className="truncate text-[11px] font-bold" style={{ color: meta.color }}>{overdueStatusLabel[group.status]}</span>
-              <span className="text-xs font-bold tabular-nums" style={{ color: meta.color }}>{group.items.length}</span>
-            </div>
-          )
+              <span className="flex items-center gap-1 text-xs font-bold tabular-nums" style={{ color: meta.color }}>
+                {group.items.length}
+                {oldestItem && <ArrowRight className="h-3 w-3" />}
+              </span>
+            </>
+          const className = 'flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left transition-all'
+
+          if (!oldestItem) {
+            return <div key={group.status} aria-disabled="true" className={`${className} opacity-60`} style={{ background: meta.bg }}>{content}</div>
+          }
+
+          const href = overdueItemHref(oldestItem)
+          return <Link
+            key={group.status}
+            href={href}
+            aria-label={`前往最早一筆${overdueStatusLabel[group.status]}帳目：${oldestItem.name} ${oldestItem.date}`}
+            title={`前往 ${oldestItem.name} ${oldestItem.date} 的帳目`}
+            className={`${className} hover:-translate-y-0.5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2`}
+            style={{ background: meta.bg }}
+          >{content}</Link>
         })}
       </div>
       <div className="grid items-start gap-3 md:grid-cols-2">
@@ -90,9 +123,7 @@ function OverdueSection({ items }: { items: OverdueAlert[] }) {
               <div className="max-h-[280px] overflow-y-auto divide-y" style={{ borderColor: '#f4e4e7' }}>
                 {group.items.map(item => {
                   const meta = overdueStatusStyle[item.status]
-                  const href = item.entity === 'ck'
-                    ? `/hq/accounting?tab=ck&ckStoreId=${encodeURIComponent(item.storeId)}&date=${encodeURIComponent(item.date)}`
-                    : `/hq/accounting?tab=store&storeId=${encodeURIComponent(item.storeId)}&date=${encodeURIComponent(item.date)}`
+                  const href = overdueItemHref(item)
                   return (
                     <Link key={item.id} href={href}
                       className="group flex items-center gap-2.5 bg-white px-3 py-2.5 transition-colors hover:bg-rose-50/50">
@@ -118,4 +149,10 @@ function OverdueSection({ items }: { items: OverdueAlert[] }) {
       </div>
     </section>
   )
+}
+
+function overdueItemHref(item: OverdueAlert) {
+  return item.entity === 'ck'
+    ? `/hq/accounting?tab=ck&ckStoreId=${encodeURIComponent(item.storeId)}&date=${encodeURIComponent(item.date)}`
+    : `/hq/accounting?tab=store&storeId=${encodeURIComponent(item.storeId)}&date=${encodeURIComponent(item.date)}`
 }

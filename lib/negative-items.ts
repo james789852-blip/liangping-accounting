@@ -2,7 +2,7 @@
  * 名稱屬於「負值」的品項：使用者輸入正數，系統自動存負數。
  * 例如「折扣」「退貨」「退款」等，本來就應該以負數呈現。
  */
-const NEGATIVE_KEYWORDS = ['折扣', '退貨', '退款', '退費', '抵扣']
+const NEGATIVE_KEYWORDS = ['折扣', '退貨', '退款', '退費', '抵扣', '賣東西給分店']
 
 export function isNegativeItem(name: string): boolean {
   if (!name) return false

@@ -11,6 +11,8 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMonthLastDay } from '@/lib/business-date'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
+import { resolveCentralKitchenExpenseDocType } from '@/lib/ck-expense-doc-type'
+import { normalizeItemAmount } from '@/lib/negative-items'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -195,21 +197,26 @@ export async function getCKRangeStats(
       const exps = (expenses ?? []).filter((e: any) => e.ck_daily_record_id === rec.id)
       for (const e of exps) {
         const vg = (e.vendor_group ?? '') as string
-        const doc = (e.doc_type ?? '') as string
+        const doc = resolveCentralKitchenExpenseDocType({
+          vendorGroup: vg,
+          itemName: String(e.item_name ?? ''),
+          storedDocType: (e.doc_type ?? '') as string,
+          mappings: mappingItems,
+        })
         const mappedItem = findMappedItem(vg, doc, String(e.item_name ?? ''))
         const isRefund = hasExplicitRefundMappings
           ? !!mappedItem?.is_refund
           : doc === '發票' && vg.includes('退稅')
         const note = typeof e.note === 'string' ? e.note.trim() : ''
+        const amt = normalizeItemAmount(String(e.item_name ?? ''), Number(e.amount ?? 0))
         dd.expenses.push({
-          category: e.category, item_name: e.item_name, amount: e.amount ?? 0,
+          category: e.category, item_name: e.item_name, amount: amt,
           payer_name: e.payer_name ?? undefined,
           vendor_group: vg || undefined, doc_type: doc || undefined,
           note: note || undefined,
           receipt_photo_url: e.receipt_photo_url ?? undefined,
           is_refund: isRefund,
         })
-        const amt = e.amount ?? 0
         if (e.category === '食材') dd.food += amt
         else if (e.category === '耗材') dd.pack += amt
         else dd.misc += amt
