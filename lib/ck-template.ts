@@ -64,7 +64,16 @@ export function prepareCKTemplateStoreColumns(
 
   const headerRow = ws.getRow(layout.headerRowNum)
   for (let offset = 0; offset < availableSlots; offset++) {
-    headerRow.getCell(layout.weekdayCol + 1 + offset).value = storeNames[offset] ?? null
+    const columnNumber = layout.weekdayCol + 1 + offset
+    headerRow.getCell(columnNumber).value = storeNames[offset] ?? null
+    // Old templates used hidden placeholder columns for discontinued stores.
+    // A current store assigned to one of those slots must always be visible in
+    // both the downloaded Excel file and the synced Google Sheet.
+    if (storeNames[offset]) {
+      const column = ws.getColumn(columnNumber)
+      column.hidden = false
+      column.width = Math.max(column.width ?? 0, 12)
+    }
   }
   return true
 }
@@ -239,6 +248,26 @@ export function fillCKWorksheet(
       }
     })
   })
+
+  // Keep the template's wider columns, but grow any narrow data column enough
+  // to show its header and largest monthly/daily number without truncation.
+  for (const colIdx of uniqueCols) {
+    const columnNumber = colIdx as number
+    const headerText = ws.getRow(headerRowNum).getCell(columnNumber).text?.trim() ?? ''
+    if (!headerText) continue
+    let maxCharacters = headerText.length
+    for (let rowNumber = headerRowNum + 1; rowNumber < dataStartRow + days.length; rowNumber++) {
+      const value = ws.getRow(rowNumber).getCell(columnNumber).value
+      let display = ''
+      if (typeof value === 'number') display = value.toLocaleString('en-US', { maximumFractionDigits: 2 })
+      else if (value instanceof Date) display = `${value.getMonth() + 1}月${value.getDate()}日`
+      else if (typeof value === 'string') display = value
+      maxCharacters = Math.max(maxCharacters, display.length)
+    }
+    const column = ws.getColumn(columnNumber)
+    const requiredWidth = Math.min(Math.max(maxCharacters + 2, 8), 24)
+    column.width = Math.max(column.width ?? 0, requiredWidth)
+  }
 
   return { headerRowNum, dataStartRow }
 }

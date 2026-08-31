@@ -17,6 +17,9 @@ test('央廚舊模板會沿用既有欄位排版並替換為目前店家', () =>
   const worksheet = workbook.addWorksheet('6月食耗成本')
   worksheet.getRow(3).values = ['日期', '', '府中', '幸福', '福城', '福城', '海山', '土城', '哇哥', '現場', '營業額']
   worksheet.getCell('F3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }
+  worksheet.getColumn(6).hidden = true
+  worksheet.getColumn(10).hidden = true
+  worksheet.getColumn(6).width = 3
 
   assert.equal(prepareCKTemplateStoreColumns(
     worksheet,
@@ -27,6 +30,9 @@ test('央廚舊模板會沿用既有欄位排版並替換為目前店家', () =>
     ['府中', '幸福', '福城', '心惦', '景新', '海山', '土城', '沐香'],
   )
   assert.equal(worksheet.getCell('F3').fill.fgColor.argb, 'FFFF0000')
+  assert.equal(worksheet.getColumn(6).hidden, false)
+  assert.equal(worksheet.getColumn(10).hidden, false)
+  assert.ok(worksheet.getColumn(6).width >= 12)
 })
 
 test('Google 只同步月分頁時會移除跨分頁公式並保留同分頁公式', () => {
@@ -77,4 +83,5 @@ test('央廚舊月份模板會更新日期並以資料庫金額取代跨分頁�
   assert.equal(worksheet.getCell('G4').value, 20)
   assert.equal(worksheet.getCell('H4').value, 30)
   assert.equal(worksheet.getCell('I4').value, 60)
+  assert.ok(worksheet.getColumn(5).width >= '300'.length + 2)
 })
