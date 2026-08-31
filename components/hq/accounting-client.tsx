@@ -4,10 +4,12 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Loader2, ChevronLeft, ChevronRight, ChevronDown, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays, FileArchive, Check, Square, X, Images } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, ChevronDown, Store as StoreIcon, ChefHat, Download, Calendar, CalendarDays, FileArchive, Check, Square, X, Images, Sheet } from 'lucide-react'
 import { fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
 import { fetchCKDailyDetail } from '@/app/actions/ck-overview'
 import { setManagerStore } from '@/app/actions/store-select'
+import { reSyncMonthToSheets } from '@/app/actions/closings'
+import { syncCKMonthToSheets } from '@/app/actions/ck'
 import type { DailyStats } from '@/lib/store-aggregator'
 import { getBusinessDate } from '@/lib/business-date'
 import ReviewCard from './review-card'
@@ -717,6 +719,7 @@ function BatchExcelGroup({
 /* ─────────── 匯出按鈕（含年月自由選擇） ─────────── */
 function ExportButtons({ kind, storeId, storeName, date }: { kind: 'store' | 'ck'; storeId: string; storeName: string; date: string }) {
   const [downloading, setDownloading] = useState<'month' | 'year' | null>(null)
+  const [syncing, setSyncing] = useState(false)
   const [dy, dm] = date.split('-')
   const nowY = new Date().getFullYear()
   const [year, setYear] = useState<number>(parseInt(dy))
@@ -757,6 +760,23 @@ function ExportButtons({ kind, storeId, storeName, date }: { kind: 'store' | 'ck
     }
   }
 
+  async function handleSync() {
+    if (!storeId) return
+    const month = `${year}-${String(monthNum).padStart(2, '0')}`
+    setSyncing(true)
+    try {
+      const result = kind === 'store'
+        ? await reSyncMonthToSheets(storeId, month)
+        : await syncCKMonthToSheets(storeId, month)
+      if ('error' in result && result.error) toast.error('同步失敗：' + result.error)
+      else toast.success(`已同步 ${storeName} ${month} 到 Google 試算表`)
+    } catch (error) {
+      toast.error('同步失敗：' + (error instanceof Error ? error.message : '未知錯誤'))
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   const selectStyle: React.CSSProperties = { height: 34, padding: '0 8px', border: '1px solid #e4e4e7', borderRadius: 8, background: 'white', fontFamily: 'inherit', fontSize: 12, color: '#18181b', outline: 'none' }
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -771,6 +791,12 @@ function ExportButtons({ kind, storeId, storeName, date }: { kind: 'store' | 'ck
         style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', color: 'white', boxShadow: '0 2px 6px rgba(245,158,11,0.25)', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1 }}>
         {downloading === 'month' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
         當月 Excel
+      </button>
+      <button type="button" onClick={handleSync} disabled={syncing || downloading !== null}
+        className="flex items-center gap-1.5 px-3 h-[34px] rounded-lg text-xs font-semibold"
+        style={{ background: '#f0fdf4', border: '1.5px solid #22c55e', color: '#15803d', cursor: syncing || downloading ? 'not-allowed' : 'pointer', opacity: syncing || downloading ? 0.6 : 1 }}>
+        {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sheet className="h-3.5 w-3.5" />}
+        同步試算表
       </button>
       <button onClick={() => handleExport('year')} disabled={downloading !== null}
         className="flex items-center gap-1.5 px-3 h-[34px] rounded-lg text-xs font-semibold"

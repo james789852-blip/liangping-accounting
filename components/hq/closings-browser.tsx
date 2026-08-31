@@ -2,9 +2,9 @@
 
 import { useState, useTransition, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Camera, Package, FileText, Search, CheckCircle, RotateCcw, Trash2, Loader2, BarChart2 as BarChart, Banknote, Wallet, ArrowLeftRight, Download, Sheet } from 'lucide-react'
+import { X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Camera, Package, FileText, Search, CheckCircle, RotateCcw, Trash2, Loader2, BarChart2 as BarChart, Banknote, Wallet, ArrowLeftRight, Download } from 'lucide-react'
 import { toast } from 'sonner'
-import { verifyClosing, disputeClosing, deleteClosing, reSyncMonthToSheets } from '@/app/actions/closings'
+import { verifyClosing, disputeClosing, deleteClosing } from '@/app/actions/closings'
 import SafePhotoImage from './safe-photo-image'
 import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 
@@ -293,21 +293,8 @@ function ClosingCard({
   const [expanded, setExpanded] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [exporting, setExporting] = useState(false)
-  const [syncing, setSyncing] = useState(false)
   const st = STATUS[closing.status] ?? STATUS.draft
   const [, mo, d] = closing.business_date.split('-')
-
-  async function handleSync(e: React.MouseEvent) {
-    e.stopPropagation()
-    const month = closing.business_date.slice(0, 7)
-    setSyncing(true)
-    try {
-      const result = await reSyncMonthToSheets(closing.stores.id, month)
-      if (result.error) toast.error(`同步失敗：${result.error}`)
-      else toast.success(`已同步 ${closing.stores.name} ${month} 到 Google Sheets`)
-    } catch { toast.error('同步失敗') }
-    finally { setSyncing(false) }
-  }
 
   async function handleExport(e: React.MouseEvent) {
     e.stopPropagation()
@@ -397,14 +384,6 @@ function ClosingCard({
           <span className="text-xs font-semibold px-2 py-0.5 rounded-lg shrink-0" style={{ background: st.bg, color: st.color }}>{st.label}</span>
           {expanded ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} /> : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />}
         </button>
-        {canReview && (
-          <button type="button" onClick={handleSync} disabled={syncing}
-            className="shrink-0 flex items-center justify-center h-8 w-8 rounded-xl transition-opacity"
-            style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: syncing ? '#a1a1aa' : '#15803d', cursor: syncing ? 'wait' : 'pointer', opacity: syncing ? 0.6 : 1 }}
-            title={`同步 ${closing.stores.name} ${closing.business_date.slice(0, 7)} 到 Google Sheets`}>
-            {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sheet className="h-3.5 w-3.5" />}
-          </button>
-        )}
       </div>
 
       {expanded && (

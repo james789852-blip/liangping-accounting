@@ -4,7 +4,7 @@ import test from 'node:test'
 
 const closingsAction = fs.readFileSync(new URL('../app/actions/closings.ts', import.meta.url), 'utf8')
 const ckAction = fs.readFileSync(new URL('../app/actions/ck.ts', import.meta.url), 'utf8')
-const closingsUI = fs.readFileSync(new URL('../components/hq/closings-browser.tsx', import.meta.url), 'utf8')
+const accountingUI = fs.readFileSync(new URL('../components/hq/accounting-client.tsx', import.meta.url), 'utf8')
 const ckUI = fs.readFileSync(new URL('../components/hq/ck-overview.tsx', import.meta.url), 'utf8')
 const storeEditor = fs.readFileSync(new URL('../components/hq/store-editor.tsx', import.meta.url), 'utf8')
 const sheetsModule = fs.readFileSync(new URL('../lib/google-sheets.ts', import.meta.url), 'utf8')
@@ -27,7 +27,9 @@ test('店面與央廚手動同步 action 都會驗證權限與月份', () => {
 test('總公司介面可綁定試算表並手動重同步', () => {
   assert.match(storeEditor, /google_sheets_id: googleSheetsId\.trim\(\) \|\| null/)
   assert.match(storeEditor, /Google Sheets 試算表 ID/)
-  assert.match(closingsUI, /onClick=\{handleSync\}/)
+  assert.match(accountingUI, /同步試算表/)
+  assert.match(accountingUI, /reSyncMonthToSheets\(storeId, month\)/)
+  assert.match(accountingUI, /syncCKMonthToSheets\(storeId, month\)/)
   assert.match(ckUI, /<SyncSection key=.*ckStoreId=\{d\.ckStore\.id\}/)
 })
 
