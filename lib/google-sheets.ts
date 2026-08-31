@@ -371,7 +371,14 @@ async function applyTemplateFormatting(
   const views: any[] = (ws as any).views ?? []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const frozenView = views.find((v: any) => v.state === 'frozen')
-  reqs.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: frozenView?.ySplit ?? 3, frozenColumnCount: frozenView?.xSplit ?? 2 } }, fields: 'gridProperties.frozenRowCount,gridProperties.frozenColumnCount' } })
+  let frozenRowCount = frozenView?.ySplit ?? 3
+  let frozenColumnCount = frozenView?.xSplit ?? 2
+  // Google Sheets rejects a merge that crosses a freeze boundary, although
+  // Excel permits it. Preserve the workbook's merged layout and only remove
+  // the conflicting freeze direction.
+  if (merges.some(m => m.r0 < frozenRowCount && m.r1 > frozenRowCount)) frozenRowCount = 0
+  if (merges.some(m => m.c0 < frozenColumnCount && m.c1 > frozenColumnCount)) frozenColumnCount = 0
+  reqs.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount, frozenColumnCount } }, fields: 'gridProperties.frozenRowCount,gridProperties.frozenColumnCount' } })
 
   // Merges from template
   for (const m of merges) {

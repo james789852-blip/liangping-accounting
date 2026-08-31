@@ -38,6 +38,11 @@ test('央廚 Google Sheets 與系統下載 Excel 共用原生工作簿', () => {
   assert.doesNotMatch(sheetsModule, /download\(`ck-\$\{ckStoreId\}\.xlsx`\)/)
 })
 
+test('Google Sheets 合併儲存格跨過凍結線時保留 Excel 合併排版', () => {
+  assert.match(sheetsModule, /m\.r0 < frozenRowCount && m\.r1 > frozenRowCount/)
+  assert.match(sheetsModule, /m\.c0 < frozenColumnCount && m\.c1 > frozenColumnCount/)
+})
+
 test('總公司介面可綁定試算表並手動重同步', () => {
   assert.match(storeEditor, /google_sheets_id: googleSheetsId\.trim\(\) \|\| null/)
   assert.match(storeEditor, /Google Sheets 試算表 ID/)
