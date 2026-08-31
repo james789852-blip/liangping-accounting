@@ -24,6 +24,12 @@ test('店面與央廚手動同步 action 都會驗證權限與月份', () => {
   assert.match(ckAction, /MONTH_PATTERN\.test\(month\)/)
 })
 
+test('央廚審核通過後會自動同步 Google Sheets', () => {
+  assert.match(ckAction, /if \(decision === 'verified'\)/)
+  assert.match(ckAction, /await syncCKMonthToSheetsImpl\(ckStoreId, date\.slice\(0, 7\)\)/)
+  assert.match(ckAction, /央廚 \$\{date\.slice\(0, 7\)\} 審核後試算表同步失敗/)
+})
+
 test('總公司介面可綁定試算表並手動重同步', () => {
   assert.match(storeEditor, /google_sheets_id: googleSheetsId\.trim\(\) \|\| null/)
   assert.match(storeEditor, /Google Sheets 試算表 ID/)

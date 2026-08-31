@@ -4,14 +4,13 @@ import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { getMonthLastDay } from '@/lib/business-date'
+import { fillCKWorksheet, type CKDayData } from '@/lib/ck-template'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 const BUCKET = 'excel-templates'
 const FONT_FAMILY = 'Microsoft JhengHei'
 const HEADER_FONT_SIZE = 14
 const DATA_FONT_SIZE = 13
-
-const norm = (s: string) => s.replace(/[\s　（）()]/g, '').toLowerCase()
 
 function getDaysInMonth(year: number, month: number) {
   const count = new Date(year, month, 0).getDate()
@@ -20,21 +19,7 @@ function getDaysInMonth(year: number, month: number) {
   )
 }
 
-const hasFormula = (cell: ExcelJS.Cell) => {
-  const v = cell.value
-  if (v == null || typeof v !== 'object') return false
-  return 'formula' in (v as any) || 'sharedFormula' in (v as any)
-}
-
-interface DayData {
-  storeRevenues: Record<string, number>
-  expenses: Record<string, number>
-  foodTotal: number
-  packTotal: number
-  miscTotal: number
-  totalRevenue: number
-  totalExpense: number
-}
+type DayData = CKDayData
 
 function appendStoreOrdersSheet(
   wb: ExcelJS.Workbook,
@@ -130,83 +115,9 @@ async function fillTemplate(
     ?? wb.worksheets[0]
   if (!ws) { console.warn('[ck-export] no sheet found'); return null }
 
-  // Find header row (C1 contains "日期")
-  let headerRowNum = -1
-  for (let r = 1; r <= 10; r++) {
-    if (ws.getRow(r).getCell(1).text?.replace(/[\s　]/g, '') === '日期') { headerRowNum = r; break }
-  }
-  if (headerRowNum < 0) { console.warn('[ck-export] no header row'); return null }
+  const filled = fillCKWorksheet(ws, days, dataMap)
+  if (!filled) { console.warn('[ck-export] no header row'); return null }
 
-  // Build colMap: name → col index
-  const colMap: Record<string, number> = {}
-  ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
-    const t = cell.text?.trim()
-    if (!t) return
-    colMap[t] = colNum
-    colMap[norm(t)] = colNum
-  })
-
-  const dataStartRow = headerRowNum + 2  // skip monthly total row
-
-  // Clear old numeric values from data rows
-  const uniqueCols = new Set(Object.values(colMap))
-  days.forEach((_, idx) => {
-    const excelRow = ws!.getRow(dataStartRow + idx)
-    for (const colIdx of uniqueCols) {
-      const cell = excelRow.getCell(colIdx as number)
-      if (typeof cell.value === 'number') cell.value = null
-    }
-  })
-
-  // Fill data rows
-  days.forEach((date, idx) => {
-    const rowNum = dataStartRow + idx
-    const d = dataMap[date]
-    if (!d) return
-    const excelRow = ws!.getRow(rowNum)
-
-    function setIfNotFormula(colIdx: number | undefined, value: number) {
-      if (!colIdx || !value) return
-      const cell = excelRow.getCell(colIdx)
-      if (!hasFormula(cell)) cell.value = value
-    }
-
-    // Store revenue columns (match by name)
-    for (const [storeName, amount] of Object.entries(d.storeRevenues)) {
-      if (!amount) continue
-      const colIdx = colMap[storeName] ?? colMap[norm(storeName)]
-      setIfNotFormula(colIdx, amount)
-    }
-
-    // Summary columns
-    setIfNotFormula(colMap['營業額'] ?? colMap['营业额'], d.totalRevenue)
-    setIfNotFormula(colMap['總'] ?? colMap['总'], d.totalExpense)
-    setIfNotFormula(colMap['食材'], d.foodTotal)
-    setIfNotFormula(colMap['耗材'], d.packTotal)
-    setIfNotFormula(colMap['雜項'], d.miscTotal)
-
-    // Individual expense items
-    for (const [itemName, amount] of Object.entries(d.expenses)) {
-      if (!amount) continue
-      const colIdx = colMap[itemName] ?? colMap[norm(itemName)]
-      setIfNotFormula(colIdx, amount)
-    }
-  })
-
-  // Fix shared-formula slave cells
-  ws.eachRow({ includeEmpty: false }, row => {
-    row.eachCell({ includeEmpty: false }, cell => {
-      const v = cell.value
-      if (!v || typeof v !== 'object') return
-      const sv = v as any
-      if (!('sharedFormula' in sv)) return
-      const masterCell = ws.getCell(sv.sharedFormula as string)
-      const masterV = masterCell?.value as any
-      if (!masterV || typeof masterV !== 'object' || !('formula' in masterV)) {
-        cell.value = sv.result ?? null
-      }
-    })
-  })
 
   // 附加「各店叫貨」sheet
   appendStoreOrdersSheet(wb, days, dataMap, assignedStoreNames)

@@ -303,6 +303,23 @@ export async function reviewCKDailyRecord(
     metadata: { business_date: date, decision, note: note ?? null },
   })
 
+  if (decision === 'verified') {
+    try {
+      await syncCKMonthToSheetsImpl(ckStoreId, date.slice(0, 7))
+    } catch (syncError) {
+      const message = syncError instanceof Error ? syncError.message : String(syncError)
+      console.error('[reviewCKDailyRecord] Google Sheets sync failed:', syncError)
+      await logAudit({
+        eventType: 'sheets_sync_failed',
+        severity: 'warn',
+        storeId: ckStoreId,
+        userId: ctx.userId,
+        description: `央廚 ${date.slice(0, 7)} 審核後試算表同步失敗`,
+        metadata: { error: message, month: date.slice(0, 7), business_date: date },
+      })
+    }
+  }
+
   revalidatePath('/hq/ck')
   revalidatePath('/hq/accounting')
   revalidatePath('/manager/ck')

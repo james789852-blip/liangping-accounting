@@ -52,6 +52,27 @@ export function fillCKWorksheet(
   })
 
   const dataStartRow = headerRowNum + 2
+  const firstDate = days[0]
+  const monthNum = firstDate ? Number(firstDate.slice(5, 7)) : null
+  const dateCol = colMap['日期'] ?? colMap[norm('日期')] ?? 1
+  const weekdayCol = colMap['星期'] ?? colMap[norm('星期')] ?? dateCol + 1
+  const revenueCol = colMap['營業額'] ?? colMap['营业额']
+  const storeColumns: Array<{ col: number; name: string }> = []
+
+  // CK templates place member/external-store revenue columns between 日期/星期
+  // and 營業額. These cells may contain formulas that refer to helper sheets in
+  // the original Excel file; Google Sheets only receives the monthly tab, so
+  // write the authoritative database amounts into these cells directly.
+  if (revenueCol && revenueCol > weekdayCol) {
+    for (let col = weekdayCol + 1; col < revenueCol; col++) {
+      storeColumns.push({ col, name: ws.getRow(headerRowNum).getCell(col).text?.trim() ?? '' })
+    }
+  }
+
+  if (monthNum) {
+    ws.name = `${monthNum}月食耗成本`
+    ws.getRow(headerRowNum + 1).getCell(dateCol).value = `${monthNum}月`
+  }
 
   const uniqueCols = new Set(Object.values(colMap))
   days.forEach((_, idx) => {
@@ -65,19 +86,25 @@ export function fillCKWorksheet(
   days.forEach((date, idx) => {
     const rowNum = dataStartRow + idx
     const d = dataMap[date]
-    if (!d) return
     const excelRow = ws.getRow(rowNum)
+
+    excelRow.getCell(dateCol).value = new Date(`${date}T00:00:00+08:00`)
+    const weekday = new Date(`${date}T12:00:00+08:00`).getDay()
+    excelRow.getCell(weekdayCol).value = `星期${WEEKDAYS[weekday]}`
+
+    for (const storeColumn of storeColumns) {
+      const matched = Object.entries(d?.storeRevenues ?? {}).find(([name]) => (
+        name === storeColumn.name || norm(name) === norm(storeColumn.name)
+      ))
+      excelRow.getCell(storeColumn.col).value = matched?.[1] || null
+    }
+
+    if (!d) return
 
     function setIfNotFormula(colIdx: number | undefined, value: number) {
       if (!colIdx || !value) return
       const cell = excelRow.getCell(colIdx)
       if (!hasFormula(cell)) cell.value = value
-    }
-
-    for (const [storeName, amount] of Object.entries(d.storeRevenues)) {
-      if (!amount) continue
-      const colIdx = colMap[storeName] ?? colMap[norm(storeName)]
-      setIfNotFormula(colIdx, amount)
     }
 
     setIfNotFormula(colMap['營業額'] ?? colMap['营业额'], d.totalRevenue)
