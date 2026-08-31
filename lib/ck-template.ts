@@ -270,12 +270,54 @@ function formulaColumnNumber(letters: string): number {
   return result
 }
 
+function formulaColumnLetters(columnNumber: number): string {
+  let result = ''
+  let value = columnNumber
+  while (value > 0) {
+    value--
+    result = String.fromCharCode(65 + (value % 26)) + result
+    value = Math.floor(value / 26)
+  }
+  return result
+}
+
+function formulaAddressParts(address: string): { row: number; column: number } {
+  const match = address.replace(/\$/g, '').match(/^([A-Za-z]+)(\d+)$/)
+  if (!match) throw new Error(`Invalid formula address: ${address}`)
+  return { row: Number(match[2]), column: formulaColumnNumber(match[1]) }
+}
+
+function adjustCKFormula(formula: string, rowOffset: number, columnOffset: number): string {
+  return formula.replace(/(\$?)([A-Z]+)(\$?)(\d+)/gi, (_, absoluteColumn, column, absoluteRow, row) => {
+    const nextColumn = absoluteColumn ? formulaColumnNumber(column) : formulaColumnNumber(column) + columnOffset
+    const nextRow = absoluteRow ? Number(row) : Number(row) + rowOffset
+    return `${absoluteColumn ? '$' : ''}${formulaColumnLetters(nextColumn)}${absoluteRow ? '$' : ''}${nextRow}`
+  })
+}
+
 /**
  * Recalculate the same-sheet formulas used by CK templates and refresh their
  * cached Excel results. Google evaluates these formulas immediately, whereas
  * ExcelJS otherwise preserves stale results from the uploaded template.
  */
 export function refreshCKFormulaResults(ws: ExcelJS.Worksheet): void {
+  // ExcelJS exposes copied formulas as sharedFormula slaves. Turn them into
+  // explicit formulas first so every cached result can be recalculated.
+  ws.eachRow({ includeEmpty: false }, row => {
+    row.eachCell({ includeEmpty: false }, cell => {
+      const value = cell.value
+      if (!value || typeof value !== 'object' || !('sharedFormula' in value) || typeof value.sharedFormula !== 'string') return
+      const masterValue = ws.getCell(value.sharedFormula).value
+      if (!masterValue || typeof masterValue !== 'object' || !('formula' in masterValue) || typeof masterValue.formula !== 'string') return
+      const master = formulaAddressParts(value.sharedFormula)
+      const current = formulaAddressParts(cell.address)
+      cell.value = {
+        formula: adjustCKFormula(masterValue.formula, current.row - master.row, current.column - master.column),
+        result: 'result' in value ? value.result : null,
+      } as ExcelJS.CellFormulaValue
+    })
+  })
+
   const memo = new Map<string, FormulaScalar>()
   const evaluating = new Set<string>()
 
@@ -529,7 +571,9 @@ export function fillCKWorksheet(
     const d = dataMap[date]
     const excelRow = ws.getRow(rowNum)
 
-    excelRow.getCell(dateCol).value = new Date(`${date}T00:00:00+08:00`)
+    // Excel serial dates are timezone-free. Use UTC midnight so ExcelJS writes
+    // an integer serial instead of Taiwan midnight as the previous day + 16h.
+    excelRow.getCell(dateCol).value = new Date(`${date}T00:00:00.000Z`)
     const weekday = new Date(`${date}T12:00:00+08:00`).getDay()
     excelRow.getCell(weekdayCol).value = `星期${WEEKDAYS[weekday]}`
 

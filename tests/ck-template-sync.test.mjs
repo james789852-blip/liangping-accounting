@@ -69,6 +69,10 @@ test('央廚 Excel 會更新同分頁公式的暫存結果以吻合 Google', () 
   worksheet.getCell('D1').value = { formula: "'統計'!A1", result: 7 }
   worksheet.getCell('D2').value = { formula: '100-D1', result: 999 }
   worksheet.getCell('D3').value = { formula: '1-1', result: 999 }
+  worksheet.getCell('C10').value = { formula: 'SUM(C5:C6)', result: 999 }
+  worksheet.getCell('D5').value = 30
+  worksheet.getCell('D6').value = 40
+  worksheet.getCell('D10').value = { sharedFormula: 'C10', result: 999 }
 
   materializeCKCrossSheetFormulas(worksheet)
   refreshCKFormulaResults(worksheet)
@@ -81,6 +85,8 @@ test('央廚 Excel 會更新同分頁公式的暫存結果以吻合 Google', () 
   assert.equal(worksheet.getCell('C9').value.result, 10)
   assert.equal(worksheet.getCell('D2').value.result, 93)
   assert.equal(worksheet.getCell('D3').value, 0)
+  assert.equal(worksheet.getCell('D10').value.formula, 'SUM(D5:D6)')
+  assert.equal(worksheet.getCell('D10').value.result, 70)
 })
 
 test('Excel 與 Google 共用相同的央廚每日資料組裝', () => {
@@ -134,6 +140,7 @@ test('央廚舊月份模板會更新日期並以資料庫金額取代跨分頁�
   assert.equal(worksheet.name, '8月食耗成本')
   assert.equal(worksheet.getCell('A4').value, '8月')
   assert.ok(worksheet.getCell('A5').value instanceof Date)
+  assert.equal(worksheet.getCell('A5').value.toISOString(), '2026-08-01T00:00:00.000Z')
   assert.equal(worksheet.getCell('B5').value, '星期六')
   assert.equal(worksheet.getCell('C5').value, 100)
   assert.equal(worksheet.getCell('D5').value, 200)
