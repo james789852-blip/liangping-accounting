@@ -5,7 +5,7 @@ import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { extractValues, extractColWidths, extractMerges } from '@/lib/food-cost-template'
 import { buildFoodCostNativeWorkbook } from '@/lib/food-cost-native-workbook'
-import { type CKDayData, fillCKWorksheet, buildCKGeneratedWorkbook, clearCKCrossSheetFormulas, prepareCKTemplateStoreColumns, getDaysInMonth } from '@/lib/ck-template'
+import { buildCKDataMap, fillCKWorksheet, buildCKGeneratedWorkbook, materializeCKCrossSheetFormulas, prepareCKTemplateStoreColumns, getDaysInMonth } from '@/lib/ck-template'
 import { getMonthLastDay } from '@/lib/business-date'
 
 function getAuth() {
@@ -144,6 +144,7 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: extractValues(worksheet) },
     })
+    await writeDateColumnsAsText(sheets, sheetsId, tabName, worksheet)
 
     await applyTemplateFormatting(
       sheets,
@@ -171,6 +172,54 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
 }
 type SheetsAPI = ReturnType<typeof google.sheets>
 type RGB = { red: number; green: number; blue: number }
+
+function columnNumberToA1(columnNumber: number): string {
+  let result = ''
+  let value = columnNumber
+  while (value > 0) {
+    value--
+    result = String.fromCharCode(65 + (value % 26)) + result
+    value = Math.floor(value / 26)
+  }
+  return result
+}
+
+/**
+ * USER_ENTERED is required for formulas, but it also makes Google Sheets parse
+ * strings such as "8月1日" as dates. Rewrite only 日期 columns with RAW values so
+ * their visible contents stay identical to the generated Excel workbook.
+ */
+async function writeDateColumnsAsText(
+  sheets: SheetsAPI,
+  spreadsheetId: string,
+  tabName: string,
+  ws: ExcelJS.Worksheet,
+): Promise<void> {
+  const escapedTabName = tabName.replace(/'/g, "''")
+  const maxHeaderRow = Math.min(ws.rowCount, 10)
+  for (let rowNumber = 1; rowNumber <= maxHeaderRow; rowNumber++) {
+    const row = ws.getRow(rowNumber)
+    for (let columnNumber = 1; columnNumber <= ws.columnCount; columnNumber++) {
+      const header = row.getCell(columnNumber).text.replace(/[\s　]/g, '')
+      if (header !== '日期') continue
+
+      const values: string[][] = []
+      for (let dataRow = rowNumber + 1; dataRow <= ws.rowCount; dataRow++) {
+        const cell = ws.getRow(dataRow).getCell(columnNumber)
+        values.push([cell.value == null ? '' : cell.text])
+      }
+      if (values.length === 0) continue
+
+      const column = columnNumberToA1(columnNumber)
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `'${escapedTabName}'!${column}${rowNumber + 1}:${column}${ws.rowCount}`,
+        valueInputOption: 'RAW',
+        requestBody: { values },
+      })
+    }
+  }
+}
 
 function inferNumFmtType(pattern: string): string {
   const stripped = pattern.replace(/"[^"]*"/g, '').toLowerCase()
@@ -473,52 +522,8 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
       : Promise.resolve({ data: [] }),
   ])
 
-  // Build dataMap (mirrors /api/export/ck)
-  // 預先 group by ck_daily_record_id 避免 O(N×M) 線性掃描
-  const ordersByRecordId: Record<string, AnyRecord[]> = {}
-  for (const o of (storeOrders ?? []) as AnyRecord[]) {
-    const k = o.ck_daily_record_id as string
-    if (!ordersByRecordId[k]) ordersByRecordId[k] = []
-    ordersByRecordId[k].push(o)
-  }
-  const expsByRecordId: Record<string, AnyRecord[]> = {}
-  for (const e of (expenseItems ?? []) as AnyRecord[]) {
-    const k = e.ck_daily_record_id as string
-    if (!expsByRecordId[k]) expsByRecordId[k] = []
-    expsByRecordId[k].push(e)
-  }
   const days = getDaysInMonth(year, monthNum)
-  const dataMap: Record<string, CKDayData> = {}
-  for (const record of records ?? []) {
-    const date = record.business_date as string
-    const orders = ordersByRecordId[record.id as string] ?? []
-    const exps = expsByRecordId[record.id as string] ?? []
-
-    const storeRevenues: Record<string, number> = {}
-    for (const o of orders) {
-      const name = (o as AnyRecord).store_id
-        ? storeNameMap[(o as AnyRecord).store_id] ?? (o as AnyRecord).store_id
-        : (o as AnyRecord).external_store_name
-      const amount = (o as AnyRecord).store_id
-        ? Number((o as AnyRecord).ck_confirmed_amount ?? 0)
-        : Number((o as AnyRecord).amount ?? 0)
-      if (name) storeRevenues[name] = (storeRevenues[name] ?? 0) + amount
-    }
-
-    const expenses: Record<string, number> = {}
-    let foodTotal = 0, packTotal = 0, miscTotal = 0
-    for (const e of exps) {
-      const name = (e as AnyRecord).item_name as string
-      const amt = (e as AnyRecord).amount as number
-      expenses[name] = (expenses[name] ?? 0) + amt
-      if ((e as AnyRecord).category === '食材') foodTotal += amt
-      else if ((e as AnyRecord).category === '耗材') packTotal += amt
-      else miscTotal += amt
-    }
-    const totalRevenue = Object.values(storeRevenues).reduce((s, v) => s + v, 0)
-    const totalExpense = foodTotal + packTotal + miscTotal
-    dataMap[date] = { storeRevenues, expenses, foodTotal, packTotal, miscTotal, totalRevenue, totalExpense }
-  }
+  const dataMap = buildCKDataMap(records ?? [], storeOrders ?? [], expenseItems ?? [], storeNameMap)
 
   const assignedStoreNames = assignedIds.map(id => storeNameMap[id]).filter(Boolean)
   const externalStoreNames = [...new Set(
@@ -556,7 +561,7 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
   }
   if (!ws) throw new Error('無法建立工作表')
 
-  clearCKCrossSheetFormulas(ws)
+  materializeCKCrossSheetFormulas(ws)
 
   const wsValues = extractValues(ws)
   const wsWidths = extractColWidths(ws)

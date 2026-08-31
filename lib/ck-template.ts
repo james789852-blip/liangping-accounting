@@ -88,16 +88,89 @@ export interface CKDayData {
   totalExpense: number
 }
 
-/** Google Sheets receives only the monthly tab, so formulas that reference a
- * helper worksheet would become #REF!. Remove only those cross-sheet formulas;
- * same-sheet formulas and the uploaded Excel workbook remain untouched. */
-export function clearCKCrossSheetFormulas(ws: ExcelJS.Worksheet): void {
+export interface CKRecordRow {
+  id: string
+  business_date: string
+}
+
+export interface CKStoreOrderRow {
+  ck_daily_record_id: string
+  store_id: string | null
+  external_store_name: string | null
+  amount: number | string | null
+  ck_confirmed_amount: number | string | null
+}
+
+export interface CKExpenseRow {
+  ck_daily_record_id: string
+  category: string
+  item_name: string
+  amount: number | string | null
+}
+
+/** Shared source-of-truth transformation for both CK Excel and Google Sheets. */
+export function buildCKDataMap(
+  records: CKRecordRow[],
+  storeOrders: CKStoreOrderRow[],
+  expenseItems: CKExpenseRow[],
+  storeNameMap: Record<string, string>,
+): Record<string, CKDayData> {
+  const ordersByRecordId: Record<string, CKStoreOrderRow[]> = {}
+  for (const order of storeOrders) {
+    if (!ordersByRecordId[order.ck_daily_record_id]) ordersByRecordId[order.ck_daily_record_id] = []
+    ordersByRecordId[order.ck_daily_record_id].push(order)
+  }
+  const expensesByRecordId: Record<string, CKExpenseRow[]> = {}
+  for (const expense of expenseItems) {
+    if (!expensesByRecordId[expense.ck_daily_record_id]) expensesByRecordId[expense.ck_daily_record_id] = []
+    expensesByRecordId[expense.ck_daily_record_id].push(expense)
+  }
+
+  const dataMap: Record<string, CKDayData> = {}
+  for (const record of records) {
+    const storeRevenues: Record<string, number> = {}
+    for (const order of ordersByRecordId[record.id] ?? []) {
+      const name = order.store_id
+        ? storeNameMap[order.store_id] ?? order.store_id
+        : order.external_store_name
+      const amount = order.store_id
+        ? Number(order.ck_confirmed_amount ?? 0)
+        : Number(order.amount ?? 0)
+      if (name) storeRevenues[name] = (storeRevenues[name] ?? 0) + amount
+    }
+
+    const expenses: Record<string, number> = {}
+    let foodTotal = 0
+    let packTotal = 0
+    let miscTotal = 0
+    for (const expense of expensesByRecordId[record.id] ?? []) {
+      const amount = Number(expense.amount ?? 0)
+      expenses[expense.item_name] = (expenses[expense.item_name] ?? 0) + amount
+      if (expense.category === '食材') foodTotal += amount
+      else if (expense.category === '耗材') packTotal += amount
+      else miscTotal += amount
+    }
+    const totalRevenue = Object.values(storeRevenues).reduce((sum, amount) => sum + amount, 0)
+    const totalExpense = foodTotal + packTotal + miscTotal
+    dataMap[record.business_date] = { storeRevenues, expenses, foodTotal, packTotal, miscTotal, totalRevenue, totalExpense }
+  }
+  return dataMap
+}
+
+/** Make cross-sheet formulas deterministic in both the generated Excel and the
+ * single-tab Google sync by replacing them with Excel's stored result. */
+export function materializeCKCrossSheetFormulas(ws: ExcelJS.Worksheet): void {
   ws.eachRow({ includeEmpty: false }, row => {
     row.eachCell({ includeEmpty: false }, cell => {
       const value = cell.value
       if (!value || typeof value !== 'object') return
       const formula = 'formula' in value ? value.formula : null
-      if (typeof formula === 'string' && formula.includes('!')) cell.value = null
+      if (typeof formula !== 'string' || !formula.includes('!')) return
+      const result = 'result' in value ? value.result : null
+      cell.value = (
+        (typeof result === 'number' && Number.isFinite(result))
+        || (typeof result === 'string' && !result.startsWith('#'))
+      ) ? result : null
     })
   })
 }

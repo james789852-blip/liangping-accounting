@@ -36,7 +36,8 @@ test('央廚模板會保留原排版並將預留欄位更新為目前店家', ()
   assert.match(sheetsModule, /buildCKGeneratedWorkbook\(monthNum, days, dataMap, assignedStoreNames\)/)
   assert.match(sheetsModule, /Apply formatting for both template and generated workbooks/)
   assert.match(sheetsModule, /gridProperties: \{ rowCount: gridRowCount, columnCount: gridColumnCount \}/)
-  assert.match(sheetsModule, /clearCKCrossSheetFormulas\(ws\)/)
+  assert.match(sheetsModule, /materializeCKCrossSheetFormulas\(ws\)/)
+  assert.match(sheetsModule, /buildCKDataMap\(records \?\? \[\], storeOrders \?\? \[\], expenseItems \?\? \[\], storeNameMap\)/)
 })
 
 test('總公司介面可綁定試算表並手動重同步', () => {
@@ -58,5 +59,7 @@ test('店面 Google Sheets 與當月 Excel 共用原生活頁簿', () => {
   assert.match(sheetsModule, /await buildFoodCostNativeWorkbook\(storeId, year, monthNum\)/)
   assert.match(sheetsModule, /for \(const worksheet of workbook\.worksheets\)/)
   assert.match(sheetsModule, /const tabName = `\$\{year\}年\$\{worksheet\.name\}`/)
+  assert.match(sheetsModule, /await writeDateColumnsAsText\(sheets, sheetsId, tabName, worksheet\)/)
+  assert.match(sheetsModule, /valueInputOption: 'RAW'/)
   assert.doesNotMatch(sheetsModule, /EXCEL_COLUMNS/)
 })

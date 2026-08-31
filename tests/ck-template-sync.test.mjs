@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import ExcelJS from 'exceljs'
-import { ckTemplateHasStoreColumns, clearCKCrossSheetFormulas, fillCKWorksheet, prepareCKTemplateStoreColumns } from '../lib/ck-template.ts'
+import { buildCKDataMap, ckTemplateHasStoreColumns, materializeCKCrossSheetFormulas, fillCKWorksheet, prepareCKTemplateStoreColumns } from '../lib/ck-template.ts'
 
 test('央廚模板缺少目前店家欄位時會判定為過期', () => {
   const workbook = new ExcelJS.Workbook()
@@ -35,16 +35,41 @@ test('央廚舊模板會沿用既有欄位排版並替換為目前店家', () =>
   assert.ok(worksheet.getColumn(6).width >= 12)
 })
 
-test('Google 只同步月分頁時會移除跨分頁公式並保留同分頁公式', () => {
+test('Excel 與 Google 會將跨分頁公式固定為相同結果並保留同分頁公式', () => {
   const workbook = new ExcelJS.Workbook()
   const worksheet = workbook.addWorksheet('8月食耗成本')
-  worksheet.getCell('A1').value = { formula: "SUM('統計'!A1:A3)" }
+  worksheet.getCell('A1').value = { formula: "SUM('統計'!A1:A3)", result: 123 }
   worksheet.getCell('A2').value = { formula: 'SUM(B2:C2)' }
 
-  clearCKCrossSheetFormulas(worksheet)
+  materializeCKCrossSheetFormulas(worksheet)
 
-  assert.equal(worksheet.getCell('A1').value, null)
+  assert.equal(worksheet.getCell('A1').value, 123)
   assert.deepEqual(worksheet.getCell('A2').value, { formula: 'SUM(B2:C2)' })
+})
+
+test('Excel 與 Google 共用相同的央廚每日資料組裝', () => {
+  const dataMap = buildCKDataMap(
+    [{ id: 'r1', business_date: '2026-08-01' }],
+    [
+      { ck_daily_record_id: 'r1', store_id: 's1', external_store_name: null, amount: 999, ck_confirmed_amount: 100 },
+      { ck_daily_record_id: 'r1', store_id: null, external_store_name: '外店', amount: 200, ck_confirmed_amount: null },
+    ],
+    [
+      { ck_daily_record_id: 'r1', category: '食材', item_name: '雞肉', amount: 30 },
+      { ck_daily_record_id: 'r1', category: '耗材', item_name: '紙盒', amount: '20' },
+      { ck_daily_record_id: 'r1', category: '其他', item_name: '運費', amount: 10 },
+    ],
+    { s1: '府中' },
+  )
+  assert.deepEqual(dataMap['2026-08-01'], {
+    storeRevenues: { 府中: 100, 外店: 200 },
+    expenses: { 雞肉: 30, 紙盒: 20, 運費: 10 },
+    foodTotal: 30,
+    packTotal: 20,
+    miscTotal: 10,
+    totalRevenue: 300,
+    totalExpense: 60,
+  })
 })
 
 test('央廚舊月份模板會更新日期並以資料庫金額取代跨分頁公式', () => {

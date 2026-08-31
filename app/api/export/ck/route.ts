@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { getMonthLastDay } from '@/lib/business-date'
-import { prepareCKTemplateStoreColumns, fillCKWorksheet, type CKDayData } from '@/lib/ck-template'
+import { buildCKDataMap, materializeCKCrossSheetFormulas, prepareCKTemplateStoreColumns, fillCKWorksheet, type CKDayData } from '@/lib/ck-template'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 const BUCKET = 'excel-templates'
@@ -126,6 +126,7 @@ async function fillTemplate(
 
   const filled = fillCKWorksheet(ws, days, dataMap)
   if (!filled) { console.warn('[ck-export] no header row'); return null }
+  materializeCKCrossSheetFormulas(ws)
 
 
   // 附加「各店叫貨」sheet
@@ -187,42 +188,8 @@ export async function GET(req: NextRequest) {
       : Promise.resolve({ data: [] }),
   ])
 
-  // Build per-date data
   const days = getDaysInMonth(year, monthNum)
-  const dataMap: Record<string, DayData> = {}
-
-  for (const record of records ?? []) {
-    const date = record.business_date as string
-    const orders = (storeOrders ?? []).filter((o: any) => o.ck_daily_record_id === record.id)
-    const exps = (expenseItems ?? []).filter((e: any) => e.ck_daily_record_id === record.id)
-
-    const storeRevenues: Record<string, number> = {}
-    for (const o of orders) {
-      const name = (o as any).store_id
-        ? storeNameMap[(o as any).store_id] ?? (o as any).store_id
-        : (o as any).external_store_name
-      const amount = (o as any).store_id
-        ? Number((o as any).ck_confirmed_amount ?? 0)
-        : Number((o as any).amount ?? 0)
-      if (name) storeRevenues[name] = (storeRevenues[name] ?? 0) + amount
-    }
-
-    const expenses: Record<string, number> = {}
-    let foodTotal = 0, packTotal = 0, miscTotal = 0
-    for (const e of exps) {
-      const name = (e as any).item_name as string
-      const amt = (e as any).amount as number
-      expenses[name] = (expenses[name] ?? 0) + amt
-      if ((e as any).category === '食材') foodTotal += amt
-      else if ((e as any).category === '耗材') packTotal += amt
-      else miscTotal += amt
-    }
-
-    const totalRevenue = Object.values(storeRevenues).reduce((s, v) => s + v, 0)
-    const totalExpense = foodTotal + packTotal + miscTotal
-
-    dataMap[date] = { storeRevenues, expenses, foodTotal, packTotal, miscTotal, totalRevenue, totalExpense }
-  }
+  const dataMap = buildCKDataMap(records ?? [], storeOrders ?? [], expenseItems ?? [], storeNameMap)
 
   // Try template fill
   try {
