@@ -34,6 +34,7 @@ test('央廚模板店家欄位過期時改用完整的產生版活頁簿', () =>
   assert.match(sheetsModule, /ckTemplateHasStoreColumns\(ws, requiredStoreNames\)/)
   assert.match(sheetsModule, /template store columns are outdated; using generated workbook/)
   assert.match(sheetsModule, /buildCKGeneratedWorkbook\(monthNum, days, dataMap, assignedStoreNames\)/)
+  assert.match(sheetsModule, /Apply formatting for both template and generated workbooks/)
 })
 
 test('總公司介面可綁定試算表並手動重同步', () => {

@@ -568,15 +568,38 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
   const { data: spreadsheet } = await sheets.spreadsheets.get({ spreadsheetId: sheetsId })
   const existingSheet = spreadsheet.sheets?.find(s => s.properties?.title === tabName)
   let sheetId: number
+  let gridRowCount: number
+  let gridColumnCount: number
   if (existingSheet) {
     sheetId = existingSheet.properties?.sheetId ?? 0
+    gridRowCount = existingSheet.properties?.gridProperties?.rowCount ?? 1000
+    gridColumnCount = existingSheet.properties?.gridProperties?.columnCount ?? 26
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: sheetsId,
+      requestBody: {
+        requests: [{
+          unmergeCells: {
+            range: {
+              sheetId,
+              startRowIndex: 0,
+              endRowIndex: gridRowCount,
+              startColumnIndex: 0,
+              endColumnIndex: gridColumnCount,
+            },
+          },
+        }],
+      },
+    })
     await sheets.spreadsheets.values.clear({ spreadsheetId: sheetsId, range: `'${tabName}'` })
   } else {
     const addRes = await sheets.spreadsheets.batchUpdate({
       spreadsheetId: sheetsId,
       requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
     })
-    sheetId = addRes.data.replies?.[0]?.addSheet?.properties?.sheetId ?? 0
+    const properties = addRes.data.replies?.[0]?.addSheet?.properties
+    sheetId = properties?.sheetId ?? 0
+    gridRowCount = properties?.gridProperties?.rowCount ?? 1000
+    gridColumnCount = properties?.gridProperties?.columnCount ?? 26
   }
 
   await sheets.spreadsheets.values.update({
@@ -586,12 +609,21 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
     requestBody: { values: wsValues.map(row => row.map(v => v ?? '')) },
   })
 
-  if (usedTemplate) {
-    try {
-      await applyTemplateFormatting(sheets, sheetsId, sheetId, wsWidths, wsMerges, ws)
-    } catch (fmtErr) {
-      console.warn('[syncCKMonthToSheets] template formatting failed (data already written):', fmtErr)
-    }
+  // Apply formatting for both template and generated workbooks so an outdated
+  // template cannot leave stale merges or column styling behind.
+  try {
+    await applyTemplateFormatting(
+      sheets,
+      sheetsId,
+      sheetId,
+      wsWidths,
+      wsMerges,
+      ws,
+      gridRowCount,
+      gridColumnCount,
+    )
+  } catch (fmtErr) {
+    console.warn('[syncCKMonthToSheets] formatting failed (data already written):', fmtErr)
   }
   console.log(`[syncCKMonthToSheets] ${ckStore.name} ${month} → sheet "${tabName}" done (${usedTemplate ? 'template' : 'generated'})`)
 }
