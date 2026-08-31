@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { getMonthLastDay } from '@/lib/business-date'
-import { ckTemplateHasStoreColumns, fillCKWorksheet, type CKDayData } from '@/lib/ck-template'
+import { prepareCKTemplateStoreColumns, fillCKWorksheet, type CKDayData } from '@/lib/ck-template'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 const BUCKET = 'excel-templates'
@@ -119,8 +119,8 @@ async function fillTemplate(
     Object.values(dataMap).flatMap(day => Object.keys(day.storeRevenues))
       .filter(name => !assignedStoreNames.includes(name)),
   )]
-  if (!ckTemplateHasStoreColumns(ws, [...assignedStoreNames, ...externalStoreNames])) {
-    console.warn('[ck-export] template store columns are outdated')
+  if (!prepareCKTemplateStoreColumns(ws, [...assignedStoreNames, ...externalStoreNames])) {
+    console.warn('[ck-export] template has too few store columns')
     return null
   }
 

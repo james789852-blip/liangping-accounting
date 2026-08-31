@@ -30,11 +30,12 @@ test('央廚審核通過後會自動同步 Google Sheets', () => {
   assert.match(ckAction, /央廚 \$\{date\.slice\(0, 7\)\} 審核後試算表同步失敗/)
 })
 
-test('央廚模板店家欄位過期時改用完整的產生版活頁簿', () => {
-  assert.match(sheetsModule, /ckTemplateHasStoreColumns\(ws, requiredStoreNames\)/)
-  assert.match(sheetsModule, /template store columns are outdated; using generated workbook/)
+test('央廚模板會保留原排版並將預留欄位更新為目前店家', () => {
+  assert.match(sheetsModule, /prepareCKTemplateStoreColumns\(ws, requiredStoreNames\)/)
+  assert.match(sheetsModule, /template has too few store columns; using generated workbook/)
   assert.match(sheetsModule, /buildCKGeneratedWorkbook\(monthNum, days, dataMap, assignedStoreNames\)/)
   assert.match(sheetsModule, /Apply formatting for both template and generated workbooks/)
+  assert.match(sheetsModule, /gridProperties: \{ rowCount: gridRowCount, columnCount: gridColumnCount \}/)
 })
 
 test('總公司介面可綁定試算表並手動重同步', () => {

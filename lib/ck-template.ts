@@ -4,10 +4,11 @@ const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
 const norm = (s: string) => s.replace(/[\s　（）()]/g, '').toLowerCase()
 
-export function ckTemplateHasStoreColumns(
-  ws: ExcelJS.Worksheet,
-  requiredStoreNames: string[],
-): boolean {
+function getTemplateStoreLayout(ws: ExcelJS.Worksheet): {
+  headerRowNum: number
+  weekdayCol: number
+  revenueCol: number
+} | null {
   let headerRowNum = -1
   for (let row = 1; row <= 10; row++) {
     if (ws.getRow(row).getCell(1).text?.replace(/[\s　]/g, '') === '日期') {
@@ -15,28 +16,57 @@ export function ckTemplateHasStoreColumns(
       break
     }
   }
-  if (headerRowNum < 0) return false
+  if (headerRowNum < 0) return null
 
-  const headerRow = ws.getRow(headerRowNum)
+  let weekdayCol = -1
   let revenueCol = -1
-  headerRow.eachCell({ includeEmpty: false }, (cell, colNum) => {
+  ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
+    const text = norm(cell.text?.trim() ?? '')
+    if (text === norm('星期')) weekdayCol = colNum
     if (['營業額', '营业额'].includes(cell.text?.trim())) revenueCol = colNum
   })
-  if (revenueCol < 0) return false
+  if (weekdayCol < 0) weekdayCol = 2
+  if (revenueCol <= weekdayCol + 1) return null
+  return { headerRowNum, weekdayCol, revenueCol }
+}
+
+export function ckTemplateHasStoreColumns(
+  ws: ExcelJS.Worksheet,
+  requiredStoreNames: string[],
+): boolean {
+  const layout = getTemplateStoreLayout(ws)
+  if (!layout) return false
 
   const available = new Set<string>()
-  for (let col = 3; col < revenueCol; col++) {
-    const name = headerRow.getCell(col).text?.trim()
+  for (let col = layout.weekdayCol + 1; col < layout.revenueCol; col++) {
+    const name = ws.getRow(layout.headerRowNum).getCell(col).text?.trim()
     if (name) available.add(norm(name))
   }
   return requiredStoreNames.every(name => available.has(norm(name)))
 }
 
-function hasFormula(cell: ExcelJS.Cell): boolean {
-  const v = cell.value
-  if (v == null || typeof v !== 'object') return false
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return 'formula' in (v as any) || 'sharedFormula' in (v as any)
+/**
+ * Reuses the store slots already present in an uploaded CK template, replacing
+ * stale/duplicate store names while keeping every original style and column.
+ */
+export function prepareCKTemplateStoreColumns(
+  ws: ExcelJS.Worksheet,
+  requiredStoreNames: string[],
+): boolean {
+  const layout = getTemplateStoreLayout(ws)
+  if (!layout) return false
+
+  const storeNames = [...new Map(
+    requiredStoreNames.filter(Boolean).map(name => [norm(name), name.trim()]),
+  ).values()]
+  const availableSlots = layout.revenueCol - layout.weekdayCol - 1
+  if (availableSlots < storeNames.length) return false
+
+  const headerRow = ws.getRow(layout.headerRowNum)
+  for (let offset = 0; offset < availableSlots; offset++) {
+    headerRow.getCell(layout.weekdayCol + 1 + offset).value = storeNames[offset] ?? null
+  }
+  return true
 }
 
 export interface CKDayData {
@@ -85,6 +115,7 @@ export function fillCKWorksheet(
   const dateCol = colMap['日期'] ?? colMap[norm('日期')] ?? 1
   const weekdayCol = colMap['星期'] ?? colMap[norm('星期')] ?? dateCol + 1
   const revenueCol = colMap['營業額'] ?? colMap['营业额']
+  const totalExpenseCol = colMap['總'] ?? colMap['总'] ?? colMap['總支出'] ?? colMap['总支出']
   const storeColumns: Array<{ col: number; name: string }> = []
 
   // CK templates place member/external-store revenue columns between 日期/星期
@@ -106,10 +137,14 @@ export function fillCKWorksheet(
   days.forEach((_, idx) => {
     const excelRow = ws.getRow(dataStartRow + idx)
     for (const colIdx of uniqueCols) {
-      const cell = excelRow.getCell(colIdx as number)
-      if (typeof cell.value === 'number') cell.value = null
+      excelRow.getCell(colIdx as number).value = null
     }
   })
+
+  function setValue(row: ExcelJS.Row, colIdx: number | undefined, value: number) {
+    if (!colIdx) return
+    row.getCell(colIdx).value = value || null
+  }
 
   days.forEach((date, idx) => {
     const rowNum = dataStartRow + idx
@@ -129,24 +164,50 @@ export function fillCKWorksheet(
 
     if (!d) return
 
-    function setIfNotFormula(colIdx: number | undefined, value: number) {
-      if (!colIdx || !value) return
-      const cell = excelRow.getCell(colIdx)
-      if (!hasFormula(cell)) cell.value = value
-    }
-
-    setIfNotFormula(colMap['營業額'] ?? colMap['营业额'], d.totalRevenue)
-    setIfNotFormula(colMap['總'] ?? colMap['总'], d.totalExpense)
-    setIfNotFormula(colMap['食材'], d.foodTotal)
-    setIfNotFormula(colMap['耗材'], d.packTotal)
-    setIfNotFormula(colMap['雜項'], d.miscTotal)
+    setValue(excelRow, revenueCol, d.totalRevenue)
+    setValue(excelRow, totalExpenseCol, d.totalExpense)
+    setValue(excelRow, colMap['食材'], d.foodTotal)
+    setValue(excelRow, colMap['耗材'], d.packTotal)
+    setValue(excelRow, colMap['雜項'], d.miscTotal)
 
     for (const [itemName, amount] of Object.entries(d.expenses)) {
       if (!amount) continue
       const colIdx = colMap[itemName] ?? colMap[norm(itemName)]
-      setIfNotFormula(colIdx, amount)
+      setValue(excelRow, colIdx, amount)
     }
   })
+
+  // Replace the template's old monthly formulas (which may reference helper
+  // sheets that are not copied to Google Sheets) with authoritative totals.
+  const totalRow = ws.getRow(headerRowNum + 1)
+  for (const colIdx of uniqueCols) {
+    if (colIdx !== dateCol && colIdx !== weekdayCol) totalRow.getCell(colIdx as number).value = null
+  }
+  const monthData = days.map(date => dataMap[date]).filter((day): day is CKDayData => Boolean(day))
+  for (const storeColumn of storeColumns) {
+    const total = monthData.reduce((sum, day) => {
+      const amount = Object.entries(day.storeRevenues).find(([name]) => (
+        name === storeColumn.name || norm(name) === norm(storeColumn.name)
+      ))?.[1] ?? 0
+      return sum + amount
+    }, 0)
+    setValue(totalRow, storeColumn.col, total)
+  }
+  setValue(totalRow, revenueCol, monthData.reduce((sum, day) => sum + day.totalRevenue, 0))
+  setValue(totalRow, totalExpenseCol, monthData.reduce((sum, day) => sum + day.totalExpense, 0))
+  setValue(totalRow, colMap['食材'], monthData.reduce((sum, day) => sum + day.foodTotal, 0))
+  setValue(totalRow, colMap['耗材'], monthData.reduce((sum, day) => sum + day.packTotal, 0))
+  setValue(totalRow, colMap['雜項'], monthData.reduce((sum, day) => sum + day.miscTotal, 0))
+
+  const monthlyExpenses: Record<string, number> = {}
+  for (const day of monthData) {
+    for (const [itemName, amount] of Object.entries(day.expenses)) {
+      monthlyExpenses[itemName] = (monthlyExpenses[itemName] ?? 0) + amount
+    }
+  }
+  for (const [itemName, amount] of Object.entries(monthlyExpenses)) {
+    setValue(totalRow, colMap[itemName] ?? colMap[norm(itemName)], amount)
+  }
 
   // Resolve shared-formula slave cells
   ws.eachRow({ includeEmpty: false }, row => {

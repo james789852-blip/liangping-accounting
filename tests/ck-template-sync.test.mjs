@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import ExcelJS from 'exceljs'
-import { ckTemplateHasStoreColumns, fillCKWorksheet } from '../lib/ck-template.ts'
+import { ckTemplateHasStoreColumns, fillCKWorksheet, prepareCKTemplateStoreColumns } from '../lib/ck-template.ts'
 
 test('央廚模板缺少目前店家欄位時會判定為過期', () => {
   const workbook = new ExcelJS.Workbook()
@@ -10,6 +10,23 @@ test('央廚模板缺少目前店家欄位時會判定為過期', () => {
 
   assert.equal(ckTemplateHasStoreColumns(worksheet, ['府中', '幸福']), true)
   assert.equal(ckTemplateHasStoreColumns(worksheet, ['府中', '幸福', '景新']), false)
+})
+
+test('央廚舊模板會沿用既有欄位排版並替換為目前店家', () => {
+  const workbook = new ExcelJS.Workbook()
+  const worksheet = workbook.addWorksheet('6月食耗成本')
+  worksheet.getRow(3).values = ['日期', '', '府中', '幸福', '福城', '福城', '海山', '土城', '哇哥', '現場', '營業額']
+  worksheet.getCell('F3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }
+
+  assert.equal(prepareCKTemplateStoreColumns(
+    worksheet,
+    ['府中', '幸福', '福城', '心惦', '景新', '海山', '土城', '沐香'],
+  ), true)
+  assert.deepEqual(
+    Array.from({ length: 8 }, (_, offset) => worksheet.getRow(3).getCell(3 + offset).value),
+    ['府中', '幸福', '福城', '心惦', '景新', '海山', '土城', '沐香'],
+  )
+  assert.equal(worksheet.getCell('F3').fill.fgColor.argb, 'FFFF0000')
 })
 
 test('央廚舊月份模板會更新日期並以資料庫金額取代跨分頁公式', () => {
@@ -40,5 +57,12 @@ test('央廚舊月份模板會更新日期並以資料庫金額取代跨分頁�
   assert.equal(worksheet.getCell('C5').value, 100)
   assert.equal(worksheet.getCell('D5').value, 200)
   assert.equal(worksheet.getCell('D6').value, null)
-  assert.deepEqual(worksheet.getCell('E5').value, { formula: 'SUM(C5:D5)' })
+  assert.equal(worksheet.getCell('E5').value, 300)
+  assert.equal(worksheet.getCell('C4').value, 100)
+  assert.equal(worksheet.getCell('D4').value, 200)
+  assert.equal(worksheet.getCell('E4').value, 300)
+  assert.equal(worksheet.getCell('F4').value, 10)
+  assert.equal(worksheet.getCell('G4').value, 20)
+  assert.equal(worksheet.getCell('H4').value, 30)
+  assert.equal(worksheet.getCell('I4').value, 60)
 })

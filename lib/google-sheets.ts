@@ -5,7 +5,7 @@ import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { extractValues, extractColWidths, extractMerges } from '@/lib/food-cost-template'
 import { buildFoodCostNativeWorkbook } from '@/lib/food-cost-native-workbook'
-import { type CKDayData, fillCKWorksheet, buildCKGeneratedWorkbook, ckTemplateHasStoreColumns, getDaysInMonth } from '@/lib/ck-template'
+import { type CKDayData, fillCKWorksheet, buildCKGeneratedWorkbook, prepareCKTemplateStoreColumns, getDaysInMonth } from '@/lib/ck-template'
 import { getMonthLastDay } from '@/lib/business-date'
 
 function getAuth() {
@@ -541,11 +541,11 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
       ws = wb.getWorksheet(targetName)
         ?? wb.worksheets.find(s => s.name.includes('食耗'))
         ?? wb.worksheets[0]
-      if (ws && ckTemplateHasStoreColumns(ws, requiredStoreNames)) {
+      if (ws && prepareCKTemplateStoreColumns(ws, requiredStoreNames)) {
         const filled = fillCKWorksheet(ws, days, dataMap)
         if (filled) usedTemplate = true
       } else if (ws) {
-        console.warn('[syncCKMonthToSheets] template store columns are outdated; using generated workbook')
+        console.warn('[syncCKMonthToSheets] template has too few store columns; using generated workbook')
       }
     }
   } catch (e) { console.warn('[syncCKMonthToSheets] template load failed:', e) }
@@ -600,6 +600,27 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
     sheetId = properties?.sheetId ?? 0
     gridRowCount = properties?.gridProperties?.rowCount ?? 1000
     gridColumnCount = properties?.gridProperties?.columnCount ?? 26
+  }
+
+  const requiredRows = Math.max(ws.rowCount, 1)
+  const requiredColumns = Math.max(ws.columnCount, 1)
+  if (gridRowCount < requiredRows || gridColumnCount < requiredColumns) {
+    gridRowCount = Math.max(gridRowCount, requiredRows)
+    gridColumnCount = Math.max(gridColumnCount, requiredColumns)
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: sheetsId,
+      requestBody: {
+        requests: [{
+          updateSheetProperties: {
+            properties: {
+              sheetId,
+              gridProperties: { rowCount: gridRowCount, columnCount: gridColumnCount },
+            },
+            fields: 'gridProperties.rowCount,gridProperties.columnCount',
+          },
+        }],
+      },
+    })
   }
 
   await sheets.spreadsheets.values.update({
