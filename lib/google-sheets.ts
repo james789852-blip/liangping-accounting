@@ -3,12 +3,10 @@ import 'server-only'
 import { google } from 'googleapis'
 import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { EXCEL_COLUMNS } from '@/lib/excel-columns'
-import { type RowVals, fillWorksheet, extractValues, extractColors, extractBold, extractColWidths, extractMerges } from '@/lib/food-cost-template'
+import { extractValues, extractColWidths, extractMerges } from '@/lib/food-cost-template'
+import { buildFoodCostNativeWorkbook } from '@/lib/food-cost-native-workbook'
 import { type CKDayData, fillCKWorksheet, buildCKGeneratedWorkbook, getDaysInMonth } from '@/lib/ck-template'
 import { getMonthLastDay } from '@/lib/business-date'
-
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
 function getAuth() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_CREDENTIALS
@@ -31,21 +29,9 @@ function getAuth() {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRecord = Record<string, any>
 
-interface DayData {
-  items: Record<string, number>
-  notes: Record<string, string>
-  pos: number; twpay: number
-  panda: number; online: number; online_cash: number
-  uber: Record<string, number>
-  onsite: number; actual: number; ck: number
-  revenue: number; variance: number
-}
-
-
 export async function syncClosingToSheets(closingId: string): Promise<void> {
   const admin = createAdminClient()
 
-  // Fetch the closing to get store and date
   const { data: closing } = await admin
     .from('daily_closings')
     .select('store_id, business_date')
@@ -58,441 +44,133 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
   const [yearStr, monthStr] = businessDate.split('-')
   const year = parseInt(yearStr)
   const monthNum = parseInt(monthStr)
-  const month = `${yearStr}-${monthStr}`
-  const firstDay = `${month}-01`
-  const lastDay = getMonthLastDay(year, monthNum)
 
-  // Fetch store info including Google Sheet ID
-  const { data: storeRow } = await admin
+  const { data: store } = await admin
     .from('stores')
-    .select('name, uber_accounts, ichef_uber_linked, google_sheets_id')
+    .select('name, google_sheets_id')
     .eq('id', storeId)
     .single()
 
-  const sheetsId = storeRow?.google_sheets_id as string | null
-  if (!sheetsId) return  // No sheet configured for this store
+  const sheetsId = store?.google_sheets_id as string | null
+  if (!sheetsId) return
 
-  const storeName = storeRow?.name as string ?? 'store'
-  const uberAccounts: string[] = (storeRow?.uber_accounts as string[]) ?? []
-  const ichefLinked: boolean = (storeRow?.ichef_uber_linked as boolean) ?? false
-  const N = uberAccounts.length
-
-  // Fetch all month data
-  const [{ data: receipts }, { data: closings }, { data: mappingsRaw }, { data: ckPricesData }] = await Promise.all([
-    admin.from('receipts')
-      .select('business_date, total_amount, tax_amount, receipt_type, notes, receipt_items(item_name, excel_column, amount)')
-      .eq('store_id', storeId)
-      .gte('business_date', firstDay).lte('business_date', lastDay),
-    admin.from('daily_closings')
-      .select('business_date, total_revenue, actual_remit, variance, revenue_items(channel, gross_amount, account_name), order_items(item_name, total_amount)')
-      .eq('store_id', storeId)
-      .gte('business_date', firstDay).lte('business_date', lastDay),
-    admin.from('item_column_mappings')
-      .select('item_name, excel_column, item_category, store_id, vendor_group')
-      .eq('store_id', storeId),
-    admin.from('central_kitchen_prices').select('item_name, excel_column').eq('active', true),
-  ])
-
-  const mappingLookup: Record<string, string> = {}
-  const categoryLookup: Record<string, string> = {}
-  const vendorGroupLookup: Record<string, string> = {}
-  for (const m of (mappingsRaw ?? []) as AnyRecord[]) {
-    mappingLookup[m.item_name] = m.excel_column
-    categoryLookup[m.item_name] = m.item_category
-    if (m.vendor_group) { vendorGroupLookup[m.item_name] = m.vendor_group; vendorGroupLookup[m.excel_column] = m.vendor_group }
-  }
-  const ckColLookup: Record<string, string> = {}
-  for (const p of (ckPricesData ?? []) as AnyRecord[]) {
-    ckColLookup[p.item_name] = p.excel_column || p.item_name
-  }
-
-  // Load store-specific columns if available
-  let storeColumns = EXCEL_COLUMNS
-  try {
-    const { data: colFile } = await admin.storage.from('excel-templates').download(`${storeId}-columns.json`)
-    if (colFile) {
-      const parsed = JSON.parse(await colFile.text())
-      if (parsed['食材']?.length && parsed['耗材']?.length && parsed['雜項']?.length) {
-        storeColumns = parsed
-      }
-    }
-  } catch { /* fallback to defaults */ }
-
-  const foodCols: string[] = storeColumns['食材']
-  const packCols: string[] = storeColumns['耗材']
-  const miscCols: string[] = storeColumns['雜項']
-
-  const byDate: Record<string, DayData> = {}
-  function ensureDay(d: string): DayData {
-    if (!byDate[d]) byDate[d] = { items: {}, notes: {}, pos: 0, twpay: 0, panda: 0, online: 0, online_cash: 0, uber: {}, onsite: 0, actual: 0, ck: 0, revenue: 0, variance: 0 }
-    return byDate[d]
-  }
-
-  let invoiceTotal = 0, receiptTotal = 0
-  for (const r of (receipts ?? []) as AnyRecord[]) {
-    const dd = ensureDay(r.business_date)
-    const resolvedItems = (r.receipt_items ?? []).map((it: AnyRecord) => ({
-      ...it, resolved_col: mappingLookup[it.item_name] ?? it.excel_column ?? '',
-    }))
-    const validItems = resolvedItems.filter((it: AnyRecord) => it.resolved_col && it.amount)
-    const positiveItems = validItems.filter((it: AnyRecord) => (it.amount as number) > 0)
-    for (const it of validItems) {
-      const vg = vendorGroupLookup[it.item_name]
-      const key = (vg && it.item_name !== it.resolved_col)
-        ? `_col_${vg}_${it.resolved_col}`
-        : it.resolved_col
-      dd.items[key] = (dd.items[key] || 0) + (it.amount as number)
-    }
-    if ((r.notes as string)?.trim() && validItems.length > 0) {
-      const noteText = (r.notes as string).trim()
-      for (const it of validItems) {
-        const vg = vendorGroupLookup[it.item_name]
-        const key = (vg && it.item_name !== it.resolved_col)
-          ? `_col_${vg}_${it.resolved_col}`
-          : it.resolved_col
-        dd.notes[key] = dd.notes[key] ? `${dd.notes[key]}\n${noteText}` : noteText
-      }
-    }
-    const taxAmt = (r.tax_amount ?? 0) as number
-    if (taxAmt > 0 && positiveItems.length > 0) {
-      const hasPackItem = positiveItems.some((it: AnyRecord) =>
-        categoryLookup[it.item_name] === '耗材' || packCols.includes(it.resolved_col)
-      )
-      if (hasPackItem) {
-        dd.items['免洗稅金'] = (dd.items['免洗稅金'] || 0) + taxAmt
-      } else {
-        const vg = positiveItems
-          .map((it: AnyRecord) => vendorGroupLookup[it.item_name] ?? vendorGroupLookup[it.resolved_col])
-          .find(Boolean)
-        const itemNames = [...new Set(positiveItems.map((it: AnyRecord) => it.item_name as string).filter(Boolean))].join('|')
-        const taxKey = vg ? `_tax_${vg}::${itemNames}` : '稅金'
-        dd.items[taxKey] = (dd.items[taxKey] || 0) + taxAmt
-      }
-    }
-    if (r.receipt_type === 'invoice') invoiceTotal += (r.total_amount ?? 0) as number
-    else if (r.receipt_type === 'receipt') receiptTotal += (r.total_amount ?? 0) as number
-  }
-
-  for (const c of (closings ?? []) as AnyRecord[]) {
-    const dd = ensureDay(c.business_date)
-    dd.revenue  = (c.total_revenue  ?? 0) as number
-    dd.actual   = (c.actual_remit   ?? 0) as number
-    dd.variance = (c.variance       ?? 0) as number
-    let handwriteSum = 0
-    for (const rv of (c.revenue_items as AnyRecord[]) ?? []) {
-      // POS 欄只記實際的 POS channel；handwrite 走 onsite
-      if (rv.channel === 'pos') dd.pos += (rv.gross_amount ?? 0) as number
-      if (rv.channel === 'handwrite') handwriteSum += (rv.gross_amount ?? 0) as number
-      if (rv.channel === 'twpay') dd.twpay  += (rv.gross_amount ?? 0) as number
-      if (rv.channel === 'panda') dd.panda  += (rv.gross_amount ?? 0) as number
-      if (rv.channel === 'online') dd.online += (rv.gross_amount ?? 0) as number
-      if (rv.channel === 'online_cash') dd.online_cash += (rv.gross_amount ?? 0) as number
-      if (rv.channel === 'uber' && rv.account_name) {
-        dd.uber[rv.account_name as string] = (dd.uber[rv.account_name as string] || 0) + ((rv.gross_amount ?? 0) as number)
-      }
-    }
-    const uberSum = Object.values(dd.uber).reduce((s, v) => s + v, 0)
-    dd.onsite = (ichefLinked ? (dd.pos - uberSum - dd.twpay - dd.panda - dd.online) : dd.pos) + handwriteSum
-    let ckItemsSum = 0
-    let ckSummarySum = 0
-    for (const oi of (c.order_items as AnyRecord[]) ?? []) {
-      if (oi.item_name === '央廚配送') {
-        ckSummarySum += (oi.total_amount ?? 0) as number
-      } else {
-        const excelCol = mappingLookup[oi.item_name] ?? ckColLookup[oi.item_name] ?? oi.item_name
-        if (excelCol && (oi.total_amount || 0) > 0) {
-          dd.items[excelCol] = (dd.items[excelCol] || 0) + (oi.total_amount as number)
-        }
-        if ((oi.item_name in ckColLookup) && (oi.total_amount || 0) > 0) ckItemsSum += oi.total_amount as number
-      }
-    }
-    dd.ck = ckSummarySum > 0 ? ckSummarySum : ckItemsSum
-  }
-
-  const daysInMonth = new Date(year, monthNum, 0).getDate()
-  const days = Array.from({ length: daysInMonth }, (_, i) =>
-    `${month}-${String(i + 1).padStart(2, '0')}`
-  )
-
-  const dataRows: Array<{ date: string; row: RowVals }> = days.map(date => {
-    const d = byDate[date]
-    const pos      = d?.pos ?? 0
-    const twpay    = d?.twpay ?? 0
-    const panda    = d?.panda ?? 0
-    const online   = d?.online ?? 0
-    const online_cash = d?.online_cash ?? 0
-    const uber     = d?.uber ?? {}
-    const onsite   = d?.onsite ?? 0
-    const actual   = d?.actual ?? 0
-    const ck       = d?.ck ?? 0
-    const variance = d?.variance ?? 0
-    const after_deduct = actual - ck - variance
-    const computedRevenue = onsite + variance
-    const totalRevenue = d?.revenue ?? 0
-    const items = d?.items ?? {}
-    const foodTotal = foodCols.reduce((s, col) => s + (items[col] || 0), 0)
-    const packTotal = packCols.reduce((s, col) => s + (items[col] || 0), 0)
-    const miscTotal = miscCols.reduce((s, col) => s + (items[col] || 0), 0)
-    const notes = d?.notes ?? {}
-    return { date, row: { pos, twpay, panda, online, online_cash, uber, after_deduct, onsite, actual, ck, result: variance, revenue: computedRevenue, totalRevenue, items, notes, foodTotal, packTotal, miscTotal, grandTotal: foodTotal + packTotal + miscTotal } }
+  const workbook = await buildFoodCostNativeWorkbook(storeId, year, monthNum)
+  const sheets = google.sheets({ version: 'v4', auth: getAuth() })
+  const spreadsheet = await sheets.spreadsheets.get({
+    spreadsheetId: sheetsId,
+    fields: 'sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))',
   })
 
-  const sumOf = (fn: (r: RowVals) => number) => dataRows.reduce((s, { row }) => s + fn(row), 0)
-  const totals: RowVals = {
-    pos:          sumOf(r => r.pos),
-    twpay:        sumOf(r => r.twpay),
-    panda:        sumOf(r => r.panda),
-    online:       sumOf(r => r.online),
-    online_cash:  sumOf(r => r.online_cash ?? 0),
-    uber:         Object.fromEntries(uberAccounts.map(acc => [acc, dataRows.reduce((s, { row }) => s + (row.uber[acc] ?? 0), 0)])),
-    after_deduct: sumOf(r => r.after_deduct),
-    onsite:       sumOf(r => r.onsite),
-    actual:       sumOf(r => r.actual),
-    ck:           sumOf(r => r.ck),
-    result:       sumOf(r => r.result),
-    revenue:      sumOf(r => r.revenue),
-    totalRevenue: dataRows.reduce((s, { row }) => s + (row.totalRevenue ?? 0), 0),
-    items:        Object.fromEntries([...foodCols, ...packCols, ...miscCols].map(col => [col, dataRows.reduce((s, { row }) => s + (row.items[col] || 0), 0)])),
-    notes:        {},
-    foodTotal:    sumOf(r => r.foodTotal),
-    packTotal:    sumOf(r => r.packTotal),
-    miscTotal:    sumOf(r => r.miscTotal),
-    grandTotal:   sumOf(r => r.grandTotal),
-  }
-  const lianpingTaxRefund = totals.items['免洗稅金'] ?? 0
+  for (const worksheet of workbook.worksheets) {
+    const tabName = `${year}年${worksheet.name}`
+    const existing = spreadsheet.data.sheets?.find(sheet => sheet.properties?.title === tabName)
+    let sheetId = existing?.properties?.sheetId
+    let gridRowCount = existing?.properties?.gridProperties?.rowCount ?? 0
+    let gridColumnCount = existing?.properties?.gridProperties?.columnCount ?? 0
+    const requiredRows = Math.max(worksheet.rowCount, 1)
+    const requiredColumns = Math.max(worksheet.columnCount, 1)
 
-  // Column layout (0-indexed)
-  const BASE = 4 + N
-  const COL_AFTER_DEDUCT = BASE
-  const COL_ONSITE       = BASE + 1
-  const COL_ACTUAL       = BASE + 2
-  const COL_CK           = BASE + 3
-  const COL_RESULT       = BASE + 4
-  const COL_REVENUE      = BASE + 5
-  const COL_SPACER       = BASE + 6
-  const COL_TOTAL        = BASE + 7
-  const COL_FOOD_SUB     = BASE + 8
-  const COL_PACK_SUB     = BASE + 9
-  const COL_MISC_SUB     = BASE + 10
-  const COL_FOOD_START   = BASE + 11
-  const COL_PACK_START   = COL_FOOD_START + foodCols.length
-  const COL_MISC_START   = COL_PACK_START + packCols.length
-  const TOTAL_COLS       = COL_MISC_START + miscCols.length
-
-  function makeRow(): (string | number)[] { return Array(TOTAL_COLS).fill('') }
-
-  function rowToValues(date: string | null, row: RowVals): (string | number)[] {
-    const vals = makeRow()
-    if (date) {
-      const dt = new Date(date + 'T12:00:00+08:00')
-      vals[0] = date
-      vals[1] = `星期${WEEKDAYS[dt.getDay()]}`
-    } else {
-      vals[0] = `${monthNum}月合計`
+    if (sheetId == null) {
+      const added = await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: sheetsId,
+        requestBody: {
+          requests: [{
+            addSheet: {
+              properties: {
+                title: tabName,
+                gridProperties: {
+                  rowCount: Math.max(requiredRows, 100),
+                  columnCount: Math.max(requiredColumns, 26),
+                },
+              },
+            },
+          }],
+        },
+      })
+      const properties = added.data.replies?.[0]?.addSheet?.properties
+      sheetId = properties?.sheetId
+      gridRowCount = properties?.gridProperties?.rowCount ?? Math.max(requiredRows, 100)
+      gridColumnCount = properties?.gridProperties?.columnCount ?? Math.max(requiredColumns, 26)
+    } else if (gridRowCount < requiredRows || gridColumnCount < requiredColumns) {
+      gridRowCount = Math.max(gridRowCount, requiredRows)
+      gridColumnCount = Math.max(gridColumnCount, requiredColumns)
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: sheetsId,
+        requestBody: {
+          requests: [{
+            updateSheetProperties: {
+              properties: {
+                sheetId,
+                gridProperties: {
+                  rowCount: gridRowCount,
+                  columnCount: gridColumnCount,
+                },
+              },
+              fields: 'gridProperties.rowCount,gridProperties.columnCount',
+            },
+          }],
+        },
+      })
     }
-    vals[2] = row.pos || ''
-    vals[3] = row.twpay || ''
-    for (let i = 0; i < N; i++) vals[4 + i] = row.uber[uberAccounts[i]] || ''
-    vals[COL_AFTER_DEDUCT] = row.after_deduct || ''
-    vals[COL_ONSITE]       = row.onsite || ''
-    vals[COL_ACTUAL]       = row.actual || ''
-    vals[COL_CK]           = row.ck || ''
-    vals[COL_RESULT]       = row.result || ''
-    vals[COL_REVENUE]      = row.revenue || ''
-    vals[COL_SPACER]       = ''
-    vals[COL_TOTAL]        = row.grandTotal || ''
-    vals[COL_FOOD_SUB]     = row.foodTotal || ''
-    vals[COL_PACK_SUB]     = row.packTotal || ''
-    vals[COL_MISC_SUB]     = row.miscTotal || ''
-    for (let i = 0; i < foodCols.length; i++) vals[COL_FOOD_START + i] = row.items[foodCols[i]] || ''
-    for (let i = 0; i < packCols.length; i++) vals[COL_PACK_START + i] = row.items[packCols[i]] || ''
-    for (let i = 0; i < miscCols.length; i++) vals[COL_MISC_START + i] = row.items[miscCols[i]] || ''
-    return vals
-  }
 
-  // Row 1: vendor group labels
-  const row1 = makeRow()
-  row1[COL_TOTAL]    = '梁平退稅'
-  row1[COL_FOOD_SUB] = lianpingTaxRefund || ''
-  row1[COL_FOOD_START]      = '央廚配送'
-  row1[COL_FOOD_START + 6]  = '振源'
-  row1[COL_FOOD_START + 7]  = '小雲'
-  row1[COL_FOOD_START + 8]  = '菜商'
-  row1[COL_FOOD_START + 17] = '雜貨'
-  row1[COL_PACK_START]      = '免洗'
-  row1[COL_MISC_START]      = '感熱紙'
-  row1[COL_MISC_START + 13] = '固定費用'
+    if (sheetId == null) throw new Error(`無法建立 Google 試算表分頁：${tabName}`)
 
-  // Row 2: invoice/receipt totals
-  const row2 = makeRow()
-  row2[COL_TOTAL]    = '總發票'
-  row2[COL_FOOD_SUB] = invoiceTotal || ''
-  row2[COL_PACK_SUB] = '總收據'
-  row2[COL_MISC_SUB] = receiptTotal || ''
-
-  // Row 3: column headers
-  const row3 = makeRow()
-  row3[0] = '日期'; row3[1] = '星期'; row3[2] = 'POS'; row3[3] = 'TWPAY'
-  for (let i = 0; i < N; i++) row3[4 + i] = uberAccounts[i]
-  row3[COL_AFTER_DEDUCT] = '扣除後的$'
-  row3[COL_ONSITE]       = '現場'
-  row3[COL_ACTUAL]       = '實際$'
-  row3[COL_CK]           = '配送(月底結)'
-  row3[COL_RESULT]       = '結果'
-  row3[COL_REVENUE]      = '營業額'
-  row3[COL_TOTAL]        = '總'
-  row3[COL_FOOD_SUB]     = '食材'
-  row3[COL_PACK_SUB]     = '耗材'
-  row3[COL_MISC_SUB]     = '雜項'
-  for (let i = 0; i < foodCols.length; i++) row3[COL_FOOD_START + i] = foodCols[i]
-  for (let i = 0; i < packCols.length; i++) row3[COL_PACK_START + i] = packCols[i]
-  for (let i = 0; i < miscCols.length; i++) row3[COL_MISC_START + i] = miscCols[i]
-
-  const allValues: (string | number)[][] = [
-    row1, row2, row3,
-    rowToValues(null, totals),
-    ...dataRows.map(({ date, row }) => rowToValues(date, row)),
-  ]
-
-  // Write to Google Sheets
-  const tabName = `${year}年${monthNum}月食耗成本`
-  const auth = getAuth()
-  const sheets = google.sheets({ version: 'v4', auth })
-
-  // Get or create tab
-  const { data: spreadsheet } = await sheets.spreadsheets.get({ spreadsheetId: sheetsId })
-  const existingSheet = spreadsheet.sheets?.find(s => s.properties?.title === tabName)
-  let sheetId: number
-
-  if (existingSheet) {
-    sheetId = existingSheet.properties?.sheetId ?? 0
-    await sheets.spreadsheets.values.clear({ spreadsheetId: sheetsId, range: `'${tabName}'` })
-  } else {
-    const addRes = await sheets.spreadsheets.batchUpdate({
+    // Values cannot be pasted into a range that only partially overlaps an old
+    // merge, so remove the previous layout before writing the native workbook.
+    await sheets.spreadsheets.batchUpdate({
       spreadsheetId: sheetsId,
-      requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
+      requestBody: {
+        requests: [{
+          unmergeCells: {
+            range: {
+              sheetId,
+              startRowIndex: 0,
+              endRowIndex: gridRowCount,
+              startColumnIndex: 0,
+              endColumnIndex: gridColumnCount,
+            },
+          },
+        }],
+      },
     })
-    sheetId = addRes.data.replies?.[0]?.addSheet?.properties?.sheetId ?? 0
-  }
 
-  // ── Template path: fill uploaded Excel template → extract values+colors → write to Sheets ──
-  let usedTemplate = false
-  try {
-    const { data: tmpl, error: tmplErr } = await admin.storage.from('excel-templates').download(`${storeId}.xlsx`)
-    if (tmplErr) console.log(`[syncClosingToSheets] no template for store ${storeId}: ${tmplErr.message}`)
-    if (tmpl) {
-      const wb = new ExcelJS.Workbook()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await wb.xlsx.load(Buffer.from(await tmpl.arrayBuffer()) as any)
-      const targetName = `${monthNum}月食耗成本`
-      const ws = wb.getWorksheet(targetName)
-        ?? wb.getWorksheet(`${monthNum}月`)
-        ?? wb.worksheets.find(s => s.name.includes('食耗'))
-        ?? wb.worksheets[0]
-      if (ws) {
-        const filled = await fillWorksheet(ws, days, dataRows, uberAccounts, vendorGroupLookup)
-        if (filled) {
-          const wsValues = extractValues(ws)
-          const wsWidths = extractColWidths(ws)
-          const wsMerges = extractMerges(ws)
-          const hiddenCols = wsWidths.filter(w => w.hidden)
-          console.log(`[syncClosingToSheets] v2 wsWidths=${wsWidths.length} hiddenCols=${hiddenCols.length} (${hiddenCols.map(h=>h.col).join(',')})`)
-
-          await sheets.spreadsheets.values.update({
-            spreadsheetId: sheetsId,
-            range: `'${tabName}'!A1`,
-            valueInputOption: 'USER_ENTERED',
-            requestBody: { values: wsValues.map(row => row.map(v => v ?? '')) },
-          })
-          // Mark template used BEFORE formatting so a formatting error never discards the data
-          usedTemplate = true
-          console.log(`[syncClosingToSheets] ${storeName} ${year}-${String(monthNum).padStart(2, '0')} → sheet "${tabName}" data written (template)`)
-
-          try {
-            await applyTemplateFormatting(sheets, sheetsId, sheetId, [], [], wsWidths, wsMerges, ws)
-            console.log(`[syncClosingToSheets] ${storeName} ${year}-${String(monthNum).padStart(2, '0')} → formatting applied`)
-          } catch (fmtErr) {
-            console.warn('[syncClosingToSheets] template formatting failed (data already written):', fmtErr)
-          }
-          // Write cell notes (annotations) from the filled worksheet
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const noteReqs: any[] = []
-            const dataStart0 = filled.dataStartRow - 1  // convert to 0-based row index
-            // Clear stale notes in the data range first
-            noteReqs.push({ repeatCell: { range: { sheetId, startRowIndex: dataStart0, endRowIndex: dataStart0 + days.length, startColumnIndex: 0, endColumnIndex: ws.columnCount || 100 }, cell: { note: '' }, fields: 'note' } })
-            for (let dayIdx = 0; dayIdx < days.length; dayIdx++) {
-              const excelRowNum = filled.dataStartRow + dayIdx  // 1-based ExcelJS row
-              ws.getRow(excelRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
-                if (!cell.note) return
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const rawNote = cell.note as any
-                const noteText = typeof rawNote === 'string' ? rawNote : (rawNote.texts?.map((t: any) => t.text ?? '').join('') ?? '')
-                if (!noteText.trim()) return
-                noteReqs.push({ updateCells: { range: { sheetId, startRowIndex: excelRowNum - 1, endRowIndex: excelRowNum, startColumnIndex: colNum - 1, endColumnIndex: colNum }, rows: [{ values: [{ note: noteText }] }], fields: 'note' } })
-              })
-            }
-            if (noteReqs.length > 1) {
-              for (let ni = 0; ni < noteReqs.length; ni += 1000) {
-                await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetsId, requestBody: { requests: noteReqs.slice(ni, ni + 1000) } })
-              }
-            }
-          } catch (noteErr) {
-            console.warn('[syncClosingToSheets] failed to write cell notes:', noteErr)
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('[syncClosingToSheets] template path failed, falling back to generated layout:', e)
-  }
-
-  if (!usedTemplate) {
-    // Fallback: write generated values and apply hardcoded formatting
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: sheetsId,
+      range: `'${tabName.replace(/'/g, "''")}'`,
+    })
     await sheets.spreadsheets.values.update({
       spreadsheetId: sheetsId,
-      range: `'${tabName}'!A1`,
+      range: `'${tabName.replace(/'/g, "''")}'!A1`,
       valueInputOption: 'USER_ENTERED',
-      requestBody: { values: allValues },
+      requestBody: { values: extractValues(worksheet) },
     })
-    await applySheetFormatting(sheets, sheetsId, sheetId, days.length, N, foodCols.length, packCols.length, miscCols.length, BASE)
-    console.log(`[syncClosingToSheets] ${storeName} ${year}-${String(monthNum).padStart(2, '0')} → sheet "${tabName}" done (generated)`)
-    // Write cell notes (annotations) for fallback layout
-    try {
-      const colKeyToIdx: Record<string, number> = {}
-      foodCols.forEach((col, i) => { colKeyToIdx[col] = COL_FOOD_START + i })
-      packCols.forEach((col, i) => { colKeyToIdx[col] = COL_PACK_START + i })
-      miscCols.forEach((col, i) => { colKeyToIdx[col] = COL_MISC_START + i })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const noteReqs: any[] = []
-      // Clear stale notes in the data range first
-      noteReqs.push({ repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 4 + days.length, startColumnIndex: 0, endColumnIndex: TOTAL_COLS }, cell: { note: '' }, fields: 'note' } })
-      dataRows.forEach(({ row }, dayIdx) => {
-        const rowIdx = 4 + dayIdx
-        for (const [key, noteText] of Object.entries(row.notes)) {
-          if (!noteText?.trim()) continue
-          const colIdx = colKeyToIdx[key]
-          if (colIdx === undefined) continue
-          noteReqs.push({ updateCells: { range: { sheetId, startRowIndex: rowIdx, endRowIndex: rowIdx + 1, startColumnIndex: colIdx, endColumnIndex: colIdx + 1 }, rows: [{ values: [{ note: noteText }] }], fields: 'note' } })
-        }
-      })
-      if (noteReqs.length > 1) {
-        for (let ni = 0; ni < noteReqs.length; ni += 1000) {
-          await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetsId, requestBody: { requests: noteReqs.slice(ni, ni + 1000) } })
-        }
-      }
-    } catch (noteErr) {
-      console.warn('[syncClosingToSheets] failed to write cell notes (fallback):', noteErr)
-    }
+
+    await applyTemplateFormatting(
+      sheets,
+      sheetsId,
+      sheetId,
+      extractColWidths(worksheet),
+      extractMerges(worksheet),
+      worksheet,
+      gridRowCount,
+      gridColumnCount,
+    )
+    await writeWorksheetNotes(
+      sheets,
+      sheetsId,
+      sheetId,
+      worksheet,
+      gridRowCount,
+      gridColumnCount,
+    )
+
+    console.log(
+      `[syncClosingToSheets] ${store?.name ?? storeId} ${year}-${String(monthNum).padStart(2, '0')} → sheet "${tabName}" done (native workbook)`,
+    )
   }
 }
-
 type SheetsAPI = ReturnType<typeof google.sheets>
 type RGB = { red: number; green: number; blue: number }
-
-function hex(h: string): RGB {
-  return { red: parseInt(h.slice(0,2),16)/255, green: parseInt(h.slice(2,4),16)/255, blue: parseInt(h.slice(4,6),16)/255 }
-}
 
 function inferNumFmtType(pattern: string): string {
   const stripped = pattern.replace(/"[^"]*"/g, '').toLowerCase()
@@ -512,23 +190,25 @@ async function applyTemplateFormatting(
   sheets: SheetsAPI,
   spreadsheetId: string,
   sheetId: number,
-  _colors: (string | null)[][],   // kept for signature compat, unused — ws read directly
-  _bold: boolean[][],
   colWidths: Array<{ col: number; px: number; hidden?: boolean }>,
   merges: Array<{ r0: number; r1: number; c0: number; c1: number }>,
   ws: ExcelJS.Worksheet,
+  gridRowCount = Math.max(ws.rowCount, 1),
+  gridColumnCount = Math.max(ws.columnCount, 1),
 ): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const reqs: any[] = []
 
-  // Unmerge all first
-  reqs.push({ unmergeCells: { range: { sheetId, startRowIndex: 0, endRowIndex: 500, startColumnIndex: 0, endColumnIndex: 300 } } })
+  const maxRow = Math.max(ws.rowCount, 1)
+  const maxCol = Math.max(ws.columnCount, 1)
 
-  const maxRow = ws.rowCount
-  const maxCol = ws.columnCount
-
-  // Reset everything to white/default first
-  reqs.push({ repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: maxRow, startColumnIndex: 0, endColumnIndex: maxCol }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 1, blue: 1 }, textFormat: { bold: false, fontSize: 10, foregroundColor: { red: 0, green: 0, blue: 0 } }, horizontalAlignment: 'LEFT' } }, fields: 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.horizontalAlignment' } })
+  // Remove formatting and merges left behind by an older sync before applying the
+  // current native workbook. Resetting the entire tab also handles a workbook
+  // that became smaller since the previous sync.
+  reqs.push({ unmergeCells: { range: { sheetId, startRowIndex: 0, endRowIndex: gridRowCount, startColumnIndex: 0, endColumnIndex: gridColumnCount } } })
+  reqs.push({ repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: gridRowCount, startColumnIndex: 0, endColumnIndex: gridColumnCount }, cell: { userEnteredFormat: {} }, fields: 'userEnteredFormat' } })
+  reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: gridColumnCount }, properties: { hiddenByUser: false }, fields: 'hiddenByUser' } })
+  reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 0, endIndex: gridRowCount }, properties: { hiddenByUser: false }, fields: 'hiddenByUser' } })
 
   // Border style mapping from Excel to Sheets API
   const BORDER_STYLE: Record<string, string> = {
@@ -554,7 +234,21 @@ async function applyTemplateFormatting(
 
   // Apply per-cell formatting extracted directly from the worksheet
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  type CellFmt = { bg: RGB; bold: boolean; fontSize: number; fgColor: RGB; hAlign: string; borders: any; numFmt: string }
+  type CellFmt = {
+    bg: RGB
+    bold: boolean
+    italic: boolean
+    underline: boolean
+    strikethrough: boolean
+    fontFamily?: string
+    fontSize: number
+    fgColor: RGB
+    hAlign: string
+    vAlign: string
+    wrapStrategy: string
+    borders: any
+    numFmt: string
+  }
   for (let r = 1; r <= maxRow; r++) {
     const rowObj = ws.getRow(r)
     const cells: CellFmt[] = []
@@ -563,10 +257,22 @@ async function applyTemplateFormatting(
       const bg = getBg(cell, rowObj)
       const fontObj = cell.font
       const bold = fontObj?.bold ?? false
+      const italic = fontObj?.italic ?? false
+      const underline = Boolean(fontObj?.underline)
+      const strikethrough = fontObj?.strike ?? false
+      const fontFamily = fontObj?.name
       const fontSize = fontObj?.size ?? 10
       let fgColor: RGB = { red: 0, green: 0, blue: 0 }
       if (fontObj?.color?.argb) fgColor = argbToRgb(fontObj.color.argb)
-      const hAlign = (cell.alignment?.horizontal ?? 'center').toUpperCase()
+      const horizontal = cell.alignment?.horizontal
+      const hAlign = horizontal === 'left' || horizontal === 'right' || horizontal === 'center'
+        ? horizontal.toUpperCase()
+        : 'CENTER'
+      const vertical = cell.alignment?.vertical
+      const vAlign = vertical === 'top' || vertical === 'bottom' || vertical === 'middle'
+        ? vertical.toUpperCase()
+        : 'MIDDLE'
+      const wrapStrategy = cell.alignment?.wrapText ? 'WRAP' : 'OVERFLOW_CELL'
       const borderObj = cell.border as any
       const borders: any = {}
       if (borderObj?.top)    borders.top    = cvtBorder(borderObj.top)
@@ -574,7 +280,7 @@ async function applyTemplateFormatting(
       if (borderObj?.left)   borders.left   = cvtBorder(borderObj.left)
       if (borderObj?.right)  borders.right  = cvtBorder(borderObj.right)
       const numFmt = cell.numFmt ?? ''
-      cells.push({ bg, bold, fontSize, fgColor, hAlign, borders, numFmt })
+      cells.push({ bg, bold, italic, underline, strikethrough, fontFamily, fontSize, fgColor, hAlign, vAlign, wrapStrategy, borders, numFmt })
     }
 
     // Batch consecutive cells with identical formatting
@@ -588,10 +294,20 @@ async function applyTemplateFormatting(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const uf: any = {
         backgroundColor: fmt.bg,
-        textFormat: { bold: fmt.bold, fontSize: fmt.fontSize, foregroundColor: fmt.fgColor },
+        textFormat: {
+          bold: fmt.bold,
+          italic: fmt.italic,
+          underline: fmt.underline,
+          strikethrough: fmt.strikethrough,
+          fontFamily: fmt.fontFamily,
+          fontSize: fmt.fontSize,
+          foregroundColor: fmt.fgColor,
+        },
         horizontalAlignment: fmt.hAlign,
+        verticalAlignment: fmt.vAlign,
+        wrapStrategy: fmt.wrapStrategy,
       }
-      const fields = 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.horizontalAlignment'
+      const fields = 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat,userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.wrapStrategy'
       let flds = fields
       if (Object.keys(fmt.borders).length) { uf.borders = fmt.borders; flds += ',userEnteredFormat.borders' }
       if (fmt.numFmt) { uf.numberFormat = { type: inferNumFmtType(fmt.numFmt), pattern: fmt.numFmt }; flds += ',userEnteredFormat.numberFormat' }
@@ -614,13 +330,12 @@ async function applyTemplateFormatting(
     reqs.push({ mergeCells: { range: { sheetId, startRowIndex: m.r0, endRowIndex: m.r1, startColumnIndex: m.c0, endColumnIndex: m.c1 }, mergeType: 'MERGE_ALL' } })
   }
 
-  // Row heights from template (Excel row height is in points; 1pt ≈ 1.333px)
+  // Row heights from workbook (Excel row height is in points; 1pt ≈ 1.333px)
+  const defaultRowHeight = Math.max(15, Math.round((ws.properties.defaultRowHeight ?? 15) * 1.333))
   for (let ri = 1; ri <= ws.rowCount; ri++) {
     const rowObj = ws.getRow(ri)
-    if (rowObj.height) {
-      const px = Math.max(15, Math.round(rowObj.height * 1.333))
-      reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: ri - 1, endIndex: ri }, properties: { pixelSize: px }, fields: 'pixelSize' } })
-    }
+    const px = rowObj.height ? Math.max(15, Math.round(rowObj.height * 1.333)) : defaultRowHeight
+    reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: ri - 1, endIndex: ri }, properties: { pixelSize: px }, fields: 'pixelSize' } })
   }
 
   // Column widths from template (ExcelJS width ≈ characters; 1 char ≈ 7.5px + padding)
@@ -638,143 +353,52 @@ async function applyTemplateFormatting(
   }
 }
 
-async function applySheetFormatting(
+function worksheetNoteText(note: ExcelJS.Cell['note']): string | null {
+  if (typeof note === 'string') return note
+  if (!note || !('texts' in note) || !Array.isArray(note.texts)) return null
+  return note.texts.map(part => part.text).join('')
+}
+
+async function writeWorksheetNotes(
   sheets: SheetsAPI,
   spreadsheetId: string,
   sheetId: number,
-  daysCount: number,
-  N: number,
-  foodLen: number,
-  packLen: number,
-  miscLen: number,
-  BASE: number,
+  ws: ExcelJS.Worksheet,
+  gridRowCount: number,
+  gridColumnCount: number,
 ): Promise<void> {
-  const COL_AFTER_DEDUCT = BASE
-  const COL_CK           = BASE + 3
-  const COL_REVENUE      = BASE + 5
-  const COL_SPACER       = BASE + 6
-  const COL_TOTAL        = BASE + 7
-  const COL_FOOD_SUB     = BASE + 8
-  const COL_PACK_SUB     = BASE + 9
-  const COL_MISC_SUB     = BASE + 10
-  const COL_FOOD_START   = BASE + 11
-  const COL_PACK_START   = COL_FOOD_START + foodLen
-  const COL_MISC_START   = COL_PACK_START + packLen
-  const TOTAL_COLS       = COL_MISC_START + miscLen
-  const dataEnd          = 4 + daysCount  // row index after last day
-
-  const C = {
-    FFFFCC: hex('FFFFCC'), FFFF00: hex('FFFF00'), BFBFBF: hex('BFBFBF'),
-    FFC000: hex('FFC000'), DA9694: hex('DA9694'), GREEN:  hex('00B050'),
-    C6D9F0: hex('C6D9F0'), FBD4B4: hex('FBD4B4'), FDE9D9: hex('FDE9D9'),
-    F79544: hex('F79544'), WHITE:  hex('FFFFFF'), E8E8E8: hex('E8E8E8'),
-  }
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const reqs: any[] = []
+  const reqs: any[] = [{
+    repeatCell: {
+      range: { sheetId, startRowIndex: 0, endRowIndex: gridRowCount, startColumnIndex: 0, endColumnIndex: gridColumnCount },
+      cell: { note: null },
+      fields: 'note',
+    },
+  }]
 
-  function rc(r0: number, r1: number, c0: number, c1: number, bg?: RGB, bold?: boolean) {
-    if (c0 >= c1) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const fmt: any = {}
-    const fields: string[] = ['userEnteredFormat.horizontalAlignment']
-    fmt.horizontalAlignment = 'CENTER'
-    if (bg)            { fmt.backgroundColor = bg;           fields.push('userEnteredFormat.backgroundColor') }
-    if (bold !== undefined) { fmt.textFormat = { bold, fontSize: 10 }; fields.push('userEnteredFormat.textFormat.bold', 'userEnteredFormat.textFormat.fontSize') }
-    reqs.push({ repeatCell: { range: { sheetId, startRowIndex: r0, endRowIndex: r1, startColumnIndex: c0, endColumnIndex: c1 }, cell: { userEnteredFormat: fmt }, fields: fields.join(',') } })
+  ws.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+    row.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
+      const note = worksheetNoteText(cell.note)
+      if (!note) return
+      reqs.push({
+        updateCells: {
+          range: {
+            sheetId,
+            startRowIndex: rowNumber - 1,
+            endRowIndex: rowNumber,
+            startColumnIndex: columnNumber - 1,
+            endColumnIndex: columnNumber,
+          },
+          rows: [{ values: [{ note }] }],
+          fields: 'note',
+        },
+      })
+    })
+  })
+
+  for (let i = 0; i < reqs.length; i += 1000) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: reqs.slice(i, i + 1000) } })
   }
-
-  function mg(r0: number, r1: number, c0: number, c1: number) {
-    if (c1 - c0 < 2) return
-    reqs.push({ mergeCells: { range: { sheetId, startRowIndex: r0, endRowIndex: r1, startColumnIndex: c0, endColumnIndex: c1 }, mergeType: 'MERGE_ALL' } })
-  }
-
-  // ── Row 1: vendor group header row ──
-  rc(0, 1, 0, COL_REVENUE + 1, C.FFFFCC, true)
-  rc(0, 1, COL_SPACER, COL_SPACER + 1, C.E8E8E8)
-  rc(0, 1, COL_TOTAL,    COL_TOTAL + 1,    C.BFBFBF, true)
-  rc(0, 1, COL_FOOD_SUB, COL_FOOD_SUB + 1, C.FFFF00, true)
-  rc(0, 1, COL_PACK_SUB, COL_MISC_SUB + 1, C.BFBFBF, true)
-  // Vendor colors (food cols)
-  rc(0, 1, COL_FOOD_START,     Math.min(COL_FOOD_START + 6,  COL_FOOD_START + foodLen), C.WHITE,   true)
-  rc(0, 1, COL_FOOD_START + 6, Math.min(COL_FOOD_START + 7,  COL_FOOD_START + foodLen), C.DA9694,  true)
-  rc(0, 1, COL_FOOD_START + 7, Math.min(COL_FOOD_START + 8,  COL_FOOD_START + foodLen), C.C6D9F0,  true)
-  rc(0, 1, COL_FOOD_START + 8, Math.min(COL_FOOD_START + 17, COL_FOOD_START + foodLen), C.FDE9D9,  true)
-  rc(0, 1, Math.min(COL_FOOD_START + 17, COL_PACK_START), COL_PACK_START, C.FBD4B4, true)
-  rc(0, 1, COL_PACK_START, COL_MISC_START, C.C6D9F0, true)
-  rc(0, 1, COL_MISC_START, Math.min(COL_MISC_START + 13, TOTAL_COLS), C.C6D9F0, true)
-  rc(0, 1, Math.min(COL_MISC_START + 13, TOTAL_COLS), TOTAL_COLS, C.FBD4B4, true)
-  // Merges row 1
-  mg(0, 1, COL_FOOD_START, Math.min(COL_FOOD_START + 6, COL_PACK_START))
-  mg(0, 1, COL_FOOD_START + 8, Math.min(COL_FOOD_START + 17, COL_PACK_START))
-  mg(0, 1, Math.min(COL_FOOD_START + 17, COL_PACK_START), COL_PACK_START)
-  mg(0, 1, COL_PACK_START, COL_MISC_START)
-  mg(0, 1, COL_MISC_START, Math.min(COL_MISC_START + 13, TOTAL_COLS))
-  mg(0, 1, Math.min(COL_MISC_START + 13, TOTAL_COLS), TOTAL_COLS)
-
-  // ── Row 2: 總發票/總收據 ──
-  rc(1, 2, 0, COL_REVENUE + 1, C.FFFFCC, true)
-  rc(1, 2, COL_SPACER, COL_SPACER + 1, C.E8E8E8)
-  rc(1, 2, COL_TOTAL,    COL_TOTAL + 1,    C.BFBFBF, true)
-  rc(1, 2, COL_FOOD_SUB, COL_FOOD_SUB + 1, C.FFFF00, true)
-  rc(1, 2, COL_PACK_SUB, COL_PACK_SUB + 1, C.BFBFBF, true)
-  rc(1, 2, COL_MISC_SUB, COL_MISC_SUB + 1, C.FFFF00, true)
-  rc(1, 2, COL_FOOD_START, TOTAL_COLS, C.BFBFBF, false)
-
-  // ── Row 3: column headers ──
-  rc(2, 3, 0, 2, C.BFBFBF, true)
-  rc(2, 3, 2, 3, C.FFC000, true)
-  rc(2, 3, 3, 4, C.DA9694, true)
-  for (let i = 0; i < N; i++) rc(2, 3, 4 + i, 5 + i, C.GREEN, true)
-  for (let c = COL_AFTER_DEDUCT; c <= COL_REVENUE; c++) {
-    rc(2, 3, c, c + 1, c === COL_CK ? C.FFFF00 : C.FFC000, true)
-  }
-  rc(2, 3, COL_SPACER,   COL_SPACER + 1,   C.E8E8E8, false)
-  rc(2, 3, COL_TOTAL,    COL_TOTAL + 1,    C.BFBFBF, true)
-  rc(2, 3, COL_FOOD_SUB, COL_FOOD_SUB + 1, C.BFBFBF, true)
-  rc(2, 3, COL_PACK_SUB, COL_PACK_SUB + 1, C.BFBFBF, true)
-  rc(2, 3, COL_MISC_SUB, COL_MISC_SUB + 1, C.BFBFBF, true)
-  rc(2, 3, COL_FOOD_START, TOTAL_COLS, C.BFBFBF, true)
-
-  // ── Row 4: monthly totals (yellow) ──
-  rc(3, 4, 0, TOTAL_COLS, C.FFFF00, true)
-
-  // ── Rows 5+: daily data ──
-  rc(4, dataEnd, 0, COL_REVENUE + 1, C.FFFFCC, false)
-  rc(4, dataEnd, COL_SPACER, COL_SPACER + 1, C.E8E8E8, false)
-  rc(4, dataEnd, COL_TOTAL,    COL_TOTAL + 1,    C.WHITE,   false)
-  rc(4, dataEnd, COL_FOOD_SUB, COL_FOOD_SUB + 1, C.F79544,  false)
-  rc(4, dataEnd, COL_PACK_SUB, COL_PACK_SUB + 1, C.C6D9F0,  false)
-  rc(4, dataEnd, COL_MISC_SUB, COL_MISC_SUB + 1, C.F79544,  false)
-  rc(4, dataEnd, COL_FOOD_START, COL_PACK_START, C.WHITE,   false)
-  rc(4, dataEnd, COL_PACK_START, COL_MISC_START, C.C6D9F0,  false)
-  rc(4, dataEnd, COL_MISC_START, Math.min(COL_MISC_START + 13, TOTAL_COLS), C.C6D9F0, false)
-  rc(4, dataEnd, Math.min(COL_MISC_START + 13, TOTAL_COLS), TOTAL_COLS, C.FBD4B4, false)
-
-  // ── Freeze rows 1-3, cols A-B ──
-  reqs.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: 3, frozenColumnCount: 2 } }, fields: 'gridProperties.frozenRowCount,gridProperties.frozenColumnCount' } })
-
-  // ── Row heights ──
-  for (const [idx, px] of [[0,24],[1,21],[2,26],[3,24]] as [number,number][]) {
-    reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: idx, endIndex: idx + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })
-  }
-
-  // ── Column widths ──
-  const colWidths: [number, number, number][] = [ // [start, end, px]
-    [0, 1, 90], [1, 2, 50],
-    [2, 3, 60], [3, 4, 60],
-    ...(Array.from({ length: N }, (_, i) => [4 + i, 5 + i, 60] as [number,number,number])),
-    [COL_AFTER_DEDUCT, COL_AFTER_DEDUCT+1, 70],
-    [BASE+1, BASE+2, 60], [BASE+2, BASE+3, 60], [BASE+3, BASE+4, 80], [BASE+4, BASE+5, 60], [BASE+5, BASE+6, 70],
-    [COL_SPACER, COL_SPACER+1, 15],
-  ]
-  // Default all item columns to 55px first
-  reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: COL_TOTAL, endIndex: TOTAL_COLS }, properties: { pixelSize: 55 }, fields: 'pixelSize' } })
-  for (const [s, e, px] of colWidths) {
-    reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: s, endIndex: e }, properties: { pixelSize: px }, fields: 'pixelSize' } })
-  }
-
-  await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: reqs } })
 }
 
 // Sync an entire month directly by storeId + month (for manual re-sync of historical data)
@@ -956,7 +580,7 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
 
   if (usedTemplate) {
     try {
-      await applyTemplateFormatting(sheets, sheetsId, sheetId, [], [], wsWidths, wsMerges, ws)
+      await applyTemplateFormatting(sheets, sheetsId, sheetId, wsWidths, wsMerges, ws)
     } catch (fmtErr) {
       console.warn('[syncCKMonthToSheets] template formatting failed (data already written):', fmtErr)
     }

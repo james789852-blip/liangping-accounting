@@ -37,3 +37,11 @@ test('Google Sheets 整合只能載入在伺服器端', () => {
   assert.match(sheetsModule, /^import 'server-only'/)
   assert.match(sheetsModule, /此店家尚未綁定 Google 試算表/)
 })
+
+test('店面 Google Sheets 與當月 Excel 共用原生活頁簿', () => {
+  assert.match(sheetsModule, /import \{ buildFoodCostNativeWorkbook \} from '@\/lib\/food-cost-native-workbook'/)
+  assert.match(sheetsModule, /await buildFoodCostNativeWorkbook\(storeId, year, monthNum\)/)
+  assert.match(sheetsModule, /for \(const worksheet of workbook\.worksheets\)/)
+  assert.match(sheetsModule, /const tabName = `\$\{year\}年\$\{worksheet\.name\}`/)
+  assert.doesNotMatch(sheetsModule, /EXCEL_COLUMNS/)
+})
