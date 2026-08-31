@@ -12,7 +12,7 @@ interface Store {
   uber_enabled: boolean; uber_accounts: string[]; panda_enabled: boolean
   twpay_enabled: boolean; online_enabled: boolean; online_cash_enabled?: boolean
   petty_cash: number
-  type?: string; assigned_store_ids?: string[]; google_sheets_id?: string
+  type?: string; active?: boolean; assigned_store_ids?: string[]; google_sheets_id?: string
 }
 
 interface Props {
@@ -76,6 +76,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
   const [editingExtId, setEditingExtId] = useState<string | null>(null)
   const [editingExtName, setEditingExtName] = useState('')
   const extComposingRef = useRef(false)
+  const isActive = store.active !== false
 
   function addAccount() {
     const name = newAccount.trim()
@@ -165,7 +166,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
   }
 
   async function handleDeactivate() {
-    const confirmed = window.confirm(`確定要停用「${storeName}」嗎？\n\n停用後會從操作清單移除，但既有帳務與歷史報表仍會保留。`)
+    const confirmed = window.confirm(`確定要停用「${storeName}」嗎？\n\n店家管理仍會保留並標示「已停用」；其他操作清單不再顯示，但既有帳務與歷史報表都會保留。`)
     if (!confirmed) return
     setDeleting(true)
     const result = await deactivateStore(store.id)
@@ -181,9 +182,9 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
   const modeLabel: Record<string, string> = { ichef: 'iChef', handwrite: '手寫菜單', mixed: '混合模式' }
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-      <button type="button" onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-4 py-4">
+    <div className="bg-white rounded-2xl overflow-hidden" style={{ border: isActive ? '1px solid #f4f4f5' : '1px solid #e4e4e7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', opacity: isActive ? 1 : 0.72 }}>
+      <button type="button" onClick={() => isActive && setOpen(v => !v)} disabled={!isActive}
+        className="w-full flex items-center justify-between px-4 py-4" style={{ cursor: isActive ? 'pointer' : 'default' }}>
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-xl flex items-center justify-center text-white font-bold shrink-0"
             style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', fontSize: storeName.length > 2 ? '10px' : '13px' }}>
@@ -196,6 +197,11 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                 style={{ background: storeType === '央廚' ? '#fef3c7' : '#f0fdf4', color: storeType === '央廚' ? '#b45309' : '#15803d' }}>
                 {storeType}
               </span>
+              {!isActive && (
+                <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full" style={{ background: '#e4e4e7', color: '#52525b' }}>
+                  已停用
+                </span>
+              )}
               {storeType !== '央廚' && (
                 <>
                   <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: '#f4f4f5', color: '#71717a' }}>
@@ -209,7 +215,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
             </div>
           </div>
         </div>
-        {open
+        {!isActive ? null : open
           ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />
           : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />}
       </button>

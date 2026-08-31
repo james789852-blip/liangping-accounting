@@ -32,8 +32,7 @@ export default async function StoresPage() {
   // 老闆 / is_hq 看全部店家，其他只看自己負責的
   let query = admin
     .from('stores')
-    .select('id, name, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled, petty_cash, type, assigned_store_ids, google_sheets_id')
-    .eq('active', true)
+    .select('id, name, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled, petty_cash, type, active, assigned_store_ids, google_sheets_id')
 
   if (canEditStoreSettings && !canEditCKSettings) {
     query = query.neq('type', '央廚') as typeof query
@@ -75,6 +74,7 @@ export default async function StoresPage() {
       <div className="max-w-2xl mx-auto px-4 py-5 pb-28 space-y-6">
         {(['店面', '央廚'] as const).map(type => {
           const group = stores.filter(s => ((s as any).type ?? '店面') === type)
+          const activeCount = group.filter(s => (s as any).active !== false).length
           if (group.length === 0) return null
           return (
             <div key={type}>
@@ -83,13 +83,15 @@ export default async function StoresPage() {
                   style={{ background: type === '央廚' ? '#fef3c7' : '#f0fdf4', color: type === '央廚' ? '#b45309' : '#15803d' }}>
                   {type}
                 </span>
-                <span className="text-xs" style={{ color: '#a1a1aa' }}>{group.length} 間</span>
+                <span className="text-xs" style={{ color: '#a1a1aa' }}>
+                  {group.length} 間{activeCount !== group.length ? `・啟用 ${activeCount} 間` : ''}
+                </span>
               </div>
               <div className="space-y-3">
                 {group.map(store => (
                   <StoreEditor
                     key={store.id}
-                    store={{ ...store, uber_accounts: store.uber_accounts ?? [], type: (store as any).type ?? '店面', assigned_store_ids: (store as any).assigned_store_ids ?? [], google_sheets_id: (store as any).google_sheets_id ?? '' }}
+                    store={{ ...store, uber_accounts: store.uber_accounts ?? [], type: (store as any).type ?? '店面', active: (store as any).active !== false, assigned_store_ids: (store as any).assigned_store_ids ?? [], google_sheets_id: (store as any).google_sheets_id ?? '' }}
                     canEdit={(store as any).type === '央廚' ? canEditCKSettings : canEditStoreSettings}
                     canEditCKRelations={canEditCKSettings}
                     memberStoreOptions={type === '央廚' ? memberStoreOptions : []}
