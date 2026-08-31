@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import ExcelJS from 'exceljs'
-import { fillCKWorksheet } from '../lib/ck-template.ts'
+import { ckTemplateHasStoreColumns, fillCKWorksheet } from '../lib/ck-template.ts'
+
+test('央廚模板缺少目前店家欄位時會判定為過期', () => {
+  const workbook = new ExcelJS.Workbook()
+  const worksheet = workbook.addWorksheet('8月食耗成本')
+  worksheet.getRow(3).values = ['日期', '', '府中', '幸福', '哇哥', '營業額']
+
+  assert.equal(ckTemplateHasStoreColumns(worksheet, ['府中', '幸福']), true)
+  assert.equal(ckTemplateHasStoreColumns(worksheet, ['府中', '幸福', '景新']), false)
+})
 
 test('央廚舊月份模板會更新日期並以資料庫金額取代跨分頁公式', () => {
   const workbook = new ExcelJS.Workbook()

@@ -4,6 +4,34 @@ const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
 const norm = (s: string) => s.replace(/[\s　（）()]/g, '').toLowerCase()
 
+export function ckTemplateHasStoreColumns(
+  ws: ExcelJS.Worksheet,
+  requiredStoreNames: string[],
+): boolean {
+  let headerRowNum = -1
+  for (let row = 1; row <= 10; row++) {
+    if (ws.getRow(row).getCell(1).text?.replace(/[\s　]/g, '') === '日期') {
+      headerRowNum = row
+      break
+    }
+  }
+  if (headerRowNum < 0) return false
+
+  const headerRow = ws.getRow(headerRowNum)
+  let revenueCol = -1
+  headerRow.eachCell({ includeEmpty: false }, (cell, colNum) => {
+    if (['營業額', '营业额'].includes(cell.text?.trim())) revenueCol = colNum
+  })
+  if (revenueCol < 0) return false
+
+  const available = new Set<string>()
+  for (let col = 3; col < revenueCol; col++) {
+    const name = headerRow.getCell(col).text?.trim()
+    if (name) available.add(norm(name))
+  }
+  return requiredStoreNames.every(name => available.has(norm(name)))
+}
+
 function hasFormula(cell: ExcelJS.Cell): boolean {
   const v = cell.value
   if (v == null || typeof v !== 'object') return false

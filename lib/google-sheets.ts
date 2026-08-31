@@ -5,7 +5,7 @@ import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { extractValues, extractColWidths, extractMerges } from '@/lib/food-cost-template'
 import { buildFoodCostNativeWorkbook } from '@/lib/food-cost-native-workbook'
-import { type CKDayData, fillCKWorksheet, buildCKGeneratedWorkbook, getDaysInMonth } from '@/lib/ck-template'
+import { type CKDayData, fillCKWorksheet, buildCKGeneratedWorkbook, ckTemplateHasStoreColumns, getDaysInMonth } from '@/lib/ck-template'
 import { getMonthLastDay } from '@/lib/business-date'
 
 function getAuth() {
@@ -520,6 +520,13 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
     dataMap[date] = { storeRevenues, expenses, foodTotal, packTotal, miscTotal, totalRevenue, totalExpense }
   }
 
+  const assignedStoreNames = assignedIds.map(id => storeNameMap[id]).filter(Boolean)
+  const externalStoreNames = [...new Set(
+    Object.values(dataMap).flatMap(day => Object.keys(day.storeRevenues))
+      .filter(name => !assignedStoreNames.includes(name)),
+  )]
+  const requiredStoreNames = [...assignedStoreNames, ...externalStoreNames]
+
   // Build workbook (template if available, otherwise generated)
   let wb: ExcelJS.Workbook | null = null
   let ws: ExcelJS.Worksheet | null = null
@@ -534,15 +541,16 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
       ws = wb.getWorksheet(targetName)
         ?? wb.worksheets.find(s => s.name.includes('食耗'))
         ?? wb.worksheets[0]
-      if (ws) {
+      if (ws && ckTemplateHasStoreColumns(ws, requiredStoreNames)) {
         const filled = fillCKWorksheet(ws, days, dataMap)
         if (filled) usedTemplate = true
+      } else if (ws) {
+        console.warn('[syncCKMonthToSheets] template store columns are outdated; using generated workbook')
       }
     }
   } catch (e) { console.warn('[syncCKMonthToSheets] template load failed:', e) }
 
   if (!usedTemplate) {
-    const assignedStoreNames = assignedIds.map(id => storeNameMap[id]).filter(Boolean)
     wb = buildCKGeneratedWorkbook(monthNum, days, dataMap, assignedStoreNames)
     ws = wb.worksheets[0]
   }
