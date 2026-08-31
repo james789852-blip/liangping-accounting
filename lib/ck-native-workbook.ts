@@ -304,7 +304,9 @@ function addCKVendorAnalysisSheet(wb: ExcelJS.Workbook, title: string, rows: CKV
     cell.border = thinBorder() as ExcelJS.Borders
     setFill(cell, CK_PAPER)
     const letter = colLetter(col)
-    cell.value = { formula: `SUM(${letter}4:${letter}${Math.max(4, totalRow - 1)})` } as any
+    cell.value = rows.length > 0
+      ? { formula: `SUM(${letter}4:${letter}${totalRow - 1})` } as any
+      : 0
     cell.numFmt = '#,##0;-#,##0;"-"'
     cell.font = { name: CK_FONT, size: 12, bold: true }
     cell.alignment = { horizontal: 'right', vertical: 'middle' }

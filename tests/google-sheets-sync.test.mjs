@@ -8,6 +8,7 @@ const accountingUI = fs.readFileSync(new URL('../components/hq/accounting-client
 const ckUI = fs.readFileSync(new URL('../components/hq/ck-overview.tsx', import.meta.url), 'utf8')
 const storeEditor = fs.readFileSync(new URL('../components/hq/store-editor.tsx', import.meta.url), 'utf8')
 const sheetsModule = fs.readFileSync(new URL('../lib/google-sheets.ts', import.meta.url), 'utf8')
+const ckNativeWorkbook = fs.readFileSync(new URL('../lib/ck-native-workbook.ts', import.meta.url), 'utf8')
 
 test('店面帳目核准後會同步 Google Sheets，失敗時留下操作軌跡', () => {
   assert.match(closingsAction, /import \{ syncClosingToSheets, syncMonthToSheets \} from '@\/lib\/google-sheets'/)
@@ -41,6 +42,12 @@ test('央廚 Google Sheets 與系統下載 Excel 共用原生工作簿', () => {
 test('Google Sheets 合併儲存格跨過凍結線時保留 Excel 合併排版', () => {
   assert.match(sheetsModule, /m\.r0 < frozenRowCount && m\.r1 > frozenRowCount/)
   assert.match(sheetsModule, /m\.c0 < frozenColumnCount && m\.c1 > frozenColumnCount/)
+})
+
+test('央廚沒有廠商明細時總計為零，不會產生自我加總循環公式', () => {
+  assert.match(ckNativeWorkbook, /cell\.value = rows\.length > 0/)
+  assert.match(ckNativeWorkbook, /SUM\(\$\{letter\}4:\$\{letter\}\$\{totalRow - 1\}\)/)
+  assert.doesNotMatch(ckNativeWorkbook, /Math\.max\(4, totalRow - 1\)/)
 })
 
 test('總公司介面可綁定試算表並手動重同步', () => {
