@@ -5,7 +5,7 @@ import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { extractValues, extractColWidths, extractMerges } from '@/lib/food-cost-template'
 import { buildFoodCostNativeWorkbook } from '@/lib/food-cost-native-workbook'
-import { buildCKDataMap, fillCKWorksheet, buildCKGeneratedWorkbook, materializeCKCrossSheetFormulas, refreshCKFormulaResults, prepareCKTemplateStoreColumns, getDaysInMonth } from '@/lib/ck-template'
+import { buildCKNativeWorkbook } from '@/lib/ck-native-workbook'
 import { getMonthLastDay } from '@/lib/business-date'
 
 function getAuth() {
@@ -482,177 +482,102 @@ export async function syncMonthToSheets(storeId: string, month: string): Promise
 
 /**
  * Sync CK store's monthly data to Google Sheets.
- * Content mirrors `/api/export/ck` Excel output.
+ * Content comes from the exact same native workbook builder used by the
+ * user-facing `/api/export/ck-native` download.
  */
 export async function syncCKMonthToSheets(ckStoreId: string, month: string): Promise<void> {
   const admin = createAdminClient()
   const [yearStr, monthStr] = month.split('-')
   const year = parseInt(yearStr)
   const monthNum = parseInt(monthStr)
-  const firstDay = `${month}-01`
-  const lastDay = getMonthLastDay(year, monthNum)
 
-  // CK store info
   const { data: ckStore } = await admin
-    .from('stores').select('id, name, assigned_store_ids, google_sheets_id').eq('id', ckStoreId).single()
+    .from('stores').select('id, name, google_sheets_id').eq('id', ckStoreId).single()
   if (!ckStore) throw new Error('找不到央廚店家')
   const sheetsId = (ckStore as AnyRecord).google_sheets_id as string | null
   if (!sheetsId) throw new Error('此央廚尚未綁定 Google 試算表（請至「店家管理」設定 google_sheets_id）')
 
-  const assignedIds: string[] = (ckStore.assigned_store_ids as string[] | null) ?? []
-  const { data: memberStores } = assignedIds.length > 0
-    ? await admin.from('stores').select('id, name').in('id', assignedIds)
-    : { data: [] }
-  const storeNameMap = Object.fromEntries((memberStores ?? []).map((s: AnyRecord) => [s.id as string, s.name as string]))
-
-  // Fetch CK records
-  const { data: records } = await admin
-    .from('ck_daily_records')
-    .select('id, business_date')
-    .eq('ck_store_id', ckStoreId)
-    .gte('business_date', firstDay)
-    .lte('business_date', lastDay)
-  const recordIds = (records ?? []).map(r => r.id)
-  const [{ data: storeOrders }, { data: expenseItems }] = await Promise.all([
-    recordIds.length > 0
-      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount').in('ck_daily_record_id', recordIds)
-      : Promise.resolve({ data: [] }),
-    recordIds.length > 0
-      ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount').in('ck_daily_record_id', recordIds).order('sort_order')
-      : Promise.resolve({ data: [] }),
-  ])
-
-  const days = getDaysInMonth(year, monthNum)
-  const dataMap = buildCKDataMap(records ?? [], storeOrders ?? [], expenseItems ?? [], storeNameMap)
-
-  const assignedStoreNames = assignedIds.map(id => storeNameMap[id]).filter(Boolean)
-  const externalStoreNames = [...new Set(
-    Object.values(dataMap).flatMap(day => Object.keys(day.storeRevenues))
-      .filter(name => !assignedStoreNames.includes(name)),
-  )]
-  const requiredStoreNames = [...assignedStoreNames, ...externalStoreNames]
-
-  // Build workbook (template if available, otherwise generated)
-  let wb: ExcelJS.Workbook | null = null
-  let ws: ExcelJS.Worksheet | null = null
-  let usedTemplate = false
-  try {
-    const { data: tmpl } = await admin.storage.from('excel-templates').download(`ck-${ckStoreId}.xlsx`)
-    if (tmpl) {
-      wb = new ExcelJS.Workbook()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await wb.xlsx.load(Buffer.from(await tmpl.arrayBuffer()) as any)
-      const targetName = `${monthNum}月食耗成本`
-      ws = wb.getWorksheet(targetName)
-        ?? wb.worksheets.find(s => s.name.includes('食耗'))
-        ?? wb.worksheets[0]
-      if (ws && prepareCKTemplateStoreColumns(ws, requiredStoreNames)) {
-        const filled = fillCKWorksheet(ws, days, dataMap)
-        if (filled) usedTemplate = true
-      } else if (ws) {
-        console.warn('[syncCKMonthToSheets] template has too few store columns; using generated workbook')
-      }
-    }
-  } catch (e) { console.warn('[syncCKMonthToSheets] template load failed:', e) }
-
-  if (!usedTemplate) {
-    wb = buildCKGeneratedWorkbook(monthNum, days, dataMap, assignedStoreNames)
-    ws = wb.worksheets[0]
-  }
-  if (!ws) throw new Error('無法建立工作表')
-
-  materializeCKCrossSheetFormulas(ws)
-  refreshCKFormulaResults(ws)
-
-  const wsValues = extractValues(ws)
-  const wsWidths = extractColWidths(ws)
-  const wsMerges = extractMerges(ws)
-
-  // Push to Google Sheets
-  const tabName = `${year}年${monthNum}月食耗成本`
-  const auth = getAuth()
-  const sheets = google.sheets({ version: 'v4', auth })
-
-  const { data: spreadsheet } = await sheets.spreadsheets.get({ spreadsheetId: sheetsId })
-  const existingSheet = spreadsheet.sheets?.find(s => s.properties?.title === tabName)
-  let sheetId: number
-  let gridRowCount: number
-  let gridColumnCount: number
-  if (existingSheet) {
-    sheetId = existingSheet.properties?.sheetId ?? 0
-    gridRowCount = existingSheet.properties?.gridProperties?.rowCount ?? 1000
-    gridColumnCount = existingSheet.properties?.gridProperties?.columnCount ?? 26
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: sheetsId,
-      requestBody: {
-        requests: [{
-          unmergeCells: {
-            range: {
-              sheetId,
-              startRowIndex: 0,
-              endRowIndex: gridRowCount,
-              startColumnIndex: 0,
-              endColumnIndex: gridColumnCount,
-            },
-          },
-        }],
-      },
-    })
-    await sheets.spreadsheets.values.clear({ spreadsheetId: sheetsId, range: `'${tabName}'` })
-  } else {
-    const addRes = await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: sheetsId,
-      requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
-    })
-    const properties = addRes.data.replies?.[0]?.addSheet?.properties
-    sheetId = properties?.sheetId ?? 0
-    gridRowCount = properties?.gridProperties?.rowCount ?? 1000
-    gridColumnCount = properties?.gridProperties?.columnCount ?? 26
-  }
-
-  const requiredRows = Math.max(ws.rowCount, 1)
-  const requiredColumns = Math.max(ws.columnCount, 1)
-  if (gridRowCount < requiredRows || gridColumnCount < requiredColumns) {
-    gridRowCount = Math.max(gridRowCount, requiredRows)
-    gridColumnCount = Math.max(gridColumnCount, requiredColumns)
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: sheetsId,
-      requestBody: {
-        requests: [{
-          updateSheetProperties: {
-            properties: {
-              sheetId,
-              gridProperties: { rowCount: gridRowCount, columnCount: gridColumnCount },
-            },
-            fields: 'gridProperties.rowCount,gridProperties.columnCount',
-          },
-        }],
-      },
-    })
-  }
-
-  await sheets.spreadsheets.values.update({
+  const workbook = await buildCKNativeWorkbook(ckStoreId, year, monthNum)
+  const sheets = google.sheets({ version: 'v4', auth: getAuth() })
+  const spreadsheet = await sheets.spreadsheets.get({
     spreadsheetId: sheetsId,
-    range: `'${tabName}'!A1`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: wsValues.map(row => row.map(v => v ?? '')) },
+    fields: 'sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))',
   })
 
-  // Apply formatting for both template and generated workbooks so an outdated
-  // template cannot leave stale merges or column styling behind.
-  try {
+  for (const [worksheetIndex, ws] of workbook.worksheets.entries()) {
+    // Keep the existing main-tab name used by the business, while its contents
+    // come directly from the native worksheet. Analysis tabs mirror Excel.
+    const tabName = worksheetIndex === 0
+      ? `${year}年${monthNum}月食耗成本`
+      : `${year}年${ws.name}`
+    const existing = spreadsheet.data.sheets?.find(sheet => sheet.properties?.title === tabName)
+    let sheetId = existing?.properties?.sheetId
+    let gridRowCount = existing?.properties?.gridProperties?.rowCount ?? 0
+    let gridColumnCount = existing?.properties?.gridProperties?.columnCount ?? 0
+    const requiredRows = Math.max(ws.rowCount, 1)
+    const requiredColumns = Math.max(ws.columnCount, 1)
+
+    if (sheetId == null) {
+      const added = await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: sheetsId,
+        requestBody: {
+          requests: [{ addSheet: { properties: {
+            title: tabName,
+            gridProperties: {
+              rowCount: Math.max(requiredRows, 100),
+              columnCount: Math.max(requiredColumns, 26),
+            },
+          } } }],
+        },
+      })
+      const properties = added.data.replies?.[0]?.addSheet?.properties
+      sheetId = properties?.sheetId
+      gridRowCount = properties?.gridProperties?.rowCount ?? Math.max(requiredRows, 100)
+      gridColumnCount = properties?.gridProperties?.columnCount ?? Math.max(requiredColumns, 26)
+    } else if (gridRowCount < requiredRows || gridColumnCount < requiredColumns) {
+      gridRowCount = Math.max(gridRowCount, requiredRows)
+      gridColumnCount = Math.max(gridColumnCount, requiredColumns)
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: sheetsId,
+        requestBody: { requests: [{
+          updateSheetProperties: {
+            properties: { sheetId, gridProperties: { rowCount: gridRowCount, columnCount: gridColumnCount } },
+            fields: 'gridProperties.rowCount,gridProperties.columnCount',
+          },
+        }] },
+      })
+    }
+    if (sheetId == null) throw new Error(`無法建立 Google 試算表分頁：${tabName}`)
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: sheetsId,
+      requestBody: { requests: [{ unmergeCells: { range: {
+        sheetId,
+        startRowIndex: 0,
+        endRowIndex: gridRowCount,
+        startColumnIndex: 0,
+        endColumnIndex: gridColumnCount,
+      } } }] },
+    })
+    await sheets.spreadsheets.values.clear({ spreadsheetId: sheetsId, range: `'${tabName.replace(/'/g, "''")}'` })
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetsId,
+      range: `'${tabName.replace(/'/g, "''")}'!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: extractValues(ws) },
+    })
+    await writeDateColumnsAsText(sheets, sheetsId, tabName, ws)
     await applyTemplateFormatting(
       sheets,
       sheetsId,
       sheetId,
-      wsWidths,
-      wsMerges,
+      extractColWidths(ws),
+      extractMerges(ws),
       ws,
       gridRowCount,
       gridColumnCount,
     )
-  } catch (fmtErr) {
-    console.warn('[syncCKMonthToSheets] formatting failed (data already written):', fmtErr)
+    await writeWorksheetNotes(sheets, sheetsId, sheetId, ws, gridRowCount, gridColumnCount)
+    console.log(`[syncCKMonthToSheets] ${ckStore.name} ${month} → sheet "${tabName}" done (native workbook)`)
   }
-  console.log(`[syncCKMonthToSheets] ${ckStore.name} ${month} → sheet "${tabName}" done (${usedTemplate ? 'template' : 'generated'})`)
 }

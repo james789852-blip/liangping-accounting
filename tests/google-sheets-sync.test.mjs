@@ -30,15 +30,12 @@ test('央廚審核通過後會自動同步 Google Sheets', () => {
   assert.match(ckAction, /央廚 \$\{date\.slice\(0, 7\)\} 審核後試算表同步失敗/)
 })
 
-test('央廚模板會保留原排版並將預留欄位更新為目前店家', () => {
-  assert.match(sheetsModule, /prepareCKTemplateStoreColumns\(ws, requiredStoreNames\)/)
-  assert.match(sheetsModule, /template has too few store columns; using generated workbook/)
-  assert.match(sheetsModule, /buildCKGeneratedWorkbook\(monthNum, days, dataMap, assignedStoreNames\)/)
-  assert.match(sheetsModule, /Apply formatting for both template and generated workbooks/)
+test('央廚 Google Sheets 與系統下載 Excel 共用原生工作簿', () => {
+  assert.match(sheetsModule, /import \{ buildCKNativeWorkbook \} from '@\/lib\/ck-native-workbook'/)
+  assert.match(sheetsModule, /await buildCKNativeWorkbook\(ckStoreId, year, monthNum\)/)
+  assert.match(sheetsModule, /for \(const \[worksheetIndex, ws\] of workbook\.worksheets\.entries\(\)\)/)
   assert.match(sheetsModule, /gridProperties: \{ rowCount: gridRowCount, columnCount: gridColumnCount \}/)
-  assert.match(sheetsModule, /materializeCKCrossSheetFormulas\(ws\)/)
-  assert.match(sheetsModule, /refreshCKFormulaResults\(ws\)/)
-  assert.match(sheetsModule, /buildCKDataMap\(records \?\? \[\], storeOrders \?\? \[\], expenseItems \?\? \[\], storeNameMap\)/)
+  assert.doesNotMatch(sheetsModule, /download\(`ck-\$\{ckStoreId\}\.xlsx`\)/)
 })
 
 test('總公司介面可綁定試算表並手動重同步', () => {
