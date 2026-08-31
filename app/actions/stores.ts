@@ -173,3 +173,57 @@ export async function activateStore(storeId: string) {
   revalidateTag('stores', 'default')
   return { success: true, name: store.name }
 }
+
+export async function deleteStorePermanently(storeId: string) {
+  const { profile, error } = await requireManager()
+  if (error) return { error }
+
+  const admin = createAdminClient()
+  const { data: store, error: loadError } = await admin
+    .from('stores')
+    .select('id, name, type, active')
+    .eq('id', storeId)
+    .maybeSingle()
+
+  if (loadError) return { error: loadError.message }
+  if (!store || store.active !== false) return { error: '只有已停用的店家可以永久刪除' }
+  if (!canManageStoreType(profile, store.type)) {
+    return { error: store.type === '央廚' ? '權限不足，無法刪除央廚店家' : '權限不足，無法刪除店面店家' }
+  }
+
+  const relatedChecks = await Promise.all([
+    admin.from('user_profiles').select('user_id', { count: 'exact', head: true }).contains('store_ids', [storeId]),
+    admin.from('daily_closings').select('id', { count: 'exact', head: true }).eq('store_id', storeId),
+    admin.from('ck_daily_records').select('id', { count: 'exact', head: true }).eq('ck_store_id', storeId),
+    admin.from('ck_store_orders').select('id', { count: 'exact', head: true }).eq('store_id', storeId),
+    admin.from('platform_payouts').select('id', { count: 'exact', head: true }).eq('store_id', storeId),
+    admin.from('menu_videos').select('id', { count: 'exact', head: true }).eq('store_id', storeId),
+    admin.from('audit_logs').select('id', { count: 'exact', head: true }).eq('store_id', storeId),
+    admin.from('stores').select('id', { count: 'exact', head: true }).contains('assigned_store_ids', [storeId]),
+  ])
+
+  const checkError = relatedChecks.find(result => result.error)?.error
+  if (checkError) return { error: `刪除前檢查失敗：${checkError.message}` }
+  const relatedCount = relatedChecks.reduce((sum, result) => sum + (result.count ?? 0), 0)
+  if (relatedCount > 0) {
+    return { error: '這間店仍有帳號、帳務或歷史紀錄，為避免資料遺失無法永久刪除；請維持停用狀態' }
+  }
+
+  const { data: deleted, error: dbErr } = await admin
+    .from('stores')
+    .delete()
+    .eq('id', storeId)
+    .eq('active', false)
+    .select('id')
+    .maybeSingle()
+
+  if (dbErr) return { error: '這間店仍有關聯設定或資料，無法永久刪除；請維持停用狀態' }
+  if (!deleted) return { error: '永久刪除失敗，店家可能已被修改，請重新整理後再試一次' }
+
+  revalidatePath('/hq/stores')
+  revalidatePath('/hq/users')
+  revalidatePath('/hq/dashboard')
+  revalidatePath('/manager', 'layout')
+  revalidateTag('stores', 'default')
+  return { success: true, name: store.name }
+}

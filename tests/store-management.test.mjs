@@ -25,7 +25,7 @@ test('店家管理保留已停用店家並清楚標示狀態', () => {
   assert.match(storesPage, /type, active, assigned_store_ids/)
   assert.doesNotMatch(storesPage, /google_sheets_id'\)\n\s*\.eq\('active', true\)/)
   assert.match(storeEditor, /已停用/)
-  assert.match(storeEditor, /disabled=\{!isActive\}/)
+  assert.match(storeEditor, /const canConfigure = canEdit && isActive/)
 })
 
 test('已停用店家可以重新啟用並沿用既有資料', () => {
@@ -34,4 +34,20 @@ test('已停用店家可以重新啟用並沿用既有資料', () => {
   assert.match(storeActions, /export async function activateStore\(storeId: string\)/)
   assert.match(storeActions, /\.update\(\{ active: true \}\)/)
   assert.match(storeActions, /if \(!activated\)/)
+})
+
+test('已停用店家仍可展開查看設定但不可修改', () => {
+  assert.match(storeEditor, /onClick=\{\(\) => setOpen\(v => !v\)\}/)
+  assert.match(storeEditor, /disabled=\{!canConfigure\}/)
+  assert.match(storeEditor, /disabled=\{!canConfigureCKRelations\}/)
+})
+
+test('永久刪除只允許沒有帳號與歷史資料的已停用店家', () => {
+  assert.match(storeEditor, /handlePermanentDelete/)
+  assert.match(storeEditor, /永久刪除/)
+  assert.match(storeEditor, /window\.prompt/)
+  assert.match(storeActions, /export async function deleteStorePermanently\(storeId: string\)/)
+  assert.match(storeActions, /只有已停用的店家可以永久刪除/)
+  assert.match(storeActions, /relatedCount > 0/)
+  assert.match(storeActions, /\.delete\(\)/)
 })

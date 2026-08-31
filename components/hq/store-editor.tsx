@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { activateStore, deactivateStore, updateStoreSettings } from '@/app/actions/stores'
+import { activateStore, deactivateStore, deleteStorePermanently, updateStoreSettings } from '@/app/actions/stores'
 import { updateCKAssignedStores, addCKExternalStore, deleteCKExternalStore, updateCKExternalStore, updateCKExternalStoreDeduction } from '@/app/actions/ck'
 import { toast } from 'sonner'
 import { ChevronDown, ChevronUp, Plus, X, Loader2, Check, Pencil, RotateCcw, Trash2 } from 'lucide-react'
@@ -48,10 +48,14 @@ function Toggle({ label, checked, onChange, disabled }: { label: string; checked
 
 export default function StoreEditor({ store, canEdit, canEditCKRelations = canEdit, memberStoreOptions = [], externalStores: initExternal = [] }: Props) {
   const router = useRouter()
+  const isActive = store.active !== false
+  const canConfigure = canEdit && isActive
+  const canConfigureCKRelations = canEditCKRelations && isActive
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [activating, setActivating] = useState(false)
+  const [permanentlyDeleting, setPermanentlyDeleting] = useState(false)
   const [storeName, setStoreName] = useState(store.name)
   const [editingName, setEditingName] = useState(false)
   const [mode, setMode] = useState(store.mode)
@@ -77,7 +81,6 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
   const [editingExtId, setEditingExtId] = useState<string | null>(null)
   const [editingExtName, setEditingExtName] = useState('')
   const extComposingRef = useRef(false)
-  const isActive = store.active !== false
 
   function addAccount() {
     const name = newAccount.trim()
@@ -144,7 +147,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
     if (!storeName.trim()) { toast.error('請填寫店家名稱'); return }
     setSaving(true)
     const [result, ckResult] = await Promise.all([
-      canEdit
+      canConfigure
         ? updateStoreSettings(store.id, {
             name: storeName.trim(),
             type: storeType,
@@ -155,7 +158,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
             google_sheets_id: googleSheetsId.trim() || null,
           })
         : Promise.resolve({ success: true }),
-      storeType === '央廚' && canEditCKRelations
+      storeType === '央廚' && canConfigureCKRelations
         ? updateCKAssignedStores(store.id, assignedStoreIds)
         : Promise.resolve({ success: true }),
     ])
@@ -194,13 +197,32 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
     router.refresh()
   }
 
+  async function handlePermanentDelete() {
+    const confirmed = window.confirm(`確定要永久刪除「${storeName}」嗎？\n\n只有完全沒有帳號、帳務或歷史資料的店家才能刪除。這個動作無法復原。`)
+    if (!confirmed) return
+    const typedName = window.prompt(`請輸入店家名稱「${storeName}」以確認永久刪除：`, '')
+    if (typedName?.trim() !== storeName) {
+      if (typedName !== null) toast.error('店家名稱不一致，已取消永久刪除')
+      return
+    }
+    setPermanentlyDeleting(true)
+    const result = await deleteStorePermanently(store.id)
+    if (result.error) {
+      toast.error(result.error)
+      setPermanentlyDeleting(false)
+      return
+    }
+    toast.success(`已永久刪除「${storeName}」`)
+    router.refresh()
+  }
+
   const modeLabel: Record<string, string> = { ichef: 'iChef', handwrite: '手寫菜單', mixed: '混合模式' }
 
   return (
     <div className="bg-white rounded-2xl overflow-hidden" style={{ border: isActive ? '1px solid #f4f4f5' : '1px solid #e4e4e7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', opacity: isActive ? 1 : 0.72 }}>
       <div className="flex items-stretch">
-      <button type="button" onClick={() => isActive && setOpen(v => !v)} disabled={!isActive}
-        className="flex-1 flex items-center justify-between px-4 py-4" style={{ cursor: isActive ? 'pointer' : 'default' }}>
+      <button type="button" onClick={() => setOpen(v => !v)}
+        className="flex-1 flex items-center justify-between px-4 py-4" style={{ cursor: 'pointer' }}>
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-xl flex items-center justify-center text-white font-bold shrink-0"
             style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', fontSize: storeName.length > 2 ? '10px' : '13px' }}>
@@ -231,7 +253,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
             </div>
           </div>
         </div>
-        {!isActive ? null : open
+        {open
           ? <ChevronUp className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />
           : <ChevronDown className="h-4 w-4 shrink-0" style={{ color: '#a1a1aa' }} />}
       </button>
@@ -269,11 +291,13 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
               ) : (
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium" style={{ color: '#18181b' }}>{storeName}</span>
-                  <button type="button" onClick={() => setEditingName(true)}
-                    className="p-1.5 rounded-lg transition-colors hover:bg-indigo-50"
-                    style={{ color: '#F59E0B' }}>
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
+                  {canConfigure && (
+                    <button type="button" onClick={() => setEditingName(true)}
+                      className="p-1.5 rounded-lg transition-colors hover:bg-indigo-50"
+                      style={{ color: '#F59E0B' }}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -285,7 +309,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
               <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>店家類型</p>
               <div className="flex gap-2">
                 {(['店面', '央廚'] as const).map(t => (
-                  <button key={t} type="button" onClick={() => setStoreType(t)}
+                  <button key={t} type="button" disabled={!canConfigure} onClick={() => setStoreType(t)}
                     className="px-3 py-1.5 rounded-xl text-sm font-medium"
                     style={{
                       background: storeType === t ? 'linear-gradient(135deg,#F59E0B,#F97316)' : 'white',
@@ -311,7 +335,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                     <label key={s.id}
                       className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors"
                       style={{ borderTop: i > 0 ? '1px solid #f4f4f5' : 'none', background: checked ? '#FFFBEB' : 'white' }}>
-                      <input type="checkbox" checked={checked} disabled={!canEditCKRelations}
+                      <input type="checkbox" checked={checked} disabled={!canConfigureCKRelations}
                         onChange={e => {
                           if (e.target.checked) setAssignedStoreIds(prev => [...prev, s.id])
                           else setAssignedStoreIds(prev => prev.filter(id => id !== s.id))
@@ -365,7 +389,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                     ) : (
                       <div className="flex items-center gap-2 px-3 py-2.5">
                         <span className="flex-1 text-sm font-medium" style={{ color: '#18181b' }}>{s.name}</span>
-                        {canEditCKRelations && (
+                        {canConfigureCKRelations && (
                           <Toggle
                             label="扣除包款"
                             checked={s.deductFromReimbursement}
@@ -373,7 +397,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                             disabled={extLoading === `deduct:${s.id}`}
                           />
                         )}
-                        {canEditCKRelations && (
+                        {canConfigureCKRelations && (
                           <>
                             <button type="button"
                               onClick={() => { setEditingExtId(s.id); setEditingExtName(s.name) }}
@@ -396,7 +420,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                     )}
                   </div>
                 ))}
-                {canEditCKRelations && addingExt && (
+                {canConfigureCKRelations && addingExt && (
                   <div className="flex gap-2 px-3 py-2.5" style={{ borderTop: extStores.length > 0 ? '1px solid #f4f4f5' : 'none' }}>
                     <input
                       autoFocus
@@ -421,7 +445,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                   </div>
                 )}
               </div>
-              {canEditCKRelations && !addingExt && (
+              {canConfigureCKRelations && !addingExt && (
                 <button type="button" onClick={() => setAddingExt(true)}
                   className="flex items-center gap-1.5 text-xs font-semibold"
                   style={{ color: '#F59E0B', background: 'none', border: 'none', cursor: 'pointer' }}>
@@ -442,13 +466,13 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                 <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>營業模式</p>
                 <div className="flex gap-2 flex-wrap">
                   {(['ichef', 'handwrite', 'mixed'] as const).map(m => (
-                    <button key={m} type="button" disabled={!canEdit} onClick={() => setMode(m)}
+                    <button key={m} type="button" disabled={!canConfigure} onClick={() => setMode(m)}
                       className="px-3 py-1.5 rounded-xl text-sm font-medium"
                       style={{
                         background: mode === m ? 'linear-gradient(135deg,#F59E0B,#F97316)' : 'white',
                         color: mode === m ? 'white' : '#52525b',
                         border: mode === m ? 'none' : '1px solid #e4e4e7',
-                        opacity: !canEdit ? 0.6 : 1,
+                        opacity: !canConfigure ? 0.6 : 1,
                         boxShadow: mode === m ? '0 2px 8px rgba(245,158,11,0.2)' : 'none',
                       }}>
                       {modeLabel[m]}
@@ -458,7 +482,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                 {mode === 'ichef' && (
                   <div className="mt-2 space-y-1">
                     <Toggle label="iChef 整合外送平台（總金額含 Uber / 台灣Pay）"
-                      checked={ichefLinked} onChange={setIchefLinked} disabled={!canEdit} />
+                      checked={ichefLinked} onChange={setIchefLinked} disabled={!canConfigure} />
                     <p className="text-[11px] ml-11" style={{ color: '#a1a1aa' }}>
                       啟用後，結帳時輸入 iChef 總金額，外送平台金額僅供扣除使用
                     </p>
@@ -470,7 +494,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>Uber Eats</p>
-                  <Toggle label="啟用" checked={uberEnabled} onChange={setUberEnabled} disabled={!canEdit} />
+                  <Toggle label="啟用" checked={uberEnabled} onChange={setUberEnabled} disabled={!canConfigure} />
                 </div>
                 {uberEnabled && (
                   <div className="space-y-2">
@@ -479,7 +503,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                         <span key={acc} className="flex items-center gap-1 px-2.5 py-1 rounded-full text-sm"
                           style={{ background: '#FFFBEB', color: '#92400E', border: '1px solid #FEF3C7' }}>
                           {acc}
-                          {canEdit && (
+                          {canConfigure && (
                             <button type="button" onClick={() => setUberAccounts(prev => prev.filter(a => a !== acc))}>
                               <X className="h-3 w-3" style={{ color: '#818cf8' }} />
                             </button>
@@ -487,7 +511,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                         </span>
                       ))}
                     </div>
-                    {canEdit && (
+                    {canConfigure && (
                       <div className="flex gap-2">
                         <input
                           placeholder="帳號名稱（例：鑫營）"
@@ -513,13 +537,13 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
               <div className="space-y-2">
                 <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>其他平台 / 通路</p>
                 <div className="space-y-2.5">
-                  <Toggle label="熊貓 foodpanda" checked={pandaEnabled} onChange={setPandaEnabled} disabled={!canEdit} />
-                  <Toggle label="台灣Pay" checked={twpayEnabled} onChange={setTwpayEnabled} disabled={!canEdit} />
-                  <Toggle label="線上點餐" checked={onlineEnabled} onChange={setOnlineEnabled} disabled={!canEdit} />
+                  <Toggle label="熊貓 foodpanda" checked={pandaEnabled} onChange={setPandaEnabled} disabled={!canConfigure} />
+                  <Toggle label="台灣Pay" checked={twpayEnabled} onChange={setTwpayEnabled} disabled={!canConfigure} />
+                  <Toggle label="線上點餐" checked={onlineEnabled} onChange={setOnlineEnabled} disabled={!canConfigure} />
                   {onlineEnabled && (
                     <div style={{ paddingLeft: 12, borderLeft: '2px solid #fef3c7' }}>
                       <Toggle label="線上點餐（含現金付款）"
-                        checked={onlineCashEnabled} onChange={setOnlineCashEnabled} disabled={!canEdit} />
+                        checked={onlineCashEnabled} onChange={setOnlineCashEnabled} disabled={!canConfigure} />
                       <p style={{ fontSize: 11, color: '#a1a1aa', marginTop: 2 }}>啟用後結帳會多一欄「現金付款」（請填負數）</p>
                     </div>
                   )}
@@ -533,9 +557,9 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                   <span className="text-sm" style={{ color: '#a1a1aa' }}>$</span>
                   <input
                     type="number" min="0"
-                    style={{ width: '128px', height: '36px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', textAlign: 'right', outline: 'none', background: !canEdit ? '#fafafa' : 'white', fontVariantNumeric: 'tabular-nums' }}
+                    style={{ width: '128px', height: '36px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '14px', textAlign: 'right', outline: 'none', background: !canConfigure ? '#fafafa' : 'white', fontVariantNumeric: 'tabular-nums' }}
                     value={pettyCash || ''} placeholder="0"
-                    disabled={!canEdit}
+                    disabled={!canConfigure}
                     onChange={e => setPettyCash(parseInt(e.target.value) || 0)}
                   />
                 </div>
@@ -550,6 +574,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
               <input
                 value={googleSheetsId}
                 onChange={event => setGoogleSheetsId(event.target.value)}
+                disabled={!canConfigure}
                 placeholder={storeType === '央廚' ? '貼上央廚試算表 ID' : '貼上試算表 ID（帳目審核後會自動同步）'}
                 style={{ width: '100%', height: '36px', padding: '0 12px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'inherit' }}
               />
@@ -559,7 +584,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
             </div>
           )}
 
-          {(canEdit || canEditCKRelations) && (
+          {(canConfigure || canConfigureCKRelations) && (
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
               <button type="button" onClick={handleSave} disabled={saving || deleting}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
@@ -567,7 +592,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                 儲存設定
               </button>
-              {canEdit && (
+              {canConfigure && (
                 <button type="button" onClick={handleDeactivate} disabled={saving || deleting}
                   className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold"
                   style={{ color: '#be123c', background: '#fff1f2', border: '1px solid #fecdd3', opacity: saving || deleting ? 0.6 : 1 }}>
@@ -575,6 +600,24 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                   停用店家
                 </button>
               )}
+            </div>
+          )}
+
+          {!isActive && canEdit && (
+            <div className="rounded-xl p-3 flex flex-wrap items-center justify-between gap-3"
+              style={{ background: '#fff1f2', border: '1px solid #fecdd3' }}>
+              <div>
+                <p className="text-xs font-bold" style={{ color: '#9f1239' }}>永久刪除店家</p>
+                <p className="text-[10px] mt-0.5" style={{ color: '#be123c' }}>
+                  只有完全沒有帳號、帳務或歷史紀錄時才能刪除，刪除後無法復原。
+                </p>
+              </div>
+              <button type="button" onClick={handlePermanentDelete} disabled={permanentlyDeleting || activating}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold"
+                style={{ color: 'white', background: '#be123c', opacity: permanentlyDeleting || activating ? 0.65 : 1 }}>
+                {permanentlyDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                永久刪除
+              </button>
             </div>
           )}
         </div>
