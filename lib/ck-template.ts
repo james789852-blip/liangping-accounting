@@ -157,8 +157,18 @@ export function fillCKWorksheet(
   }
 
   const uniqueCols = new Set(Object.values(colMap))
+  const referenceStoreColumn = storeColumns[0]?.col
   days.forEach((_, idx) => {
     const excelRow = ws.getRow(dataStartRow + idx)
+    if (referenceStoreColumn) {
+      const referenceStyle = excelRow.getCell(referenceStoreColumn).style
+      for (const storeColumn of storeColumns) {
+        // A hidden placeholder may carry stale black/blocked formatting from
+        // the old month. Current store cells should use the same daily style
+        // as the template's first normal store column.
+        storeColumnCellStyle(excelRow.getCell(storeColumn.col), referenceStyle)
+      }
+    }
     for (const colIdx of uniqueCols) {
       excelRow.getCell(colIdx as number).value = null
     }
@@ -270,6 +280,10 @@ export function fillCKWorksheet(
   }
 
   return { headerRowNum, dataStartRow }
+}
+
+function storeColumnCellStyle(cell: ExcelJS.Cell, style: Partial<ExcelJS.Style>): void {
+  cell.style = JSON.parse(JSON.stringify(style)) as Partial<ExcelJS.Style>
 }
 
 /**

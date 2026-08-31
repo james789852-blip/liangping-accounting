@@ -54,6 +54,8 @@ test('央廚舊月份模板會更新日期並以資料庫金額取代跨分頁�
   worksheet.getCell('A4').value = '6月'
   worksheet.getCell('D5').value = { formula: "SUM('體系外店家'!C4:G4)" }
   worksheet.getCell('E5').value = { formula: 'SUM(C5:D5)' }
+  worksheet.getCell('C5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFCC' } }
+  worksheet.getCell('D5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF000000' } }
 
   const result = fillCKWorksheet(worksheet, ['2026-08-01', '2026-08-02'], {
     '2026-08-01': {
@@ -75,6 +77,7 @@ test('央廚舊月份模板會更新日期並以資料庫金額取代跨分頁�
   assert.equal(worksheet.getCell('C5').value, 100)
   assert.equal(worksheet.getCell('D5').value, 200)
   assert.equal(worksheet.getCell('D6').value, null)
+  assert.equal(worksheet.getCell('D5').fill.fgColor.argb, 'FFFFFFCC')
   assert.equal(worksheet.getCell('E5').value, 300)
   assert.equal(worksheet.getCell('C4').value, 100)
   assert.equal(worksheet.getCell('D4').value, 200)
