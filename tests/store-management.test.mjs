@@ -11,9 +11,11 @@ test('新增店家只能按建立按鈕，不會由 Enter 鍵送出', () => {
   assert.match(addStoreForm, /<button type="button" onClick=\{handleSubmit\}/)
 })
 
-test('刪除店家會先確認並停用店家以保留歷史帳務', () => {
+test('停用店家會先確認、檢查更新結果並保留歷史帳務', () => {
   assert.match(storeEditor, /window\.confirm\(/)
-  assert.match(storeEditor, /刪除店家/)
-  assert.match(storeActions, /export async function deleteStore\(storeId: string\)/)
+  assert.match(storeEditor, /停用店家/)
+  assert.match(storeActions, /export async function deactivateStore\(storeId: string\)/)
   assert.match(storeActions, /\.update\(\{ active: false \}\)/)
+  assert.match(storeActions, /\.select\('id'\)/)
+  assert.match(storeActions, /if \(!deactivated\)/)
 })

@@ -8,6 +8,13 @@ import { getTitleOptions, inferSystemRole, type AccountUnitType } from '@/lib/ac
 
 interface Store { id: string; name: string; type?: string }
 
+interface UserCreateDialogProps {
+  stores: Store[]
+  initialUnitId?: string
+  triggerLabel?: string
+  compact?: boolean
+}
+
 const PERMISSION_TOGGLES = [
   { key: 'can_manage_users', label: '可管理帳號', desc: '新增、修改、停用使用者帳號' },
   { key: 'can_manage_store_settings', label: '可管理店面店家', desc: '修改店面設定、外送帳號與零用金' },
@@ -32,13 +39,22 @@ const INPUT_STYLE: React.CSSProperties = {
   fontSize: '14px', background: 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b',
 }
 
-export default function UserCreateDialog({ stores }: { stores: Store[] }) {
+export default function UserCreateDialog({
+  stores,
+  initialUnitId,
+  triggerLabel = '新增帳號',
+  compact = false,
+}: UserCreateDialogProps) {
+  const defaultUnitId = initialUnitId && stores.some(store => store.id === initialUnitId) ? initialUnitId : 'hq'
+  const defaultStore = stores.find(store => store.id === defaultUnitId)
+  const defaultUnitType: AccountUnitType = defaultUnitId === 'hq' ? 'hq' : defaultStore?.type === '央廚' ? 'ck' : 'store'
+  const defaultTitle = getTitleOptions(defaultUnitType)[0] ?? '經理'
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({
-    name: '', account: '', password: '', title: '經理', employee_id: '',
+    name: '', account: '', password: '', title: defaultTitle, employee_id: '',
   })
-  const [unitId, setUnitId] = useState('hq')
+  const [unitId, setUnitId] = useState(defaultUnitId)
   const [customTitle, setCustomTitle] = useState(false)
   const [permissions, setPermissions] = useState<Record<(typeof PERMISSION_TOGGLES)[number]['key'], boolean>>({
     can_manage_users: false,
@@ -68,8 +84,8 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
 
   function handleClose() {
     setOpen(false)
-    setForm({ name: '', account: '', password: '', title: '經理', employee_id: '' })
-    setUnitId('hq')
+    setForm({ name: '', account: '', password: '', title: defaultTitle, employee_id: '' })
+    setUnitId(defaultUnitId)
     setCustomTitle(false)
     setPermissions({
       can_manage_users: false,
@@ -111,9 +127,11 @@ export default function UserCreateDialog({ stores }: { stores: Store[] }) {
   return (
     <>
       <button onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-semibold"
-        style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
-        <Plus className="h-4 w-4" /> 新增帳號
+        className={`inline-flex items-center gap-1.5 rounded-xl font-semibold ${compact ? 'px-2.5 py-1.5 text-xs' : 'px-4 py-2.5 text-sm text-white'}`}
+        style={compact
+          ? { background: 'rgba(255,255,255,0.82)', color: '#7c3aed', border: '1px solid rgba(124,58,237,0.2)' }
+          : { background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
+        <Plus className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} /> {triggerLabel}
       </button>
 
       {open && (

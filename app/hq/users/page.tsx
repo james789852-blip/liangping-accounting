@@ -92,9 +92,10 @@ function UserRow({ user, stores, storeMap, account }: {
   )
 }
 
-function UserGroup({ name, type, users, stores, storeMap, accountMap }: {
+function UserGroup({ name, type, storeId, users, stores, storeMap, accountMap }: {
   name: string
   type: 'store' | 'ck' | 'hq' | 'unassigned'
+  storeId?: string
   users: UserProfile[]
   stores: { id: string; name: string; type?: string }[]
   storeMap: Record<string, string>
@@ -113,7 +114,12 @@ function UserGroup({ name, type, users, stores, storeMap, accountMap }: {
           <Icon className="h-4 w-4" style={{ color: accent }} />
           <h2 className="text-sm font-bold" style={{ color: '#18181b' }}>{name}</h2>
         </div>
-        <span className="text-xs font-bold" style={{ color: accent }}>{users.length} 人</span>
+        <div className="flex items-center gap-2">
+          {type !== 'hq' && type !== 'unassigned' && storeId && (
+            <UserCreateDialog stores={stores} initialUnitId={storeId} triggerLabel="新增管理者" compact />
+          )}
+          <span className="text-xs font-bold" style={{ color: accent }}>{users.length} 人</span>
+        </div>
       </div>
       <div className="divide-y" style={{ borderColor: '#f4f4f5' }}>
         {users.map(user => (
@@ -219,7 +225,7 @@ export default async function UsersPage() {
             <span className="text-xs font-semibold" style={{ color: '#047857' }}>{storeSections.length} 家店</span>
           </div>
           {storeSections.map(store => (
-            <UserGroup key={store.id} name={store.name} type="store" users={storeUsers.get(store.id) ?? []} stores={stores} storeMap={storeMap} accountMap={accountMap} />
+            <UserGroup key={store.id} name={store.name} type="store" storeId={store.id} users={storeUsers.get(store.id) ?? []} stores={stores} storeMap={storeMap} accountMap={accountMap} />
           ))}
         </div>
 
@@ -233,7 +239,7 @@ export default async function UsersPage() {
               <span className="text-xs font-semibold" style={{ color: '#7c3aed' }}>{ckSections.length} 座央廚</span>
             </div>
             {ckSections.map(store => (
-              <UserGroup key={store.id} name={store.name} type="ck" users={storeUsers.get(store.id) ?? []} stores={stores} storeMap={storeMap} accountMap={accountMap} />
+              <UserGroup key={store.id} name={store.name} type="ck" storeId={store.id} users={storeUsers.get(store.id) ?? []} stores={stores} storeMap={storeMap} accountMap={accountMap} />
             ))}
           </div>
         )}

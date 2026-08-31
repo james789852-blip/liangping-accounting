@@ -100,7 +100,7 @@ export async function createStore(name: string, mode: string, type = '店面') {
   return { success: true, id: data.id }
 }
 
-export async function deleteStore(storeId: string) {
+export async function deactivateStore(storeId: string) {
   const { profile, error } = await requireManager()
   if (error) return { error }
 
@@ -112,18 +112,21 @@ export async function deleteStore(storeId: string) {
     .maybeSingle()
 
   if (loadError) return { error: loadError.message }
-  if (!store || store.active === false) return { error: '找不到這間店家，可能已經被刪除' }
+  if (!store || store.active === false) return { error: '找不到這間店家，可能已經被停用' }
   if (!canManageStoreType(profile, store.type)) {
-    return { error: store.type === '央廚' ? '權限不足，無法刪除央廚店家' : '權限不足，無法刪除店面店家' }
+    return { error: store.type === '央廚' ? '權限不足，無法停用央廚店家' : '權限不足，無法停用店面店家' }
   }
 
-  const { error: dbErr } = await admin
+  const { data: deactivated, error: dbErr } = await admin
     .from('stores')
     .update({ active: false })
     .eq('id', storeId)
     .eq('active', true)
+    .select('id')
+    .maybeSingle()
 
   if (dbErr) return { error: dbErr.message }
+  if (!deactivated) return { error: '停用失敗，店家狀態沒有更新，請重新整理後再試一次' }
 
   revalidatePath('/hq/stores')
   revalidatePath('/hq/users')

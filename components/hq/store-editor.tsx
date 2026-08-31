@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { deleteStore, updateStoreSettings } from '@/app/actions/stores'
+import { deactivateStore, updateStoreSettings } from '@/app/actions/stores'
 import { updateCKAssignedStores, addCKExternalStore, deleteCKExternalStore, updateCKExternalStore, updateCKExternalStoreDeduction } from '@/app/actions/ck'
 import { toast } from 'sonner'
 import { ChevronDown, ChevronUp, Plus, X, Loader2, Check, Pencil, Trash2 } from 'lucide-react'
@@ -164,17 +164,17 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
     setSaving(false)
   }
 
-  async function handleDelete() {
-    const confirmed = window.confirm(`確定要刪除「${storeName}」嗎？\n\n店家會從操作清單移除，但既有帳務與歷史報表仍會保留。`)
+  async function handleDeactivate() {
+    const confirmed = window.confirm(`確定要停用「${storeName}」嗎？\n\n停用後會從操作清單移除，但既有帳務與歷史報表仍會保留。`)
     if (!confirmed) return
     setDeleting(true)
-    const result = await deleteStore(store.id)
+    const result = await deactivateStore(store.id)
     if (result.error) {
       toast.error(result.error)
       setDeleting(false)
       return
     }
-    toast.success(`已刪除「${storeName}」`)
+    toast.success(`已停用「${storeName}」`)
     router.refresh()
   }
 
@@ -535,11 +535,11 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                 儲存設定
               </button>
               {canEdit && (
-                <button type="button" onClick={handleDelete} disabled={saving || deleting}
+                <button type="button" onClick={handleDeactivate} disabled={saving || deleting}
                   className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold"
                   style={{ color: '#be123c', background: '#fff1f2', border: '1px solid #fecdd3', opacity: saving || deleting ? 0.6 : 1 }}>
                   {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                  刪除店家
+                  停用店家
                 </button>
               )}
             </div>
