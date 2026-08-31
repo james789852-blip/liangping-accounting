@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import ExcelJS from 'exceljs'
-import { buildCKDataMap, ckTemplateHasStoreColumns, materializeCKCrossSheetFormulas, fillCKWorksheet, prepareCKTemplateStoreColumns } from '../lib/ck-template.ts'
+import { buildCKDataMap, ckTemplateHasStoreColumns, materializeCKCrossSheetFormulas, refreshCKFormulaResults, fillCKWorksheet, prepareCKTemplateStoreColumns } from '../lib/ck-template.ts'
 
 test('央廚模板缺少目前店家欄位時會判定為過期', () => {
   const workbook = new ExcelJS.Workbook()
@@ -45,6 +45,42 @@ test('Excel 與 Google 會將跨分頁公式固定為相同結果並保留同分
 
   assert.equal(worksheet.getCell('A1').value, 123)
   assert.deepEqual(worksheet.getCell('A2').value, { formula: 'SUM(B2:C2)' })
+})
+
+test('央廚 Excel 會更新同分頁公式的暫存結果以吻合 Google', () => {
+  const workbook = new ExcelJS.Workbook()
+  const worksheet = workbook.addWorksheet('8月食耗成本')
+  worksheet.getCell('Q1').value = '退稅'
+  worksheet.getCell('R1').value = '一般'
+  worksheet.getCell('Q2').value = '發票'
+  worksheet.getCell('R2').value = '收據'
+  worksheet.getCell('Q4').value = 100
+  worksheet.getCell('R4').value = 50
+  worksheet.getCell('AC4').value = 10
+  worksheet.getCell('BO4').value = 5
+  worksheet.getCell('N1').value = { formula: 'SUMIFS(Q4:R4,Q2:R2,"發票",Q1:R1,"退稅")+P1+AC4', result: 999 }
+  worksheet.getCell('N2').value = { formula: 'SUMIFS(Q4:R4,Q2:R2,"發票")-BO4', result: 999 }
+  worksheet.getCell('P2').value = { formula: 'SUMIFS(Q4:R4,Q2:R2,"收據")' }
+  worksheet.getCell('C5').value = 10
+  worksheet.getCell('C6').value = 20
+  worksheet.getCell('C7').value = null
+  worksheet.getCell('C8').value = { formula: 'AVERAGE(C5:C7)', result: 999 }
+  worksheet.getCell('C9').value = { formula: 'MAX(C5:C7)-MIN(C5:C7)', result: 999 }
+  worksheet.getCell('D1').value = { formula: "'統計'!A1", result: 7 }
+  worksheet.getCell('D2').value = { formula: '100-D1', result: 999 }
+  worksheet.getCell('D3').value = { formula: '1-1', result: 999 }
+
+  materializeCKCrossSheetFormulas(worksheet)
+  refreshCKFormulaResults(worksheet)
+
+  assert.equal(worksheet.getCell('D1').value, 7)
+  assert.equal(worksheet.getCell('N1').value.result, 110)
+  assert.equal(worksheet.getCell('N2').value.result, 95)
+  assert.equal(worksheet.getCell('P2').value.result, 50)
+  assert.equal(worksheet.getCell('C8').value.result, 15)
+  assert.equal(worksheet.getCell('C9').value.result, 10)
+  assert.equal(worksheet.getCell('D2').value.result, 93)
+  assert.equal(worksheet.getCell('D3').value, 0)
 })
 
 test('Excel 與 Google 共用相同的央廚每日資料組裝', () => {

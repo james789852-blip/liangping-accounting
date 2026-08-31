@@ -175,6 +175,278 @@ export function materializeCKCrossSheetFormulas(ws: ExcelJS.Worksheet): void {
   })
 }
 
+type FormulaScalar = number | string | boolean | null
+type FormulaRange = { kind: 'range'; values: FormulaScalar[] }
+type FormulaResult = FormulaScalar | FormulaRange
+type FormulaToken = {
+  type: 'number' | 'string' | 'word' | 'operator' | 'leftParen' | 'rightParen' | 'comma' | 'colon'
+  value: string
+}
+
+function tokenizeFormula(formula: string): FormulaToken[] {
+  const tokens: FormulaToken[] = []
+  let index = 0
+  while (index < formula.length) {
+    const char = formula[index]
+    if (/\s/.test(char)) { index++; continue }
+    if (char === '"') {
+      let value = ''
+      index++
+      while (index < formula.length) {
+        if (formula[index] === '"' && formula[index + 1] === '"') {
+          value += '"'
+          index += 2
+        } else if (formula[index] === '"') {
+          index++
+          break
+        } else {
+          value += formula[index++]
+        }
+      }
+      tokens.push({ type: 'string', value })
+      continue
+    }
+    const number = formula.slice(index).match(/^(?:\d+(?:\.\d*)?|\.\d+)/)
+    if (number) {
+      tokens.push({ type: 'number', value: number[0] })
+      index += number[0].length
+      continue
+    }
+    const word = formula.slice(index).match(/^\$?[A-Za-z]{1,4}\$?\d+|^[A-Za-z_][A-Za-z0-9_.]*/)
+    if (word) {
+      tokens.push({ type: 'word', value: word[0] })
+      index += word[0].length
+      continue
+    }
+    const punctuation: Record<string, FormulaToken['type']> = {
+      '+': 'operator', '-': 'operator', '*': 'operator', '/': 'operator',
+      '(': 'leftParen', ')': 'rightParen', ',': 'comma', ':': 'colon',
+    }
+    const type = punctuation[char]
+    if (!type) throw new Error(`Unsupported formula token: ${char}`)
+    tokens.push({ type, value: char })
+    index++
+  }
+  return tokens
+}
+
+function formulaNumber(value: FormulaResult): number {
+  if (typeof value === 'number') return value
+  if (typeof value === 'boolean') return value ? 1 : 0
+  if (value == null || typeof value === 'object') return 0
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function formulaScalars(values: FormulaResult[]): FormulaScalar[] {
+  const result: FormulaScalar[] = []
+  for (const value of values) {
+    if (typeof value === 'object' && value?.kind === 'range') result.push(...value.values)
+    else result.push(value as FormulaScalar)
+  }
+  return result
+}
+
+function formulaCriterionMatches(value: FormulaScalar, criterion: FormulaScalar): boolean {
+  if (typeof criterion !== 'string') return value === criterion
+  const match = criterion.match(/^(>=|<=|<>|>|<|=)(.*)$/)
+  if (!match) return String(value ?? '') === criterion
+  const expectedText = match[2]
+  const expectedNumber = Number(expectedText)
+  const numeric = Number.isFinite(expectedNumber) && typeof value === 'number'
+  const left = numeric ? value : String(value ?? '')
+  const right = numeric ? expectedNumber : expectedText
+  if (match[1] === '=') return left === right
+  if (match[1] === '<>') return left !== right
+  if (match[1] === '>') return left > right
+  if (match[1] === '<') return left < right
+  if (match[1] === '>=') return left >= right
+  return left <= right
+}
+
+function formulaColumnNumber(letters: string): number {
+  let result = 0
+  for (const char of letters.toUpperCase()) result = result * 26 + char.charCodeAt(0) - 64
+  return result
+}
+
+/**
+ * Recalculate the same-sheet formulas used by CK templates and refresh their
+ * cached Excel results. Google evaluates these formulas immediately, whereas
+ * ExcelJS otherwise preserves stale results from the uploaded template.
+ */
+export function refreshCKFormulaResults(ws: ExcelJS.Worksheet): void {
+  const memo = new Map<string, FormulaScalar>()
+  const evaluating = new Set<string>()
+
+  function cellScalar(address: string): FormulaScalar {
+    const normalizedAddress = address.replace(/\$/g, '').toUpperCase()
+    if (memo.has(normalizedAddress)) return memo.get(normalizedAddress) ?? null
+    const cell = ws.getCell(normalizedAddress)
+    const value = cell.value
+    if (value == null) return null
+    if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean') return value
+    if (value instanceof Date) return value.getTime()
+    if (typeof value === 'object' && 'formula' in value && typeof value.formula === 'string') {
+      if (evaluating.has(normalizedAddress)) return typeof value.result === 'number' ? value.result : null
+      if (value.formula.includes('!')) return typeof value.result === 'number' || typeof value.result === 'string' ? value.result : null
+      evaluating.add(normalizedAddress)
+      try {
+        const result = evaluateFormula(value.formula)
+        memo.set(normalizedAddress, result)
+        return result
+      } finally {
+        evaluating.delete(normalizedAddress)
+      }
+    }
+    if (typeof value === 'object' && 'result' in value) {
+      return typeof value.result === 'number' || typeof value.result === 'string' || typeof value.result === 'boolean'
+        ? value.result
+        : null
+    }
+    return null
+  }
+
+  function rangeValues(start: string, end: string): FormulaScalar[] {
+    const startMatch = start.replace(/\$/g, '').match(/^([A-Za-z]+)(\d+)$/)
+    const endMatch = end.replace(/\$/g, '').match(/^([A-Za-z]+)(\d+)$/)
+    if (!startMatch || !endMatch) throw new Error(`Invalid formula range: ${start}:${end}`)
+    const startColumn = formulaColumnNumber(startMatch[1])
+    const endColumn = formulaColumnNumber(endMatch[1])
+    const startRow = Number(startMatch[2])
+    const endRow = Number(endMatch[2])
+    const values: FormulaScalar[] = []
+    for (let row = Math.min(startRow, endRow); row <= Math.max(startRow, endRow); row++) {
+      for (let column = Math.min(startColumn, endColumn); column <= Math.max(startColumn, endColumn); column++) {
+        values.push(cellScalar(ws.getRow(row).getCell(column).address))
+      }
+    }
+    return values
+  }
+
+  function evaluateFormula(formula: string): FormulaScalar {
+    const tokens = tokenizeFormula(formula.startsWith('=') ? formula.slice(1) : formula)
+    let position = 0
+    const peek = () => tokens[position]
+    const take = () => tokens[position++]
+    const requireToken = (type: FormulaToken['type']) => {
+      const token = take()
+      if (!token || token.type !== type) throw new Error(`Expected ${type} in formula: ${formula}`)
+      return token
+    }
+
+    function parseExpression(): FormulaResult {
+      let value = parseTerm()
+      while (peek()?.type === 'operator' && ['+', '-'].includes(peek().value)) {
+        const operator = take().value
+        const right = parseTerm()
+        value = operator === '+' ? formulaNumber(value) + formulaNumber(right) : formulaNumber(value) - formulaNumber(right)
+      }
+      return value
+    }
+
+    function parseTerm(): FormulaResult {
+      let value = parseUnary()
+      while (peek()?.type === 'operator' && ['*', '/'].includes(peek().value)) {
+        const operator = take().value
+        const right = parseUnary()
+        value = operator === '*' ? formulaNumber(value) * formulaNumber(right) : formulaNumber(value) / formulaNumber(right)
+      }
+      return value
+    }
+
+    function parseUnary(): FormulaResult {
+      if (peek()?.type === 'operator' && ['+', '-'].includes(peek().value)) {
+        const operator = take().value
+        const value = formulaNumber(parseUnary())
+        return operator === '-' ? -value : value
+      }
+      return parsePrimary()
+    }
+
+    function parseFunction(name: string): FormulaScalar {
+      requireToken('leftParen')
+      const args: FormulaResult[] = []
+      if (peek()?.type !== 'rightParen') {
+        do {
+          args.push(parseExpression())
+          if (peek()?.type !== 'comma') break
+          take()
+        } while (true)
+      }
+      requireToken('rightParen')
+      const upperName = name.toUpperCase()
+      if (upperName === 'SUMIFS') {
+        const sumValues = formulaScalars([args[0]])
+        const criteriaPairs = args.slice(1)
+        let sum = 0
+        for (let index = 0; index < sumValues.length; index++) {
+          let matches = true
+          for (let pair = 0; pair < criteriaPairs.length; pair += 2) {
+            const criteriaValues = formulaScalars([criteriaPairs[pair]])
+            if (!formulaCriterionMatches(criteriaValues[index] ?? null, criteriaPairs[pair + 1] as FormulaScalar)) {
+              matches = false
+              break
+            }
+          }
+          if (matches) sum += formulaNumber(sumValues[index])
+        }
+        return sum
+      }
+      const scalars = formulaScalars(args)
+      const numbers = scalars.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+      if (upperName === 'SUM') return numbers.reduce((sum, value) => sum + value, 0)
+      if (upperName === 'AVERAGE') return numbers.length ? numbers.reduce((sum, value) => sum + value, 0) / numbers.length : 0
+      if (upperName === 'MAX') return numbers.length ? Math.max(...numbers) : 0
+      if (upperName === 'MIN') return numbers.length ? Math.min(...numbers) : 0
+      throw new Error(`Unsupported formula function: ${name}`)
+    }
+
+    function parsePrimary(): FormulaResult {
+      const token = take()
+      if (!token) throw new Error(`Unexpected end of formula: ${formula}`)
+      if (token.type === 'number') return Number(token.value)
+      if (token.type === 'string') return token.value
+      if (token.type === 'leftParen') {
+        const result = parseExpression()
+        requireToken('rightParen')
+        return result
+      }
+      if (token.type !== 'word') throw new Error(`Unexpected token ${token.value} in formula: ${formula}`)
+      if (peek()?.type === 'leftParen') return parseFunction(token.value)
+      if (!/^\$?[A-Za-z]+\$?\d+$/.test(token.value)) throw new Error(`Unsupported formula name: ${token.value}`)
+      if (peek()?.type === 'colon') {
+        take()
+        const end = requireToken('word').value
+        return { kind: 'range', values: rangeValues(token.value, end) }
+      }
+      return cellScalar(token.value)
+    }
+
+    const result = parseExpression()
+    if (position !== tokens.length) throw new Error(`Unparsed formula content: ${formula}`)
+    if (typeof result === 'object') throw new Error(`Formula returned a range: ${formula}`)
+    return result
+  }
+
+  ws.eachRow({ includeEmpty: false }, row => {
+    row.eachCell({ includeEmpty: false }, cell => {
+      const value = cell.value
+      if (!value || typeof value !== 'object' || !('formula' in value) || typeof value.formula !== 'string') return
+      if (value.formula.includes('!')) return
+      try {
+        const result = cellScalar(cell.address)
+        // ExcelJS drops a numeric zero from a formula's cached result. Store
+        // zero-result formulas as the authoritative number so Excel and Google
+        // both persist the same numeric value instead of Excel reopening stale.
+        cell.value = result === 0 ? 0 : { ...value, result } as ExcelJS.CellFormulaValue
+      } catch (error) {
+        console.warn(`[refreshCKFormulaResults] ${ws.name}!${cell.address}:`, error)
+      }
+    })
+  })
+}
+
 export function getDaysInMonth(year: number, month: number): string[] {
   const count = new Date(year, month, 0).getDate()
   return Array.from({ length: count }, (_, i) =>

@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { getMonthLastDay } from '@/lib/business-date'
-import { buildCKDataMap, materializeCKCrossSheetFormulas, prepareCKTemplateStoreColumns, fillCKWorksheet, type CKDayData } from '@/lib/ck-template'
+import { buildCKDataMap, materializeCKCrossSheetFormulas, refreshCKFormulaResults, prepareCKTemplateStoreColumns, fillCKWorksheet, type CKDayData } from '@/lib/ck-template'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 const BUCKET = 'excel-templates'
@@ -127,6 +127,7 @@ async function fillTemplate(
   const filled = fillCKWorksheet(ws, days, dataMap)
   if (!filled) { console.warn('[ck-export] no header row'); return null }
   materializeCKCrossSheetFormulas(ws)
+  refreshCKFormulaResults(ws)
 
 
   // 附加「各店叫貨」sheet
