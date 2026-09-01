@@ -11,10 +11,10 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import type { ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { fetchAllPaged } from '@/lib/supabase-paged'
 import { unstable_cache } from 'next/cache'
+import { defaultItemSignMode } from '@/lib/negative-items'
 import {
   disabledAtFromStatusEvents,
   isExplicitItemFromStatusEvents,
-  isNegativeFromStatusEvents,
   isUnavailableForReportMonth,
   ITEM_MAPPING_ARCHIVED_EVENT,
   ITEM_MAPPING_DISABLED_EVENT,
@@ -61,7 +61,7 @@ async function loadStoreItemsFromMappings(
   scope: ItemMappingVisibilityScope = {},
 ): Promise<ResolvedStoreItem[]> {
   const admin = createAdminClient()
-  const [mappings, { data: vgs }, statusEvents] = await Promise.all([
+  const [mappings, { data: vgs }, statusEvents, { data: store }] = await Promise.all([
     // 分頁撈：避免 PostgREST 1000 max-rows 截斷
     fetchAllPaged<any>(() => admin
       .from('item_column_mappings')
@@ -82,6 +82,7 @@ async function loadStoreItemsFromMappings(
         ITEM_MAPPING_EXPLICIT_ITEM_EVENT,
       ])
       .order('created_at')),
+    admin.from('stores').select('type').eq('id', storeId).maybeSingle(),
   ])
 
   const eventsByMapping = new Map<string, ItemMappingStatusEvent[]>()
@@ -123,6 +124,10 @@ async function loadStoreItemsFromMappings(
     // 各店獨立：單據類型只看該店 mapping.doc_type_override，不再吃全域分類預設。
     const effectiveDocType = (m.doc_type_override ?? null) as string | null
 
+    const signMode = signModeFromStatusEvents(
+      eventsByMapping.get(m.id as string) ?? [],
+      defaultItemSignMode(m.item_name as string, vgName, store?.type !== '央廚'),
+    )
     items.push({
       id: m.id as string,
       mapping_id: m.id as string,
@@ -138,8 +143,8 @@ async function loadStoreItemsFromMappings(
       sort_order: (m.sort_order ?? 1000) as number,
       vg_merge_across_category: !!vg?.merge_across_category,
       is_refund: !!m.is_refund,
-      is_negative: isNegativeFromStatusEvents(eventsByMapping.get(m.id as string) ?? []),
-      sign_mode: signModeFromStatusEvents(eventsByMapping.get(m.id as string) ?? []),
+      is_negative: signMode === 'negative',
+      sign_mode: signMode,
       is_explicit_item: isExplicitItemFromStatusEvents(eventsByMapping.get(m.id as string) ?? []),
       is_tax_addon: !!m.is_tax_addon,
       tax_scope: (m.tax_scope ?? 'category') as 'category' | 'item',

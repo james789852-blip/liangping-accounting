@@ -18,6 +18,13 @@ test('品項管理可切換固定正數、固定負數與每筆正負，並明�
   assert.match(managerUI, /歷史帳目不變/)
 })
 
+test('既有賣給分店與其他品項在管理頁沿用原本正負規則', () => {
+  assert.match(managerUI, /systemFixedNegative=\{isNegativeItem\(m\.item_name\)\}/)
+  assert.match(managerUI, /m\.store_type !== '央廚'/)
+  assert.match(mappingSource, /defaultItemSignMode/)
+  assert.match(mappingSource, /signModeFromStatusEvents/)
+})
+
 test('店面新增與編輯收據都由伺服器再次強制負數', () => {
   assert.match(receiptActions, /getNegativeItemMappingIds/)
   assert.match(receiptActions, /negativeMappingIds\.has/)

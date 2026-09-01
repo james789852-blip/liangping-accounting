@@ -29,7 +29,7 @@ import { isNegativeItem } from '@/lib/negative-items'
 import type { ItemMappingSignMode } from '@/lib/item-mapping-availability'
 
 interface Mapping {
-  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_negative?: boolean; sign_mode?: ItemMappingSignMode; is_explicit_item?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; sort_order?: number; vg_sort_order?: number; disabled_at?: string | null; archived?: boolean
+  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; store_type?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_negative?: boolean; sign_mode?: ItemMappingSignMode; is_explicit_item?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; sort_order?: number; vg_sort_order?: number; disabled_at?: string | null; archived?: boolean
 }
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
@@ -1299,11 +1299,19 @@ function ItemRowContent({
           <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
             style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
           <RefundToggle mappingId={m.id} isRefund={!!m.is_refund} />
-          <SignModeControl
-            mappingId={m.id}
-            signMode={m.sign_mode ?? (m.is_negative ? 'negative' : 'positive')}
-            systemFixedNegative={isNegativeItem(m.item_name)}
-          />
+          {m.store_type !== '央廚' && (
+            <SignModeControl
+              mappingId={m.id}
+              signMode={m.sign_mode ?? (m.is_negative ? 'negative' : 'positive')}
+              systemFixedNegative={isNegativeItem(m.item_name)}
+            />
+          )}
+          {m.store_type === '央廚' && isNegativeItem(m.item_name) && (
+            <span className="text-xs px-2 py-1 rounded-full shrink-0 font-semibold"
+              style={{ color: '#be123c', background: '#fff1f2', border: '1.5px solid #fda4af' }}>
+              固定負數
+            </span>
+          )}
           <TaxAddonToggle
             mappingId={m.id}
             enabled={!!m.is_tax_addon}

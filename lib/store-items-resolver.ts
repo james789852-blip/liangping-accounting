@@ -2,6 +2,7 @@
 // 回傳跟舊 mappingColumns 一樣的格式 → 可直接餵給 closing-form 不用改 UI
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { ItemMappingSignMode } from '@/lib/item-mapping-availability'
+import { defaultItemSignMode } from '@/lib/negative-items'
 
 export interface ResolvedStoreItem {
   /** 品項唯一識別（store-side：可能是 system_item.id 或 store_item.id） */
@@ -46,11 +47,13 @@ export interface ResolvedStoreItem {
 /** 撈出某店家「實際啟用的品項列表」(含系統 + 自訂) */
 export async function getStoreItemsResolved(storeId: string): Promise<ResolvedStoreItem[]> {
   const admin = createAdminClient()
-  const [{ data: vgs }, { data: sysItems }, { data: storeItems }] = await Promise.all([
+  const [{ data: vgs }, { data: sysItems }, { data: storeItems }, { data: store }] = await Promise.all([
     admin.from('system_vendor_groups').select('id, name, doc_type, sort_order, tax_mode, merge_across_category').eq('active', true),
     admin.from('system_items').select('*').eq('active', true).order('sort_order'),
     admin.from('store_items').select('*').eq('store_id', storeId).order('sort_order'),
+    admin.from('stores').select('type').eq('id', storeId).maybeSingle(),
   ])
+  const preserveLegacyStoreOther = store?.type !== '央廚'
 
   const vgMap = new Map((vgs ?? []).map((v: any) => [v.id, {
     name: v.name as string,
@@ -92,6 +95,7 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
         is_system: false,
         sort_order: si.sort_order ?? 1000,
         vg_merge_across_category: vgMergeFlag(si.custom_vendor_group_id),
+        sign_mode: defaultItemSignMode(si.custom_name ?? '(未命名)', vgName(si.custom_vendor_group_id), preserveLegacyStoreOther),
       })
     }
   }
@@ -120,6 +124,7 @@ export async function getStoreItemsResolved(storeId: string): Promise<ResolvedSt
       is_system: true,
       sort_order: overridden?.sort_order ?? it.sort_order ?? 1000,
       vg_merge_across_category: vgMergeFlag(effectiveVgId),
+      sign_mode: defaultItemSignMode(it.name, vgName(effectiveVgId), preserveLegacyStoreOther),
     })
   }
 

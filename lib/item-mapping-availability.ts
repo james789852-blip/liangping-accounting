@@ -90,13 +90,16 @@ export function isArchivedFromStatusEvents(events: ItemMappingStatusEvent[]): bo
 }
 
 /** 此設定只影響後續輸入；歷史帳目的金額仍以當時已儲存的正負值為準。 */
-export function signModeFromStatusEvents(events: ItemMappingStatusEvent[]): ItemMappingSignMode {
+export function signModeFromStatusEvents(
+  events: ItemMappingStatusEvent[],
+  fallback: ItemMappingSignMode = 'positive',
+): ItemMappingSignMode {
   const latest = events
     .filter(event => ITEM_MAPPING_NEGATIVE_EVENTS.has(event.event_type))
     .sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
   if (latest?.event_type === ITEM_MAPPING_NEGATIVE_ENABLED_EVENT) return 'negative'
   if (latest?.event_type === ITEM_MAPPING_SIGN_FLEXIBLE_EVENT) return 'flexible'
-  return 'positive'
+  return latest?.event_type === ITEM_MAPPING_NEGATIVE_DISABLED_EVENT ? 'positive' : fallback
 }
 
 export function isNegativeFromStatusEvents(events: ItemMappingStatusEvent[]): boolean {

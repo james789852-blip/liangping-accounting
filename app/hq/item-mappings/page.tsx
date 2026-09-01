@@ -9,11 +9,11 @@ import { resolveHQStoreId } from '@/lib/hq-store-selection'
 import { canManageCKItems, canManageStoreItems } from '@/lib/user-permissions'
 import { isMiscVendorGroup, normalizeVendorGroupName } from '@/lib/linked-receipt-category'
 import { isVendorOnlyMapping } from '@/lib/vendor-only-mapping'
+import { defaultItemSignMode } from '@/lib/negative-items'
 import {
   disabledAtFromStatusEvents,
   isArchivedFromStatusEvents,
   isExplicitItemFromStatusEvents,
-  isNegativeFromStatusEvents,
   ITEM_MAPPING_ARCHIVED_EVENT,
   ITEM_MAPPING_DISABLED_EVENT,
   ITEM_MAPPING_EXPLICIT_ITEM_EVENT,
@@ -113,15 +113,25 @@ export default async function ItemMappingsPage({
     if (row.store_id) acc[row.store_id] = (acc[row.store_id] ?? 0) + 1
     return acc
   }, {})
-  const displayMappings = (mappings ?? []).map(mapping => ({
-    ...mapping,
-    vendor_group: normalizeVendorGroupName(mapping.vendor_group),
-    disabled_at: disabledAtFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
-    archived: isArchivedFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
-    is_negative: isNegativeFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
-    sign_mode: signModeFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
-    is_explicit_item: isExplicitItemFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
-  }))
+  const storeTypeById = new Map((stores ?? []).map(store => [store.id as string, (store.type ?? '店面') as string]))
+  const displayMappings = (mappings ?? []).map(mapping => {
+    const vendorGroup = normalizeVendorGroupName(mapping.vendor_group)
+    const events = statusEventsByMapping.get(mapping.id) ?? []
+    const signMode = signModeFromStatusEvents(
+      events,
+      defaultItemSignMode(mapping.item_name, vendorGroup, !!mapping.store_id && storeTypeById.get(mapping.store_id) !== '央廚'),
+    )
+    return {
+      ...mapping,
+      store_type: mapping.store_id ? storeTypeById.get(mapping.store_id) ?? '店面' : null,
+      vendor_group: vendorGroup,
+      disabled_at: disabledAtFromStatusEvents(events),
+      archived: isArchivedFromStatusEvents(events),
+      is_negative: signMode === 'negative',
+      sign_mode: signMode,
+      is_explicit_item: isExplicitItemFromStatusEvents(events),
+    }
+  })
   const activeGroupNames = new Set((vgs ?? []).map(group => group.name as string))
   const linkedCategoryNamesByStore = (receiptCategories ?? []).reduce<Record<string, string[]>>((acc, category) => {
     if (!activeGroupNames.has(category.name)) return acc
