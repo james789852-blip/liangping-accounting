@@ -94,6 +94,14 @@ test('單筆、批次與整個分類都只標記停用，不刪除歷史 mapping
   assert.match(actions, /export async function reactivateItemMapping/)
 })
 
+test('同分類新增品項不刪除分類同名 mapping 或改動歷史帳目', () => {
+  const saveAction = actions.match(/export async function saveItemMapping[\s\S]*?\/\*\* 確保品項/)?.[0] ?? ''
+  assert.match(saveAction, /新增同分類品項時一律保留它/)
+  assert.match(saveAction, /vendorOnlyDocType = vendorOnly\.doc_type_override/)
+  assert.match(saveAction, /vendorOnlyVgSort = vendorOnly\.vg_sort_order/)
+  assert.doesNotMatch(saveAction, /from\('item_column_mappings'\)[\s\S]*?\.delete\(/)
+})
+
 test('新帳目只讀啟用品項，店面與央廚報表都按月份讀取', () => {
   assert.match(mappingSource, /disabledAtFromStatusEvents\(eventsByMapping\.get\(mapping\.id as string\)/)
   assert.match(storeWorkbook, /getStoreItemsFromMappings\(storeId, \{ reportMonth \}\)/)

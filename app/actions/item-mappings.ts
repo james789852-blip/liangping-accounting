@@ -589,8 +589,9 @@ export async function saveItemMapping(
     return { success: true as const, alreadyExists: true as const }
   }
 
-  // 從「只有廠商、沒有品項」轉成真正品項時，移除內部佔位對應。
-  // 單據類型先帶到第一個真正品項，避免既有設定消失。
+  // 分類同名 mapping 可能只是內部佔位，也可能是使用者明確新增的正式品項
+  // （例如「其他／其他」）。新增同分類品項時一律保留它，避免刪除已被歷史
+  // 帳目引用的 mapping；新品項只繼承分類的單據類型與排序設定。
   let vendorOnlyDocType: string | null = null
   let vendorOnlyVgSort: number | null = null
   if (storeId && requestedGroup && itemName.trim() !== requestedGroup) {
@@ -604,8 +605,6 @@ export async function saveItemMapping(
     if (vendorOnly) {
       vendorOnlyDocType = vendorOnly.doc_type_override ?? null
       vendorOnlyVgSort = vendorOnly.vg_sort_order ?? null
-      const { error } = await admin.from('item_column_mappings').delete().eq('id', vendorOnly.id)
-      if (error) return { error: `新增失敗：${error.message}` }
     }
   }
 
