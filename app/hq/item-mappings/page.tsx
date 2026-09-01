@@ -11,6 +11,8 @@ import { isMiscVendorGroup, normalizeVendorGroupName } from '@/lib/linked-receip
 import { isVendorOnlyMapping } from '@/lib/vendor-only-mapping'
 import {
   disabledAtFromStatusEvents,
+  isArchivedFromStatusEvents,
+  ITEM_MAPPING_ARCHIVED_EVENT,
   ITEM_MAPPING_DISABLED_EVENT,
   ITEM_MAPPING_REACTIVATED_EVENT,
   mappingIdFromStatusEvent,
@@ -59,7 +61,7 @@ export default async function ItemMappingsPage({
   const statusEvents = await fetchAllPaged<ItemMappingStatusEvent>(() => admin
     .from('audit_logs')
     .select('event_type,created_at,metadata')
-    .in('event_type', [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_REACTIVATED_EVENT])
+    .in('event_type', [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_REACTIVATED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT])
     .order('created_at'))
   const statusEventsByMapping = new Map<string, ItemMappingStatusEvent[]>()
   for (const event of statusEvents ?? []) {
@@ -99,6 +101,7 @@ export default async function ItemMappingsPage({
     ...mapping,
     vendor_group: normalizeVendorGroupName(mapping.vendor_group),
     disabled_at: disabledAtFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
+    archived: isArchivedFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
   }))
   const activeGroupNames = new Set((vgs ?? []).map(group => group.name as string))
   const linkedCategoryNamesByStore = (receiptCategories ?? []).reduce<Record<string, string[]>>((acc, category) => {

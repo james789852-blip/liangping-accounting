@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect, useMemo, useRef, createContext, useContext } from 'react'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import {
-  createStoreVendorGroup, deleteItemMapping, reactivateItemMapping, updateItemMapping, saveItemMapping, reorderItemMappings, setItemDocOverride, reorderStoreVendorGroups, setStoreVendorGroupMode,
+  archiveItemMapping, createStoreVendorGroup, deleteItemMapping, reactivateItemMapping, updateItemMapping, saveItemMapping, reorderItemMappings, setItemDocOverride, reorderStoreVendorGroups, setStoreVendorGroupMode,
 } from '@/app/actions/item-mappings'
 import { setManagerStore } from '@/app/actions/store-select'
 import { useRouter } from 'next/navigation'
@@ -27,7 +27,7 @@ import {
 import { isVendorOnlyMapping } from '@/lib/vendor-only-mapping'
 
 interface Mapping {
-  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; sort_order?: number; vg_sort_order?: number; disabled_at?: string | null
+  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; sort_order?: number; vg_sort_order?: number; disabled_at?: string | null; archived?: boolean
 }
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
@@ -220,10 +220,10 @@ export default function ItemMappingsClient({
   // 各店完全獨立：一次整理目前店家的顯示資料，避免 80+ 列在每次互動時反覆掃描。
   const { displayMappings, disabledMappings, grouped, groupOrder, groupDocMap, groupCategoryMap, taxItemOptionsByGroup } = useMemo(() => {
     const activeMappings = mappings
-      .filter(mapping => mapping.store_id === activeStoreId && !mapping.disabled_at)
+      .filter(mapping => mapping.store_id === activeStoreId && !mapping.disabled_at && !mapping.archived)
       .sort((a, b) => (a.sort_order ?? 999999) - (b.sort_order ?? 999999))
     const nextDisabledMappings = mappings
-      .filter(mapping => mapping.store_id === activeStoreId && !!mapping.disabled_at && !isVendorOnlyMapping(mapping))
+      .filter(mapping => mapping.store_id === activeStoreId && !!mapping.disabled_at && !mapping.archived && !isVendorOnlyMapping(mapping))
       .sort((a, b) => String(b.disabled_at).localeCompare(String(a.disabled_at)))
     const visibleMappings = activeMappings.filter(mapping => !isVendorOnlyMapping(mapping))
     const allMappingsByGroup = activeMappings.reduce<Record<string, Mapping[]>>((acc, mapping) => {
@@ -342,6 +342,16 @@ export default function ItemMappingsClient({
       if (result && 'error' in result) { toast.error(result.error); return }
       setMappings(prev => prev.map(m => m.id === id ? { ...m, disabled_at: null } : m))
       toast.success('品項已重新啟用')
+    })
+  }
+
+  function handleArchive(id: string) {
+    if (!confirm('確定要刪除這個已停用品項嗎？\n\n• 品項會從管理清單移除\n• 過去帳目的品項內容與金額會完整保留\n• 本月與歷史 Excel／試算表不受影響\n• 資料庫中的品項身分不會被實體刪除\n• 之後重新新增同名、同分類品項時可再次啟用')) return
+    startTransition(async () => {
+      const result = await archiveItemMapping(id)
+      if (result && 'error' in result) { toast.error(result.error); return }
+      setMappings(prev => prev.map(mapping => mapping.id === id ? { ...mapping, archived: true } : mapping))
+      toast.success('已從管理清單刪除；過去帳目內容與金額完整保留')
     })
   }
 
@@ -1127,11 +1137,18 @@ export default function ItemMappingsClient({
                     停用時間：{mapping.disabled_at ? new Date(mapping.disabled_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }) : '—'}
                   </p>
                 </div>
-                <button type="button" onClick={() => handleReactivate(mapping.id)} disabled={isPending}
-                  className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-bold"
-                  style={{ border: '1px solid #86efac', background: '#f0fdf4', color: '#047857', opacity: isPending ? 0.5 : 1 }}>
-                  <RotateCcw className="h-3.5 w-3.5" /> 重新啟用
-                </button>
+                <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                  <button type="button" onClick={() => handleReactivate(mapping.id)} disabled={isPending}
+                    className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-bold"
+                    style={{ border: '1px solid #86efac', background: '#f0fdf4', color: '#047857', opacity: isPending ? 0.5 : 1 }}>
+                    <RotateCcw className="h-3.5 w-3.5" /> 重新啟用
+                  </button>
+                  <button type="button" onClick={() => handleArchive(mapping.id)} disabled={isPending}
+                    className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-bold"
+                    style={{ border: '1px solid #fecaca', background: '#fff1f2', color: '#be123c', opacity: isPending ? 0.5 : 1 }}>
+                    <Trash2 className="h-3.5 w-3.5" /> 刪除（保留歷史）
+                  </button>
+                </div>
               </div>
             ))}
           </section>

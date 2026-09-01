@@ -14,6 +14,7 @@ import { unstable_cache } from 'next/cache'
 import {
   disabledAtFromStatusEvents,
   isUnavailableForReportMonth,
+  ITEM_MAPPING_ARCHIVED_EVENT,
   ITEM_MAPPING_DISABLED_EVENT,
   ITEM_MAPPING_REACTIVATED_EVENT,
   mappingIdFromStatusEvent,
@@ -64,7 +65,7 @@ async function loadStoreItemsFromMappings(
       .from('audit_logs')
       .select('event_type,created_at,metadata')
       .eq('store_id', storeId)
-      .in('event_type', [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_REACTIVATED_EVENT])
+      .in('event_type', [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_REACTIVATED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT])
       .order('created_at')),
   ])
 

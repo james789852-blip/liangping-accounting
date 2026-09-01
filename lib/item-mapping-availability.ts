@@ -6,6 +6,7 @@ export interface ItemMappingUnavailablePeriod {
 
 export const ITEM_MAPPING_DISABLED_EVENT = 'item_mapping_disabled'
 export const ITEM_MAPPING_REACTIVATED_EVENT = 'item_mapping_reactivated'
+export const ITEM_MAPPING_ARCHIVED_EVENT = 'item_mapping_archived'
 
 export interface ItemMappingStatusEvent {
   event_type: string
@@ -56,7 +57,15 @@ export function mappingIdFromStatusEvent(event: ItemMappingStatusEvent): string 
 
 export function disabledAtFromStatusEvents(events: ItemMappingStatusEvent[]): string | null {
   const latest = [...events].sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
-  return latest?.event_type === ITEM_MAPPING_DISABLED_EVENT ? latest.created_at : null
+  return latest && [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT].includes(latest.event_type)
+    ? latest.created_at
+    : null
+}
+
+/** 封存只從管理清單移除；mapping 本身與歷史帳目都必須保留。 */
+export function isArchivedFromStatusEvents(events: ItemMappingStatusEvent[]): boolean {
+  const latest = [...events].sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+  return latest?.event_type === ITEM_MAPPING_ARCHIVED_EVENT
 }
 
 /** 把稽核事件還原成月報不可用區間，支援重複停用與重新啟用。 */
@@ -66,7 +75,7 @@ export function unavailablePeriodsFromStatusEvents(
   const periods: ItemMappingUnavailablePeriod[] = []
   let openFrom: string | null = null
   for (const event of [...events].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
-    if (event.event_type === ITEM_MAPPING_DISABLED_EVENT) {
+    if ([ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT].includes(event.event_type)) {
       if (!openFrom) openFrom = String(event.metadata?.unavailable_from ?? '').slice(0, 10) || nextMonthStart(taipeiCalendarMonthStart(new Date(event.created_at)))
       continue
     }

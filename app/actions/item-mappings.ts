@@ -10,6 +10,7 @@ import { canManageCKItems, canManageStoreItems } from '@/lib/user-permissions'
 import { historicalItemSyncTargets } from '@/lib/item-history-scope'
 import { isMiscVendorGroup, MISC_VENDOR_GROUP, normalizeVendorGroupName } from '@/lib/linked-receipt-category'
 import {
+  ITEM_MAPPING_ARCHIVED_EVENT,
   ITEM_MAPPING_DISABLED_EVENT,
   ITEM_MAPPING_REACTIVATED_EVENT,
   nextMonthStart,
@@ -410,7 +411,7 @@ async function latestMappingStatusEvent(
 ) {
   return admin.from('audit_logs')
     .select('event_type, created_at, metadata')
-    .in('event_type', [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_REACTIVATED_EVENT])
+    .in('event_type', [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_REACTIVATED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT])
     .contains('metadata', { item_mapping_id: mappingId })
     .order('created_at', { ascending: false })
     .limit(1)
@@ -458,6 +459,29 @@ async function recordMappingReactivated(
     },
   })
   return error ? { error: error.message } : { availableFrom }
+}
+
+async function recordMappingArchived(
+  admin: ReturnType<typeof createAdminClient>,
+  mapping: { id: string; store_id?: string | null; item_name?: string | null; vendor_group?: string | null },
+  userId?: string | null,
+  unavailableFrom?: string | null,
+) {
+  const preservedUnavailableFrom = unavailableFrom || nextMonthStart(taipeiCalendarMonthStart())
+  const { error } = await admin.from('audit_logs').insert({
+    event_type: ITEM_MAPPING_ARCHIVED_EVENT,
+    severity: 'info',
+    store_id: mapping.store_id ?? null,
+    user_id: userId ?? null,
+    description: `刪除品項（保留歷史）：${mapping.vendor_group ? `${mapping.vendor_group}／` : ''}${mapping.item_name ?? mapping.id}`,
+    metadata: {
+      item_mapping_id: mapping.id,
+      archived_at: new Date().toISOString(),
+      unavailable_from: preservedUnavailableFrom,
+      history_preserved: true,
+    },
+  })
+  return error ? { error: error.message } : { unavailableFrom: preservedUnavailableFrom }
 }
 
 /**
@@ -513,7 +537,7 @@ export async function saveItemMapping(
   if (existing) {
     const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, existing.id)
     if (statusError) return { error: `讀取品項狀態失敗：${statusError.message}` }
-    if (latestStatus?.event_type === ITEM_MAPPING_DISABLED_EVENT) {
+    if ([ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT].includes(latestStatus?.event_type ?? '')) {
       const reactivated = await recordMappingReactivated(admin, existing, auth.user?.id)
       if ('error' in reactivated) return { error: `重新啟用失敗：${reactivated.error}` }
       const { error } = await admin.from('item_column_mappings').update({
@@ -685,7 +709,7 @@ export async function deleteItemMapping(id: string) {
   if (!mapping) return { error: '找不到品項' }
   const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, id)
   if (statusError) return { error: `讀取品項狀態失敗：${statusError.message}` }
-  if (latestStatus?.event_type === ITEM_MAPPING_DISABLED_EVENT) {
+  if ([ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT].includes(latestStatus?.event_type ?? '')) {
     return { success: true as const, disabled: 0, alreadyDisabled: true as const }
   }
   const period = await recordMappingDisabled(admin, { id, ...mapping }, auth.user?.id)
@@ -725,7 +749,7 @@ export async function reactivateItemMapping(id: string) {
   if (auth.error) return { error: auth.error }
   const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, id)
   if (statusError) return { error: `讀取品項狀態失敗：${statusError.message}` }
-  if (latestStatus?.event_type !== ITEM_MAPPING_DISABLED_EVENT) {
+  if (![ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT].includes(latestStatus?.event_type ?? '')) {
     return { success: true as const, alreadyActive: true as const }
   }
   const reactivated = await recordMappingReactivated(admin, mapping, auth.user?.id)
@@ -740,6 +764,41 @@ export async function reactivateItemMapping(id: string) {
   if (isMiscVendorGroup(mapping.vendor_group)) deferSyncMisc(mapping.store_id ?? null)
   revalidate()
   return { success: true as const }
+}
+
+/**
+ * 將已安全停用的品項從管理清單封存。
+ * 這裡刻意不 delete item_column_mappings、store_items 或任何帳目明細，
+ * 因此過去月份的品項欄位、內容、金額與 Excel／試算表都仍能按原 mapping 還原。
+ */
+export async function archiveItemMapping(id: string) {
+  const admin = createAdminClient()
+  const { data: mapping, error: mappingError } = await admin.from('item_column_mappings')
+    .select('id, item_name, store_id, vendor_group')
+    .eq('id', id)
+    .maybeSingle()
+  if (mappingError) return { error: mappingError.message }
+  if (!mapping) return { error: '找不到品項' }
+
+  const auth = await requireCanManageItems(mapping.store_id ?? null)
+  if (auth.error) return { error: auth.error }
+  const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, id)
+  if (statusError) return { error: `讀取品項狀態失敗：${statusError.message}` }
+  if (latestStatus?.event_type === ITEM_MAPPING_ARCHIVED_EVENT) {
+    return { success: true as const, alreadyArchived: true as const }
+  }
+  if (latestStatus?.event_type !== ITEM_MAPPING_DISABLED_EVENT) {
+    return { error: '請先安全停用品項，再執行刪除（保留歷史）' }
+  }
+
+  const unavailableFrom = typeof latestStatus.metadata?.unavailable_from === 'string'
+    ? latestStatus.metadata.unavailable_from
+    : null
+  const archived = await recordMappingArchived(admin, mapping, auth.user?.id, unavailableFrom)
+  if ('error' in archived) return { error: `刪除失敗：${archived.error}` }
+
+  revalidate()
+  return { success: true as const, historyPreserved: true as const }
 }
 
 export async function updateItemMapping(id: string, excelColumn: string, itemCategory: string, vendorGroup?: string | null) {
@@ -798,7 +857,7 @@ export async function setItemMapping(
   if (existing) {
     const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, existing.id)
     if (statusError) return { error: statusError.message }
-    if (latestStatus?.event_type === ITEM_MAPPING_DISABLED_EVENT) {
+    if ([ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT].includes(latestStatus?.event_type ?? '')) {
       const reactivated = await recordMappingReactivated(admin, existing, auth.user?.id)
       if ('error' in reactivated) return { error: reactivated.error }
     }
@@ -836,7 +895,7 @@ export async function batchDeleteItemMappings(ids: string[]) {
   for (const mapping of mappings ?? []) {
     const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, mapping.id)
     if (statusError) return { error: `讀取品項狀態失敗：${statusError.message}` }
-    if (latestStatus?.event_type === ITEM_MAPPING_DISABLED_EVENT) continue
+    if ([ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT].includes(latestStatus?.event_type ?? '')) continue
     const period = await recordMappingDisabled(admin, mapping, auth.user?.id)
     if ('error' in period) return { error: `安全停用失敗：${period.error}` }
   }
@@ -1316,7 +1375,7 @@ export async function deleteVendorGroupWithItems(vgName: string, storeId?: strin
     for (const mapping of mappings) {
       const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, mapping.id)
       if (statusError) return { error: `讀取品項狀態失敗：${statusError.message}` }
-      if (latestStatus?.event_type === ITEM_MAPPING_DISABLED_EVENT) continue
+      if ([ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT].includes(latestStatus?.event_type ?? '')) continue
       const period = await recordMappingDisabled(admin, mapping, auth.user?.id)
       if ('error' in period) return { error: `安全停用失敗：${period.error}` }
     }

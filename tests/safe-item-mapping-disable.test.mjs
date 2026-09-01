@@ -45,6 +45,17 @@ test('台北月份與跨年次月計算不受伺服器時區影響', () => {
   assert.equal(nextMonthStart('2026-12-01'), '2027-01-01')
 })
 
+test('停用後封存不會改寫原停用月份，歷史與本月欄位仍可還原', () => {
+  const periods = unavailablePeriodsFromStatusEvents([
+    { event_type: 'item_mapping_disabled', created_at: '2026-09-02T00:00:00Z', metadata: { unavailable_from: '2026-10-01' } },
+    { event_type: 'item_mapping_archived', created_at: '2026-09-03T00:00:00Z', metadata: { unavailable_from: '2026-10-01' } },
+  ])
+  assert.deepEqual(periods, [{ unavailable_from: '2026-10-01', unavailable_until: null }])
+  assert.equal(isUnavailableForReportMonth('2026-08', periods), false)
+  assert.equal(isUnavailableForReportMonth('2026-09', periods), false)
+  assert.equal(isUnavailableForReportMonth('2026-10', periods), true)
+})
+
 test('單筆、批次與整個分類都只標記停用，不刪除歷史 mapping', () => {
   assert.match(actions, /export async function deleteItemMapping[\s\S]*?recordMappingDisabled/)
   assert.match(actions, /export async function batchDeleteItemMappings[\s\S]*?recordMappingDisabled/)
@@ -69,4 +80,10 @@ test('使用既有稽核日誌記錄狀態，不需要刪除 mapping 或變更�
   assert.match(actions, /event_type: ITEM_MAPPING_DISABLED_EVENT/)
   assert.match(actions, /event_type: ITEM_MAPPING_REACTIVATED_EVENT/)
   assert.match(actions, /item_mapping_id: mapping\.id/)
+  assert.match(actions, /export async function archiveItemMapping/)
+  assert.match(actions, /event_type: ITEM_MAPPING_ARCHIVED_EVENT/)
+  assert.match(managerUI, /刪除（保留歷史）/)
+  assert.match(managerUI, /過去帳目的品項內容與金額會完整保留/)
+  const archiveAction = actions.match(/export async function archiveItemMapping[\s\S]*?\n}\n/)?.[0] ?? ''
+  assert.doesNotMatch(archiveAction, /from\('item_column_mappings'\)[\s\S]*?\.delete\(/)
 })
