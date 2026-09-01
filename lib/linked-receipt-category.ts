@@ -10,6 +10,13 @@ export interface LinkedReceiptMapping {
   is_tax_addon?: boolean | null
 }
 
+const CK_DIRECT_PHOTO_ITEM_CATEGORY_NAMES = [
+  '日常用品',
+  '買東西或維修',
+  '加油或停車',
+  '退稅',
+] as const
+
 export const MISC_VENDOR_GROUP = '雜項'
 export const LEGACY_MISC_VENDOR_GROUP = '未分類'
 
@@ -22,6 +29,19 @@ export function normalizeVendorGroupName(value?: string | null): string {
 /** 舊資料相容：空白、未分類與雜項都屬於同一個雜項分類。 */
 export function isMiscVendorGroup(value?: string | null): boolean {
   return normalizeVendorGroupName(value) === MISC_VENDOR_GROUP
+}
+
+/**
+ * 央廚單據中，獨立品項分類可直接選品項；「雜項」則必須保留原本的
+ * 類別 → 品項流程，才能同時涵蓋舊空白、未分類與新雜項群組的品項。
+ */
+export function isDirectCentralKitchenPhotoItemCategory(
+  categoryName: string,
+  mappings: LinkedReceiptMapping[],
+): boolean {
+  if (isMiscVendorGroup(categoryName)) return false
+  return CK_DIRECT_PHOTO_ITEM_CATEGORY_NAMES.includes(categoryName as typeof CK_DIRECT_PHOTO_ITEM_CATEGORY_NAMES[number])
+    || mappings.some(mapping => !mapping.is_tax_addon && mapping.vendor_group?.trim() === categoryName)
 }
 
 export const STORE_LINKED_RECEIPT_CATEGORY_NAMES = [

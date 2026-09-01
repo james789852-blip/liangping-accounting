@@ -14,6 +14,7 @@ import { findTaxAddonMapping as findTaxAddonByContext } from '@/lib/tax-addon'
 import SafePhotoImage from '@/components/shared/safe-photo-image'
 import { resolveCentralKitchenExpenseDocType } from '@/lib/ck-expense-doc-type'
 import { isNegativeItem, normalizeItemAmount } from '@/lib/negative-items'
+import { isDirectCentralKitchenPhotoItemCategory } from '@/lib/linked-receipt-category'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -265,15 +266,6 @@ function shouldUseVendorAsItem(categoryName: string, vendorName: string) {
 
 function shouldRequireExplicitItem(categoryName: string, vendorName: string) {
   return categoryName === '其他' && vendorName.trim() === '購買-選擇單據類型'
-}
-
-/**
- * 央廚的這四種收據類別都是「一張單據對應一個品項」：
- * 選擇直接放在類別右側，不再多一層廠商／新增品項欄位。
- */
-function isDirectPhotoItemCategory(categoryName: string, mappings: MappingItem[]) {
-  return ['日常用品', '買東西或維修', '加油或停車', '退稅'].includes(categoryName)
-    || mappings.some(mapping => !mapping.is_tax_addon && mapping.vendor_group?.trim() === categoryName)
 }
 
 function isBuyOrRepairCategory(categoryName: string) {
@@ -1662,7 +1654,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                 ) : (
                   photoForms.map((form, index) => {
                     const activeCategoryName = resolveReceiptCategoryName(form, receiptCategories)
-                    const usesDirectPhotoItem = isDirectPhotoItemCategory(activeCategoryName, mappingItems)
+                    const usesDirectPhotoItem = isDirectCentralKitchenPhotoItemCategory(activeCategoryName, mappingItems)
                     const isBuyOrRepair = isBuyOrRepairCategory(activeCategoryName)
                     const formItems = getPhotoExpenseItems(form)
                     const configuredCategoryVendors = receiptCategories.find(c => c.name === activeCategoryName)?.vendors ?? []

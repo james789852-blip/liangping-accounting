@@ -5,6 +5,7 @@ import test from 'node:test'
 import {
   applyLinkedReceiptCategories,
   applyLinkedReceiptCategory,
+  isDirectCentralKitchenPhotoItemCategory,
   normalizeVendorGroupName,
   CK_LINKED_RECEIPT_CATEGORY_NAMES,
   resolveReceiptVendorGroupNames,
@@ -12,6 +13,25 @@ import {
   resolveLinkedReceiptCategoryNames,
   STORE_LINKED_RECEIPT_CATEGORY_NAMES,
 } from '../lib/linked-receipt-category.ts'
+
+test('央廚雜項保留所有舊空白、未分類與新雜項品項，不被誤判成單一直接分類', () => {
+  const mappings = [
+    { vendor_group: null, item_name: '水費' },
+    { vendor_group: '未分類', item_name: '瓦斯' },
+    { vendor_group: '雜項', item_name: '廚師鞋補助' },
+  ]
+
+  assert.equal(isDirectCentralKitchenPhotoItemCategory('雜項', mappings), false)
+  assert.equal(isDirectCentralKitchenPhotoItemCategory('未分類', mappings), false)
+})
+
+test('央廚原本直接選品項的類別與新增獨立分類維持原流程', () => {
+  assert.equal(isDirectCentralKitchenPhotoItemCategory('日常用品', []), true)
+  assert.equal(isDirectCentralKitchenPhotoItemCategory('加油或停車', []), true)
+  assert.equal(isDirectCentralKitchenPhotoItemCategory('員工福利', [
+    { vendor_group: '員工福利', item_name: '聚餐' },
+  ]), true)
+})
 
 const receiptSettingsSource = await readFile(
   new URL('../components/manager/receipt-settings.tsx', import.meta.url),
