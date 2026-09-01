@@ -509,30 +509,66 @@ function canUseNegativeOtherReceiptItem(itemName: string | undefined, categoryNa
   return isOtherReceiptItem(itemName, categoryName, '其他') || isAutoNegativeOtherReceiptItem(itemName, categoryName)
 }
 
-function receiptFormForcesNegativeTotal(form: Pick<ReceiptForm, 'category' | 'items'>) {
-  return (form.items ?? []).some(item => isAutoNegativeOtherReceiptItem(item.item_name, form.category))
+function receiptFormForcesNegativeTotal(
+  form: Pick<ReceiptForm, 'category' | 'vendor_name' | 'items'>,
+  mappingColumns: MappingColumn[],
+) {
+  return (form.items ?? []).some(item =>
+    receiptItemSignMode(item, form.vendor_name, form.category, mappingColumns) === 'negative',
+  )
 }
 
-function editReceiptForcesNegativeTotal(category: string, items: ReceiptFormItem[]) {
-  return items.some(item => isAutoNegativeOtherReceiptItem(item.item_name, category))
+function editReceiptForcesNegativeTotal(
+  category: string,
+  vendorName: string,
+  items: ReceiptFormItem[],
+  mappingColumns: MappingColumn[],
+) {
+  return items.some(item => receiptItemSignMode(item, vendorName, category, mappingColumns) === 'negative')
 }
 
 function requiresPurchaseRepairNote(categoryName: string | undefined) {
   return (categoryName ?? '').trim() === '買東西或維修'
 }
 
-function receiptFormAllowsNegativeTotal(form: Pick<ReceiptForm, 'category' | 'items'>) {
-  return (form.items ?? []).some(item => canUseNegativeOtherReceiptItem(item.item_name, form.category))
+function receiptFormAllowsNegativeTotal(
+  form: Pick<ReceiptForm, 'category' | 'vendor_name' | 'items'>,
+  mappingColumns: MappingColumn[],
+) {
+  return (form.items ?? []).some(item =>
+    receiptItemSignMode(item, form.vendor_name, form.category, mappingColumns) !== 'positive',
+  )
 }
 
-function isReceiptFormAmountValid(form: Pick<ReceiptForm, 'category' | 'items' | 'total_amount'>) {
+function isReceiptFormAmountValid(
+  form: Pick<ReceiptForm, 'category' | 'vendor_name' | 'items' | 'total_amount'>,
+  mappingColumns: MappingColumn[],
+) {
   const amount = Number(form.total_amount) || 0
+  if (receiptFormForcesNegativeTotal(form, mappingColumns)) return amount < 0
   if (amount > 0) return true
-  return amount < 0 && receiptFormAllowsNegativeTotal(form)
+  return amount < 0 && receiptFormAllowsNegativeTotal(form, mappingColumns)
 }
 
-function editReceiptAllowsNegativeTotal(category: string, items: ReceiptFormItem[]) {
-  return items.some(item => canUseNegativeOtherReceiptItem(item.item_name, category))
+function editReceiptAllowsNegativeTotal(
+  category: string,
+  vendorName: string,
+  items: ReceiptFormItem[],
+  mappingColumns: MappingColumn[],
+) {
+  return items.some(item => receiptItemSignMode(item, vendorName, category, mappingColumns) !== 'positive')
+}
+
+function isEditReceiptAmountValid(
+  category: string,
+  vendorName: string,
+  items: ReceiptFormItem[],
+  amount: number,
+  mappingColumns: MappingColumn[],
+) {
+  if (editReceiptForcesNegativeTotal(category, vendorName, items, mappingColumns)) return amount < 0
+  if (amount > 0) return true
+  return amount < 0 && editReceiptAllowsNegativeTotal(category, vendorName, items, mappingColumns)
 }
 
 function deriveReceiptCategory(
@@ -616,14 +652,37 @@ function configuredReceiptItemMapping(
       : findReceiptItemMapping(item.item_name, vendorName, categoryName, mappingColumns))
 }
 
+function receiptItemSignMode(
+  item: Pick<ReceiptFormItem, 'item_name' | 'item_mapping_id' | 'vendor_group_hint'>,
+  vendorName: string,
+  categoryName: string,
+  mappingColumns: MappingColumn[],
+): 'positive' | 'negative' | 'flexible' {
+  if (isNegativeItem(item.item_name) || isAutoNegativeOtherReceiptItem(item.item_name, categoryName)) {
+    return 'negative'
+  }
+  const mapping = configuredReceiptItemMapping(item, vendorName, categoryName, mappingColumns)
+  if (mapping?.sign_mode === 'negative' || mapping?.is_negative) return 'negative'
+  if (mapping?.sign_mode === 'flexible' || canUseNegativeOtherReceiptItem(item.item_name, categoryName)) return 'flexible'
+  return 'positive'
+}
+
+function normalizeReceiptAmountForSignMode(
+  amount: number,
+  signMode: 'positive' | 'negative' | 'flexible',
+) {
+  if (signMode === 'negative') return -Math.abs(amount || 0)
+  if (signMode === 'positive') return Math.abs(amount || 0)
+  return amount || 0
+}
+
 function configuredNegativeReceiptItem(
   item: Pick<ReceiptFormItem, 'item_name' | 'item_mapping_id' | 'vendor_group_hint'>,
   vendorName: string,
   categoryName: string,
   mappingColumns: MappingColumn[],
 ): boolean {
-  const mapping = configuredReceiptItemMapping(item, vendorName, categoryName, mappingColumns)
-  return mapping?.sign_mode === 'negative' || !!mapping?.is_negative
+  return receiptItemSignMode(item, vendorName, categoryName, mappingColumns) === 'negative'
 }
 
 function configuredFlexibleReceiptItem(
@@ -632,7 +691,7 @@ function configuredFlexibleReceiptItem(
   categoryName: string,
   mappingColumns: MappingColumn[],
 ): boolean {
-  return configuredReceiptItemMapping(item, vendorName, categoryName, mappingColumns)?.sign_mode === 'flexible'
+  return receiptItemSignMode(item, vendorName, categoryName, mappingColumns) === 'flexible'
 }
 
 /**
@@ -2401,9 +2460,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return
     }
     if (!editingReceiptId) return
-    const editAmountValid = editAmount > 0 || (editAmount < 0 && editReceiptAllowsNegativeTotal(editCategory, editItems))
+    const editAmountValid = isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns)
     if (!editAmountValid) {
-      toast.error(editAmount < 0 ? '只有「其他」類別的「其他」或「賣給分店食材」可輸入負數' : '請填寫金額')
+      toast.error(editReceiptForcesNegativeTotal(editCategory, editVendor, editItems, mappingColumns)
+        ? '此品項已設定固定負數，金額必須顯示為負數'
+        : editAmount < 0 ? '此品項不可輸入負數' : '請填寫金額')
       return
     }
     if (requiresPurchaseRepairNote(editCategory) && !editNotes.trim()) {
@@ -2625,22 +2686,26 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         const mapping = mappingColumns.find(column =>
           column.name === vendorName && (column.category === category || column.vendor_group === category),
         )
-        const forceNegative = isAutoNegativeOtherReceiptItem(vendorName, category)
+        const directItem: ReceiptFormItem = {
+          id: first?.id ?? crypto.randomUUID(),
+          item_name: vendorName,
+          unit: first?.unit ?? '',
+          quantity: first?.quantity ?? 1,
+          unit_price: first?.unit_price ?? 0,
+          amount: first?.amount ?? 0,
+          vendor_group_hint: mapping?.vendor_group,
+          item_mapping_id: mapping?.mapping_id ?? null,
+        }
+        const signMode = receiptItemSignMode(directItem, vendorName, category, mappingColumns)
         return {
           ...f,
           category,
           vendor_name: vendorName,
           actual_vendor_name: '',
-          total_amount: forceNegative ? -Math.abs(f.total_amount || 0) : f.total_amount,
+          total_amount: normalizeReceiptAmountForSignMode(f.total_amount, signMode),
           items: [{
-            id: first?.id ?? crypto.randomUUID(),
-            item_name: vendorName,
-            unit: first?.unit ?? '',
-            quantity: first?.quantity ?? 1,
-            unit_price: first?.unit_price ?? 0,
-            amount: forceNegative ? -Math.abs(first?.amount ?? 0) : first?.amount ?? 0,
-            vendor_group_hint: mapping?.vendor_group,
-            item_mapping_id: mapping?.mapping_id ?? null,
+            ...directItem,
+            amount: normalizeReceiptAmountForSignMode(directItem.amount, signMode),
           }],
         }
       }
@@ -2677,21 +2742,28 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         const mapping = mappingColumns.find(column =>
           column.name === vendorName && (column.category === category || column.vendor_group === category),
         )
-        const forceNegative = isAutoNegativeOtherReceiptItem(vendorName, category)
-        return [{
+        const directItem: ReceiptFormItem = {
           id: first?.id ?? crypto.randomUUID(),
           item_name: vendorName,
           unit: first?.unit ?? '',
           quantity: first?.quantity ?? 1,
           unit_price: first?.unit_price ?? 0,
-          amount: forceNegative ? -Math.abs(first?.amount ?? 0) : first?.amount ?? 0,
+          amount: first?.amount ?? 0,
           vendor_group_hint: mapping?.vendor_group,
           item_mapping_id: mapping?.mapping_id ?? null,
-        }]
+        }
+        const signMode = receiptItemSignMode(directItem, vendorName, category, mappingColumns)
+        return [{ ...directItem, amount: normalizeReceiptAmountForSignMode(directItem.amount, signMode) }]
       })
-      if (isAutoNegativeOtherReceiptItem(vendorName, category)) {
-        setEditAmount(value => -Math.abs(value || 0))
+      const mapping = mappingColumns.find(column =>
+        column.name === vendorName && (column.category === category || column.vendor_group === category),
+      )
+      const directItem: ReceiptFormItem = {
+        id: crypto.randomUUID(), item_name: vendorName, unit: '', quantity: 1, unit_price: 0, amount: 0,
+        vendor_group_hint: mapping?.vendor_group, item_mapping_id: mapping?.mapping_id ?? null,
       }
+      const signMode = receiptItemSignMode(directItem, vendorName, category, mappingColumns)
+      setEditAmount(value => normalizeReceiptAmountForSignMode(value, signMode))
       return
     }
     setEditItems(prev => {
@@ -2759,9 +2831,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       toast.error('請先重新整理最新資料，再新增單據。')
       return
     }
-    const amountValid = isReceiptFormAmountValid(form)
+    const amountValid = isReceiptFormAmountValid(form, mappingColumns)
     if (!amountValid) {
-      toast.error(form.total_amount < 0 ? '只有「其他」類別的「其他」或「賣給分店食材」可輸入負數' : '請填寫金額')
+      toast.error(receiptFormForcesNegativeTotal(form, mappingColumns)
+        ? '此品項已設定固定負數，金額必須顯示為負數'
+        : form.total_amount < 0 ? '此品項不可輸入負數' : '請填寫金額')
       return
     }
     if (requiresPurchaseRepairNote(form.category) && !form.notes.trim()) {
@@ -4395,9 +4469,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           const name = sepIdx > 0 ? raw.slice(sepIdx + 1) : raw
                                           const selectedMapping = mappingColumns.find(c => c.name === name && (!vg || c.vendor_group === vg))
                                           // 一次 syncItems 同時更新兩欄位，避免兩個連續 setState 因 closure 看到舊 state 互相覆蓋
-                                          syncItems((form.items ?? []).map(i =>
-                                            i.id !== item.id ? i : { ...i, item_name: name, vendor_group_hint: vg || undefined, item_mapping_id: selectedMapping?.mapping_id ?? null }
-                                          ))
+                                          syncItems((form.items ?? []).map(i => {
+                                            if (i.id !== item.id) return i
+                                            const nextItem = { ...i, item_name: name, vendor_group_hint: vg || undefined, item_mapping_id: selectedMapping?.mapping_id ?? null }
+                                            const signMode = receiptItemSignMode(nextItem, form.vendor_name, form.category, mappingColumns)
+                                            return { ...nextItem, amount: normalizeReceiptAmountForSignMode(i.amount, signMode) }
+                                          }))
                                         }}
                                         className="receipt-field"
                                         style={{ flex: 1, minHeight: '42px', padding: '8px 10px', border: `2px solid ${item.item_name ? '#F59E0B' : '#60A5FA'}`, borderRadius: '8px', fontSize: '14px', fontWeight: 700, fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#1d4ed8', background: item.item_name ? 'white' : '#eff6ff' }}>
@@ -4480,9 +4557,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         })())}
 
                         {isDirectReceiptCategory(form.category) && (() => {
-                          const allowNegativeTotal = receiptFormAllowsNegativeTotal(form)
-                          const forceNegativeTotal = receiptFormForcesNegativeTotal(form)
-                          const amountValid = isReceiptFormAmountValid(form)
+                          const allowNegativeTotal = receiptFormAllowsNegativeTotal(form, mappingColumns)
+                          const forceNegativeTotal = receiptFormForcesNegativeTotal(form, mappingColumns)
+                          const amountValid = isReceiptFormAmountValid(form, mappingColumns)
                           return (
                             <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', border: '1.5px solid #93c5fd', borderRadius: '10px', background: '#eff6ff' }}>
                               <label style={{ fontSize: '11px', color: '#1d4ed8', fontWeight: 700 }}>商品原始金額 *</label>
@@ -4493,6 +4570,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                   const value = parseInt(e.target.value) || 0
                                   updateReceiptForm(form.id, 'total_amount', forceNegativeTotal ? -Math.abs(value) : allowNegativeTotal ? value : Math.max(0, value))
                                 }} />
+                              {forceNegativeTotal && (
+                                <p style={{ fontSize: '11px', color: '#dc2626', textAlign: 'right', fontWeight: 800 }}>
+                                  固定負數・輸入後自動轉負
+                                </p>
+                              )}
                               {allowNegativeTotal && !forceNegativeTotal && (
                                 <button type="button"
                                   onClick={() => updateReceiptForm(form.id, 'total_amount', form.total_amount < 0 ? Math.abs(form.total_amount) : -Math.abs(form.total_amount || 0))}
@@ -4569,9 +4651,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           const hasAutoTotal = hasItemsTotal || appliedTaxAmount > 0
                           const isDirectAmountFlow = isDirectReceiptCategory(form.category)
                           const totalReadOnly = hasAutoTotal || isDirectAmountFlow
-                          const amountValid = isReceiptFormAmountValid(form)
-                          const allowNegativeTotal = receiptFormAllowsNegativeTotal(form)
-                          const forceNegativeTotal = receiptFormForcesNegativeTotal(form)
+                          const amountValid = isReceiptFormAmountValid(form, mappingColumns)
+                          const allowNegativeTotal = receiptFormAllowsNegativeTotal(form, mappingColumns)
+                          const forceNegativeTotal = receiptFormForcesNegativeTotal(form, mappingColumns)
                           return (
                             <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', border: '1.5px solid #93c5fd', borderRadius: '10px', background: '#eff6ff' }}>
                               <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -4610,13 +4692,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: '4px 8px', fontFamily: 'inherit' }}>
                             <Trash2 className="h-3 w-3" />刪除
                           </button>
-                          <button onClick={() => saveReceiptForm(form)} disabled={form.uploading || !isReceiptFormAmountValid(form)}
+                          <button onClick={() => saveReceiptForm(form)} disabled={form.uploading || !isReceiptFormAmountValid(form, mappingColumns)}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
                             style={{
-                              background: isReceiptFormAmountValid(form) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
-                              cursor: isReceiptFormAmountValid(form) ? 'pointer' : 'not-allowed',
+                              background: isReceiptFormAmountValid(form, mappingColumns) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
+                              cursor: isReceiptFormAmountValid(form, mappingColumns) ? 'pointer' : 'not-allowed',
                               opacity: form.uploading ? 0.7 : 1, border: 'none', fontFamily: 'inherit',
-                              boxShadow: isReceiptFormAmountValid(form) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
+                              boxShadow: isReceiptFormAmountValid(form, mappingColumns) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
                             }}>
                             {form.uploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />儲存中…</> : '儲存'}
                           </button>
@@ -4868,9 +4950,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                               const vg = sepIdx > 0 ? raw.slice(0, sepIdx) : ''
                                               const name = sepIdx > 0 ? raw.slice(sepIdx + 1) : raw
                                               const selectedMapping = mappingColumns.find(c => c.name === name && (!vg || c.vendor_group === vg))
-                                              syncEditItems(editItems.map((row, i) =>
-                                                i !== idx ? row : { ...row, item_name: name, vendor_group_hint: vg, item_mapping_id: selectedMapping?.mapping_id ?? null }
-                                              ))
+                                              syncEditItems(editItems.map((row, i) => {
+                                                if (i !== idx) return row
+                                                const nextItem = { ...row, item_name: name, vendor_group_hint: vg, item_mapping_id: selectedMapping?.mapping_id ?? null }
+                                                const signMode = receiptItemSignMode(nextItem, editVendor, editCategory, mappingColumns)
+                                                return { ...nextItem, amount: normalizeReceiptAmountForSignMode(row.amount, signMode) }
+                                              }))
                                             }}
                                             className="receipt-field"
                                             style={{ flex: 1, padding: '6px 8px', border: `1px solid ${item.item_name ? '#F59E0B' : '#e4e4e7'}`, borderRadius: '7px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', color: item.item_name ? '#18181b' : '#a1a1aa', background: 'white' }}>
@@ -4963,9 +5048,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             })())}
 
                             {isDirectReceiptCategory(editCategory) && (() => {
-                              const allowNegativeTotal = editReceiptAllowsNegativeTotal(editCategory, editItems)
-                              const forceNegativeTotal = editReceiptForcesNegativeTotal(editCategory, editItems)
-                              const amountValid = editAmount > 0 || (editAmount < 0 && allowNegativeTotal)
+                              const allowNegativeTotal = editReceiptAllowsNegativeTotal(editCategory, editVendor, editItems, mappingColumns)
+                              const forceNegativeTotal = editReceiptForcesNegativeTotal(editCategory, editVendor, editItems, mappingColumns)
+                              const amountValid = isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns)
                               return (
                                 <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 12px', border: '1.5px solid #93c5fd', borderRadius: '10px', background: '#eff6ff' }}>
                                   <label style={{ fontSize: '11px', color: '#1d4ed8', fontWeight: 700 }}>商品原始金額 *</label>
@@ -4976,6 +5061,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                       const value = parseInt(e.target.value) || 0
                                       setEditAmount(forceNegativeTotal ? -Math.abs(value) : allowNegativeTotal ? value : Math.max(0, value))
                                     }} />
+                                  {forceNegativeTotal && (
+                                    <p style={{ fontSize: '11px', color: '#dc2626', textAlign: 'right', fontWeight: 800 }}>
+                                      固定負數・輸入後自動轉負
+                                    </p>
+                                  )}
                                   {allowNegativeTotal && !forceNegativeTotal && (
                                     <button type="button"
                                       onClick={() => setEditAmount(editAmount < 0 ? Math.abs(editAmount) : -Math.abs(editAmount || 0))}
@@ -5035,9 +5125,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               const editHasAutoTotal = editHasItemsTotal || appliedEditTaxAmount > 0
                               const isDirectAmountFlow = isDirectReceiptCategory(editCategory)
                               const totalReadOnly = editHasAutoTotal || isDirectAmountFlow
-                              const allowNegativeTotal = editReceiptAllowsNegativeTotal(editCategory, editItems)
-                              const forceNegativeTotal = editReceiptForcesNegativeTotal(editCategory, editItems)
-                              const editAmountValid = editAmount > 0 || (editAmount < 0 && allowNegativeTotal)
+                              const allowNegativeTotal = editReceiptAllowsNegativeTotal(editCategory, editVendor, editItems, mappingColumns)
+                              const forceNegativeTotal = editReceiptForcesNegativeTotal(editCategory, editVendor, editItems, mappingColumns)
+                              const editAmountValid = isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns)
                               return (
                                 <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                   <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -5076,13 +5166,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: '4px 8px', fontFamily: 'inherit' }}>
                                 <X className="h-3 w-3" />取消
                               </button>
-                              <button onClick={handleSaveReceiptEdit} disabled={!(editAmount > 0 || (editAmount < 0 && editReceiptAllowsNegativeTotal(editCategory, editItems))) || editUploading}
+                              <button onClick={handleSaveReceiptEdit} disabled={!isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns) || editUploading}
                                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
                                 style={{
-                                  background: (editAmount > 0 || (editAmount < 0 && editReceiptAllowsNegativeTotal(editCategory, editItems))) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
-                                  cursor: (editAmount > 0 || (editAmount < 0 && editReceiptAllowsNegativeTotal(editCategory, editItems))) ? 'pointer' : 'not-allowed',
+                                  background: isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
+                                  cursor: isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns) ? 'pointer' : 'not-allowed',
                                   opacity: editUploading ? 0.7 : 1, border: 'none', fontFamily: 'inherit',
-                                  boxShadow: (editAmount > 0 || (editAmount < 0 && editReceiptAllowsNegativeTotal(editCategory, editItems))) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
+                                  boxShadow: isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
                                 }}>
                                 {editUploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />儲存中…</> : '儲存'}
                               </button>

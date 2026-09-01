@@ -33,6 +33,15 @@ test('店面新增與編輯收據都由伺服器再次強制負數', () => {
   assert.match(closingUI, /改為負數/)
 })
 
+test('店面直接輸入類別會依品項管理設定即時轉換整張單據金額', () => {
+  assert.match(closingUI, /function receiptItemSignMode/)
+  assert.match(closingUI, /mapping\?\.sign_mode === 'negative'/)
+  assert.match(closingUI, /total_amount: normalizeReceiptAmountForSignMode\(f\.total_amount, signMode\)/)
+  assert.match(closingUI, /setEditAmount\(value => normalizeReceiptAmountForSignMode\(value, signMode\)\)/)
+  assert.match(closingUI, /固定負數・輸入後自動轉負/)
+  assert.match(closingUI, /if \(receiptFormForcesNegativeTotal\(form, mappingColumns\)\) return amount < 0/)
+})
+
 test('分類同名的其他可轉成正式品項並傳到店面表單', () => {
   assert.match(actions, /recordMappingExplicitItem/)
   assert.match(actions, /convertedPlaceholder/)
