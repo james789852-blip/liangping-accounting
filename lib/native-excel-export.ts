@@ -17,6 +17,7 @@
  *   月份合計 = SUM(對應欄位 5:35)
  */
 import ExcelJS from 'exceljs'
+import { normalizeVendorGroupName } from '@/lib/linked-receipt-category'
 import { getMonthLastDay } from '@/lib/business-date'
 
 // ────────────────────────────────────────────────
@@ -584,7 +585,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
   const colOfKey: Record<string, number> = {}
   // colOfItem 用 (vendor_group + name) 當 key，避免同名不同分組互相覆蓋（例如「魚丸」央廚配送 vs 菜商）
   const colOfItem: Record<string, number> = {}
-  const itemKey = (it: { name: string; vendor_group: string }) => `${it.vendor_group || '未分類'}|${it.name}`
+  const itemKey = (it: { name: string; vendor_group: string }) => `${normalizeVendorGroupName(it.vendor_group)}|${it.name}`
   let col = 1
 
   // A 日期
@@ -620,13 +621,13 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
   const byVG: Record<string, ItemDef[]> = {}
   const vgSort: Record<string, number> = {}
   for (const it of exportItems) {
-    const vg = it.vendor_group || '未分類'
+    const vg = normalizeVendorGroupName(it.vendor_group)
     if (!byVG[vg]) byVG[vg] = []
     byVG[vg].push(it)
     const cur = it.vendor_group_sort_order ?? 9999
     if (vgSort[vg] === undefined || cur < vgSort[vg]) vgSort[vg] = cur
   }
-  const vgRank = (name: string) => name === '未分類' ? 2 : ['發票', '收據', '估價單', '公司開'].includes(name) ? 1 : 0
+  const vgRank = (name: string) => ['發票', '收據', '估價單', '公司開'].includes(name) ? 1 : 0
   const vgOrder = Object.keys(byVG).sort((a, b) =>
     (vgRank(a) - vgRank(b))
     || ((vgSort[a] ?? 9999) - (vgSort[b] ?? 9999))
@@ -691,7 +692,7 @@ function addDetailSheet(wb: ExcelJS.Workbook, opts: {
   // Row 1（廠商分類）、Row 2（單據類型）— 品項區
   // ────────────────────────────────────────────────
   for (const vg of vendorGroupRanges) {
-    if (!vg.name || vg.name === '未分類') continue
+    if (!vg.name) continue
     const cell = ws.getRow(1).getCell(vg.start)
     cell.value = vg.name
     cell.font = { name: FONT_DATA, bold: true, size: 14, color: { argb: vg.isTax ? C.red : C.ink } }

@@ -19,6 +19,7 @@ import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
 import { getExcelPlatformColumns } from '@/lib/excel-platform-order'
 import { resolveReportingActualVendor } from '@/lib/reporting-actual-vendor'
 import { blankWorkbookZero, workbookResultValue } from '@/lib/workbook-zero-display'
+import { normalizeVendorGroupName } from '@/lib/linked-receipt-category'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -85,8 +86,23 @@ function scopedItemValueForExport(
 ): { value: number; sourceKey: string } {
   const scoped = dd.itemAmountsByVendorGroup ?? {}
   if (vendorGroup) {
+    const normalizedVendorGroup = normalizeVendorGroupName(vendorGroup)
     const exactKey = `${vendorGroup}|${key}`
     if (exactKey in scoped) return { value: scoped[exactKey] ?? 0, sourceKey: key }
+
+    // 品項管理已把舊的空白／「未分類」統一顯示成「雜項」。舊帳目仍可能
+    // 保存原分類快照，因此匯出比對時也要把這三種名稱視為同一分類。
+    const normalizedExactKey = Object.keys(scoped).find(scopedKey => {
+      const separator = scopedKey.indexOf('|')
+      if (separator < 0) return false
+      const scopedVendorGroup = scopedKey.slice(0, separator)
+      const scopedItemName = scopedKey.slice(separator + 1)
+      return normalizeVendorGroupName(scopedVendorGroup) === normalizedVendorGroup
+        && scopedItemName === key
+    })
+    if (normalizedExactKey) {
+      return { value: scoped[normalizedExactKey] ?? 0, sourceKey: key }
+    }
 
     // 同一分類內允許歷史相容名稱，例如央廚單價「油蔥酥」對應各店
     // mapping「油蔥」。分類必須相同，避免一般雜貨金額被灌入央廚欄。
@@ -95,7 +111,7 @@ function scopedItemValueForExport(
       if (separator < 0) return false
       const scopedVendorGroup = scopedKey.slice(0, separator)
       const scopedItemName = scopedKey.slice(separator + 1)
-      return scopedVendorGroup === vendorGroup
+      return normalizeVendorGroupName(scopedVendorGroup) === normalizedVendorGroup
         && itemNameCompatibilityKey(scopedItemName) === itemNameCompatibilityKey(key)
     })
     if (compatibleKey) {
@@ -120,7 +136,7 @@ function scopedItemValueForExport(
 }
 
 /** Build the column layout for a store */
-function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAccounts: string[] = []): ColumnDef[] {
+function buildFoodCostLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAccounts: string[] = []): ColumnDef[] {
   const cols: ColumnDef[] = []
   let idx = 1
   cols.push({ index: idx++, header: '日期', kind: 'date' })
@@ -156,11 +172,12 @@ function buildLayout(store: StoreInfo, items: ResolvedStoreItem[], handwriteAcco
   // 食材/耗材/雜項月合計仍用各欄 category 公式計算，不依欄位是否相鄰。
   const sortedItems = [...items].sort(compareResolvedItemsByMappingOrder)
   for (const it of sortedItems) {
+    const vendorGroup = normalizeVendorGroupName(it.vendor_group)
     cols.push({
       index: idx++,
       header: displayHeader(it.name, it.vendor_group),
       nameKey: it.name,
-      vendorGroup: it.vendor_group,
+      vendorGroup,
       docType: it.doc_type ?? '',
       category: it.category,
       isRefund: !!it.is_refund,
@@ -350,7 +367,8 @@ function buildVendorAnalysisRows(
   }
   const groupSort = new Map<string, number>()
   for (const item of items) {
-    if (!groupSort.has(item.vendor_group)) groupSort.set(item.vendor_group, item.vendor_group_sort_order ?? 9999)
+    const vendorGroup = normalizeVendorGroupName(item.vendor_group)
+    if (!groupSort.has(vendorGroup)) groupSort.set(vendorGroup, item.vendor_group_sort_order ?? 9999)
   }
   const rows = new Map<string, VendorAnalysisRow>()
   const rowFor = (month: number | undefined, vendorGroup: string, actualVendor: string) => {
@@ -386,12 +404,17 @@ function buildVendorAnalysisRows(
         const firstMeta = receiptItems[0]
           ? resolveItemMeta(receiptItems[0].item_name, receipt.vendor_name, receipt.actual_vendor_name)
           : null
-        const taxRow = rowFor(monthly.monthNum, firstMeta?.vendor_group || receipt.vendor_name || '未分類', actualVendor)
+        const taxVendorGroup = firstMeta
+          ? normalizeVendorGroupName(firstMeta.vendor_group)
+          : (receipt.vendor_name || '未分類')
+        const taxRow = rowFor(monthly.monthNum, taxVendorGroup, actualVendor)
         taxRow.taxRefund += receipt.tax_amount || 0
 
         for (const item of receiptItems) {
           const meta = resolveItemMeta(item.item_name, receipt.vendor_name, receipt.actual_vendor_name)
-          const vendorGroup = meta?.vendor_group || receipt.vendor_name || '未分類'
+          const vendorGroup = meta
+            ? normalizeVendorGroupName(meta.vendor_group)
+            : (receipt.vendor_name || '未分類')
           const row = rowFor(monthly.monthNum, vendorGroup, actualVendor)
           const amount = Number(item.amount) || 0
           if (meta?.category === '食材') row.food += amount
@@ -521,7 +544,7 @@ export async function addFoodCostSheet(
   })
 
   // 手寫收入已併入「(手動)POS」總營業額；月報視覺沿用舊 Excel，不另外拆手寫欄。
-  const cols = buildLayout(store, items, [])
+  const cols = buildFoodCostLayout(store, items, [])
   const totalCols = cols.length
   const daysInMonth = new Date(year, monthNum, 0).getDate()
 
