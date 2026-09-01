@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["hnd1"],
-  "fluid": true
+  "fluid": true,
+  "crons": [
+    {
+      "path": "/api/cron/ensure-month-sheets",
+      "schedule": "0 16 * * *"
+    }
+  ]
 }

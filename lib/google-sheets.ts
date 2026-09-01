@@ -6,7 +6,6 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { extractValues, extractColWidths, extractMerges } from '@/lib/food-cost-template'
 import { buildFoodCostNativeWorkbook } from '@/lib/food-cost-native-workbook'
 import { buildCKNativeWorkbook } from '@/lib/ck-native-workbook'
-import { getMonthLastDay } from '@/lib/business-date'
 
 function getAuth() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_CREDENTIALS
@@ -41,9 +40,26 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
 
   const storeId = closing.store_id as string
   const businessDate = closing.business_date as string
-  const [yearStr, monthStr] = businessDate.split('-')
+  await syncStoreMonthToSheetsImpl(storeId, businessDate.slice(0, 7), true)
+}
+
+/**
+ * Sync a store month from the exact native workbook used by the Excel download.
+ * This intentionally does not require an existing daily closing so a new month
+ * can be created with its complete blank layout on the first day of the month.
+ */
+async function syncStoreMonthToSheetsImpl(
+  storeId: string,
+  month: string,
+  allowUnbound: boolean,
+): Promise<void> {
+  const admin = createAdminClient()
+  const [yearStr, monthStr] = month.split('-')
   const year = parseInt(yearStr)
   const monthNum = parseInt(monthStr)
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || !Number.isInteger(year) || !Number.isInteger(monthNum)) {
+    throw new Error('月份格式錯誤')
+  }
 
   const { data: store } = await admin
     .from('stores')
@@ -51,8 +67,12 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     .eq('id', storeId)
     .single()
 
+  if (!store) throw new Error('找不到店家')
   const sheetsId = store?.google_sheets_id as string | null
-  if (!sheetsId) return
+  if (!sheetsId) {
+    if (allowUnbound) return
+    throw new Error('此店家尚未綁定 Google 試算表（請至「店家管理」設定試算表 ID）')
+  }
 
   const workbook = await buildFoodCostNativeWorkbook(storeId, year, monthNum)
   const sheets = google.sheets({ version: 'v4', auth: getAuth() })
@@ -166,9 +186,13 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     )
 
     console.log(
-      `[syncClosingToSheets] ${store?.name ?? storeId} ${year}-${String(monthNum).padStart(2, '0')} → sheet "${tabName}" done (native workbook)`,
+      `[syncStoreMonthToSheets] ${store?.name ?? storeId} ${month} → sheet "${tabName}" done (native workbook)`,
     )
   }
+}
+
+export async function syncStoreMonthToSheets(storeId: string, month: string): Promise<void> {
+  await syncStoreMonthToSheetsImpl(storeId, month, false)
 }
 type SheetsAPI = ReturnType<typeof google.sheets>
 type RGB = { red: number; green: number; blue: number }
@@ -457,34 +481,9 @@ async function writeWorksheetNotes(
   }
 }
 
-// Sync an entire month directly by storeId + month (for manual re-sync of historical data)
+// Backwards-compatible entry point used by the manual re-sync server action.
 export async function syncMonthToSheets(storeId: string, month: string): Promise<void> {
-  const admin = createAdminClient()
-  const [yearStr, monthStr] = month.split('-')
-  const firstDay = `${month}-01`
-  const lastDay = getMonthLastDay(parseInt(yearStr), parseInt(monthStr))
-
-  const { data: store } = await admin
-    .from('stores')
-    .select('google_sheets_id')
-    .eq('id', storeId)
-    .maybeSingle()
-  if (!store) throw new Error('找不到店家')
-  if (!store.google_sheets_id) {
-    throw new Error('此店家尚未綁定 Google 試算表（請至「店家管理」設定試算表 ID）')
-  }
-
-  const { data: closing } = await admin
-    .from('daily_closings')
-    .select('id')
-    .eq('store_id', storeId)
-    .gte('business_date', firstDay)
-    .lte('business_date', lastDay)
-    .limit(1)
-    .single()
-
-  if (!closing) throw new Error('此月份無帳目資料')
-  await syncClosingToSheets(closing.id)
+  await syncStoreMonthToSheets(storeId, month)
 }
 
 /**
@@ -587,4 +586,83 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
     await writeWorksheetNotes(sheets, sheetsId, sheetId, ws, gridRowCount, gridColumnCount)
     console.log(`[syncCKMonthToSheets] ${ckStore.name} ${month} → sheet "${tabName}" done (native workbook)`)
   }
+}
+
+export type EnsureMonthSheetsResult = {
+  month: string
+  created: Array<{ storeId: string; storeName: string; type: string }>
+  existing: Array<{ storeId: string; storeName: string; type: string }>
+  failed: Array<{ storeId: string; storeName: string; type: string; error: string }>
+}
+
+export function getTaipeiCurrentMonth(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(now)
+  const year = parts.find(part => part.type === 'year')?.value
+  const month = parts.find(part => part.type === 'month')?.value
+  if (!year || !month) throw new Error('無法取得台北時區月份')
+  return `${year}-${month}`
+}
+
+/**
+ * Ensure every active, bound store/central-kitchen spreadsheet has the current
+ * month tab. Existing tabs are left untouched; verified records continue to use
+ * the normal approval sync and rebuild the month from the same Excel workbook.
+ */
+export async function ensureMonthSheetsTabs(month = getTaipeiCurrentMonth()): Promise<EnsureMonthSheetsResult> {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error('月份格式錯誤')
+
+  const admin = createAdminClient()
+  const { data: stores, error } = await admin
+    .from('stores')
+    .select('id, name, type, google_sheets_id')
+    .eq('active', true)
+    .not('google_sheets_id', 'is', null)
+  if (error) throw new Error(`讀取試算表設定失敗：${error.message}`)
+
+  const [yearStr, monthStr] = month.split('-')
+  const tabName = `${Number(yearStr)}年${Number(monthStr)}月食耗成本`
+  const analysisTabName = `${Number(yearStr)}年${Number(monthStr)}月廠商分析`
+  const sheets = google.sheets({ version: 'v4', auth: getAuth() })
+  const result: EnsureMonthSheetsResult = { month, created: [], existing: [], failed: [] }
+
+  for (const store of stores ?? []) {
+    const target = {
+      storeId: String(store.id),
+      storeName: String(store.name),
+      type: String(store.type ?? '店面'),
+    }
+    try {
+      const spreadsheetId = String(store.google_sheets_id ?? '').trim()
+      if (!spreadsheetId) continue
+      const spreadsheet = await sheets.spreadsheets.get({
+        spreadsheetId,
+        fields: 'sheets(properties(title))',
+      })
+      const existingTitles = new Set(
+        spreadsheet.data.sheets?.map(sheet => sheet.properties?.title).filter(Boolean) ?? [],
+      )
+      if (existingTitles.has(tabName) && existingTitles.has(analysisTabName)) {
+        result.existing.push(target)
+        continue
+      }
+
+      if (target.type === '央廚') {
+        await syncCKMonthToSheets(target.storeId, month)
+      } else {
+        await syncStoreMonthToSheets(target.storeId, month)
+      }
+      result.created.push(target)
+    } catch (syncError) {
+      result.failed.push({
+        ...target,
+        error: syncError instanceof Error ? syncError.message : String(syncError),
+      })
+    }
+  }
+
+  return result
 }

@@ -9,6 +9,8 @@ const ckUI = fs.readFileSync(new URL('../components/hq/ck-overview.tsx', import.
 const storeEditor = fs.readFileSync(new URL('../components/hq/store-editor.tsx', import.meta.url), 'utf8')
 const sheetsModule = fs.readFileSync(new URL('../lib/google-sheets.ts', import.meta.url), 'utf8')
 const ckNativeWorkbook = fs.readFileSync(new URL('../lib/ck-native-workbook.ts', import.meta.url), 'utf8')
+const monthCron = fs.readFileSync(new URL('../app/api/cron/ensure-month-sheets/route.ts', import.meta.url), 'utf8')
+const vercelConfig = JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
 
 test('店面帳目核准後會同步 Google Sheets，失敗時留下操作軌跡', () => {
   assert.match(closingsAction, /import \{ syncClosingToSheets, syncMonthToSheets \} from '@\/lib\/google-sheets'/)
@@ -72,4 +74,25 @@ test('店面 Google Sheets 與當月 Excel 共用原生活頁簿', () => {
   assert.match(sheetsModule, /await writeDateColumnsAsText\(sheets, sheetsId, tabName, worksheet\)/)
   assert.match(sheetsModule, /valueInputOption: 'RAW'/)
   assert.doesNotMatch(sheetsModule, /EXCEL_COLUMNS/)
+})
+
+test('新月份即使尚無帳目，也能直接由 Excel 工作簿建立試算表分頁', () => {
+  assert.match(sheetsModule, /export async function syncStoreMonthToSheets\(storeId: string, month: string\)/)
+  assert.match(sheetsModule, /await syncStoreMonthToSheetsImpl\(storeId, businessDate\.slice\(0, 7\), true\)/)
+  assert.match(sheetsModule, /await syncStoreMonthToSheets\(storeId, month\)/)
+  assert.doesNotMatch(sheetsModule, /此月份無帳目資料/)
+})
+
+test('每天台北時間午夜會補建所有已綁定店面與央廚的當月分頁', () => {
+  assert.match(sheetsModule, /export async function ensureMonthSheetsTabs/)
+  assert.match(sheetsModule, /timeZone: 'Asia\/Taipei'/)
+  assert.match(sheetsModule, /\.eq\('active', true\)/)
+  assert.match(sheetsModule, /\.not\('google_sheets_id', 'is', null\)/)
+  assert.match(sheetsModule, /if \(target\.type === '央廚'\)/)
+  assert.match(monthCron, /process\.env\.CRON_SECRET/)
+  assert.match(monthCron, /await ensureMonthSheetsTabs\(\)/)
+  assert.deepEqual(vercelConfig.crons, [{
+    path: '/api/cron/ensure-month-sheets',
+    schedule: '0 16 * * *',
+  }])
 })
