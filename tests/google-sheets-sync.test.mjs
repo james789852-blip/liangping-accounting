@@ -99,7 +99,11 @@ test('每天台北時間午夜會補建所有已綁定店面與央廚的當月�
   assert.match(sheetsModule, /\.not\('google_sheets_id', 'is', null\)/)
   assert.match(sheetsModule, /if \(target\.type === '央廚'\)/)
   assert.match(monthCron, /process\.env\.CRON_SECRET/)
-  assert.match(monthCron, /await ensureMonthSheetsTabs\(\)/)
+  assert.match(monthCron, /url\.searchParams\.get\('refresh'\) === '1'/)
+  assert.match(monthCron, /scope === 'store' \? '店面'/)
+  assert.match(monthCron, /await ensureMonthSheetsTabs\(month, \{ refreshExisting, type \}\)/)
+  assert.match(sheetsModule, /if \(hasCurrentTabs && !options\.refreshExisting\)/)
+  assert.match(sheetsModule, /result\.synced\.push\(target\)/)
   assert.deepEqual(vercelConfig.crons, [{
     path: '/api/cron/ensure-month-sheets',
     schedule: '0 16 * * *',

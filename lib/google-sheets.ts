@@ -591,8 +591,14 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
 export type EnsureMonthSheetsResult = {
   month: string
   created: Array<{ storeId: string; storeName: string; type: string }>
+  synced: Array<{ storeId: string; storeName: string; type: string }>
   existing: Array<{ storeId: string; storeName: string; type: string }>
   failed: Array<{ storeId: string; storeName: string; type: string; error: string }>
+}
+
+export type EnsureMonthSheetsOptions = {
+  refreshExisting?: boolean
+  type?: '店面' | '央廚'
 }
 
 export function getTaipeiCurrentMonth(now = new Date()): string {
@@ -609,25 +615,31 @@ export function getTaipeiCurrentMonth(now = new Date()): string {
 
 /**
  * Ensure every active, bound store/central-kitchen spreadsheet has the current
- * month tab. Existing tabs are left untouched; verified records continue to use
- * the normal approval sync and rebuild the month from the same Excel workbook.
+ * month tab. Existing tabs are left untouched by the scheduled run. An
+ * authenticated maintenance request can explicitly rebuild existing tabs from
+ * the same native Excel workbook used by the download.
  */
-export async function ensureMonthSheetsTabs(month = getTaipeiCurrentMonth()): Promise<EnsureMonthSheetsResult> {
+export async function ensureMonthSheetsTabs(
+  month = getTaipeiCurrentMonth(),
+  options: EnsureMonthSheetsOptions = {},
+): Promise<EnsureMonthSheetsResult> {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error('月份格式錯誤')
 
   const admin = createAdminClient()
-  const { data: stores, error } = await admin
+  let storesQuery = admin
     .from('stores')
     .select('id, name, type, google_sheets_id')
     .eq('active', true)
     .not('google_sheets_id', 'is', null)
+  if (options.type) storesQuery = storesQuery.eq('type', options.type)
+  const { data: stores, error } = await storesQuery
   if (error) throw new Error(`讀取試算表設定失敗：${error.message}`)
 
   const [yearStr, monthStr] = month.split('-')
   const tabName = `${Number(yearStr)}年${Number(monthStr)}月食耗成本`
   const analysisTabName = `${Number(yearStr)}年${Number(monthStr)}月廠商分析`
   const sheets = google.sheets({ version: 'v4', auth: getAuth() })
-  const result: EnsureMonthSheetsResult = { month, created: [], existing: [], failed: [] }
+  const result: EnsureMonthSheetsResult = { month, created: [], synced: [], existing: [], failed: [] }
 
   for (const store of stores ?? []) {
     const target = {
@@ -645,7 +657,8 @@ export async function ensureMonthSheetsTabs(month = getTaipeiCurrentMonth()): Pr
       const existingTitles = new Set(
         spreadsheet.data.sheets?.map(sheet => sheet.properties?.title).filter(Boolean) ?? [],
       )
-      if (existingTitles.has(tabName) && existingTitles.has(analysisTabName)) {
+      const hasCurrentTabs = existingTitles.has(tabName) && existingTitles.has(analysisTabName)
+      if (hasCurrentTabs && !options.refreshExisting) {
         result.existing.push(target)
         continue
       }
@@ -655,7 +668,8 @@ export async function ensureMonthSheetsTabs(month = getTaipeiCurrentMonth()): Pr
       } else {
         await syncStoreMonthToSheets(target.storeId, month)
       }
-      result.created.push(target)
+      if (hasCurrentTabs) result.synced.push(target)
+      else result.created.push(target)
     } catch (syncError) {
       result.failed.push({
         ...target,

@@ -10,7 +10,12 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await ensureMonthSheetsTabs()
+    const url = new URL(request.url)
+    const month = url.searchParams.get('month') || undefined
+    const refreshExisting = url.searchParams.get('refresh') === '1'
+    const scope = url.searchParams.get('scope')
+    const type = scope === 'store' ? '店面' : scope === 'central-kitchen' ? '央廚' : undefined
+    const result = await ensureMonthSheetsTabs(month, { refreshExisting, type })
     const status = result.failed.length > 0 ? 207 : 200
     return Response.json(result, { status })
   } catch (error) {
