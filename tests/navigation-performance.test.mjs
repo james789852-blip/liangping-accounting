@@ -45,16 +45,17 @@ test('總公司帳目中心只預載選中店家，並避免頻繁整頁刷新',
   assert.doesNotMatch(client, /for \(const store of ckStores\)/)
 })
 
-test('央廚已送出時先顯示快速摘要，完整審核明細才在背景載入', async () => {
+test('央廚帳目中心批次預載當日完整明細，切換央廚不再等待第二次請求', async () => {
   const [page, client, action] = await Promise.all([
     read('app/hq/accounting/page.tsx'),
     read('components/hq/accounting-client.tsx'),
     read('app/actions/ck-overview.ts'),
   ])
 
-  assert.match(page, /ck_store_orders\(store_id, amount, ck_confirmed_amount\)/)
-  assert.match(page, /ck_expense_items\(category, amount\)/)
-  assert.match(client, /quickRecord={ckByStore\[selectedCkStoreId\] \?\? null}/)
+  assert.match(page, /loadCKDailyDetails\(ckStores\.map\(store => store\.id\), date\)/)
+  assert.match(page, /initialCkDetailByStore={initialCkDetailByStore}/)
+  assert.match(client, /Object\.entries\(initialCkDetailByStore\)/)
+  assert.match(client, /const initialCached = cacheRef\.current\.get/)
   assert.match(client, /審核明細載入中…/)
   assert.match(client, /!detail && !loading/)
   assert.match(action, /getCachedUserProfile\(user\.id\)/)

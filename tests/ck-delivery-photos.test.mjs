@@ -58,11 +58,11 @@ test('央廚體系內叫貨不再要求或儲存配送照片，體系外仍需�
 })
 
 test('總公司切換央廚對帳日期後仍從店面帳目同步配送單照片', () => {
-  const actionSource = fs.readFileSync(new URL('../app/actions/ck-overview.ts', import.meta.url), 'utf8')
+  const detailSource = fs.readFileSync(new URL('../lib/ck-daily-detail.ts', import.meta.url), 'utf8')
 
-  assert.match(actionSource, /select\('store_id, total_cost, ck_delivery_photo_url'\)/)
-  assert.match(actionSource, /memberDeliveryPhotosFromStoreClosings/)
-  assert.match(actionSource, /deliveryPhotoUrls: memberDeliveryPhotosByStore\[id\] \?\? \[\]/)
+  assert.match(detailSource, /select\('store_id, total_cost, ck_delivery_photo_url'\)/)
+  assert.match(detailSource, /memberDeliveryPhotosFromStoreClosings/)
+  assert.match(detailSource, /deliveryPhotoUrls: memberDeliveryPhotosByStore\[storeId\] \?\? \[\]/)
 })
 
 test('總公司央廚對帳表使用固定欄寬並明確區分兩邊輸入', () => {

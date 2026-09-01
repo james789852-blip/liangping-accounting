@@ -8,6 +8,7 @@ import { resolveHQStoreId } from '@/lib/hq-store-selection'
 import { canReviewClosings } from '@/lib/user-permissions'
 import { getBusinessDate } from '@/lib/business-date'
 import { fetchDailyClosingWithReceipts } from '@/app/actions/store-overview'
+import { loadCKDailyDetails } from '@/lib/ck-daily-detail'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,24 +38,28 @@ export default async function AccountingPage({
   const initialStoreId = await resolveHQStoreId(stores, params.storeId)
   const initialCkStoreId = await resolveHQStoreId(ckStores, params.ckStoreId)
 
-  // 首屏只準備所有據點的「狀態摘要」及目前選中店家的完整明細。
-  // 過去會把所有店家的單據、品項與照片一次送到瀏覽器，資料愈多首屏愈慢。
-  const [{ data: closings }, { data: ckRecords }, { data: holidays }, initialStoreDetail] = await Promise.all([
+  // 店面只預載目前選中的完整明細；央廚數量少，則一次批次預載當日三間完整明細，
+  // 讓總公司在央廚卡片間切換時只切換記憶體資料，不再等待第二次 Server Action。
+  const [{ data: closings }, { data: holidays }, initialStoreDetail, initialCkDetailByStore] = await Promise.all([
     admin.from('daily_closings')
       .select('id, store_id, business_date, status, dispute_note, total_revenue, total_cost, total_expenses, expected_remit, actual_remit, should_include_delivery, variance, remittance_adjustments, reserve_items, cash_counts(large_expenses)')
-      .eq('business_date', date),
-    admin.from('ck_daily_records')
-      .select(`
-        ck_store_id, status, hq_paid, ck_reimbursement_confirmed, updated_at,
-        ck_store_orders(store_id, amount, ck_confirmed_amount),
-        ck_expense_items(category, amount)
-      `)
       .eq('business_date', date),
     admin.from('store_holidays').select('store_id').eq('holiday_date', date),
     initialStoreId
       ? fetchDailyClosingWithReceipts(initialStoreId, date)
       : Promise.resolve({ success: true as const, closing: null, receipts: [], submitterName: null }),
+    loadCKDailyDetails(ckStores.map(store => store.id), date),
   ])
+
+  const ckRecords = ckStores.flatMap(store => {
+    const detail = initialCkDetailByStore[store.id]
+    return detail ? [{
+      ck_store_id: store.id,
+      status: detail.status,
+      hq_paid: detail.hqPaid,
+      ck_reimbursement_confirmed: detail.ckReimbursementConfirmed,
+    }] : []
+  })
 
   const holidayIds = new Set((holidays ?? []).map((h: any) => h.store_id as string))
   const initialDetailByStore: Record<string, { closing: any; receipts: any[] }> = {}
@@ -69,6 +74,7 @@ export default async function AccountingPage({
 
   return (
     <AccountingClient
+      key={date}
       stores={stores}
       ckStores={ckStores}
       date={date}
@@ -79,6 +85,7 @@ export default async function AccountingPage({
       ckRecords={(ckRecords ?? []) as any[]}
       holidayStoreIds={[...holidayIds]}
       initialDetailByStore={initialDetailByStore}
+      initialCkDetailByStore={initialCkDetailByStore}
     />
   )
 }

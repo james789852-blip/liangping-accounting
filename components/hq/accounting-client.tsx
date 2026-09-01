@@ -43,8 +43,6 @@ interface CKRow {
   status: string
   hq_paid: boolean
   ck_reimbursement_confirmed?: boolean
-  ck_store_orders?: { store_id: string | null; amount: number | null; ck_confirmed_amount: number | null }[] | null
-  ck_expense_items?: { category: string | null; amount: number | null }[] | null
 }
 type StoreDetailState = {
   stats: DailyStats | null
@@ -63,6 +61,7 @@ interface Props {
   ckRecords: CKRow[]
   holidayStoreIds: string[]
   initialDetailByStore: Record<string, { closing: any; receipts: any[] }>
+  initialCkDetailByStore: Record<string, any | null>
 }
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -114,28 +113,10 @@ function ckStatusBadges(status: string, hqPaid: boolean, handoffConfirmed: boole
   return [{ label: '未輸入', bg: '#f4f4f5', color: '#a1a1aa' }]
 }
 
-function ckQuickStats(record: CKRow | null) {
-  if (!record) return null
-  const orders = record.ck_store_orders ?? []
-  const expenses = record.ck_expense_items ?? []
-  const revenue = orders.reduce((sum, order) => sum + Number(
-    order.store_id === null ? order.amount : order.ck_confirmed_amount,
-  ), 0)
-  const totalExpense = expenses.reduce((sum, expense) => sum + Number(expense.amount ?? 0), 0)
-  return {
-    revenue,
-    totalExpense,
-    hqPaid: !!record.hq_paid,
-    food: expenses.filter(expense => expense.category === '食材').reduce((sum, expense) => sum + Number(expense.amount ?? 0), 0),
-    pack: expenses.filter(expense => expense.category === '耗材').reduce((sum, expense) => sum + Number(expense.amount ?? 0), 0),
-    misc: expenses.filter(expense => expense.category !== '食材' && expense.category !== '耗材').reduce((sum, expense) => sum + Number(expense.amount ?? 0), 0),
-  }
-}
-
 export default function AccountingClient({
   stores, ckStores, date,
   initialStoreId, initialCkStoreId, initialTab,
-  closings, ckRecords, holidayStoreIds, initialDetailByStore,
+  closings, ckRecords, holidayStoreIds, initialDetailByStore, initialCkDetailByStore,
 }: Props) {
   const router = useRouter()
   const [tab, setTab] = useState<'store' | 'ck'>(initialTab)
@@ -153,7 +134,12 @@ export default function AccountingClient({
   const [showBatchHolidays, setShowBatchHolidays] = useState(false)
   const [showBatchExcel, setShowBatchExcel] = useState(false)
   const [statusExpanded, setStatusExpanded] = useState(true)
-  const ckDetailCacheRef = useRef<Map<string, CKDetailState>>(new Map())
+  const ckDetailCacheRef = useRef<Map<string, CKDetailState>>(new Map(
+    Object.entries(initialCkDetailByStore).map(([storeId, detail]) => [
+      `${storeId}:${date}`,
+      { detail },
+    ]),
+  ))
 
   useEffect(() => { setSelectedStoreId(initialStoreId) }, [initialStoreId])
   useEffect(() => { setSelectedCkStoreId(initialCkStoreId) }, [initialCkStoreId])
@@ -461,10 +447,10 @@ export default function AccountingClient({
         )}
         {tab === 'ck' && selectedCkStoreId && (
           <CKDetail
+            key={`${selectedCkStoreId}-${date}`}
             ckStoreId={selectedCkStoreId}
             storeName={ckStores.find(s => s.id === selectedCkStoreId)?.name ?? ''}
             date={date}
-            quickRecord={ckByStore[selectedCkStoreId] ?? null}
             cacheRef={ckDetailCacheRef}
           />
         )}
@@ -1122,17 +1108,16 @@ function CKDetail({
   ckStoreId,
   storeName,
   date,
-  quickRecord,
   cacheRef,
 }: {
   ckStoreId: string
   storeName: string
   date: string
-  quickRecord: CKRow | null
   cacheRef: React.RefObject<Map<string, CKDetailState>>
 }) {
-  const [loading, setLoading] = useState(true)
-  const [detail, setDetail] = useState<any | null>(null)
+  const initialCached = cacheRef.current.get(`${ckStoreId}:${date}`)
+  const [loading, setLoading] = useState(!initialCached)
+  const [detail, setDetail] = useState<any | null>(initialCached?.detail ?? null)
   const requestIdRef = useRef(0)
   const stats = detail ? {
     revenue: Number(detail.revenueTotal ?? 0),
@@ -1141,7 +1126,7 @@ function CKDetail({
     food: (detail.expenses ?? []).filter((e: any) => e.category === '食材').reduce((sum: number, e: any) => sum + Number(e.amount ?? 0), 0),
     pack: (detail.expenses ?? []).filter((e: any) => e.category === '耗材').reduce((sum: number, e: any) => sum + Number(e.amount ?? 0), 0),
     misc: (detail.expenses ?? []).filter((e: any) => e.category !== '食材' && e.category !== '耗材').reduce((sum: number, e: any) => sum + Number(e.amount ?? 0), 0),
-  } : ckQuickStats(quickRecord)
+  } : null
 
   const loadDetail = useCallback((force = false) => {
     const key = `${ckStoreId}:${date}`
