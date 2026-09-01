@@ -14,7 +14,8 @@ const vercelConfig = JSON.parse(fs.readFileSync(new URL('../vercel.json', import
 
 test('店面帳目核准後會同步 Google Sheets，失敗時留下操作軌跡', () => {
   assert.match(closingsAction, /import \{ syncClosingToSheets, syncMonthToSheets \} from '@\/lib\/google-sheets'/)
-  assert.match(closingsAction, /await syncVerifiedClosingToSheets\(/)
+  assert.match(closingsAction, /import \{ after \} from 'next\/server'/)
+  assert.match(closingsAction, /after\(async \(\) => \{\s*await syncVerifiedClosingToSheets\(/)
   assert.match(closingsAction, /eventType: 'sheets_sync_failed'/)
 })
 
@@ -29,8 +30,16 @@ test('店面與央廚手動同步 action 都會驗證權限與月份', () => {
 
 test('央廚審核通過後會自動同步 Google Sheets', () => {
   assert.match(ckAction, /if \(decision === 'verified'\)/)
-  assert.match(ckAction, /await syncCKMonthToSheetsImpl\(ckStoreId, date\.slice\(0, 7\)\)/)
+  assert.match(ckAction, /import \{ after \} from 'next\/server'/)
+  assert.match(ckAction, /after\(async \(\) => \{\s*try \{\s*await syncCKMonthToSheetsImpl\(ckStoreId, date\.slice\(0, 7\)\)/)
   assert.match(ckAction, /央廚 \$\{date\.slice\(0, 7\)\} 審核後試算表同步失敗/)
+})
+
+test('單筆、批次與央廚核准都在回應後同步試算表，不阻塞核准畫面', () => {
+  const storeAfterCalls = closingsAction.match(/after\(async \(\) => \{/g) ?? []
+  assert.ok(storeAfterCalls.length >= 2)
+  assert.match(closingsAction, /after\(async \(\) => \{\s*await Promise\.all\(Array\.from\(monthlySyncTargets\.values\(\)\)/)
+  assert.match(ckAction, /after\(async \(\) => \{/)
 })
 
 test('央廚 Google Sheets 與系統下載 Excel 共用原生工作簿', () => {

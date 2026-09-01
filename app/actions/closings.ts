@@ -5,6 +5,7 @@ import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { after } from 'next/server'
 import { syncClosingToSheets, syncMonthToSheets } from '@/lib/google-sheets'
 import { logAudit } from '@/lib/audit'
 import { getAuthContext, canAccessStore, getClosingMeta } from '@/lib/permissions'
@@ -221,12 +222,15 @@ export async function verifyClosing(closingId: string) {
     description: `${profile.name ?? user.email ?? '未知'} 審核 ${closing.business_date} 帳目`,
   })
 
-  // 同步失敗不回滾審核；錯誤會記錄在操作軌跡，供總公司後續手動重同步。
-  await syncVerifiedClosingToSheets({
-    closingId,
-    storeId: closing.store_id,
-    businessDate: closing.business_date,
-    userId: user.id,
+  // 核准先回應畫面，Google Sheets 在 response 後繼續同步。同步失敗
+  // 不回滾審核，並照常寫入操作軌跡供總公司後續重同步。
+  after(async () => {
+    await syncVerifiedClosingToSheets({
+      closingId,
+      storeId: closing.store_id,
+      businessDate: closing.business_date,
+      userId: user.id,
+    })
   })
 
   revalidatePath('/hq/reviews')
@@ -289,14 +293,16 @@ export async function verifyClosingsBatch(closingIds: string[]) {
     const month = String(closing.business_date).slice(0, 7)
     monthlySyncTargets.set(`${closing.store_id}:${month}`, closing)
   })
-  await Promise.all(Array.from(monthlySyncTargets.values()).map(closing =>
-    syncVerifiedClosingToSheets({
-      closingId: closing.id,
-      storeId: closing.store_id,
-      businessDate: closing.business_date,
-      userId: user.id,
-    }),
-  ))
+  after(async () => {
+    await Promise.all(Array.from(monthlySyncTargets.values()).map(closing =>
+      syncVerifiedClosingToSheets({
+        closingId: closing.id,
+        storeId: closing.store_id,
+        businessDate: closing.business_date,
+        userId: user.id,
+      }),
+    ))
+  })
 
   revalidatePath('/hq/reviews')
   revalidatePath('/hq/closings')

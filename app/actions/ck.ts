@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { getAuthContext, canAccessStore } from '@/lib/permissions'
 import { logAudit } from '@/lib/audit'
 import { recordCKReimbursementAdjustment } from '@/lib/ck-reimbursement-adjustment'
@@ -304,20 +305,22 @@ export async function reviewCKDailyRecord(
   })
 
   if (decision === 'verified') {
-    try {
-      await syncCKMonthToSheetsImpl(ckStoreId, date.slice(0, 7))
-    } catch (syncError) {
-      const message = syncError instanceof Error ? syncError.message : String(syncError)
-      console.error('[reviewCKDailyRecord] Google Sheets sync failed:', syncError)
-      await logAudit({
-        eventType: 'sheets_sync_failed',
-        severity: 'warn',
-        storeId: ckStoreId,
-        userId: ctx.userId,
-        description: `央廚 ${date.slice(0, 7)} 審核後試算表同步失敗`,
-        metadata: { error: message, month: date.slice(0, 7), business_date: date },
-      })
-    }
+    after(async () => {
+      try {
+        await syncCKMonthToSheetsImpl(ckStoreId, date.slice(0, 7))
+      } catch (syncError) {
+        const message = syncError instanceof Error ? syncError.message : String(syncError)
+        console.error('[reviewCKDailyRecord] Google Sheets sync failed:', syncError)
+        await logAudit({
+          eventType: 'sheets_sync_failed',
+          severity: 'warn',
+          storeId: ckStoreId,
+          userId: ctx.userId,
+          description: `央廚 ${date.slice(0, 7)} 審核後試算表同步失敗`,
+          metadata: { error: message, month: date.slice(0, 7), business_date: date },
+        })
+      }
+    })
   }
 
   revalidatePath('/hq/ck')
