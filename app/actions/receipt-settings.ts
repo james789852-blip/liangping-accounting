@@ -13,6 +13,7 @@ import {
   resolveLinkedReceiptCategoryNames,
   STORE_LINKED_RECEIPT_CATEGORY_NAMES,
 } from '@/lib/linked-receipt-category'
+import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 /** 精準 revalidate 只清跟收據設定相關的頁面（不 nuke 整站） */
 function revalidateReceipt() {
@@ -61,9 +62,9 @@ async function storeIdByVendor(vendorId: string) {
   return data?.store_id as string | undefined
 }
 
-async function loadReceiptSettings(storeId: string): Promise<CategoryWithVendors[]> {
+async function loadReceiptSettings(storeId: string, reportMonth?: string): Promise<CategoryWithVendors[]> {
   const admin = createAdminClient()
-  const [{ data }, { data: store }, { data: mappings }, { data: configuredGroups }] = await Promise.all([
+  const [{ data }, { data: store }, mappingItems, { data: configuredGroups }] = await Promise.all([
     admin
       .from('receipt_categories')
       .select(`
@@ -73,15 +74,18 @@ async function loadReceiptSettings(storeId: string): Promise<CategoryWithVendors
       .eq('store_id', storeId)
       .order('sort_order'),
     admin.from('stores').select('type').eq('id', storeId).maybeSingle(),
-    admin.from('item_column_mappings')
-      .select('item_name, vendor_group, is_tax_addon, vg_sort_order, sort_order')
-      .eq('store_id', storeId)
-      .order('vg_sort_order')
-      .order('sort_order'),
+    getStoreItemsFromMappings(storeId, reportMonth ? { reportMonth } : {}),
     admin.from('system_vendor_groups')
       .select('name')
       .eq('active', true),
   ])
+  const mappings = mappingItems.map(item => ({
+    item_name: item.name,
+    vendor_group: item.vendor_group,
+    is_tax_addon: item.is_tax_addon,
+    vg_sort_order: item.vendor_group_sort_order,
+    sort_order: item.sort_order,
+  }))
   // 廠商按 sort_order 排（NULL 排最後 fallback 到 created_at）
   const categories = (data ?? [])
     .filter((c: any) => (c.sort_order ?? 0) >= 0)
@@ -138,10 +142,11 @@ async function loadReceiptSettings(storeId: string): Promise<CategoryWithVendors
   })
 }
 
-export async function getReceiptSettings(storeId: string): Promise<CategoryWithVendors[]> {
+export async function getReceiptSettings(storeId: string, reportMonth?: string): Promise<CategoryWithVendors[]> {
+  const cacheScope = reportMonth && /^\d{4}-\d{2}$/.test(reportMonth) ? reportMonth : 'active'
   return unstable_cache(
-    () => loadReceiptSettings(storeId),
-    ['receipt-settings', storeId],
+    () => loadReceiptSettings(storeId, cacheScope === 'active' ? undefined : cacheScope),
+    ['receipt-settings', storeId, cacheScope],
     { revalidate: 300, tags: ['receipt-settings', 'item-mappings', 'stores'] },
   )()
 }
@@ -150,16 +155,19 @@ export async function getReceiptSettings(storeId: string): Promise<CategoryWithV
 export async function getLinkableReceiptItemGroups(storeId: string): Promise<string[]> {
   await requireAuth(storeId)
   const admin = createAdminClient()
-  const [{ data: mappings }, { data: categories }, { data: store }] = await Promise.all([
-    admin.from('item_column_mappings')
-      .select('vendor_group, vg_sort_order, is_tax_addon')
-      .eq('store_id', storeId)
-      .order('vg_sort_order'),
+  const [mappingItems, { data: categories }, { data: store }] = await Promise.all([
+    getStoreItemsFromMappings(storeId),
     admin.from('receipt_categories')
       .select('name, sort_order')
       .eq('store_id', storeId),
     admin.from('stores').select('type').eq('id', storeId).maybeSingle(),
   ])
+  const mappings = mappingItems.map(item => ({
+    vendor_group: item.vendor_group,
+    vg_sort_order: item.vendor_group_sort_order,
+    is_tax_addon: item.is_tax_addon,
+    item_name: item.name,
+  }))
 
   const visibleNames = new Set(
     (categories ?? [])

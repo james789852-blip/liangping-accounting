@@ -11,6 +11,24 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import type { ResolvedStoreItem } from '@/lib/store-items-resolver'
 import { fetchAllPaged } from '@/lib/supabase-paged'
 import { unstable_cache } from 'next/cache'
+import {
+  disabledAtFromStatusEvents,
+  isUnavailableForReportMonth,
+  ITEM_MAPPING_DISABLED_EVENT,
+  ITEM_MAPPING_REACTIVATED_EVENT,
+  mappingIdFromStatusEvent,
+  unavailablePeriodsFromStatusEvents,
+  type ItemMappingStatusEvent,
+} from '@/lib/item-mapping-availability'
+
+export interface ItemMappingVisibilityScope {
+  /** YYYY-MM；月報會保留停用當月，從下一個月起才隱藏。 */
+  reportMonth?: string
+}
+
+function normalizeReportMonth(value?: string): string | null {
+  return value && /^\d{4}-\d{2}$/.test(value) ? value : null
+}
 
 export function compareResolvedItemsByMappingOrder(a: ResolvedStoreItem, b: ResolvedStoreItem): number {
   const groupRank = (name?: string | null) => {
@@ -30,22 +48,52 @@ export function compareResolvedItemsByMappingOrder(a: ResolvedStoreItem, b: Reso
  * 從 mappings 撈出該店的品項清單，附帶完整的 vg / doc_type / category / sort_order
  * 各店獨立：只讀該店 store_id 的 mapping
  */
-async function loadStoreItemsFromMappings(storeId: string): Promise<ResolvedStoreItem[]> {
+async function loadStoreItemsFromMappings(
+  storeId: string,
+  scope: ItemMappingVisibilityScope = {},
+): Promise<ResolvedStoreItem[]> {
   const admin = createAdminClient()
-  const [mappings, { data: vgs }] = await Promise.all([
+  const [mappings, { data: vgs }, statusEvents] = await Promise.all([
     // 分頁撈：避免 PostgREST 1000 max-rows 截斷
     fetchAllPaged<any>(() => admin
       .from('item_column_mappings')
       .select('id,item_name,item_category,vendor_group,doc_type_override,sort_order,vg_sort_order,store_id,is_refund,is_tax_addon,tax_scope,tax_target_item')
       .eq('store_id', storeId)),
     admin.from('system_vendor_groups').select('id, name, doc_type, sort_order, tax_mode, merge_across_category').eq('active', true),
+    fetchAllPaged<ItemMappingStatusEvent>(() => admin
+      .from('audit_logs')
+      .select('event_type,created_at,metadata')
+      .eq('store_id', storeId)
+      .in('event_type', [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_REACTIVATED_EVENT])
+      .order('created_at')),
   ])
+
+  const eventsByMapping = new Map<string, ItemMappingStatusEvent[]>()
+  for (const event of statusEvents ?? []) {
+    const mappingId = mappingIdFromStatusEvent(event)
+    if (!mappingId) continue
+    const events = eventsByMapping.get(mappingId) ?? []
+    events.push(event)
+    eventsByMapping.set(mappingId, events)
+  }
+
+  const reportMonth = normalizeReportMonth(scope.reportMonth)
+  let visibleMappings = mappings ?? []
+  if (reportMonth) {
+    const unavailableIds = new Set([...eventsByMapping.entries()]
+      .filter(([, events]) => isUnavailableForReportMonth(reportMonth, unavailablePeriodsFromStatusEvents(events)))
+      .map(([mappingId]) => mappingId))
+    visibleMappings = visibleMappings.filter(mapping => !unavailableIds.has(mapping.id as string))
+  } else {
+    // 新帳目與日常表單只顯示目前啟用中的品項。
+    visibleMappings = visibleMappings.filter(mapping => !disabledAtFromStatusEvents(eventsByMapping.get(mapping.id as string) ?? []))
+  }
 
   const vgByName = new Map<string, any>((vgs ?? []).map((v: any) => [v.name as string, v]))
 
   // 同一品名可以分屬不同廠商分類（例如「油豆腐」分類內的「油豆腐」品項）。
   const byName = new Map<string, any>()
-  for (const m of mappings ?? []) {
+  for (const m of visibleMappings) {
     const key = `${m.item_name}||${m.vendor_group ?? ''}`
     const existing = byName.get(key)
     if (!existing) byName.set(key, m)
@@ -84,11 +132,15 @@ async function loadStoreItemsFromMappings(storeId: string): Promise<ResolvedStor
   return items.sort(compareResolvedItemsByMappingOrder)
 }
 
-export async function getStoreItemsFromMappings(storeId: string): Promise<ResolvedStoreItem[]> {
+export async function getStoreItemsFromMappings(
+  storeId: string,
+  scope: ItemMappingVisibilityScope = {},
+): Promise<ResolvedStoreItem[]> {
+  const reportMonth = normalizeReportMonth(scope.reportMonth) ?? 'active'
   // 品項異動會統一 revalidateTag('item-mappings')；一般切頁不必重複撈相同設定。
   return unstable_cache(
-    () => loadStoreItemsFromMappings(storeId),
-    ['store-items-from-mappings', storeId],
+    () => loadStoreItemsFromMappings(storeId, scope),
+    ['store-items-from-mappings', storeId, reportMonth],
     { revalidate: 300, tags: ['item-mappings'] },
   )()
 }

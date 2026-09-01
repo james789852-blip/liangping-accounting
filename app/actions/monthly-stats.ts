@@ -96,7 +96,7 @@ export async function getMonthlyStats(storeId: string, year: number, monthNum: n
   }
 
   // resolver 取 doc_type / vendor_group 顯示名（vendorBreakdown 用）
-  const resolved = await getStoreItemsFromMappings(storeId)
+  const resolved = await getStoreItemsFromMappings(storeId, { reportMonth: `${year}-${String(monthNum).padStart(2, '0')}` })
   const docTypeByName: Record<string, string> = {}
   const vgNameByName: Record<string, string> = {}
   for (const r of resolved) {

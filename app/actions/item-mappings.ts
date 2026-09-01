@@ -9,6 +9,12 @@ import { syncMiscVendorsFromMappingChange } from '@/lib/misc-sync'
 import { canManageCKItems, canManageStoreItems } from '@/lib/user-permissions'
 import { historicalItemSyncTargets } from '@/lib/item-history-scope'
 import { isMiscVendorGroup, MISC_VENDOR_GROUP, normalizeVendorGroupName } from '@/lib/linked-receipt-category'
+import {
+  ITEM_MAPPING_DISABLED_EVENT,
+  ITEM_MAPPING_REACTIVATED_EVENT,
+  nextMonthStart,
+  taipeiCalendarMonthStart,
+} from '@/lib/item-mapping-availability'
 
 const ITEM_CATEGORIES = ['食材', '耗材', '雜項'] as const
 type ItemCategory = typeof ITEM_CATEGORIES[number]
@@ -398,6 +404,62 @@ function normalizedVendorGroup(vendorGroup?: string | null) {
   return (vendorGroup ?? '').trim()
 }
 
+async function latestMappingStatusEvent(
+  admin: ReturnType<typeof createAdminClient>,
+  mappingId: string,
+) {
+  return admin.from('audit_logs')
+    .select('event_type, created_at, metadata')
+    .in('event_type', [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_REACTIVATED_EVENT])
+    .contains('metadata', { item_mapping_id: mappingId })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+}
+
+async function recordMappingDisabled(
+  admin: ReturnType<typeof createAdminClient>,
+  mapping: { id: string; store_id?: string | null; item_name?: string | null; vendor_group?: string | null },
+  userId?: string | null,
+) {
+  const currentMonth = taipeiCalendarMonthStart()
+  const unavailableFrom = nextMonthStart(currentMonth)
+  const { error } = await admin.from('audit_logs').insert({
+    event_type: ITEM_MAPPING_DISABLED_EVENT,
+    severity: 'info',
+    store_id: mapping.store_id ?? null,
+    user_id: userId ?? null,
+    description: `安全停用品項：${mapping.vendor_group ? `${mapping.vendor_group}／` : ''}${mapping.item_name ?? mapping.id}`,
+    metadata: {
+      item_mapping_id: mapping.id,
+      disabled_at: new Date().toISOString(),
+      unavailable_from: unavailableFrom,
+    },
+  })
+  return error ? { error: error.message } : { unavailableFrom }
+}
+
+async function recordMappingReactivated(
+  admin: ReturnType<typeof createAdminClient>,
+  mapping: { id: string; store_id?: string | null; item_name?: string | null; vendor_group?: string | null },
+  userId?: string | null,
+) {
+  const availableFrom = taipeiCalendarMonthStart()
+  const { error } = await admin.from('audit_logs').insert({
+    event_type: ITEM_MAPPING_REACTIVATED_EVENT,
+    severity: 'info',
+    store_id: mapping.store_id ?? null,
+    user_id: userId ?? null,
+    description: `重新啟用品項：${mapping.vendor_group ? `${mapping.vendor_group}／` : ''}${mapping.item_name ?? mapping.id}`,
+    metadata: {
+      item_mapping_id: mapping.id,
+      reactivated_at: new Date().toISOString(),
+      available_from: availableFrom,
+    },
+  })
+  return error ? { error: error.message } : { availableFrom }
+}
+
 /**
  * system_items 本來就以「品項名稱＋廠商分類」為唯一值。
  * 不能只用名稱找，否則不同分類的同名品項會錯連到同一筆資料。
@@ -442,13 +504,29 @@ export async function saveItemMapping(
   const admin = createAdminClient()
 
   // 檢查是否已存在（避免 unique constraint 錯誤）
-  let query = admin.from('item_column_mappings').select('id, vendor_group').eq('item_name', itemName)
+  let query = admin.from('item_column_mappings').select('id, item_name, store_id, vendor_group').eq('item_name', itemName)
   if (storeId) query = query.eq('store_id', storeId)
   else query = query.is('store_id', null)
   const { data: candidates } = await query
   const requestedGroup = normalizeVendorGroupName(vendorGroup)
   const existing = (candidates ?? []).find(item => normalizeVendorGroupName(item.vendor_group) === requestedGroup)
   if (existing) {
+    const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, existing.id)
+    if (statusError) return { error: `讀取品項狀態失敗：${statusError.message}` }
+    if (latestStatus?.event_type === ITEM_MAPPING_DISABLED_EVENT) {
+      const reactivated = await recordMappingReactivated(admin, existing, auth.user?.id)
+      if ('error' in reactivated) return { error: `重新啟用失敗：${reactivated.error}` }
+      const { error } = await admin.from('item_column_mappings').update({
+        excel_column: excelColumn,
+        item_category: itemCategory,
+        updated_at: new Date().toISOString(),
+      }).eq('id', existing.id)
+      if (error) return { error: `重新啟用失敗：${error.message}` }
+      const ensured = await ensureSystemItemAndEnable(itemName, itemCategory, requestedGroup, storeId)
+      if (isMiscVendorGroup(vendorGroup)) deferSyncMisc(storeId ?? null)
+      revalidate()
+      return { success: true as const, reactivated: true as const, newVg: ensured.newlyCreatedVg }
+    }
     return { success: true as const, alreadyExists: true as const }
   }
 
@@ -604,7 +682,14 @@ export async function deleteItemMapping(id: string) {
   const auth = await requireCanManageItems(mapping?.store_id ?? null)
   if (auth.error) return { error: auth.error }
 
-  await admin.from('item_column_mappings').delete().eq('id', id)
+  if (!mapping) return { error: '找不到品項' }
+  const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, id)
+  if (statusError) return { error: `讀取品項狀態失敗：${statusError.message}` }
+  if (latestStatus?.event_type === ITEM_MAPPING_DISABLED_EVENT) {
+    return { success: true as const, disabled: 0, alreadyDisabled: true as const }
+  }
+  const period = await recordMappingDisabled(admin, { id, ...mapping }, auth.user?.id)
+  if ('error' in period) return { error: `安全停用失敗：${period.error}` }
 
   // 若 mapping 綁定特定店家 → 同步 disable 該店的 store_item（否則 xlsx 匯出還會有這欄）
   if (mapping?.store_id && mapping?.item_name) {
@@ -624,7 +709,37 @@ export async function deleteItemMapping(id: string) {
   }
 
   revalidate()
-  return { success: true }
+  return { success: true as const, disabled: 1, unavailableFrom: period.unavailableFrom }
+}
+
+/** 重新啟用安全停用的品項；歷史月份的停用區間會保留。 */
+export async function reactivateItemMapping(id: string) {
+  const admin = createAdminClient()
+  const { data: mapping, error: mappingError } = await admin.from('item_column_mappings')
+    .select('id, item_name, item_category, store_id, vendor_group')
+    .eq('id', id)
+    .maybeSingle()
+  if (mappingError) return { error: mappingError.message }
+  if (!mapping) return { error: '找不到品項' }
+  const auth = await requireCanManageItems(mapping.store_id ?? null)
+  if (auth.error) return { error: auth.error }
+  const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, id)
+  if (statusError) return { error: `讀取品項狀態失敗：${statusError.message}` }
+  if (latestStatus?.event_type !== ITEM_MAPPING_DISABLED_EVENT) {
+    return { success: true as const, alreadyActive: true as const }
+  }
+  const reactivated = await recordMappingReactivated(admin, mapping, auth.user?.id)
+  if ('error' in reactivated) return { error: `重新啟用失敗：${reactivated.error}` }
+
+  await ensureSystemItemAndEnable(
+    mapping.item_name,
+    mapping.item_category ?? '雜項',
+    mapping.vendor_group ?? undefined,
+    mapping.store_id ?? undefined,
+  )
+  if (isMiscVendorGroup(mapping.vendor_group)) deferSyncMisc(mapping.store_id ?? null)
+  revalidate()
+  return { success: true as const }
 }
 
 export async function updateItemMapping(id: string, excelColumn: string, itemCategory: string, vendorGroup?: string | null) {
@@ -678,18 +793,35 @@ export async function setItemMapping(
   const auth = await requireCanManageItems(storeId)
   if (auth.error) return { error: auth.error }
   const admin = createAdminClient()
-  await admin.from('item_column_mappings').delete().eq('item_name', itemName).eq('store_id', storeId)
-  await admin.from('item_column_mappings').insert({
-    item_name: itemName, excel_column: excelColumn, item_category: itemCategory,
-    store_id: storeId, updated_at: new Date().toISOString(),
-  })
+  const { data: existing } = await admin.from('item_column_mappings')
+    .select('id, item_name, store_id, vendor_group').eq('item_name', itemName).eq('store_id', storeId).maybeSingle()
+  if (existing) {
+    const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, existing.id)
+    if (statusError) return { error: statusError.message }
+    if (latestStatus?.event_type === ITEM_MAPPING_DISABLED_EVENT) {
+      const reactivated = await recordMappingReactivated(admin, existing, auth.user?.id)
+      if ('error' in reactivated) return { error: reactivated.error }
+    }
+    const { error } = await admin.from('item_column_mappings').update({
+      excel_column: excelColumn,
+      item_category: itemCategory,
+      updated_at: new Date().toISOString(),
+    }).eq('id', existing.id)
+    if (error) return { error: error.message }
+  } else {
+    const { error } = await admin.from('item_column_mappings').insert({
+      item_name: itemName, excel_column: excelColumn, item_category: itemCategory,
+      store_id: storeId, updated_at: new Date().toISOString(),
+    })
+    if (error) return { error: error.message }
+  }
   revalidate()
   return { success: true }
 }
 
-/** 批次刪除品項 */
+/** 批次安全停用品項 */
 export async function batchDeleteItemMappings(ids: string[]) {
-  if (ids.length === 0) return { success: true as const, deleted: 0 }
+  if (ids.length === 0) return { success: true as const, disabled: 0 }
   const admin = createAdminClient()
 
   // 撈全部 mappings 資料
@@ -701,7 +833,13 @@ export async function batchDeleteItemMappings(ids: string[]) {
     return { error: '權限不足，批次品項包含不可管理的店家' as const }
   }
 
-  await admin.from('item_column_mappings').delete().in('id', ids)
+  for (const mapping of mappings ?? []) {
+    const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, mapping.id)
+    if (statusError) return { error: `讀取品項狀態失敗：${statusError.message}` }
+    if (latestStatus?.event_type === ITEM_MAPPING_DISABLED_EVENT) continue
+    const period = await recordMappingDisabled(admin, mapping, auth.user?.id)
+    if ('error' in period) return { error: `安全停用失敗：${period.error}` }
+  }
 
   // 同步 disable 店家專屬 store_items
   for (const m of mappings ?? []) {
@@ -724,7 +862,7 @@ export async function batchDeleteItemMappings(ids: string[]) {
   for (const sid of affectedStores) deferSyncMisc(sid)
 
   revalidate()
-  return { success: true as const, deleted: mappings?.length ?? 0 }
+  return { success: true as const, disabled: mappings?.length ?? 0 }
 }
 
 /** 改品項名稱：同步更新 mapping.item_name + 選擇性同步 receipt_items 舊資料 */
@@ -1155,9 +1293,9 @@ export async function renameVendorGroup(oldName: string, newName: string, storeI
 }
 
 /**
- * 移除整個廠商群組（含底下所有 mappings + store_items disable + system_vendor_group deactivate）
+ * 安全停用整個廠商群組（mapping 與歷史帳目保留）。
  * @param vgName - vendor_group 名稱
- * @param storeId - 若有 → 只刪該店 mappings；若沒 → 也 deactivate 全域 vg
+ * @param storeId - 若有 → 只停用該店 mappings；若沒 → 也 deactivate 全域 vg
  */
 export async function deleteVendorGroupWithItems(vgName: string, storeId?: string) {
   const auth = await requireCanManageItems(storeId)
@@ -1166,14 +1304,22 @@ export async function deleteVendorGroupWithItems(vgName: string, storeId?: strin
   const admin = createAdminClient()
 
   // 1. 找 vg 底下的 mappings
-  let mapQuery = admin.from('item_column_mappings').select('id, item_name, store_id, vendor_group').eq('vendor_group', vgName)
+  let mapQuery = admin.from('item_column_mappings')
+    .select('id, item_name, store_id, vendor_group')
+    .eq('vendor_group', vgName)
   if (storeId) mapQuery = mapQuery.eq('store_id', storeId)
   const { data: mappings } = await mapQuery
   const itemNames = [...new Set((mappings ?? []).map((m: any) => m.item_name as string))]
 
-  // 2. 刪除 mappings
+  // 2. 安全停用 mappings；本月與過去月份報表仍保留欄位。
   if (mappings && mappings.length > 0) {
-    await admin.from('item_column_mappings').delete().in('id', mappings.map((m: any) => m.id))
+    for (const mapping of mappings) {
+      const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, mapping.id)
+      if (statusError) return { error: `讀取品項狀態失敗：${statusError.message}` }
+      if (latestStatus?.event_type === ITEM_MAPPING_DISABLED_EVENT) continue
+      const period = await recordMappingDisabled(admin, mapping, auth.user?.id)
+      if ('error' in period) return { error: `安全停用失敗：${period.error}` }
+    }
   }
 
   // 3. Disable 對應 store_items
@@ -1193,7 +1339,7 @@ export async function deleteVendorGroupWithItems(vgName: string, storeId?: strin
   if (!storeId) {
     await admin.from('system_vendor_groups').update({ active: false }).eq('name', vgName)
   } else {
-    // 每店分類由品項管理建立時，刪除分類也同步移除收據管理的同名連動類別。
+    // 每店分類停用後同步移除新帳目下拉；歷史帳目仍由 mapping 快照保留。
     await admin.from('receipt_categories')
       .delete()
       .eq('store_id', storeId)
@@ -1211,7 +1357,7 @@ export async function deleteVendorGroupWithItems(vgName: string, storeId?: strin
   }
 
   revalidate()
-  return { success: true as const, mappingsRemoved: mappings?.length ?? 0, itemsAffected: itemNames.length }
+  return { success: true as const, mappingsDisabled: mappings?.length ?? 0, itemsAffected: itemNames.length }
 }
 
 /** 把 fromStoreId 的整份品項對應複製到 toStoreId（會清除目標店的現有對應）。 */

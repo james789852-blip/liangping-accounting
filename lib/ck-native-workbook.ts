@@ -401,7 +401,7 @@ export async function addCKSheet(
 ): Promise<void> {
   const [monthly, mappingItems] = await Promise.all([
     getCKMonthlyStats(ckStoreId, year, monthNum),
-    getStoreItemsFromMappings(ckStoreId),
+    getStoreItemsFromMappings(ckStoreId, { reportMonth: `${year}-${String(monthNum).padStart(2, '0')}` }),
   ])
 
   const ws = wb.addWorksheet(`${monthNum}月央廚食耗`, {

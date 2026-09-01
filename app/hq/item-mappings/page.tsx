@@ -9,6 +9,13 @@ import { resolveHQStoreId } from '@/lib/hq-store-selection'
 import { canManageCKItems, canManageStoreItems } from '@/lib/user-permissions'
 import { isMiscVendorGroup, normalizeVendorGroupName } from '@/lib/linked-receipt-category'
 import { isVendorOnlyMapping } from '@/lib/vendor-only-mapping'
+import {
+  disabledAtFromStatusEvents,
+  ITEM_MAPPING_DISABLED_EVENT,
+  ITEM_MAPPING_REACTIVATED_EVENT,
+  mappingIdFromStatusEvent,
+  type ItemMappingStatusEvent,
+} from '@/lib/item-mapping-availability'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,6 +56,19 @@ export default async function ItemMappingsPage({
       .order('item_category')
       .order('item_name')
   )
+  const statusEvents = await fetchAllPaged<ItemMappingStatusEvent>(() => admin
+    .from('audit_logs')
+    .select('event_type,created_at,metadata')
+    .in('event_type', [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_REACTIVATED_EVENT])
+    .order('created_at'))
+  const statusEventsByMapping = new Map<string, ItemMappingStatusEvent[]>()
+  for (const event of statusEvents ?? []) {
+    const mappingId = mappingIdFromStatusEvent(event)
+    if (!mappingId) continue
+    const events = statusEventsByMapping.get(mappingId) ?? []
+    events.push(event)
+    statusEventsByMapping.set(mappingId, events)
+  }
   // 自動同步 orphan vg：目前載入範圍內 mapping 用到但 system_vendor_groups 沒 record 的 → 補建
   const knownVgNames = new Set((vgsInitial ?? []).map(v => v.name as string))
   const orphanVgs = new Set<string>()
@@ -71,13 +91,14 @@ export default async function ItemMappingsPage({
     vgs = refetched
   }
   const storeMappingCounts = (mappings ?? []).reduce<Record<string, number>>((acc, row) => {
-    if (isVendorOnlyMapping(row)) return acc
+    if (disabledAtFromStatusEvents(statusEventsByMapping.get(row.id) ?? []) || isVendorOnlyMapping(row)) return acc
     if (row.store_id) acc[row.store_id] = (acc[row.store_id] ?? 0) + 1
     return acc
   }, {})
   const displayMappings = (mappings ?? []).map(mapping => ({
     ...mapping,
     vendor_group: normalizeVendorGroupName(mapping.vendor_group),
+    disabled_at: disabledAtFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
   }))
   const activeGroupNames = new Set((vgs ?? []).map(group => group.name as string))
   const linkedCategoryNamesByStore = (receiptCategories ?? []).reduce<Record<string, string[]>>((acc, category) => {

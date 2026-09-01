@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
 /**
  * 依 mapping 內 vendor_group IN (null, '雜項', '未分類') 的品項清單
@@ -14,10 +15,11 @@ export async function syncMiscVendorsForStore(storeId: string) {
   if (!cat) return
 
   const existing: { id: string; name: string; sort_order: number | null }[] = (cat as any).receipt_vendors ?? []
-  const { data: mps } = await admin
-    .from('item_column_mappings')
-    .select('item_name, vendor_group, sort_order')
-    .eq('store_id', storeId)
+  const mps = (await getStoreItemsFromMappings(storeId)).map(item => ({
+    item_name: item.name,
+    vendor_group: item.vendor_group,
+    sort_order: item.sort_order,
+  }))
 
   // name → mapping.sort_order（用來給 receipt_vendors 排序）
   const shouldBe = new Map<string, number>()

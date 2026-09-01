@@ -496,17 +496,14 @@ function addVendorAnalysisSheet(wb: ExcelJS.Workbook, store: StoreInfo, title: s
   ws.getRow(3).height = 28
 }
 
-/** 一次拉店家 + 品項，共用於單月/年度匯出 */
+/** 拉店家基本資料；品項需依各報表月份另外載入，才能正確保留停用前的歷史欄位。 */
 async function loadStoreContext(storeId: string) {
   const admin = createAdminClient()
   const { data: storeRow } = await admin.from('stores')
     .select('id, name, ichef_uber_linked, uber_accounts, twpay_enabled, panda_enabled, online_enabled, online_cash_enabled')
     .eq('id', storeId).single()
   const store = (storeRow ?? { id: storeId, name: '' }) as StoreInfo
-  // 用 item_column_mappings 撈品項清單（作為 xlsx layout source of truth）
-  // → xlsx 內容 100% 反映品項對應管理設定，不受 store_items orphan 影響
-  const items = await getStoreItemsFromMappings(storeId)
-  return { store, items }
+  return { store }
 }
 
 /** 在既有 workbook 上加一個「N 月食耗成本」sheet */
@@ -921,7 +918,9 @@ export async function buildFoodCostNativeWorkbook(
   wb.creator = 'Liangping Accounting'
   wb.created = new Date()
   ;(wb as any).calcProperties = { fullCalcOnLoad: true }
-  const { store, items } = await loadStoreContext(storeId)
+  const { store } = await loadStoreContext(storeId)
+  const reportMonth = `${year}-${String(monthNum).padStart(2, '0')}`
+  const items = await getStoreItemsFromMappings(storeId, { reportMonth })
   await addFoodCostSheet(wb, store, items, year, monthNum)
   const monthly = await getMonthlyStats(storeId, year, monthNum)
   addVendorAnalysisSheet(wb, store, `${monthNum}月廠商分析`, buildVendorAnalysisRows([monthly], items, false, store.name), false)
@@ -937,17 +936,22 @@ export async function buildAnnualFoodCostWorkbook(
   wb.creator = 'Liangping Accounting'
   wb.created = new Date()
   ;(wb as any).calcProperties = { fullCalcOnLoad: true }
-  const { store, items } = await loadStoreContext(storeId)
+  const { store } = await loadStoreContext(storeId)
 
   // 先加「年度總覽」sheet（引用各 month sheet 的月合計）
   addAnnualOverviewSheet(wb, store, year)
 
   // 12 個月 sheet
   const monthlies: MonthlyStats[] = []
+  const annualItemsById = new Map<string, ResolvedStoreItem>()
   for (let m = 1; m <= 12; m++) {
-    await addFoodCostSheet(wb, store, items, year, m)
+    const reportMonth = `${year}-${String(m).padStart(2, '0')}`
+    const monthItems = await getStoreItemsFromMappings(storeId, { reportMonth })
+    for (const item of monthItems) annualItemsById.set(item.mapping_id ?? item.id, item)
+    await addFoodCostSheet(wb, store, monthItems, year, m)
     monthlies.push(await getMonthlyStats(storeId, year, m))
   }
+  const items = [...annualItemsById.values()].sort(compareResolvedItemsByMappingOrder)
   addVendorAnalysisSheet(wb, store, '年度廠商分析', buildVendorAnalysisRows(monthlies, items, true, store.name), true)
 
   return wb

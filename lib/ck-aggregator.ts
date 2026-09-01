@@ -109,7 +109,7 @@ export async function getCKRangeStats(
       .select('id, business_date, status, payer_name, hq_paid, ck_reimbursement_confirmed, receipt_photo_urls')
       .eq('ck_store_id', ckStoreId)
       .gte('business_date', firstDay).lte('business_date', lastDay),
-    getStoreItemsFromMappings(ckStoreId),
+    getStoreItemsFromMappings(ckStoreId, { reportMonth: firstDay.slice(0, 7) }),
   ])
   const ckStore = (storeRow ?? { id: ckStoreId, name: '' }) as CKStoreInfo
   const assignedIds = (ckStore.assigned_store_ids ?? []) as string[]

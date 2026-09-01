@@ -164,7 +164,7 @@ export async function getRangeStats(
     admin.from('stores')
       .select('id, name, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled')
       .eq('id', storeId).single(),
-    getStoreItemsFromMappings(storeId),  // 跟 xlsx 匯出用同源，確保成本 category 分類一致
+    getStoreItemsFromMappings(storeId, { reportMonth: firstDay.slice(0, 7) }),  // 歷史月份保留當時仍有效的欄位
     admin.from('daily_closings')
       .select('business_date, status, updated_at, actual_remit, total_revenue, total_cost, variance, revenue_items(channel, account_name, gross_amount), order_items(item_name, total_amount, item_mapping_id, vendor_group_snapshot)')
       .eq('store_id', storeId)

@@ -82,12 +82,12 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .eq('store_id', storeId)
       .eq('business_date', closing.business_date)
       .order('created_at'),
-    getReceiptSettings(storeId),
+    getReceiptSettings(storeId, closing.business_date.slice(0, 7)),
     admin2.from('item_column_mappings').select('id, item_name, item_category, vendor_group, excel_column, doc_type_override').eq('store_id', storeId),
     admin2.storage.from('excel-templates').download(`${storeId}-item-order.json`)
       .then(async ({ data }) => (data ? data.text() : null))
       .catch((): null => null),
-    getStoreItemsFromMappings(storeId),
+    getStoreItemsFromMappings(storeId, { reportMonth: closing.business_date.slice(0, 7) }),
     supabase
       .from('store_actual_vendors')
       .select('id, vendor_group, name')

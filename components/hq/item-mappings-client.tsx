@@ -3,11 +3,11 @@
 import { useState, useTransition, useEffect, useMemo, useRef, createContext, useContext } from 'react'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import {
-  createStoreVendorGroup, deleteItemMapping, updateItemMapping, saveItemMapping, reorderItemMappings, setItemDocOverride, reorderStoreVendorGroups, setStoreVendorGroupMode,
+  createStoreVendorGroup, deleteItemMapping, reactivateItemMapping, updateItemMapping, saveItemMapping, reorderItemMappings, setItemDocOverride, reorderStoreVendorGroups, setStoreVendorGroupMode,
 } from '@/app/actions/item-mappings'
 import { setManagerStore } from '@/app/actions/store-select'
 import { useRouter } from 'next/navigation'
-import { Trash2, Edit2, Check, X, Plus, Tag, ChevronLeft, ChevronUp, ChevronDown, GripVertical } from 'lucide-react'
+import { Trash2, Edit2, Check, X, Plus, Tag, ChevronLeft, ChevronUp, ChevronDown, GripVertical, PowerOff, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import HelpBox from './help-box'
 import {
@@ -27,7 +27,7 @@ import {
 import { isVendorOnlyMapping } from '@/lib/vendor-only-mapping'
 
 interface Mapping {
-  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; sort_order?: number; vg_sort_order?: number
+  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; sort_order?: number; vg_sort_order?: number; disabled_at?: string | null
 }
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
@@ -218,10 +218,13 @@ export default function ItemMappingsClient({
   }
 
   // 各店完全獨立：一次整理目前店家的顯示資料，避免 80+ 列在每次互動時反覆掃描。
-  const { displayMappings, grouped, groupOrder, groupDocMap, groupCategoryMap, taxItemOptionsByGroup } = useMemo(() => {
+  const { displayMappings, disabledMappings, grouped, groupOrder, groupDocMap, groupCategoryMap, taxItemOptionsByGroup } = useMemo(() => {
     const activeMappings = mappings
-      .filter(mapping => mapping.store_id === activeStoreId)
+      .filter(mapping => mapping.store_id === activeStoreId && !mapping.disabled_at)
       .sort((a, b) => (a.sort_order ?? 999999) - (b.sort_order ?? 999999))
+    const nextDisabledMappings = mappings
+      .filter(mapping => mapping.store_id === activeStoreId && !!mapping.disabled_at && !isVendorOnlyMapping(mapping))
+      .sort((a, b) => String(b.disabled_at).localeCompare(String(a.disabled_at)))
     const visibleMappings = activeMappings.filter(mapping => !isVendorOnlyMapping(mapping))
     const allMappingsByGroup = activeMappings.reduce<Record<string, Mapping[]>>((acc, mapping) => {
       const vendorGroup = normalizeVendorGroupName(mapping.vendor_group)
@@ -284,6 +287,7 @@ export default function ItemMappingsClient({
     })
     return {
       displayMappings: visibleMappings,
+      disabledMappings: nextDisabledMappings,
       grouped: nextGrouped,
       groupOrder: nextGroupOrder,
       groupDocMap: nextGroupDocMap,
@@ -323,10 +327,21 @@ export default function ItemMappingsClient({
   }
 
   function handleDelete(id: string) {
-    if (!confirm('確定要刪除此對應嗎？')) return
+    if (!confirm('確定要安全停用這個品項嗎？\n\n• 新帳目會立刻停止顯示\n• 本月與過去月份的 Excel／試算表欄位和金額會保留\n• 從下個月起才不再建立這個欄位\n• 之後可以重新啟用')) return
     startTransition(async () => {
-      await deleteItemMapping(id)
-      setMappings(prev => prev.filter(m => m.id !== id))
+      const result = await deleteItemMapping(id)
+      if (result && 'error' in result) { toast.error(result.error); return }
+      setMappings(prev => prev.map(m => m.id === id ? { ...m, disabled_at: new Date().toISOString() } : m))
+      toast.success('已安全停用；歷史帳目與本月報表不受影響')
+    })
+  }
+
+  function handleReactivate(id: string) {
+    startTransition(async () => {
+      const result = await reactivateItemMapping(id)
+      if (result && 'error' in result) { toast.error(result.error); return }
+      setMappings(prev => prev.map(m => m.id === id ? { ...m, disabled_at: null } : m))
+      toast.success('品項已重新啟用')
     })
   }
 
@@ -472,12 +487,12 @@ export default function ItemMappingsClient({
   async function handleBatchDelete() {
     const ids = [...selectedIds]
     if (ids.length === 0) return
-    if (!confirm(`確定刪除 ${ids.length} 個品項？此動作無法復原。`)) return
+    if (!confirm(`確定要安全停用 ${ids.length} 個品項嗎？\n\n新帳目會立刻停止顯示；本月與過去月份報表完整保留，下個月起才移除欄位。`)) return
     startTransition(async () => {
       const { batchDeleteItemMappings } = await import('@/app/actions/item-mappings')
       const r = await batchDeleteItemMappings(ids)
       if (r && 'error' in r) { toast.error(r.error); return }
-      toast.success(`已刪除 ${(r as any).deleted ?? ids.length} 個品項`)
+      toast.success(`已安全停用 ${(r as any).disabled ?? ids.length} 個品項，歷史帳目不受影響`)
       setSelectedIds(new Set())
       setSelectMode(false)
       router.refresh()
@@ -498,7 +513,7 @@ export default function ItemMappingsClient({
           <button onClick={handleBatchDelete} disabled={isPending}
             className="text-xs font-semibold px-3 py-1 rounded-lg text-white flex items-center gap-1"
             style={{ background: '#dc2626', cursor: 'pointer', opacity: isPending ? 0.5 : 1 }}>
-            <Trash2 className="h-3 w-3" /> 刪除選中
+            <PowerOff className="h-3 w-3" /> 安全停用選中
           </button>
         </div>
       )}
@@ -615,7 +630,7 @@ export default function ItemMappingsClient({
                 style={selectMode
                   ? { background: '#dc2626', color: 'white', boxShadow: '0 2px 8px rgba(220,38,38,0.3)' }
                   : { background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}
-                title={selectMode ? '取消選取' : '進入選取模式（可批次刪除）'}>
+                title={selectMode ? '取消選取' : '進入選取模式（可批次安全停用）'}>
                 {selectMode ? <><X className="h-3.5 w-3.5" /> 取消</> : <><Check className="h-3.5 w-3.5" /> 選取</>}
               </button>
               <CopyToStoreButton fromStoreId={activeStoreId} stores={stores} />
@@ -1084,6 +1099,43 @@ export default function ItemMappingsClient({
             </div>
           )
         })}
+
+        {disabledMappings.length > 0 && (
+          <section className="rounded-2xl overflow-hidden" style={{ border: '1px solid #e4e4e7', background: 'white' }}>
+            <div className="flex items-center justify-between gap-3 px-4 py-3" style={{ background: '#f4f4f5' }}>
+              <div>
+                <h2 className="text-sm font-bold" style={{ color: '#52525b' }}>已安全停用品項</h2>
+                <p className="mt-0.5 text-[11px]" style={{ color: '#71717a' }}>
+                  新帳目不再顯示；本月與過去月份報表仍保留原欄位與金額。
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" style={{ background: 'white', color: '#71717a' }}>
+                {disabledMappings.length} 項
+              </span>
+            </div>
+            {disabledMappings.map((mapping, index) => (
+              <div key={mapping.id} className="flex items-center gap-3 px-4 py-3"
+                style={{ borderTop: index === 0 ? 'none' : '1px solid #f4f4f5' }}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-sm font-semibold" style={{ color: '#52525b' }}>{displayName(mapping)}</span>
+                    <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: '#fef3c7', color: '#92400e' }}>
+                      {normalizeVendorGroupName(mapping.vendor_group)}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[11px]" style={{ color: '#a1a1aa' }}>
+                    停用時間：{mapping.disabled_at ? new Date(mapping.disabled_at).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }) : '—'}
+                  </p>
+                </div>
+                <button type="button" onClick={() => handleReactivate(mapping.id)} disabled={isPending}
+                  className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-bold"
+                  style={{ border: '1px solid #86efac', background: '#f0fdf4', color: '#047857', opacity: isPending ? 0.5 : 1 }}>
+                  <RotateCcw className="h-3.5 w-3.5" /> 重新啟用
+                </button>
+              </div>
+            ))}
+          </section>
+        )}
         </DndContext>
       </div>
     </div>
@@ -1242,9 +1294,11 @@ function ItemRowContent({
             <Edit2 className="h-4 w-4" />
           </button>
           <button onClick={() => handleDelete(m.id)} className="min-h-10 min-w-10 flex items-center justify-center rounded-lg" style={{ color: '#d4d4d8' }}
+            title="安全停用（保留歷史帳目與本月報表）"
+            aria-label="安全停用品項"
             onMouseEnter={e => (e.currentTarget.style.color = '#be123c')}
             onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
-            <Trash2 className="h-4 w-4" />
+            <PowerOff className="h-4 w-4" />
           </button>
         </>
       )}
@@ -1592,13 +1646,13 @@ function VgActions({
 
   async function handleDelete() {
     const scope = storeId ? '本店' : '所有店家'
-    if (!confirm(`確定刪除「${vgName}」廠商群組？（${scope}，含底下 ${itemCount} 個品項的對應）\n\n※ 品項本身不會刪除，只是移除對應。可到品項對應管理重建。`)) return
+    if (!confirm(`確定安全停用「${vgName}」廠商群組？（${scope}，共 ${itemCount} 個品項）\n\n新帳目會停止顯示；本月與過去月份的 Excel／試算表欄位及金額都會保留。`)) return
     setSaving(true)
     try {
       const { deleteVendorGroupWithItems } = await import('@/app/actions/item-mappings')
       const r = await deleteVendorGroupWithItems(vgName, storeId ?? undefined)
       if ('error' in r) { toast.error(String(r.error)); return }
-      toast.success(`已移除 ${r.mappingsRemoved} 筆對應`)
+      toast.success(`已安全停用 ${r.mappingsDisabled} 個品項，歷史帳目不受影響`)
       onDone()
     } finally { setSaving(false) }
   }
@@ -1640,7 +1694,7 @@ function VgActions({
         <Edit2 className="h-3 w-3" />
       </button>
       <button onClick={handleDelete} disabled={saving}
-        title="刪除整個群組"
+        title="安全停用整個群組"
         style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 2 }}>
         <Trash2 className="h-3 w-3" />
       </button>
