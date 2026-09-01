@@ -13,9 +13,14 @@ import { fetchAllPaged } from '@/lib/supabase-paged'
 import { unstable_cache } from 'next/cache'
 import {
   disabledAtFromStatusEvents,
+  isExplicitItemFromStatusEvents,
+  isNegativeFromStatusEvents,
   isUnavailableForReportMonth,
   ITEM_MAPPING_ARCHIVED_EVENT,
   ITEM_MAPPING_DISABLED_EVENT,
+  ITEM_MAPPING_EXPLICIT_ITEM_EVENT,
+  ITEM_MAPPING_NEGATIVE_DISABLED_EVENT,
+  ITEM_MAPPING_NEGATIVE_ENABLED_EVENT,
   ITEM_MAPPING_REACTIVATED_EVENT,
   mappingIdFromStatusEvent,
   unavailablePeriodsFromStatusEvents,
@@ -65,7 +70,14 @@ async function loadStoreItemsFromMappings(
       .from('audit_logs')
       .select('event_type,created_at,metadata')
       .eq('store_id', storeId)
-      .in('event_type', [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_REACTIVATED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT])
+      .in('event_type', [
+        ITEM_MAPPING_DISABLED_EVENT,
+        ITEM_MAPPING_REACTIVATED_EVENT,
+        ITEM_MAPPING_ARCHIVED_EVENT,
+        ITEM_MAPPING_NEGATIVE_ENABLED_EVENT,
+        ITEM_MAPPING_NEGATIVE_DISABLED_EVENT,
+        ITEM_MAPPING_EXPLICIT_ITEM_EVENT,
+      ])
       .order('created_at')),
   ])
 
@@ -123,6 +135,8 @@ async function loadStoreItemsFromMappings(
       sort_order: (m.sort_order ?? 1000) as number,
       vg_merge_across_category: !!vg?.merge_across_category,
       is_refund: !!m.is_refund,
+      is_negative: isNegativeFromStatusEvents(eventsByMapping.get(m.id as string) ?? []),
+      is_explicit_item: isExplicitItemFromStatusEvents(eventsByMapping.get(m.id as string) ?? []),
       is_tax_addon: !!m.is_tax_addon,
       tax_scope: (m.tax_scope ?? 'category') as 'category' | 'item',
       tax_target_item: (m.tax_target_item ?? null) as string | null,

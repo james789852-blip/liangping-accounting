@@ -13,7 +13,7 @@ import { saveCashCounts, submitClosing, savePettyCounts } from '@/app/actions/cl
 import { refreshReserveHistoryContext } from '@/app/actions/reserve-history'
 import { createSignedUploadUrl, uploadToStorage } from '@/app/actions/upload'
 import { compressImage } from '@/lib/compress-image'
-import { normalizeItemAmount } from '@/lib/negative-items'
+import { isNegativeItem, normalizeItemAmount } from '@/lib/negative-items'
 import {
   applyPreReservedExpenseHints,
   type PreReservedExpenseHint,
@@ -599,6 +599,24 @@ function findReceiptItemMapping(
   )
 }
 
+function configuredNegativeReceiptItem(
+  item: Pick<ReceiptFormItem, 'item_name' | 'item_mapping_id' | 'vendor_group_hint'>,
+  vendorName: string,
+  categoryName: string,
+  mappingColumns: MappingColumn[],
+): boolean {
+  const mapping = (item.item_mapping_id
+    ? mappingColumns.find(column => column.mapping_id === item.item_mapping_id)
+    : undefined)
+    ?? (item.vendor_group_hint
+      ? mappingColumns.find(column =>
+          itemNameCompatibilityKey(column.name) === itemNameCompatibilityKey(item.item_name)
+          && column.vendor_group === item.vendor_group_hint,
+        )
+      : findReceiptItemMapping(item.item_name, vendorName, categoryName, mappingColumns))
+  return !!mapping?.is_negative
+}
+
 /**
  * Return the item mappings shown by a receipt item's dropdown for the current
  * category/vendor context.  Keeping this in one place is important: when the
@@ -934,6 +952,8 @@ type MappingColumn = {
   vendor_group?: string
   excel_column?: string
   doc_type?: string | null
+  is_negative?: boolean
+  is_explicit_item?: boolean
   is_tax_addon?: boolean
   tax_scope?: 'category' | 'item' | null
   tax_target_item?: string | null
@@ -2452,7 +2472,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         photo_url: newPhotoUrl,
         notes: editNotes.trim() || undefined,
         updated_at: updatedReceipt.updated_at ?? receiptUpdatedAt,
-        receipt_items: canonicalItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: normalizeItemAmount(i.item_name, i.amount), item_mapping_id: i.item_mapping_id ?? null, vendor_group_snapshot: i.vendor_group_hint ?? editVendor ?? null })),
+        receipt_items: canonicalItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: normalizeItemAmount(i.item_name, i.amount, !!resolveEditItemMapping(i)?.is_negative), item_mapping_id: i.item_mapping_id ?? null, vendor_group_snapshot: i.vendor_group_hint ?? editVendor ?? null })),
       } : r
     )
     setLocalReceipts(updatedReceipts)
@@ -2470,7 +2490,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             unit: i.unit ?? '',
             quantity: i.quantity ?? 1,
             unit_price: i.unit_price ?? 0,
-            amount: normalizeItemAmount(i.item_name, i.amount),
+            amount: normalizeItemAmount(i.item_name, i.amount, !!match?.is_negative),
             item_category: match?.category ?? '食材',
             excel_column: match?.excel_column ?? match?.name ?? '',
             item_mapping_id: match?.mapping_id ?? null,
@@ -2808,7 +2828,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             unit: i.unit,
             quantity: i.quantity,
             unit_price: i.unit_price ?? 0,
-            amount: normalizeItemAmount(i.item_name, i.amount),
+            amount: normalizeItemAmount(i.item_name, i.amount, !!match?.is_negative),
             item_category: match?.category ?? '食材',
             excel_column: match?.excel_column ?? match?.name ?? '',
             item_mapping_id: match?.mapping_id ?? null,
@@ -4402,7 +4422,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                     )}
                                     {(() => {
                                       // 「折扣 / 退貨」類品項：使用者輸入正數，系統自動存負數
-                                      const neg = ['折扣', '退貨', '退款', '退費', '抵扣'].some(k => (item.item_name ?? '').includes(k)) || isAutoNegativeOtherReceiptItem(item.item_name, form.category)
+                                      const neg = isNegativeItem(item.item_name)
+                                        || isAutoNegativeOtherReceiptItem(item.item_name, form.category)
+                                        || configuredNegativeReceiptItem(item, form.vendor_name, form.category, mappingColumns)
                                       const allowManualNegative = canUseNegativeOtherReceiptItem(item.item_name, form.category) && !isAutoNegativeOtherReceiptItem(item.item_name, form.category)
                                       const displayed = item.amount === 0 ? '' : (neg ? Math.abs(item.amount) : item.amount)
                                       return (
@@ -4882,7 +4904,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                             onChange={e => updateEditItemFn(idx, 'item_name', e.target.value)} />
                                         )}
                                         {(() => {
-                                          const neg = ['折扣', '退貨', '退款', '退費', '抵扣'].some(k => (item.item_name ?? '').includes(k)) || isAutoNegativeOtherReceiptItem(item.item_name, editCategory)
+                                          const neg = isNegativeItem(item.item_name)
+                                            || isAutoNegativeOtherReceiptItem(item.item_name, editCategory)
+                                            || configuredNegativeReceiptItem(item, editVendor, editCategory, mappingColumns)
                                           const allowManualNegative = canUseNegativeOtherReceiptItem(item.item_name, editCategory) && !isAutoNegativeOtherReceiptItem(item.item_name, editCategory)
                                           const displayed = item.amount === 0 ? '' : (neg ? Math.abs(item.amount) : item.amount)
                                           return (

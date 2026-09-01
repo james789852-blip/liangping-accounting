@@ -4,6 +4,7 @@ export type VendorMappingLike = {
   excel_column?: string | null
   vendor_group?: string | null
   is_tax_addon?: boolean | null
+  is_explicit_item?: boolean | null
 }
 
 /**
@@ -11,6 +12,7 @@ export type VendorMappingLike = {
  * 保存食材／耗材／雜項分類。這筆資料不是店長需要選擇的明細品項。
  */
 export function isVendorOnlyMapping(mapping: VendorMappingLike): boolean {
+  if (mapping.is_explicit_item) return false
   const vendorGroup = (mapping.vendor_group ?? '').trim()
   const itemName = (mapping.item_name ?? mapping.name ?? '').trim()
   const excelColumn = (mapping.excel_column ?? '').trim()

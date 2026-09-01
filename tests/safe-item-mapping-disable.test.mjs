@@ -3,6 +3,9 @@ import fs from 'node:fs'
 import test from 'node:test'
 
 import {
+  disabledAtFromStatusEvents,
+  isExplicitItemFromStatusEvents,
+  isNegativeFromStatusEvents,
   isUnavailableForReportMonth,
   nextMonthStart,
   taipeiCalendarMonthStart,
@@ -54,6 +57,25 @@ test('停用後封存不會改寫原停用月份，歷史與本月欄位仍可�
   assert.equal(isUnavailableForReportMonth('2026-08', periods), false)
   assert.equal(isUnavailableForReportMonth('2026-09', periods), false)
   assert.equal(isUnavailableForReportMonth('2026-10', periods), true)
+})
+
+test('負數設定不會誤改停用狀態，且以最後一次負數設定為準', () => {
+  const events = [
+    { event_type: 'item_mapping_disabled', created_at: '2026-09-01T01:00:00Z', metadata: { item_mapping_id: 'm1' } },
+    { event_type: 'item_mapping_negative_enabled', created_at: '2026-09-01T02:00:00Z', metadata: { item_mapping_id: 'm1' } },
+  ]
+  assert.equal(disabledAtFromStatusEvents(events), '2026-09-01T01:00:00Z')
+  assert.equal(isNegativeFromStatusEvents(events), true)
+  assert.equal(isNegativeFromStatusEvents([
+    ...events,
+    { event_type: 'item_mapping_negative_disabled', created_at: '2026-09-01T03:00:00Z', metadata: { item_mapping_id: 'm1' } },
+  ]), false)
+})
+
+test('明確新增分類同名品項後會留下正式品項標記', () => {
+  assert.equal(isExplicitItemFromStatusEvents([
+    { event_type: 'item_mapping_explicit_item', created_at: '2026-09-01T03:00:00Z', metadata: { item_mapping_id: 'm1' } },
+  ]), true)
 })
 
 test('單筆、批次與整個分類都只標記停用，不刪除歷史 mapping', () => {

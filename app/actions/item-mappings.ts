@@ -12,6 +12,9 @@ import { isMiscVendorGroup, MISC_VENDOR_GROUP, normalizeVendorGroupName } from '
 import {
   ITEM_MAPPING_ARCHIVED_EVENT,
   ITEM_MAPPING_DISABLED_EVENT,
+  ITEM_MAPPING_EXPLICIT_ITEM_EVENT,
+  ITEM_MAPPING_NEGATIVE_DISABLED_EVENT,
+  ITEM_MAPPING_NEGATIVE_ENABLED_EVENT,
   ITEM_MAPPING_REACTIVATED_EVENT,
   nextMonthStart,
   taipeiCalendarMonthStart,
@@ -461,6 +464,26 @@ async function recordMappingReactivated(
   return error ? { error: error.message } : { availableFrom }
 }
 
+async function recordMappingExplicitItem(
+  admin: ReturnType<typeof createAdminClient>,
+  mapping: { id: string; store_id?: string | null; item_name?: string | null; vendor_group?: string | null },
+  userId?: string | null,
+) {
+  const { error } = await admin.from('audit_logs').insert({
+    event_type: ITEM_MAPPING_EXPLICIT_ITEM_EVENT,
+    severity: 'info',
+    store_id: mapping.store_id ?? null,
+    user_id: userId ?? null,
+    description: `將分類同名資料設為正式品項：${mapping.vendor_group ? `${mapping.vendor_group}／` : ''}${mapping.item_name ?? mapping.id}`,
+    metadata: {
+      item_mapping_id: mapping.id,
+      explicit_item: true,
+      effective_at: new Date().toISOString(),
+    },
+  })
+  return error ? { error: error.message } : { success: true as const }
+}
+
 async function recordMappingArchived(
   admin: ReturnType<typeof createAdminClient>,
   mapping: { id: string; store_id?: string | null; item_name?: string | null; vendor_group?: string | null },
@@ -528,7 +551,7 @@ export async function saveItemMapping(
   const admin = createAdminClient()
 
   // 檢查是否已存在（避免 unique constraint 錯誤）
-  let query = admin.from('item_column_mappings').select('id, item_name, store_id, vendor_group').eq('item_name', itemName)
+  let query = admin.from('item_column_mappings').select('id, item_name, excel_column, store_id, vendor_group').eq('item_name', itemName)
   if (storeId) query = query.eq('store_id', storeId)
   else query = query.is('store_id', null)
   const { data: candidates } = await query
@@ -537,9 +560,19 @@ export async function saveItemMapping(
   if (existing) {
     const { data: latestStatus, error: statusError } = await latestMappingStatusEvent(admin, existing.id)
     if (statusError) return { error: `讀取品項狀態失敗：${statusError.message}` }
-    if ([ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT].includes(latestStatus?.event_type ?? '')) {
+    const isVendorOnlyPlaceholder = !!requestedGroup
+      && existing.item_name.trim() === requestedGroup
+      && (existing.excel_column ?? '').trim() === requestedGroup
+    const needsReactivation = [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT].includes(latestStatus?.event_type ?? '')
+    if (isVendorOnlyPlaceholder) {
+      const explicit = await recordMappingExplicitItem(admin, existing, auth.user?.id)
+      if ('error' in explicit) return { error: `新增失敗：${explicit.error}` }
+    }
+    if (needsReactivation) {
       const reactivated = await recordMappingReactivated(admin, existing, auth.user?.id)
       if ('error' in reactivated) return { error: `重新啟用失敗：${reactivated.error}` }
+    }
+    if (isVendorOnlyPlaceholder || needsReactivation) {
       const { error } = await admin.from('item_column_mappings').update({
         excel_column: excelColumn,
         item_category: itemCategory,
@@ -549,7 +582,7 @@ export async function saveItemMapping(
       const ensured = await ensureSystemItemAndEnable(itemName, itemCategory, requestedGroup, storeId)
       if (isMiscVendorGroup(vendorGroup)) deferSyncMisc(storeId ?? null)
       revalidate()
-      return { success: true as const, reactivated: true as const, newVg: ensured.newlyCreatedVg }
+      return { success: true as const, reactivated: needsReactivation, convertedPlaceholder: isVendorOnlyPlaceholder, newVg: ensured.newlyCreatedVg }
     }
     return { success: true as const, alreadyExists: true as const }
   }
@@ -1212,6 +1245,39 @@ export async function setItemRefundFlag(id: string, isRefund: boolean) {
   if (error) return { error: error.message }
   revalidate()
   return { success: true as const }
+}
+
+/** 店面輸入正數後自動以負數儲存；設定異動不回寫任何歷史帳目。 */
+export async function setItemNegativeFlag(id: string, isNegative: boolean) {
+  const admin = createAdminClient()
+  const { data: mapping, error: mappingError } = await admin.from('item_column_mappings')
+    .select('id, item_name, store_id, vendor_group')
+    .eq('id', id)
+    .maybeSingle()
+  if (mappingError) return { error: mappingError.message }
+  if (!mapping) return { error: '找不到品項' }
+  const auth = await requireCanManageItems(mapping.store_id ?? null)
+  if (auth.error) return { error: auth.error }
+
+  const eventType = isNegative
+    ? ITEM_MAPPING_NEGATIVE_ENABLED_EVENT
+    : ITEM_MAPPING_NEGATIVE_DISABLED_EVENT
+  const { error } = await admin.from('audit_logs').insert({
+    event_type: eventType,
+    severity: 'info',
+    store_id: mapping.store_id ?? null,
+    user_id: auth.user?.id ?? null,
+    description: `${isNegative ? '啟用' : '取消'}店面負數品項：${mapping.vendor_group ? `${mapping.vendor_group}／` : ''}${mapping.item_name}`,
+    metadata: {
+      item_mapping_id: mapping.id,
+      is_negative: isNegative,
+      effective_at: new Date().toISOString(),
+      historical_amounts_preserved: true,
+    },
+  })
+  if (error) return { error: error.message }
+  revalidate()
+  return { success: true as const, isNegative }
 }
 
 /**

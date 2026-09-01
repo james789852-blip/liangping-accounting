@@ -10,7 +10,7 @@ export function isNegativeItem(name: string): boolean {
 }
 
 /** 規範化品項金額：屬於負值類就強制負數，否則照原值 */
-export function normalizeItemAmount(itemName: string, amount: number): number {
-  if (isNegativeItem(itemName)) return -Math.abs(amount)
+export function normalizeItemAmount(itemName: string, amount: number, configuredNegative = false): number {
+  if (configuredNegative || isNegativeItem(itemName)) return -Math.abs(amount)
   return amount
 }

@@ -27,7 +27,7 @@ import {
 import { isVendorOnlyMapping } from '@/lib/vendor-only-mapping'
 
 interface Mapping {
-  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; sort_order?: number; vg_sort_order?: number; disabled_at?: string | null; archived?: boolean
+  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_negative?: boolean; is_explicit_item?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; sort_order?: number; vg_sort_order?: number; disabled_at?: string | null; archived?: boolean
 }
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
@@ -1297,6 +1297,7 @@ function ItemRowContent({
           <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
             style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
           <RefundToggle mappingId={m.id} isRefund={!!m.is_refund} />
+          <NegativeToggle mappingId={m.id} isNegative={!!m.is_negative} />
           <TaxAddonToggle
             mappingId={m.id}
             enabled={!!m.is_tax_addon}
@@ -1495,6 +1496,39 @@ function RefundToggle({ mappingId, isRefund }: { mappingId: string; isRefund: bo
         : { background: 'white', color: '#a1a1aa', border: '1.5px solid #e4e4e7' }}
       title={checked ? '已納入梁平退稅總額（點擊取消）' : '未納入梁平退稅（點擊勾選）'}>
       {checked ? '✓ 退稅' : '退稅'}
+    </button>
+  )
+}
+
+/** 店面端負數品項：輸入正數，系統自動轉成負數儲存與統計。 */
+function NegativeToggle({ mappingId, isNegative }: { mappingId: string; isNegative: boolean }) {
+  const [checked, setChecked] = useState(isNegative)
+  const [pending, startTransition] = useTransition()
+  useEffect(() => { setChecked(isNegative) }, [isNegative])
+
+  function toggle() {
+    const next = !checked
+    setChecked(next)
+    startTransition(async () => {
+      const { setItemNegativeFlag } = await import('@/app/actions/item-mappings')
+      const result = await setItemNegativeFlag(mappingId, next)
+      if (result && 'error' in result) {
+        setChecked(!next)
+        toast.error('儲存失敗：' + result.error)
+        return
+      }
+      toast.success(next ? '店面端將自動以負數計算；歷史帳目不變' : '已取消自動負數；歷史帳目不變')
+    })
+  }
+
+  return (
+    <button type="button" onClick={toggle} disabled={pending}
+      className="text-xs px-2 py-0.5 rounded-full shrink-0 font-semibold transition-colors"
+      style={checked
+        ? { background: '#fff1f2', color: '#be123c', border: '1.5px solid #fda4af', opacity: pending ? 0.6 : 1 }
+        : { background: 'white', color: '#a1a1aa', border: '1.5px solid #e4e4e7', opacity: pending ? 0.6 : 1 }}
+      title={checked ? '店面輸入正數後自動轉負（點擊取消）' : '點擊後店面端將自動以負數計算'}>
+      {checked ? '✓ 負數' : '負數'}
     </button>
   )
 }

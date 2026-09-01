@@ -35,6 +35,18 @@ test('廠商新增真正品項後才顯示品項選擇框', () => {
   assert.equal(hasSelectableVendorItems('阿一蔬果', mappings), true)
 })
 
+test('管理者明確新增分類同名品項時，不再當成內部佔位資料隱藏', () => {
+  const mapping = {
+    item_name: '其他',
+    excel_column: '其他',
+    vendor_group: '其他',
+    is_explicit_item: true,
+  }
+
+  assert.equal(isVendorOnlyMapping(mapping), false)
+  assert.equal(hasSelectableVendorItems('其他', [mapping]), true)
+})
+
 test('只有稅外加設定也不要求選擇品項', () => {
   const mappings = [{
     item_name: '阿一蔬果稅金',

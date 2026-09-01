@@ -7,6 +7,19 @@ export interface ItemMappingUnavailablePeriod {
 export const ITEM_MAPPING_DISABLED_EVENT = 'item_mapping_disabled'
 export const ITEM_MAPPING_REACTIVATED_EVENT = 'item_mapping_reactivated'
 export const ITEM_MAPPING_ARCHIVED_EVENT = 'item_mapping_archived'
+export const ITEM_MAPPING_NEGATIVE_ENABLED_EVENT = 'item_mapping_negative_enabled'
+export const ITEM_MAPPING_NEGATIVE_DISABLED_EVENT = 'item_mapping_negative_disabled'
+export const ITEM_MAPPING_EXPLICIT_ITEM_EVENT = 'item_mapping_explicit_item'
+
+const ITEM_MAPPING_LIFECYCLE_EVENTS = new Set([
+  ITEM_MAPPING_DISABLED_EVENT,
+  ITEM_MAPPING_REACTIVATED_EVENT,
+  ITEM_MAPPING_ARCHIVED_EVENT,
+])
+const ITEM_MAPPING_NEGATIVE_EVENTS = new Set([
+  ITEM_MAPPING_NEGATIVE_ENABLED_EVENT,
+  ITEM_MAPPING_NEGATIVE_DISABLED_EVENT,
+])
 
 export interface ItemMappingStatusEvent {
   event_type: string
@@ -56,7 +69,9 @@ export function mappingIdFromStatusEvent(event: ItemMappingStatusEvent): string 
 }
 
 export function disabledAtFromStatusEvents(events: ItemMappingStatusEvent[]): string | null {
-  const latest = [...events].sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+  const latest = events
+    .filter(event => ITEM_MAPPING_LIFECYCLE_EVENTS.has(event.event_type))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
   return latest && [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT].includes(latest.event_type)
     ? latest.created_at
     : null
@@ -64,8 +79,23 @@ export function disabledAtFromStatusEvents(events: ItemMappingStatusEvent[]): st
 
 /** 封存只從管理清單移除；mapping 本身與歷史帳目都必須保留。 */
 export function isArchivedFromStatusEvents(events: ItemMappingStatusEvent[]): boolean {
-  const latest = [...events].sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+  const latest = events
+    .filter(event => ITEM_MAPPING_LIFECYCLE_EVENTS.has(event.event_type))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
   return latest?.event_type === ITEM_MAPPING_ARCHIVED_EVENT
+}
+
+/** 此設定只影響後續輸入；歷史帳目的金額仍以當時已儲存的正負值為準。 */
+export function isNegativeFromStatusEvents(events: ItemMappingStatusEvent[]): boolean {
+  const latest = events
+    .filter(event => ITEM_MAPPING_NEGATIVE_EVENTS.has(event.event_type))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+  return latest?.event_type === ITEM_MAPPING_NEGATIVE_ENABLED_EVENT
+}
+
+/** 分類同名品項若由管理者明確新增，就不可再當成內部廠商佔位資料隱藏。 */
+export function isExplicitItemFromStatusEvents(events: ItemMappingStatusEvent[]): boolean {
+  return events.some(event => event.event_type === ITEM_MAPPING_EXPLICIT_ITEM_EVENT)
 }
 
 /** 把稽核事件還原成月報不可用區間，支援重複停用與重新啟用。 */

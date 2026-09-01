@@ -10,9 +10,10 @@ import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import { Camera, Loader2, CheckCircle2, Plus, Trash2, X, Sparkles } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { storePhotoPath } from '@/lib/storage-paths'
+import { isNegativeItem, normalizeItemAmount } from '@/lib/negative-items'
 
 interface MappingOption {
-  id?: string; item_name: string; excel_column: string; item_category: string; vendor_group?: string | null
+  id?: string; item_name: string; excel_column: string; item_category: string; vendor_group?: string | null; is_negative?: boolean
 }
 
 interface NewReceiptData {
@@ -40,6 +41,11 @@ interface FormItem {
 }
 
 function mappingKey(item: MappingOption) { return `${item.vendor_group ?? ''}::${item.item_name}` }
+function negativeFormItem(item: FormItem, mappings: MappingOption[]) {
+  const mapping = (item.item_mapping_id ? mappings.find(option => option.id === item.item_mapping_id) : undefined)
+    ?? mappings.find(option => option.item_name === item.name && (!item.vendor_group || option.vendor_group === item.vendor_group))
+  return !!mapping?.is_negative || isNegativeItem(item.name)
+}
 export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCancel }: Props) {
   const [step, setStep] = useState<'upload' | 'recognizing' | 'review' | 'saving'>('upload')
   const [photoUrl, setPhotoUrl] = useState('')
@@ -122,6 +128,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
     const m = mappings.find(item => mappingKey(item) === key)
     setItems(prev => prev.map((item, idx) => idx !== i ? item : {
       ...item, name: m?.item_name ?? key,
+      amount: normalizeItemAmount(m?.item_name ?? key, item.amount, !!m?.is_negative),
       excel_column: m?.excel_column ?? '',
       item_category: m?.item_category ?? '食材',
       vendor_group: m?.vendor_group ?? null,
@@ -138,7 +145,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
         ?? (sameName.length === 1 ? sameName[0] : undefined)
       return {
         name: item.name,
-        amount: item.amount,
+        amount: normalizeItemAmount(item.name, item.amount, !!m?.is_negative),
         excel_column: m?.excel_column ?? '',
         item_category: m?.item_category ?? '食材',
         vendor_group: m?.vendor_group ?? null,
@@ -247,7 +254,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
         receipt_items: validItems.map((it, idx) => ({
           id: `new-${result.id}-${idx}`,
           item_name: it.name,
-          amount: it.amount,
+          amount: normalizeItemAmount(it.name, it.amount, negativeFormItem(it, mappings)),
           excel_column: it.excel_column,
           item_category: it.item_category,
           item_mapping_id: it.item_mapping_id ?? null,
@@ -415,10 +422,19 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
                   )
                 })()}
               </div>
-              <input type="number" min="0"
-                className="h-9 px-2 text-sm rounded-lg border border-slate-200 outline-none focus:border-blue-500 text-right tabular-nums"
-                value={item.amount || ''} placeholder="0"
-                onChange={e => updateItem(i, 'amount', parseInt(e.target.value) || 0)} />
+              <div>
+                <input type="number" min="0"
+                  className="h-9 w-full px-2 text-sm rounded-lg outline-none text-right tabular-nums"
+                  style={negativeFormItem(item, mappings)
+                    ? { border: '1px solid #fca5a5', color: '#dc2626', background: '#fef2f2' }
+                    : { border: '1px solid #e2e8f0' }}
+                  value={item.amount ? (negativeFormItem(item, mappings) ? Math.abs(item.amount) : item.amount) : ''} placeholder="0"
+                  onChange={e => {
+                    const amount = parseInt(e.target.value) || 0
+                    updateItem(i, 'amount', normalizeItemAmount(item.name, amount, negativeFormItem(item, mappings)))
+                  }} />
+                {negativeFormItem(item, mappings) && <p className="mt-0.5 text-right text-[9px] font-bold text-rose-600">自動轉負</p>}
+              </div>
               <button onClick={() => setItems(p => p.filter((_, idx) => idx !== i))} className="text-slate-300 hover:text-red-400 mt-2">
                 <Trash2 className="h-4 w-4" />
               </button>

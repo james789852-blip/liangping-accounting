@@ -7,6 +7,7 @@ import ReceiptUpload from './receipt-upload'
 import Link from 'next/link'
 import SafePhotoImage from '@/components/shared/safe-photo-image'
 import { isReceiptDateLocked } from '@/lib/receipt-guards'
+import { isNegativeItem, normalizeItemAmount } from '@/lib/negative-items'
 
 interface ReceiptItem {
   id: string; item_name: string; quantity?: number; unit?: string; unit_price?: number; amount: number; excel_column: string; item_category: string
@@ -17,7 +18,7 @@ interface ReceiptData {
   total_amount: number; tax_amount: number; photo_url: string; status: string
   notes: string; created_at: string; receipt_items: ReceiptItem[]
 }
-interface MappingOption { id?: string; item_name: string; excel_column: string; item_category: string; vendor_group?: string | null }
+interface MappingOption { id?: string; item_name: string; excel_column: string; item_category: string; vendor_group?: string | null; is_negative?: boolean }
 interface Props {
   storeId: string; storeName: string; today: string; receipts: ReceiptData[]; mappings: MappingOption[]
   closingStatusByDate: Record<string, string>
@@ -55,6 +56,11 @@ function mappingKey(item: MappingOption) { return `${item.vendor_group ?? ''}::$
 function findMapping(mappings: MappingOption[], itemName: string, vendorGroup?: string | null) {
   return mappings.find(item => item.item_name === itemName && (!vendorGroup || item.vendor_group === vendorGroup))
 }
+function negativeEditItem(item: EditItem, mappings: MappingOption[]) {
+  const mapping = (item.item_mapping_id ? mappings.find(option => option.id === item.item_mapping_id) : undefined)
+    ?? findMapping(mappings, item.item_name, item.vendor_group)
+  return !!mapping?.is_negative || isNegativeItem(item.item_name)
+}
 
 function inputStyle(extra?: object) {
   return {
@@ -80,6 +86,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
     const m = mappings.find(item => mappingKey(item) === key)
     setEditItems(prev => prev.map((it, i) => i !== idx ? it : {
       ...it, item_name: m?.item_name ?? key,
+      amount: normalizeItemAmount(m?.item_name ?? key, it.amount, !!m?.is_negative),
       excel_column: m?.excel_column ?? '',
       item_category: m?.item_category ?? '食材',
       vendor_group: m?.vendor_group ?? null,
@@ -146,7 +153,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
       total_amount: editTotal, tax_amount: editTax, notes: editNotes,
       receipt_items: filteredItems.map((item, idx) => ({
         id: receipt.receipt_items[idx]?.id ?? `local-${idx}`,
-        item_name: item.item_name, amount: item.amount,
+        item_name: item.item_name, amount: normalizeItemAmount(item.item_name, item.amount, negativeEditItem(item, mappings)),
         excel_column: item.excel_column, item_category: item.item_category,
         item_mapping_id: item.item_mapping_id ?? null,
         vendor_group_snapshot: item.vendor_group ?? editVendor ?? null,
@@ -411,9 +418,22 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
                       )
                     })()}
                   </div>
-                  <input type="number" style={inputStyle({ padding: '7px 10px', fontSize: '13px', textAlign: 'right' })}
-                    placeholder="金額" value={item.amount || ''}
-                    onChange={e => setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, amount: parseFloat(e.target.value) || 0 } : it))} />
+                  <div>
+                    <input type="number" min="0" style={inputStyle({
+                      padding: '7px 10px', fontSize: '13px', textAlign: 'right',
+                      border: negativeEditItem(item, mappings) ? '1.5px solid #fca5a5' : '1.5px solid #e4e4e7',
+                      color: negativeEditItem(item, mappings) ? '#dc2626' : '#18181b',
+                      background: negativeEditItem(item, mappings) ? '#fef2f2' : 'white',
+                    })}
+                      placeholder="金額" value={item.amount ? (negativeEditItem(item, mappings) ? Math.abs(item.amount) : item.amount) : ''}
+                      onChange={e => {
+                        const amount = parseFloat(e.target.value) || 0
+                        setEditItems(prev => prev.map((it, i) => i === idx
+                          ? { ...it, amount: normalizeItemAmount(it.item_name, amount, negativeEditItem(it, mappings)) }
+                          : it))
+                      }} />
+                    {negativeEditItem(item, mappings) && <p className="mt-0.5 text-right text-[9px] font-bold text-rose-600">自動轉負</p>}
+                  </div>
                   <button onClick={() => setEditItems(prev => prev.filter((_, i) => i !== idx))}
                     className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors hover:bg-red-50 mt-0.5"
                     style={{ color: '#a1a1aa' }}>

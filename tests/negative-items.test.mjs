@@ -13,3 +13,9 @@ test('一般買東西或維修品項維持原本金額', () => {
   assert.equal(normalizeItemAmount('與分店買東西', 650), 650)
   assert.equal(normalizeItemAmount('冷氣維修', 1200), 1200)
 })
+
+test('品項管理啟用負數後，自訂名稱也會固定以負數儲存', () => {
+  assert.equal(normalizeItemAmount('其他', 500, true), -500)
+  assert.equal(normalizeItemAmount('其他', -500, true), -500)
+  assert.equal(normalizeItemAmount('其他', 500, false), 500)
+})

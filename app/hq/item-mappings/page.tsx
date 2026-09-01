@@ -12,8 +12,13 @@ import { isVendorOnlyMapping } from '@/lib/vendor-only-mapping'
 import {
   disabledAtFromStatusEvents,
   isArchivedFromStatusEvents,
+  isExplicitItemFromStatusEvents,
+  isNegativeFromStatusEvents,
   ITEM_MAPPING_ARCHIVED_EVENT,
   ITEM_MAPPING_DISABLED_EVENT,
+  ITEM_MAPPING_EXPLICIT_ITEM_EVENT,
+  ITEM_MAPPING_NEGATIVE_DISABLED_EVENT,
+  ITEM_MAPPING_NEGATIVE_ENABLED_EVENT,
   ITEM_MAPPING_REACTIVATED_EVENT,
   mappingIdFromStatusEvent,
   type ItemMappingStatusEvent,
@@ -61,7 +66,14 @@ export default async function ItemMappingsPage({
   const statusEvents = await fetchAllPaged<ItemMappingStatusEvent>(() => admin
     .from('audit_logs')
     .select('event_type,created_at,metadata')
-    .in('event_type', [ITEM_MAPPING_DISABLED_EVENT, ITEM_MAPPING_REACTIVATED_EVENT, ITEM_MAPPING_ARCHIVED_EVENT])
+    .in('event_type', [
+      ITEM_MAPPING_DISABLED_EVENT,
+      ITEM_MAPPING_REACTIVATED_EVENT,
+      ITEM_MAPPING_ARCHIVED_EVENT,
+      ITEM_MAPPING_NEGATIVE_ENABLED_EVENT,
+      ITEM_MAPPING_NEGATIVE_DISABLED_EVENT,
+      ITEM_MAPPING_EXPLICIT_ITEM_EVENT,
+    ])
     .order('created_at'))
   const statusEventsByMapping = new Map<string, ItemMappingStatusEvent[]>()
   for (const event of statusEvents ?? []) {
@@ -93,7 +105,8 @@ export default async function ItemMappingsPage({
     vgs = refetched
   }
   const storeMappingCounts = (mappings ?? []).reduce<Record<string, number>>((acc, row) => {
-    if (disabledAtFromStatusEvents(statusEventsByMapping.get(row.id) ?? []) || isVendorOnlyMapping(row)) return acc
+    const events = statusEventsByMapping.get(row.id) ?? []
+    if (disabledAtFromStatusEvents(events) || isVendorOnlyMapping({ ...row, is_explicit_item: isExplicitItemFromStatusEvents(events) })) return acc
     if (row.store_id) acc[row.store_id] = (acc[row.store_id] ?? 0) + 1
     return acc
   }, {})
@@ -102,6 +115,8 @@ export default async function ItemMappingsPage({
     vendor_group: normalizeVendorGroupName(mapping.vendor_group),
     disabled_at: disabledAtFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
     archived: isArchivedFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
+    is_negative: isNegativeFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
+    is_explicit_item: isExplicitItemFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
   }))
   const activeGroupNames = new Set((vgs ?? []).map(group => group.name as string))
   const linkedCategoryNamesByStore = (receiptCategories ?? []).reduce<Record<string, string[]>>((acc, category) => {

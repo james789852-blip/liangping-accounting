@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { getAuthContext, canAccessStore } from '@/lib/permissions'
 import { logAudit } from '@/lib/audit'
 import { normalizeItemAmount } from '@/lib/negative-items'
+import { getNegativeItemMappingIds } from '@/lib/item-mapping-negative'
 import { receiptDateWriteError } from '@/lib/receipt-write-access'
 
 interface ReceiptItemPayload {
@@ -85,8 +86,13 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
 
   const normalizedItems = normalizeReceiptItemsForTotal(payload.items, payload.totalAmount, payload.taxAmount)
   if (normalizedItems.length > 0) {
+    const negativeMappingIds = await getNegativeItemMappingIds(admin, payload.storeId)
     const { error: itemError } = await admin.from('receipt_items').insert(
-      normalizedItems.map(item => ({ ...item, amount: normalizeItemAmount(item.item_name, item.amount), receipt_id: receipt.id }))
+      normalizedItems.map(item => ({
+        ...item,
+        amount: normalizeItemAmount(item.item_name, item.amount, !!item.item_mapping_id && negativeMappingIds.has(item.item_mapping_id)),
+        receipt_id: receipt.id,
+      }))
     )
     if (itemError) {
       // receipts -> receipt_items 是 cascade 關聯；刪除主檔可完整回滾本次新增。
@@ -219,8 +225,13 @@ export async function updateReceipt(
 
   const normalizedItems = normalizeReceiptItemsForTotal(payload.items, payload.totalAmount, payload.taxAmount)
   if (normalizedItems.length > 0) {
+    const negativeMappingIds = await getNegativeItemMappingIds(admin, storeId)
     const { error: itemError } = await admin.from('receipt_items').insert(
-      normalizedItems.map(item => ({ ...item, amount: normalizeItemAmount(item.item_name, item.amount), receipt_id: receiptId }))
+      normalizedItems.map(item => ({
+        ...item,
+        amount: normalizeItemAmount(item.item_name, item.amount, !!item.item_mapping_id && negativeMappingIds.has(item.item_mapping_id)),
+        receipt_id: receiptId,
+      }))
     )
     if (itemError) {
       await admin.from('receipts').update({
