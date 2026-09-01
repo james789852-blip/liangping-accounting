@@ -7,6 +7,10 @@ import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord, saveCKHQReimbur
 import { uploadToStorage } from '@/app/actions/upload'
 import { toast } from 'sonner'
 import { centralKitchenPhotoPath } from '@/lib/storage-paths'
+import {
+  groupCKExpensesByReceipt,
+  type CKExpenseForReceiptReview,
+} from '@/lib/ck-expense-receipt-groups'
 import SafePhotoImage from './safe-photo-image'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
@@ -92,48 +96,7 @@ interface MemberStore {
   deliveryPhotoUrls: string[]
 }
 interface ExternalOrder { name: string; amount: number; deliveryPhotoUrls: string[] }
-interface Expense { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }
-
-type ExpenseGroup = {
-  key: string
-  name: string
-  expenses: Expense[]
-  total: number
-  categories: string[]
-  payerNames: string[]
-  docTypes: string[]
-  notes: string[]
-  photoUrls: string[]
-}
-
-/** 同一廠商的多個品項視為同一張待核對單據，不再逐品項重複顯示照片。 */
-function groupExpensesByVendor(expenses: Expense[]): ExpenseGroup[] {
-  const groups = new Map<string, ExpenseGroup>()
-  expenses.forEach(expense => {
-    const name = expense.vendor_group?.trim() || expense.item_name.trim() || '未分類支出'
-    const key = name
-    const current = groups.get(key) ?? {
-      key,
-      name,
-      expenses: [],
-      total: 0,
-      categories: [],
-      payerNames: [],
-      docTypes: [],
-      notes: [],
-      photoUrls: [],
-    }
-    current.expenses.push(expense)
-    current.total += Number(expense.amount) || 0
-    if (expense.category && !current.categories.includes(expense.category)) current.categories.push(expense.category)
-    if (expense.payer_name && !current.payerNames.includes(expense.payer_name)) current.payerNames.push(expense.payer_name)
-    if (expense.doc_type && !current.docTypes.includes(expense.doc_type)) current.docTypes.push(expense.doc_type)
-    if (expense.note && !current.notes.includes(expense.note)) current.notes.push(expense.note)
-    if (expense.receipt_photo_url && !current.photoUrls.includes(expense.receipt_photo_url)) current.photoUrls.push(expense.receipt_photo_url)
-    groups.set(key, current)
-  })
-  return Array.from(groups.values())
-}
+type Expense = CKExpenseForReceiptReview
 
 interface CKStoreData {
   ckStore: { id: string; name: string }
@@ -558,7 +521,7 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
   const externalRevenue = deductibleExternalRevenue(d)
   const reimbursementBaseAmount = Math.max(0, d.expenseTotal - externalRevenue)
   const reimbursementAmount = Math.max(0, reimbursementBaseAmount + Number(d.hqReimbursementAdjustment ?? 0))
-  const expenseGroups = groupExpensesByVendor(d.expenses)
+  const expenseGroups = groupCKExpensesByReceipt(d.expenses)
   const assignedExpensePhotos = new Set(expenseGroups.flatMap(group => group.photoUrls))
   const unassignedReceiptPhotos = (d.receiptPhotoUrls ?? []).filter(url => !assignedExpensePhotos.has(url))
   const expenseCategoryOrder = ['食材', '耗材', '雜項', '未分類']
@@ -942,7 +905,7 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
 
   const expensePhotoSet = new Set(d.expenses.map(e => e.receipt_photo_url).filter(Boolean))
   const unassignedPhotos = (d.receiptPhotoUrls ?? []).filter(url => !expensePhotoSet.has(url))
-  const expenseGroups = groupExpensesByVendor(d.expenses)
+  const expenseGroups = groupCKExpensesByReceipt(d.expenses)
   const steps: CKReviewStep[] = [
     ...d.memberStores.map(item => ({
       key: `member-${item.store_id}`,
