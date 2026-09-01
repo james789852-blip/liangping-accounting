@@ -18,6 +18,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { itemNameCompatibilityKey } from '@/lib/item-name-compat'
 import { getExcelPlatformColumns } from '@/lib/excel-platform-order'
 import { resolveReportingActualVendor } from '@/lib/reporting-actual-vendor'
+import { blankWorkbookZero, workbookResultValue } from '@/lib/workbook-zero-display'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -201,7 +202,6 @@ const STAT_ORANGE_FILL = 'FFF79544'
 const STAT_BLUE_FILL = 'FF4BACC6'
 const STAT_MISC_FILL = 'FFF4B183'
 const RED_FONT = 'FFFF0000'
-const ZERO_NUM_FMT = '#,##0;-#,##0;0'
 const BLANK_ZERO_NUM_FMT = '#,##0;-#,##0;'
 const RESULT_NUM_FMT = '#,##0;[Red]-#,##0;0'
 
@@ -544,8 +544,8 @@ export async function addFoodCostSheet(
   const HEADER_ROW = 3           // 「日期/POS/...」在 row 3
   const TOTAL_ROW = 4            // 月合計
   const DATA_START = 5           // 每日資料
-  const blankZeroFromCol = cols.find(c => c.kind === 'item' && c.vendorGroup === '央廚配送')?.index ?? Number.POSITIVE_INFINITY
-  const numFmtForColumn = (c: ColumnDef) => c.kind === 'item' && c.index >= blankZeroFromCol ? BLANK_ZERO_NUM_FMT : ZERO_NUM_FMT
+  // 除「結果」外，所有數值欄的 0 都顯示空白，降低核對時的視覺雜訊。
+  const numFmtForColumn = (_c: ColumnDef) => BLANK_ZERO_NUM_FMT
   const incomeRef = (key: string) => cols.find(c => c.incomeKey === key)?.index
   const posCol = incomeRef('pos')
   const varianceCol = incomeRef('variance')
@@ -643,7 +643,7 @@ export async function addFoodCostSheet(
     setSolidFill(cellRefund, PALE_YELLOW)
     cellRefund.font = { name: FONT_FAMILY, size: 12, bold: true }
     cellRefund.alignment = { horizontal: 'center', vertical: 'middle' }
-    cellRefund.numFmt = '#,##0;-#,##0;"-"'
+    cellRefund.numFmt = BLANK_ZERO_NUM_FMT
 
     // 總發票 = 所有 doc=發票
     fillHeaderCell(ws.getRow(2).getCell(totalStatCol - 1), '總發票', 'FFC6D9F0', BLACK)
@@ -651,7 +651,7 @@ export async function addFoodCostSheet(
     cellInv.value = { formula: `SUMIFS(${totalRange},${docRow2Range},"發票")` } as any
     setSolidFill(cellInv, PALE_YELLOW)
     cellInv.alignment = { horizontal: 'center', vertical: 'middle' }
-    cellInv.numFmt = '#,##0;-#,##0;"-"'
+    cellInv.numFmt = BLANK_ZERO_NUM_FMT
 
     // 總收據 = 所有 doc=收據
     const foodCol = cols.find(c => c.statKey === 'food')?.index
@@ -661,7 +661,7 @@ export async function addFoodCostSheet(
       cellRec.value = { formula: `SUMIFS(${totalRange},${docRow2Range},"收據")` } as any
       setSolidFill(cellRec, PALE_YELLOW)
       cellRec.alignment = { horizontal: 'center', vertical: 'middle' }
-      cellRec.numFmt = '#,##0;-#,##0;"-"'
+      cellRec.numFmt = BLANK_ZERO_NUM_FMT
     }
   }
 
@@ -767,25 +767,25 @@ export async function addFoodCostSheet(
         cell.value = ''
       } else if (c.kind === 'income' && dd && c.incomeKey) {
         const platformSum = sumRefs(platformIncomeCols, rowNum)
-        // 「結果」欄特殊：=0 顯示 0（不是空）、有誤差顯示紅色
+        // 「結果」欄特殊：已做帳且 =0 才顯示 0；尚未做帳留白，有誤差顯示紅色。
         if (c.incomeKey === 'after_deduct') {
-          cell.value = dd.after_deduct
-          cell.numFmt = ZERO_NUM_FMT
+          cell.value = blankWorkbookZero(dd.after_deduct)
+          cell.numFmt = BLANK_ZERO_NUM_FMT
         } else if (c.incomeKey === 'onsite' && posCol) {
           cell.value = { formula: `${cellRef(posCol, rowNum)}-${platformSum}` } as any
-          cell.numFmt = ZERO_NUM_FMT
+          cell.numFmt = BLANK_ZERO_NUM_FMT
         } else if (c.incomeKey === 'variance') {
-          cell.value = dd.variance
+          cell.value = workbookResultValue(dd.variance, dd.closingStatus)
           cell.numFmt = RESULT_NUM_FMT
           cell.font = { ...(cell.font as any), color: { argb: BLACK }, bold: true }
         } else if (c.incomeKey === 'revenue' && posCol && varianceCol) {
           cell.value = { formula: `IF(${cellRef(posCol, rowNum)}-${platformSum}>0,${cellRef(varianceCol, rowNum)}+${cellRef(posCol, rowNum)}-${platformSum},"")` } as any
-          cell.numFmt = ZERO_NUM_FMT
+          cell.numFmt = BLANK_ZERO_NUM_FMT
           cell.font = { ...(cell.font as any), color: { argb: BLACK }, bold: true }
         } else {
           const v = readIncomeValue(dd, c.incomeKey, store)
-          cell.value = v
-          cell.numFmt = ZERO_NUM_FMT
+          cell.value = blankWorkbookZero(v)
+          cell.numFmt = BLANK_ZERO_NUM_FMT
         }
       } else if (c.kind === 'stat' && c.statKey) {
         // 用 SUM range 公式，Excel 開會動態重算
@@ -803,14 +803,14 @@ export async function addFoodCostSheet(
           formula = `${colLetter(foodCol.index)}${rowNum}+${colLetter(packCol.index)}${rowNum}+${colLetter(miscCol.index)}${rowNum}`
         }
         if (formula) cell.value = { formula } as any
-        cell.numFmt = ZERO_NUM_FMT
+        cell.numFmt = BLANK_ZERO_NUM_FMT
       } else if (c.kind === 'item' && dd) {
         // nameKey = 完整 item_name（aggregator items 用），header 可能剝過前綴
         // 先精確比對，再以相容鍵比對（處理「小雲-稅金」↔「小雲稅金」、
         // 「（賣）給分店食材」↔「賣給分店食材」等舊名稱差異）
         const key = c.nameKey ?? c.header
         const { value: v, sourceKey } = scopedItemValueForExport(dd, key, c.vendorGroup)
-        cell.value = v
+        cell.value = blankWorkbookZero(v)
         const note = dd.notes[sourceKey]
         if (note?.trim()) cell.note = note
         cell.numFmt = numFmtForColumn(c)
