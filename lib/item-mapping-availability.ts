@@ -9,7 +9,10 @@ export const ITEM_MAPPING_REACTIVATED_EVENT = 'item_mapping_reactivated'
 export const ITEM_MAPPING_ARCHIVED_EVENT = 'item_mapping_archived'
 export const ITEM_MAPPING_NEGATIVE_ENABLED_EVENT = 'item_mapping_negative_enabled'
 export const ITEM_MAPPING_NEGATIVE_DISABLED_EVENT = 'item_mapping_negative_disabled'
+export const ITEM_MAPPING_SIGN_FLEXIBLE_EVENT = 'item_mapping_sign_flexible'
 export const ITEM_MAPPING_EXPLICIT_ITEM_EVENT = 'item_mapping_explicit_item'
+
+export type ItemMappingSignMode = 'positive' | 'negative' | 'flexible'
 
 const ITEM_MAPPING_LIFECYCLE_EVENTS = new Set([
   ITEM_MAPPING_DISABLED_EVENT,
@@ -19,6 +22,7 @@ const ITEM_MAPPING_LIFECYCLE_EVENTS = new Set([
 const ITEM_MAPPING_NEGATIVE_EVENTS = new Set([
   ITEM_MAPPING_NEGATIVE_ENABLED_EVENT,
   ITEM_MAPPING_NEGATIVE_DISABLED_EVENT,
+  ITEM_MAPPING_SIGN_FLEXIBLE_EVENT,
 ])
 
 export interface ItemMappingStatusEvent {
@@ -86,11 +90,17 @@ export function isArchivedFromStatusEvents(events: ItemMappingStatusEvent[]): bo
 }
 
 /** 此設定只影響後續輸入；歷史帳目的金額仍以當時已儲存的正負值為準。 */
-export function isNegativeFromStatusEvents(events: ItemMappingStatusEvent[]): boolean {
+export function signModeFromStatusEvents(events: ItemMappingStatusEvent[]): ItemMappingSignMode {
   const latest = events
     .filter(event => ITEM_MAPPING_NEGATIVE_EVENTS.has(event.event_type))
     .sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
-  return latest?.event_type === ITEM_MAPPING_NEGATIVE_ENABLED_EVENT
+  if (latest?.event_type === ITEM_MAPPING_NEGATIVE_ENABLED_EVENT) return 'negative'
+  if (latest?.event_type === ITEM_MAPPING_SIGN_FLEXIBLE_EVENT) return 'flexible'
+  return 'positive'
+}
+
+export function isNegativeFromStatusEvents(events: ItemMappingStatusEvent[]): boolean {
+  return signModeFromStatusEvents(events) === 'negative'
 }
 
 /** 分類同名品項若由管理者明確新增，就不可再當成內部廠商佔位資料隱藏。 */

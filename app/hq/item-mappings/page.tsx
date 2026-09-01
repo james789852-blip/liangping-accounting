@@ -20,7 +20,9 @@ import {
   ITEM_MAPPING_NEGATIVE_DISABLED_EVENT,
   ITEM_MAPPING_NEGATIVE_ENABLED_EVENT,
   ITEM_MAPPING_REACTIVATED_EVENT,
+  ITEM_MAPPING_SIGN_FLEXIBLE_EVENT,
   mappingIdFromStatusEvent,
+  signModeFromStatusEvents,
   type ItemMappingStatusEvent,
 } from '@/lib/item-mapping-availability'
 
@@ -72,6 +74,7 @@ export default async function ItemMappingsPage({
       ITEM_MAPPING_ARCHIVED_EVENT,
       ITEM_MAPPING_NEGATIVE_ENABLED_EVENT,
       ITEM_MAPPING_NEGATIVE_DISABLED_EVENT,
+      ITEM_MAPPING_SIGN_FLEXIBLE_EVENT,
       ITEM_MAPPING_EXPLICIT_ITEM_EVENT,
     ])
     .order('created_at'))
@@ -116,6 +119,7 @@ export default async function ItemMappingsPage({
     disabled_at: disabledAtFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
     archived: isArchivedFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
     is_negative: isNegativeFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
+    sign_mode: signModeFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
     is_explicit_item: isExplicitItemFromStatusEvents(statusEventsByMapping.get(mapping.id) ?? []),
   }))
   const activeGroupNames = new Set((vgs ?? []).map(group => group.name as string))

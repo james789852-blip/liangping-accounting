@@ -1,6 +1,7 @@
 // 從新 schema (system_items + store_items + system_vendor_groups) 取得店家「有效啟用品項列表」
 // 回傳跟舊 mappingColumns 一樣的格式 → 可直接餵給 closing-form 不用改 UI
 import { createAdminClient } from '@/lib/supabase/admin'
+import type { ItemMappingSignMode } from '@/lib/item-mapping-availability'
 
 export interface ResolvedStoreItem {
   /** 品項唯一識別（store-side：可能是 system_item.id 或 store_item.id） */
@@ -31,6 +32,8 @@ export interface ResolvedStoreItem {
   is_refund?: boolean
   /** 店面輸入時是否自動以負數儲存；不回寫歷史帳目。 */
   is_negative?: boolean
+  /** 店面金額模式：正數、固定負數，或每筆手動切換正負。 */
+  sign_mode?: ItemMappingSignMode
   /** 分類同名但由管理者明確建立的正式品項。 */
   is_explicit_item?: boolean
   /** 店長輸入稅外加時由系統自動寫入的隱藏稅金品項 */
@@ -142,6 +145,7 @@ export function toMappingColumns(items: ResolvedStoreItem[]) {
     excel_column: i.name,
     is_tax_addon: !!i.is_tax_addon,
     is_negative: !!i.is_negative,
+    sign_mode: i.sign_mode ?? (i.is_negative ? 'negative' : 'positive'),
     is_explicit_item: !!i.is_explicit_item,
     tax_scope: i.tax_scope ?? 'category',
     tax_target_item: i.tax_target_item ?? null,

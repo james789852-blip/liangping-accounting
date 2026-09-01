@@ -8,6 +8,7 @@ import {
   isNegativeFromStatusEvents,
   isUnavailableForReportMonth,
   nextMonthStart,
+  signModeFromStatusEvents,
   taipeiCalendarMonthStart,
   unavailablePeriodsFromStatusEvents,
 } from '../lib/item-mapping-availability.ts'
@@ -70,6 +71,10 @@ test('負數設定不會誤改停用狀態，且以最後一次負數設定為�
     ...events,
     { event_type: 'item_mapping_negative_disabled', created_at: '2026-09-01T03:00:00Z', metadata: { item_mapping_id: 'm1' } },
   ]), false)
+  assert.equal(signModeFromStatusEvents([
+    ...events,
+    { event_type: 'item_mapping_sign_flexible', created_at: '2026-09-01T04:00:00Z', metadata: { item_mapping_id: 'm1' } },
+  ]), 'flexible')
 })
 
 test('明確新增分類同名品項後會留下正式品項標記', () => {

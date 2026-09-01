@@ -22,7 +22,9 @@ import {
   ITEM_MAPPING_NEGATIVE_DISABLED_EVENT,
   ITEM_MAPPING_NEGATIVE_ENABLED_EVENT,
   ITEM_MAPPING_REACTIVATED_EVENT,
+  ITEM_MAPPING_SIGN_FLEXIBLE_EVENT,
   mappingIdFromStatusEvent,
+  signModeFromStatusEvents,
   unavailablePeriodsFromStatusEvents,
   type ItemMappingStatusEvent,
 } from '@/lib/item-mapping-availability'
@@ -76,6 +78,7 @@ async function loadStoreItemsFromMappings(
         ITEM_MAPPING_ARCHIVED_EVENT,
         ITEM_MAPPING_NEGATIVE_ENABLED_EVENT,
         ITEM_MAPPING_NEGATIVE_DISABLED_EVENT,
+        ITEM_MAPPING_SIGN_FLEXIBLE_EVENT,
         ITEM_MAPPING_EXPLICIT_ITEM_EVENT,
       ])
       .order('created_at')),
@@ -136,6 +139,7 @@ async function loadStoreItemsFromMappings(
       vg_merge_across_category: !!vg?.merge_across_category,
       is_refund: !!m.is_refund,
       is_negative: isNegativeFromStatusEvents(eventsByMapping.get(m.id as string) ?? []),
+      sign_mode: signModeFromStatusEvents(eventsByMapping.get(m.id as string) ?? []),
       is_explicit_item: isExplicitItemFromStatusEvents(eventsByMapping.get(m.id as string) ?? []),
       is_tax_addon: !!m.is_tax_addon,
       tax_scope: (m.tax_scope ?? 'category') as 'category' | 'item',

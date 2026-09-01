@@ -16,6 +16,8 @@ import {
   ITEM_MAPPING_NEGATIVE_DISABLED_EVENT,
   ITEM_MAPPING_NEGATIVE_ENABLED_EVENT,
   ITEM_MAPPING_REACTIVATED_EVENT,
+  ITEM_MAPPING_SIGN_FLEXIBLE_EVENT,
+  type ItemMappingSignMode,
   nextMonthStart,
   taipeiCalendarMonthStart,
 } from '@/lib/item-mapping-availability'
@@ -1247,8 +1249,9 @@ export async function setItemRefundFlag(id: string, isRefund: boolean) {
   return { success: true as const }
 }
 
-/** 店面輸入正數後自動以負數儲存；設定異動不回寫任何歷史帳目。 */
-export async function setItemNegativeFlag(id: string, isNegative: boolean) {
+/** 設定店面金額模式；設定異動只影響後續輸入，不回寫任何歷史帳目。 */
+export async function setItemSignMode(id: string, signMode: ItemMappingSignMode) {
+  if (!['positive', 'negative', 'flexible'].includes(signMode)) return { error: '金額模式不正確' }
   const admin = createAdminClient()
   const { data: mapping, error: mappingError } = await admin.from('item_column_mappings')
     .select('id, item_name, store_id, vendor_group')
@@ -1259,25 +1262,34 @@ export async function setItemNegativeFlag(id: string, isNegative: boolean) {
   const auth = await requireCanManageItems(mapping.store_id ?? null)
   if (auth.error) return { error: auth.error }
 
-  const eventType = isNegative
+  const eventType = signMode === 'negative'
     ? ITEM_MAPPING_NEGATIVE_ENABLED_EVENT
-    : ITEM_MAPPING_NEGATIVE_DISABLED_EVENT
+    : signMode === 'flexible'
+      ? ITEM_MAPPING_SIGN_FLEXIBLE_EVENT
+      : ITEM_MAPPING_NEGATIVE_DISABLED_EVENT
+  const modeLabel = signMode === 'negative' ? '固定負數' : signMode === 'flexible' ? '每筆正負' : '固定正數'
   const { error } = await admin.from('audit_logs').insert({
     event_type: eventType,
     severity: 'info',
     store_id: mapping.store_id ?? null,
     user_id: auth.user?.id ?? null,
-    description: `${isNegative ? '啟用' : '取消'}店面負數品項：${mapping.vendor_group ? `${mapping.vendor_group}／` : ''}${mapping.item_name}`,
+    description: `設定店面品項金額模式為${modeLabel}：${mapping.vendor_group ? `${mapping.vendor_group}／` : ''}${mapping.item_name}`,
     metadata: {
       item_mapping_id: mapping.id,
-      is_negative: isNegative,
+      sign_mode: signMode,
+      is_negative: signMode === 'negative',
       effective_at: new Date().toISOString(),
       historical_amounts_preserved: true,
     },
   })
   if (error) return { error: error.message }
   revalidate()
-  return { success: true as const, isNegative }
+  return { success: true as const, signMode }
+}
+
+/** 保留舊呼叫相容；新介面改用三態金額模式。 */
+export async function setItemNegativeFlag(id: string, isNegative: boolean) {
+  return setItemSignMode(id, isNegative ? 'negative' : 'positive')
 }
 
 /**

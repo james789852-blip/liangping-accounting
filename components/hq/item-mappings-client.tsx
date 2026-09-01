@@ -25,9 +25,11 @@ import {
   RECEIPT_VENDOR_GROUP_EXCLUDED_NAMES,
 } from '@/lib/linked-receipt-category'
 import { isVendorOnlyMapping } from '@/lib/vendor-only-mapping'
+import { isNegativeItem } from '@/lib/negative-items'
+import type { ItemMappingSignMode } from '@/lib/item-mapping-availability'
 
 interface Mapping {
-  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_negative?: boolean; is_explicit_item?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; sort_order?: number; vg_sort_order?: number; disabled_at?: string | null; archived?: boolean
+  id: string; item_name: string; excel_column: string; item_category: string; store_id?: string | null; vendor_group?: string | null; doc_type_override?: string | null; is_refund?: boolean; is_negative?: boolean; sign_mode?: ItemMappingSignMode; is_explicit_item?: boolean; is_tax_addon?: boolean; tax_scope?: 'category' | 'item' | null; tax_target_item?: string | null; sort_order?: number; vg_sort_order?: number; disabled_at?: string | null; archived?: boolean
 }
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
@@ -1297,7 +1299,11 @@ function ItemRowContent({
           <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
             style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
           <RefundToggle mappingId={m.id} isRefund={!!m.is_refund} />
-          <NegativeToggle mappingId={m.id} isNegative={!!m.is_negative} />
+          <SignModeControl
+            mappingId={m.id}
+            signMode={m.sign_mode ?? (m.is_negative ? 'negative' : 'positive')}
+            systemFixedNegative={isNegativeItem(m.item_name)}
+          />
           <TaxAddonToggle
             mappingId={m.id}
             enabled={!!m.is_tax_addon}
@@ -1500,36 +1506,50 @@ function RefundToggle({ mappingId, isRefund }: { mappingId: string; isRefund: bo
   )
 }
 
-/** 店面端負數品項：輸入正數，系統自動轉成負數儲存與統計。 */
-function NegativeToggle({ mappingId, isNegative }: { mappingId: string; isNegative: boolean }) {
-  const [checked, setChecked] = useState(isNegative)
+/** 店面端金額模式：固定正數、固定負數，或每筆由店長切換。 */
+function SignModeControl({ mappingId, signMode, systemFixedNegative }: {
+  mappingId: string
+  signMode: ItemMappingSignMode
+  systemFixedNegative: boolean
+}) {
+  const [mode, setMode] = useState<ItemMappingSignMode>(systemFixedNegative ? 'negative' : signMode)
   const [pending, startTransition] = useTransition()
-  useEffect(() => { setChecked(isNegative) }, [isNegative])
+  useEffect(() => { setMode(systemFixedNegative ? 'negative' : signMode) }, [signMode, systemFixedNegative])
 
-  function toggle() {
-    const next = !checked
-    setChecked(next)
+  function changeMode(next: ItemMappingSignMode) {
+    if (systemFixedNegative) return
+    const previous = mode
+    setMode(next)
     startTransition(async () => {
-      const { setItemNegativeFlag } = await import('@/app/actions/item-mappings')
-      const result = await setItemNegativeFlag(mappingId, next)
+      const { setItemSignMode } = await import('@/app/actions/item-mappings')
+      const result = await setItemSignMode(mappingId, next)
       if (result && 'error' in result) {
-        setChecked(!next)
+        setMode(previous)
         toast.error('儲存失敗：' + result.error)
         return
       }
-      toast.success(next ? '店面端將自動以負數計算；歷史帳目不變' : '已取消自動負數；歷史帳目不變')
+      const label = next === 'negative' ? '固定負數' : next === 'flexible' ? '每筆正負' : '固定正數'
+      toast.success(`已設為${label}；歷史帳目不變`)
     })
   }
 
   return (
-    <button type="button" onClick={toggle} disabled={pending}
-      className="text-xs px-2 py-0.5 rounded-full shrink-0 font-semibold transition-colors"
-      style={checked
-        ? { background: '#fff1f2', color: '#be123c', border: '1.5px solid #fda4af', opacity: pending ? 0.6 : 1 }
-        : { background: 'white', color: '#a1a1aa', border: '1.5px solid #e4e4e7', opacity: pending ? 0.6 : 1 }}
-      title={checked ? '店面輸入正數後自動轉負（點擊取消）' : '點擊後店面端將自動以負數計算'}>
-      {checked ? '✓ 負數' : '負數'}
-    </button>
+    <select
+      value={mode}
+      onChange={event => changeMode(event.target.value as ItemMappingSignMode)}
+      disabled={pending || systemFixedNegative}
+      className="text-xs px-2 py-1 rounded-full shrink-0 font-semibold"
+      style={{
+        color: mode === 'negative' ? '#be123c' : mode === 'flexible' ? '#7c3aed' : '#52525b',
+        background: mode === 'negative' ? '#fff1f2' : mode === 'flexible' ? '#f5f3ff' : 'white',
+        border: `1.5px solid ${mode === 'negative' ? '#fda4af' : mode === 'flexible' ? '#c4b5fd' : '#e4e4e7'}`,
+        opacity: pending ? 0.6 : 1,
+      }}
+      title={systemFixedNegative ? '此品項原本就是系統固定負數，不受新設定影響' : '只影響之後新增或修改的帳目'}>
+      <option value="positive">固定正數</option>
+      <option value="negative">固定負數</option>
+      <option value="flexible">每筆正負</option>
+    </select>
   )
 }
 

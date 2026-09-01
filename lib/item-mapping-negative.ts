@@ -4,6 +4,7 @@ import {
   isNegativeFromStatusEvents,
   ITEM_MAPPING_NEGATIVE_DISABLED_EVENT,
   ITEM_MAPPING_NEGATIVE_ENABLED_EVENT,
+  ITEM_MAPPING_SIGN_FLEXIBLE_EVENT,
   mappingIdFromStatusEvent,
   type ItemMappingStatusEvent,
 } from '@/lib/item-mapping-availability'
@@ -17,7 +18,7 @@ export async function getNegativeItemMappingIds(
     .from('audit_logs')
     .select('event_type,created_at,metadata')
     .eq('store_id', storeId)
-    .in('event_type', [ITEM_MAPPING_NEGATIVE_ENABLED_EVENT, ITEM_MAPPING_NEGATIVE_DISABLED_EVENT])
+    .in('event_type', [ITEM_MAPPING_NEGATIVE_ENABLED_EVENT, ITEM_MAPPING_NEGATIVE_DISABLED_EVENT, ITEM_MAPPING_SIGN_FLEXIBLE_EVENT])
     .order('created_at'))
 
   const eventsByMapping = new Map<string, ItemMappingStatusEvent[]>()

@@ -599,13 +599,13 @@ function findReceiptItemMapping(
   )
 }
 
-function configuredNegativeReceiptItem(
+function configuredReceiptItemMapping(
   item: Pick<ReceiptFormItem, 'item_name' | 'item_mapping_id' | 'vendor_group_hint'>,
   vendorName: string,
   categoryName: string,
   mappingColumns: MappingColumn[],
-): boolean {
-  const mapping = (item.item_mapping_id
+): MappingColumn | undefined {
+  return (item.item_mapping_id
     ? mappingColumns.find(column => column.mapping_id === item.item_mapping_id)
     : undefined)
     ?? (item.vendor_group_hint
@@ -614,7 +614,25 @@ function configuredNegativeReceiptItem(
           && column.vendor_group === item.vendor_group_hint,
         )
       : findReceiptItemMapping(item.item_name, vendorName, categoryName, mappingColumns))
-  return !!mapping?.is_negative
+}
+
+function configuredNegativeReceiptItem(
+  item: Pick<ReceiptFormItem, 'item_name' | 'item_mapping_id' | 'vendor_group_hint'>,
+  vendorName: string,
+  categoryName: string,
+  mappingColumns: MappingColumn[],
+): boolean {
+  const mapping = configuredReceiptItemMapping(item, vendorName, categoryName, mappingColumns)
+  return mapping?.sign_mode === 'negative' || !!mapping?.is_negative
+}
+
+function configuredFlexibleReceiptItem(
+  item: Pick<ReceiptFormItem, 'item_name' | 'item_mapping_id' | 'vendor_group_hint'>,
+  vendorName: string,
+  categoryName: string,
+  mappingColumns: MappingColumn[],
+): boolean {
+  return configuredReceiptItemMapping(item, vendorName, categoryName, mappingColumns)?.sign_mode === 'flexible'
 }
 
 /**
@@ -953,6 +971,7 @@ type MappingColumn = {
   excel_column?: string
   doc_type?: string | null
   is_negative?: boolean
+  sign_mode?: 'positive' | 'negative' | 'flexible'
   is_explicit_item?: boolean
   is_tax_addon?: boolean
   tax_scope?: 'category' | 'item' | null
@@ -4425,7 +4444,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                       const neg = isNegativeItem(item.item_name)
                                         || isAutoNegativeOtherReceiptItem(item.item_name, form.category)
                                         || configuredNegativeReceiptItem(item, form.vendor_name, form.category, mappingColumns)
-                                      const allowManualNegative = canUseNegativeOtherReceiptItem(item.item_name, form.category) && !isAutoNegativeOtherReceiptItem(item.item_name, form.category)
+                                      const flexibleSign = configuredFlexibleReceiptItem(item, form.vendor_name, form.category, mappingColumns)
+                                      const allowManualNegative = flexibleSign || (canUseNegativeOtherReceiptItem(item.item_name, form.category) && !isAutoNegativeOtherReceiptItem(item.item_name, form.category))
                                       const displayed = item.amount === 0 ? '' : (neg ? Math.abs(item.amount) : item.amount)
                                       return (
                                         <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
@@ -4442,7 +4462,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                               type="button"
                                               onClick={() => updateItem(item.id, 'amount', item.amount < 0 ? Math.abs(item.amount) : -Math.abs(item.amount || 0))}
                                               style={{ width: '80px', minHeight: '36px', fontSize: 12, color: item.amount < 0 ? '#047857' : '#dc2626', marginTop: 4, padding: '8px 10px', border: `1px solid ${item.amount < 0 ? '#86efac' : '#fca5a5'}`, borderRadius: 999, background: item.amount < 0 ? '#f0fdf4' : '#fef2f2', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 800, lineHeight: 1 }}>
-                                              {item.amount < 0 ? '轉正' : '轉負'}
+                                              {item.amount < 0 ? '改為正數' : '改為負數'}
                                             </button>
                                           )}
                                         </div>
@@ -4907,7 +4927,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                           const neg = isNegativeItem(item.item_name)
                                             || isAutoNegativeOtherReceiptItem(item.item_name, editCategory)
                                             || configuredNegativeReceiptItem(item, editVendor, editCategory, mappingColumns)
-                                          const allowManualNegative = canUseNegativeOtherReceiptItem(item.item_name, editCategory) && !isAutoNegativeOtherReceiptItem(item.item_name, editCategory)
+                                          const flexibleSign = configuredFlexibleReceiptItem(item, editVendor, editCategory, mappingColumns)
+                                          const allowManualNegative = flexibleSign || (canUseNegativeOtherReceiptItem(item.item_name, editCategory) && !isAutoNegativeOtherReceiptItem(item.item_name, editCategory))
                                           const displayed = item.amount === 0 ? '' : (neg ? Math.abs(item.amount) : item.amount)
                                           return (
                                             <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
@@ -4924,7 +4945,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                                     type="button"
                                                     onClick={() => updateEditItemFn(idx, 'amount', item.amount < 0 ? Math.abs(item.amount) : -Math.abs(item.amount || 0))}
                                                   style={{ width: '80px', minHeight: '36px', fontSize: 12, color: item.amount < 0 ? '#047857' : '#dc2626', marginTop: 4, padding: '8px 10px', border: `1px solid ${item.amount < 0 ? '#86efac' : '#fca5a5'}`, borderRadius: 999, background: item.amount < 0 ? '#f0fdf4' : '#fef2f2', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 800, lineHeight: 1 }}>
-                                                  {item.amount < 0 ? '轉正' : '轉負'}
+                                                  {item.amount < 0 ? '改為正數' : '改為負數'}
                                                 </button>
                                               )}
                                             </div>

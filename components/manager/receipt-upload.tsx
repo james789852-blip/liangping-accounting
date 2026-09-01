@@ -13,7 +13,7 @@ import { storePhotoPath } from '@/lib/storage-paths'
 import { isNegativeItem, normalizeItemAmount } from '@/lib/negative-items'
 
 interface MappingOption {
-  id?: string; item_name: string; excel_column: string; item_category: string; vendor_group?: string | null; is_negative?: boolean
+  id?: string; item_name: string; excel_column: string; item_category: string; vendor_group?: string | null; is_negative?: boolean; sign_mode?: 'positive' | 'negative' | 'flexible'
 }
 
 interface NewReceiptData {
@@ -41,10 +41,16 @@ interface FormItem {
 }
 
 function mappingKey(item: MappingOption) { return `${item.vendor_group ?? ''}::${item.item_name}` }
-function negativeFormItem(item: FormItem, mappings: MappingOption[]) {
-  const mapping = (item.item_mapping_id ? mappings.find(option => option.id === item.item_mapping_id) : undefined)
+function formItemMapping(item: FormItem, mappings: MappingOption[]) {
+  return (item.item_mapping_id ? mappings.find(option => option.id === item.item_mapping_id) : undefined)
     ?? mappings.find(option => option.item_name === item.name && (!item.vendor_group || option.vendor_group === item.vendor_group))
-  return !!mapping?.is_negative || isNegativeItem(item.name)
+}
+function negativeFormItem(item: FormItem, mappings: MappingOption[]) {
+  const mapping = formItemMapping(item, mappings)
+  return mapping?.sign_mode === 'negative' || !!mapping?.is_negative || isNegativeItem(item.name)
+}
+function flexibleFormItem(item: FormItem, mappings: MappingOption[]) {
+  return formItemMapping(item, mappings)?.sign_mode === 'flexible' && !isNegativeItem(item.name)
 }
 export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCancel }: Props) {
   const [step, setStep] = useState<'upload' | 'recognizing' | 'review' | 'saving'>('upload')
@@ -422,19 +428,35 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
                   )
                 })()}
               </div>
-              <div>
-                <input type="number" min="0"
-                  className="h-9 w-full px-2 text-sm rounded-lg outline-none text-right tabular-nums"
-                  style={negativeFormItem(item, mappings)
-                    ? { border: '1px solid #fca5a5', color: '#dc2626', background: '#fef2f2' }
-                    : { border: '1px solid #e2e8f0' }}
-                  value={item.amount ? (negativeFormItem(item, mappings) ? Math.abs(item.amount) : item.amount) : ''} placeholder="0"
-                  onChange={e => {
-                    const amount = parseInt(e.target.value) || 0
-                    updateItem(i, 'amount', normalizeItemAmount(item.name, amount, negativeFormItem(item, mappings)))
-                  }} />
-                {negativeFormItem(item, mappings) && <p className="mt-0.5 text-right text-[9px] font-bold text-rose-600">自動轉負</p>}
-              </div>
+              {(() => {
+                const fixedNegative = negativeFormItem(item, mappings)
+                const flexible = flexibleFormItem(item, mappings)
+                return (
+                  <div>
+                    <input type="number" min={flexible ? undefined : 0}
+                      className="h-9 w-full px-2 text-sm rounded-lg outline-none text-right tabular-nums"
+                      style={fixedNegative || item.amount < 0
+                        ? { border: '1px solid #fca5a5', color: '#dc2626', background: '#fef2f2' }
+                        : { border: '1px solid #e2e8f0' }}
+                      value={item.amount ? (fixedNegative ? Math.abs(item.amount) : item.amount) : ''} placeholder="0"
+                      onChange={e => {
+                        const amount = parseInt(e.target.value) || 0
+                        updateItem(i, 'amount', fixedNegative ? -Math.abs(amount) : flexible ? amount : Math.max(0, amount))
+                      }} />
+                    {fixedNegative && <p className="mt-0.5 text-right text-[9px] font-bold text-rose-600">自動轉負</p>}
+                    {flexible && (
+                      <button type="button"
+                        onClick={() => updateItem(i, 'amount', item.amount < 0 ? Math.abs(item.amount) : -Math.abs(item.amount || 0))}
+                        className="mt-1 w-full rounded-full px-2 py-1 text-[10px] font-bold"
+                        style={item.amount < 0
+                          ? { color: '#047857', border: '1px solid #86efac', background: '#f0fdf4' }
+                          : { color: '#dc2626', border: '1px solid #fca5a5', background: '#fef2f2' }}>
+                        {item.amount < 0 ? '改為正數' : '改為負數'}
+                      </button>
+                    )}
+                  </div>
+                )
+              })()}
               <button onClick={() => setItems(p => p.filter((_, idx) => idx !== i))} className="text-slate-300 hover:text-red-400 mt-2">
                 <Trash2 className="h-4 w-4" />
               </button>

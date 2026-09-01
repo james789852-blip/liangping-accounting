@@ -65,10 +65,10 @@ export default async function ReceiptsPage() {
   // 保留同名但不同廠商分類的品項（例如「免洗｜酒精」與「日常用品｜酒精」），
   // 不再用 item_name 當 object key 造成其中一筆被覆蓋。
   const mappings = mappingBasedItems.length > 0
-    ? mappingBasedItems.map(i => ({ id: i.mapping_id, item_name: i.name, excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group, is_negative: !!i.is_negative }))
+    ? mappingBasedItems.map(i => ({ id: i.mapping_id, item_name: i.name, excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group, is_negative: !!i.is_negative, sign_mode: i.sign_mode ?? (i.is_negative ? 'negative' : 'positive') }))
     : newItems.length > 0
-    ? newItems.map(i => ({ id: i.mapping_id, item_name: i.name, excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group, is_negative: !!i.is_negative }))
-    : (mappingRows ?? []).map(r => ({ id: r.id, item_name: r.item_name, excel_column: r.excel_column, item_category: r.item_category, vendor_group: r.vendor_group ?? null, is_negative: false }))
+    ? newItems.map(i => ({ id: i.mapping_id, item_name: i.name, excel_column: i.name, item_category: i.category, vendor_group: i.vendor_group, is_negative: !!i.is_negative, sign_mode: i.sign_mode ?? (i.is_negative ? 'negative' : 'positive') }))
+    : (mappingRows ?? []).map(r => ({ id: r.id, item_name: r.item_name, excel_column: r.excel_column, item_category: r.item_category, vendor_group: r.vendor_group ?? null, is_negative: false, sign_mode: 'positive' as const }))
 
   return (
     <ReceiptsClient

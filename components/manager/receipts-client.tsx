@@ -18,7 +18,7 @@ interface ReceiptData {
   total_amount: number; tax_amount: number; photo_url: string; status: string
   notes: string; created_at: string; receipt_items: ReceiptItem[]
 }
-interface MappingOption { id?: string; item_name: string; excel_column: string; item_category: string; vendor_group?: string | null; is_negative?: boolean }
+interface MappingOption { id?: string; item_name: string; excel_column: string; item_category: string; vendor_group?: string | null; is_negative?: boolean; sign_mode?: 'positive' | 'negative' | 'flexible' }
 interface Props {
   storeId: string; storeName: string; today: string; receipts: ReceiptData[]; mappings: MappingOption[]
   closingStatusByDate: Record<string, string>
@@ -56,10 +56,16 @@ function mappingKey(item: MappingOption) { return `${item.vendor_group ?? ''}::$
 function findMapping(mappings: MappingOption[], itemName: string, vendorGroup?: string | null) {
   return mappings.find(item => item.item_name === itemName && (!vendorGroup || item.vendor_group === vendorGroup))
 }
-function negativeEditItem(item: EditItem, mappings: MappingOption[]) {
-  const mapping = (item.item_mapping_id ? mappings.find(option => option.id === item.item_mapping_id) : undefined)
+function editItemMapping(item: EditItem, mappings: MappingOption[]) {
+  return (item.item_mapping_id ? mappings.find(option => option.id === item.item_mapping_id) : undefined)
     ?? findMapping(mappings, item.item_name, item.vendor_group)
-  return !!mapping?.is_negative || isNegativeItem(item.item_name)
+}
+function negativeEditItem(item: EditItem, mappings: MappingOption[]) {
+  const mapping = editItemMapping(item, mappings)
+  return mapping?.sign_mode === 'negative' || !!mapping?.is_negative || isNegativeItem(item.item_name)
+}
+function flexibleEditItem(item: EditItem, mappings: MappingOption[]) {
+  return editItemMapping(item, mappings)?.sign_mode === 'flexible' && !isNegativeItem(item.item_name)
 }
 
 function inputStyle(extra?: object) {
@@ -418,22 +424,40 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
                       )
                     })()}
                   </div>
-                  <div>
-                    <input type="number" min="0" style={inputStyle({
-                      padding: '7px 10px', fontSize: '13px', textAlign: 'right',
-                      border: negativeEditItem(item, mappings) ? '1.5px solid #fca5a5' : '1.5px solid #e4e4e7',
-                      color: negativeEditItem(item, mappings) ? '#dc2626' : '#18181b',
-                      background: negativeEditItem(item, mappings) ? '#fef2f2' : 'white',
-                    })}
-                      placeholder="金額" value={item.amount ? (negativeEditItem(item, mappings) ? Math.abs(item.amount) : item.amount) : ''}
-                      onChange={e => {
-                        const amount = parseFloat(e.target.value) || 0
-                        setEditItems(prev => prev.map((it, i) => i === idx
-                          ? { ...it, amount: normalizeItemAmount(it.item_name, amount, negativeEditItem(it, mappings)) }
-                          : it))
-                      }} />
-                    {negativeEditItem(item, mappings) && <p className="mt-0.5 text-right text-[9px] font-bold text-rose-600">自動轉負</p>}
-                  </div>
+                  {(() => {
+                    const fixedNegative = negativeEditItem(item, mappings)
+                    const flexible = flexibleEditItem(item, mappings)
+                    return (
+                      <div>
+                        <input type="number" min={flexible ? undefined : 0} style={inputStyle({
+                          padding: '7px 10px', fontSize: '13px', textAlign: 'right',
+                          border: fixedNegative || item.amount < 0 ? '1.5px solid #fca5a5' : '1.5px solid #e4e4e7',
+                          color: fixedNegative || item.amount < 0 ? '#dc2626' : '#18181b',
+                          background: fixedNegative || item.amount < 0 ? '#fef2f2' : 'white',
+                        })}
+                          placeholder="金額" value={item.amount ? (fixedNegative ? Math.abs(item.amount) : item.amount) : ''}
+                          onChange={e => {
+                            const amount = parseFloat(e.target.value) || 0
+                            setEditItems(prev => prev.map((it, i) => i === idx
+                              ? { ...it, amount: fixedNegative ? -Math.abs(amount) : flexible ? amount : Math.max(0, amount) }
+                              : it))
+                          }} />
+                        {fixedNegative && <p className="mt-0.5 text-right text-[9px] font-bold text-rose-600">自動轉負</p>}
+                        {flexible && (
+                          <button type="button"
+                            onClick={() => setEditItems(prev => prev.map((it, i) => i === idx
+                              ? { ...it, amount: it.amount < 0 ? Math.abs(it.amount) : -Math.abs(it.amount || 0) }
+                              : it))}
+                            className="mt-1 w-full rounded-full px-2 py-1 text-[10px] font-bold"
+                            style={item.amount < 0
+                              ? { color: '#047857', border: '1px solid #86efac', background: '#f0fdf4' }
+                              : { color: '#dc2626', border: '1px solid #fca5a5', background: '#fef2f2' }}>
+                            {item.amount < 0 ? '改為正數' : '改為負數'}
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })()}
                   <button onClick={() => setEditItems(prev => prev.filter((_, i) => i !== idx))}
                     className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors hover:bg-red-50 mt-0.5"
                     style={{ color: '#a1a1aa' }}>
