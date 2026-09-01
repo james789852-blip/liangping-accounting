@@ -128,13 +128,6 @@ export async function getCKRangeStats(
       .filter(Boolean),
   )
 
-  // 成員店家名字
-  const memberStoreMap: Record<string, string> = {}
-  if (assignedIds.length > 0) {
-    const { data: memberStores } = await admin.from('stores').select('id, name').in('id', assignedIds)
-    for (const s of memberStores ?? []) memberStoreMap[s.id] = s.name
-  }
-
   const recordIds = (records ?? []).map(r => r.id)
   const [{ data: orders }, { data: expenses }] = await Promise.all([
     recordIds.length > 0
@@ -144,6 +137,18 @@ export async function getCKRangeStats(
       ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type, note, receipt_photo_url').in('ck_daily_record_id', recordIds).order('sort_order')
       : Promise.resolve({ data: [] }),
   ])
+
+  // 店名必須同時依「目前指派」與「該月份實際歷史訂單」查詢。
+  // 否則店家在後續月份解除央廚配送後，重匯舊月份會找不到名稱而顯示 store UUID。
+  const historicalMemberStoreIds = (orders ?? [])
+    .map((order: any) => order.store_id as string | null)
+    .filter((storeId): storeId is string => !!storeId)
+  const memberStoreIds = Array.from(new Set([...assignedIds, ...historicalMemberStoreIds]))
+  const memberStoreMap: Record<string, string> = {}
+  if (memberStoreIds.length > 0) {
+    const { data: memberStores } = await admin.from('stores').select('id, name').in('id', memberStoreIds)
+    for (const store of memberStores ?? []) memberStoreMap[store.id] = store.name
+  }
 
   const recordByDate = new Map((records ?? []).map(r => [r.business_date as string, r] as const))
   const compact = (value?: string | null) => String(value ?? '').replace(/[\s　]/g, '')
