@@ -93,3 +93,16 @@ test('a configured direct item document type is applied to historical expenses',
     ],
   }), '公司開')
 })
+
+test('legacy empty, unclassified and new miscellaneous groups share the same central-kitchen mapping', () => {
+  for (const vendorGroup of [null, '未分類', '雜項']) {
+    assert.equal(resolveCentralKitchenExpenseDocType({
+      vendorGroup,
+      itemName: '水費',
+      storedDocType: '發票',
+      mappings: [
+        { vendor_group: null, item_name: '水費', doc_type_override: '收據' },
+      ],
+    }), '收據')
+  }
+})

@@ -11,6 +11,7 @@
 import ExcelJS from 'exceljs'
 import { getCKMonthlyStats, type CKMonthlyStats } from '@/lib/ck-aggregator'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
+import { normalizeVendorGroupName } from '@/lib/linked-receipt-category'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -45,7 +46,7 @@ function compactKey(value?: string | null): string {
 }
 
 function vendorGroupKey(value?: string | null): string {
-  return compactKey(value) || '未分類'
+  return compactKey(normalizeVendorGroupName(value))
 }
 
 function expenseKey(category: string, vendorGroup?: string | null, docType?: string | null, itemName = '') {
@@ -217,7 +218,7 @@ function buildCKVendorAnalysisRows(monthlies: CKMonthlyStats[], includeMonth: bo
   for (const monthly of monthlies) {
     for (const day of monthly.daily) {
       for (const expense of day.expenses) {
-        const vendorGroup = expense.vendor_group?.trim() || '未分類'
+        const vendorGroup = normalizeVendorGroupName(expense.vendor_group)
         const actualVendor = expense.payer_name?.trim() || '未指定'
         const row = rowFor(monthly.monthNum, vendorGroup, actualVendor)
         const amount = Number(expense.amount) || 0
@@ -239,7 +240,6 @@ function buildCKVendorAnalysisRows(monthlies: CKMonthlyStats[], includeMonth: bo
     .filter(row => row.total !== 0 || row.taxRefund !== 0)
     .sort((a, b) =>
       ((a.month ?? 0) - (b.month ?? 0))
-      || (a.vendorGroup === '未分類' ? 1 : b.vendorGroup === '未分類' ? -1 : 0)
       || a.vendorGroup.localeCompare(b.vendorGroup, 'zh-Hant')
       || a.actualVendor.localeCompare(b.actualVendor, 'zh-Hant')
     )
@@ -416,7 +416,7 @@ export async function addCKSheet(
   const vendorGroupMeta = new Map<string, { name: string; sortOrder: number }>()
   for (const m of mappingItems) {
     const key = vendorGroupKey(m.vendor_group)
-    const name = cleanText(m.vendor_group) || '未分類'
+    const name = normalizeVendorGroupName(m.vendor_group)
     const sortOrder = m.vendor_group_sort_order ?? 9999
     const existing = vendorGroupMeta.get(key)
     if (!existing || sortOrder < existing.sortOrder) {
@@ -424,7 +424,7 @@ export async function addCKSheet(
     }
   }
   const canonicalVendorGroup = (vendorGroup?: string | null) =>
-    vendorGroupMeta.get(vendorGroupKey(vendorGroup))?.name ?? (cleanText(vendorGroup) || '未分類')
+    vendorGroupMeta.get(vendorGroupKey(vendorGroup))?.name ?? normalizeVendorGroupName(vendorGroup)
   const vendorGroupSortOrder = (vendorGroup?: string | null, fallback = 999999) =>
     vendorGroupMeta.get(vendorGroupKey(vendorGroup))?.sortOrder ?? fallback
 
@@ -449,7 +449,7 @@ export async function addCKSheet(
     return {
       ...expense,
       category: mapped?.category ?? cleanText(expense.category),
-      vendor_group: mapped?.vendor_group ?? canonicalVendorGroup(expense.vendor_group),
+      vendor_group: canonicalVendorGroup(mapped?.vendor_group ?? expense.vendor_group),
       doc_type: mapped ? cleanText(mapped.doc_type) : cleanText(expense.doc_type),
       item_name: mapped?.name ?? cleanText(expense.item_name),
     }
@@ -460,7 +460,7 @@ export async function addCKSheet(
     return {
       ...expense,
       category: mapped?.category ?? cleanText(expense.category),
-      vendor_group: mapped?.vendor_group ?? canonicalVendorGroup(expense.vendor_group),
+      vendor_group: canonicalVendorGroup(mapped?.vendor_group ?? expense.vendor_group),
       doc_type: mapped ? cleanText(mapped.doc_type) : cleanText(expense.doc_type),
       item_name: mapped?.name ?? cleanText(expense.item_name),
     }
@@ -502,7 +502,7 @@ export async function addCKSheet(
       return {
         item_name: m.name,
         category: m.category,
-        vendor_group: m.vendor_group,
+        vendor_group: canonicalVendorGroup(m.vendor_group),
         doc_type: m.doc_type ?? '',
         is_refund: !!m.is_refund,
         total: rec?.total ?? 0,
@@ -546,7 +546,7 @@ export async function addCKSheet(
   // 支出品項欄：先依品項管理的黃色廠商分類排序，讓同一廠商群組在 Excel 上連在一起。
   // 食材/耗材/雜項合計已改為逐欄加總，因此不需要把同 category 強制排成連續區塊。
   const catOrder: Record<string, number> = { '食材': 0, '耗材': 1, '雜項': 2 }
-  const groupRank = (vendorGroup?: string | null) => vendorGroupKey(vendorGroup) === '未分類' ? 1 : 0
+  const groupRank = (vendorGroup?: string | null) => vendorGroupKey(vendorGroup) === vendorGroupKey(null) ? 1 : 0
   const sortedExpenseItems = [...expenseItems].sort((a, b) =>
     groupRank(a.vendor_group) - groupRank(b.vendor_group)
     || (a.vendor_group_sort_order ?? 9999) - (b.vendor_group_sort_order ?? 9999)
@@ -603,7 +603,7 @@ export async function addCKSheet(
       else vgRanges.push({ key, vg: c.vendorGroup ?? '', start: c.index, end: c.index })
     }
     for (const r of vgRanges) {
-      fillHeader(ws.getRow(1).getCell(r.start), r.vg || '未分類', ckVgColor(r.vg || ''), true, 'FF000000', 14)
+      fillHeader(ws.getRow(1).getCell(r.start), r.vg || normalizeVendorGroupName(null), ckVgColor(r.vg || ''), true, 'FF000000', 14)
       if (r.end > r.start) ws.mergeCells(1, r.start, 1, r.end)
     }
     // Row 2: 單據類型（doc_type），同 vg 內連續相同就 merge

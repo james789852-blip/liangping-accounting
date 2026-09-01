@@ -10,6 +10,11 @@ function compact(value?: string | null): string {
   return String(value ?? '').replace(/[\s　]/g, '')
 }
 
+function vendorGroupKey(value?: string | null): string {
+  const key = compact(value)
+  return !key || key === '未分類' ? '雜項' : key
+}
+
 function mappingItemName(mapping: CentralKitchenExpenseMapping): string {
   return compact(mapping.name ?? mapping.item_name)
 }
@@ -38,12 +43,13 @@ export function resolveCentralKitchenExpenseDocType(input: {
   storedDocType?: string | null
   mappings: CentralKitchenExpenseMapping[]
 }): string {
-  const vendor = compact(input.vendorGroup)
+  const rawVendor = compact(input.vendorGroup)
+  const vendor = vendorGroupKey(input.vendorGroup)
   const item = compact(input.itemName)
   const stored = String(input.storedDocType ?? '').trim()
 
   const vendorMappings = input.mappings.filter(mapping =>
-    compact(mapping.vendor_group) === vendor,
+    vendorGroupKey(mapping.vendor_group) === vendor,
   )
 
   if (item) {
@@ -57,7 +63,8 @@ export function resolveCentralKitchenExpenseDocType(input: {
     // 避免同名品項跨廠商互相覆蓋。
     if (exactMappings.length === 0) {
       exactMappings = input.mappings.filter(mapping =>
-        !compact(mapping.vendor_group) && mappingItemName(mapping) === item,
+        vendorGroupKey(mapping.vendor_group) === vendorGroupKey(null)
+        && mappingItemName(mapping) === item,
       )
     }
 
@@ -67,7 +74,7 @@ export function resolveCentralKitchenExpenseDocType(input: {
     if (exactMappings.length > 0 && exactMappings.every(mapping => !mappingDocType(mapping))) return ''
   }
 
-  const isVendorFallbackItem = !!vendor && (!item || item === vendor)
+  const isVendorFallbackItem = !!rawVendor && (!item || item === rawVendor)
   if (isVendorFallbackItem) {
     const vendorDocType = uniqueDocType(vendorMappings)
     if (vendorDocType) return vendorDocType

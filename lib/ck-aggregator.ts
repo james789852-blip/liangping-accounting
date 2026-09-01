@@ -13,6 +13,7 @@ import { getMonthLastDay } from '@/lib/business-date'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 import { resolveCentralKitchenExpenseDocType } from '@/lib/ck-expense-doc-type'
 import { normalizeItemAmount } from '@/lib/negative-items'
+import { normalizeVendorGroupName } from '@/lib/linked-receipt-category'
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -146,17 +147,18 @@ export async function getCKRangeStats(
 
   const recordByDate = new Map((records ?? []).map(r => [r.business_date as string, r] as const))
   const compact = (value?: string | null) => String(value ?? '').replace(/[\s　]/g, '')
+  const vendorGroupKey = (value?: string | null) => compact(normalizeVendorGroupName(value))
   const hasExplicitRefundMappings = mappingItems.some(item => item.is_refund)
   const findMappedItem = (vendorGroup: string, docType: string, itemName: string) => {
-    const vendor = compact(vendorGroup)
+    const vendor = vendorGroupKey(vendorGroup)
     const doc = compact(docType)
     const item = compact(itemName)
     return mappingItems.find(mapping =>
-      compact(mapping.vendor_group) === vendor
+      vendorGroupKey(mapping.vendor_group) === vendor
       && compact(mapping.doc_type) === doc
       && compact(mapping.name) === item
     ) ?? mappingItems.find(mapping =>
-      compact(mapping.vendor_group) === vendor
+      vendorGroupKey(mapping.vendor_group) === vendor
       && compact(mapping.name) === item
     ) ?? mappingItems.find(mapping => compact(mapping.name) === item)
   }
@@ -196,23 +198,24 @@ export async function getCKRangeStats(
       // 支出
       const exps = (expenses ?? []).filter((e: any) => e.ck_daily_record_id === rec.id)
       for (const e of exps) {
-        const vg = (e.vendor_group ?? '') as string
+        const storedVendorGroup = (e.vendor_group ?? '') as string
         const doc = resolveCentralKitchenExpenseDocType({
-          vendorGroup: vg,
+          vendorGroup: storedVendorGroup,
           itemName: String(e.item_name ?? ''),
           storedDocType: (e.doc_type ?? '') as string,
           mappings: mappingItems,
         })
-        const mappedItem = findMappedItem(vg, doc, String(e.item_name ?? ''))
+        const mappedItem = findMappedItem(storedVendorGroup, doc, String(e.item_name ?? ''))
+        const vendorGroup = normalizeVendorGroupName(mappedItem?.vendor_group ?? storedVendorGroup)
         const isRefund = hasExplicitRefundMappings
           ? !!mappedItem?.is_refund
-          : doc === '發票' && vg.includes('退稅')
+          : doc === '發票' && vendorGroup.includes('退稅')
         const note = typeof e.note === 'string' ? e.note.trim() : ''
         const amt = normalizeItemAmount(String(e.item_name ?? ''), Number(e.amount ?? 0))
         dd.expenses.push({
           category: e.category, item_name: e.item_name, amount: amt,
           payer_name: e.payer_name ?? undefined,
-          vendor_group: vg || undefined, doc_type: doc || undefined,
+          vendor_group: vendorGroup, doc_type: doc || undefined,
           note: note || undefined,
           receipt_photo_url: e.receipt_photo_url ?? undefined,
           is_refund: isRefund,
