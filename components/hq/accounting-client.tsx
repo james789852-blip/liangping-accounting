@@ -43,6 +43,8 @@ interface CKRow {
   status: string
   hq_paid: boolean
   ck_reimbursement_confirmed?: boolean
+  ck_store_orders?: { store_id: string | null; amount: number | null; ck_confirmed_amount: number | null }[] | null
+  ck_expense_items?: { category: string | null; amount: number | null }[] | null
 }
 type StoreDetailState = {
   stats: DailyStats | null
@@ -110,6 +112,24 @@ function ckStatusBadges(status: string, hqPaid: boolean, handoffConfirmed: boole
   }
   if (status === 'draft') return [{ label: '草稿', bg: '#fef3c7', color: '#92400e' }]
   return [{ label: '未輸入', bg: '#f4f4f5', color: '#a1a1aa' }]
+}
+
+function ckQuickStats(record: CKRow | null) {
+  if (!record) return null
+  const orders = record.ck_store_orders ?? []
+  const expenses = record.ck_expense_items ?? []
+  const revenue = orders.reduce((sum, order) => sum + Number(
+    order.store_id === null ? order.amount : order.ck_confirmed_amount,
+  ), 0)
+  const totalExpense = expenses.reduce((sum, expense) => sum + Number(expense.amount ?? 0), 0)
+  return {
+    revenue,
+    totalExpense,
+    hqPaid: !!record.hq_paid,
+    food: expenses.filter(expense => expense.category === '食材').reduce((sum, expense) => sum + Number(expense.amount ?? 0), 0),
+    pack: expenses.filter(expense => expense.category === '耗材').reduce((sum, expense) => sum + Number(expense.amount ?? 0), 0),
+    misc: expenses.filter(expense => expense.category !== '食材' && expense.category !== '耗材').reduce((sum, expense) => sum + Number(expense.amount ?? 0), 0),
+  }
 }
 
 export default function AccountingClient({
@@ -444,6 +464,7 @@ export default function AccountingClient({
             ckStoreId={selectedCkStoreId}
             storeName={ckStores.find(s => s.id === selectedCkStoreId)?.name ?? ''}
             date={date}
+            quickRecord={ckByStore[selectedCkStoreId] ?? null}
             cacheRef={ckDetailCacheRef}
           />
         )}
@@ -1101,11 +1122,13 @@ function CKDetail({
   ckStoreId,
   storeName,
   date,
+  quickRecord,
   cacheRef,
 }: {
   ckStoreId: string
   storeName: string
   date: string
+  quickRecord: CKRow | null
   cacheRef: React.RefObject<Map<string, CKDetailState>>
 }) {
   const [loading, setLoading] = useState(true)
@@ -1118,7 +1141,7 @@ function CKDetail({
     food: (detail.expenses ?? []).filter((e: any) => e.category === '食材').reduce((sum: number, e: any) => sum + Number(e.amount ?? 0), 0),
     pack: (detail.expenses ?? []).filter((e: any) => e.category === '耗材').reduce((sum: number, e: any) => sum + Number(e.amount ?? 0), 0),
     misc: (detail.expenses ?? []).filter((e: any) => e.category !== '食材' && e.category !== '耗材').reduce((sum: number, e: any) => sum + Number(e.amount ?? 0), 0),
-  } : null
+  } : ckQuickStats(quickRecord)
 
   const loadDetail = useCallback((force = false) => {
     const key = `${ckStoreId}:${date}`
@@ -1200,7 +1223,13 @@ function CKDetail({
           <CKOverview data={[detail]} date={date} onRefresh={refreshDetail} />
         </div>
       )}
-      {!detail && (
+      {!detail && loading && (
+        <div className="bg-white rounded-2xl p-4 text-center text-sm flex items-center justify-center gap-2" style={{ color: '#71717a', border: '1px solid #f4f4f5' }}>
+          <Loader2 className="h-4 w-4 animate-spin" />
+          審核明細載入中…
+        </div>
+      )}
+      {!detail && !loading && (
         <div className="bg-white rounded-2xl p-4 text-center text-sm" style={{ color: '#a1a1aa', border: '1px solid #f4f4f5' }}>
           當日尚無央廚日報
         </div>

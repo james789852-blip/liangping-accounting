@@ -45,6 +45,22 @@ test('總公司帳目中心只預載選中店家，並避免頻繁整頁刷新',
   assert.doesNotMatch(client, /for \(const store of ckStores\)/)
 })
 
+test('央廚已送出時先顯示快速摘要，完整審核明細才在背景載入', async () => {
+  const [page, client, action] = await Promise.all([
+    read('app/hq/accounting/page.tsx'),
+    read('components/hq/accounting-client.tsx'),
+    read('app/actions/ck-overview.ts'),
+  ])
+
+  assert.match(page, /ck_store_orders\(store_id, amount, ck_confirmed_amount\)/)
+  assert.match(page, /ck_expense_items\(category, amount\)/)
+  assert.match(client, /quickRecord={ckByStore\[selectedCkStoreId\] \?\? null}/)
+  assert.match(client, /審核明細載入中…/)
+  assert.match(client, /!detail && !loading/)
+  assert.match(action, /getCachedUserProfile\(user\.id\)/)
+  assert.doesNotMatch(action, /createClient\(\)/)
+})
+
 test('常用日期與清除操作使用站內切換而不是完整重載', async () => {
   const [ckPage, historyPage, ckForm, closingForm] = await Promise.all([
     read('app/hq/ck/page.tsx'),

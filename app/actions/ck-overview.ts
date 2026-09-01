@@ -1,8 +1,8 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getCachedUserProfile } from '@/lib/cached-queries'
 import { getCKRangeStats, getCKMonthlyStats, type CKDailyStats, type CKMonthlyStats } from '@/lib/ck-aggregator'
 import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment'
 import {
@@ -11,11 +11,11 @@ import {
 } from '@/lib/ck-delivery-photos'
 
 async function checkHqAuth() {
-  const supabase = await createClient()
   const user = await getVerifiedUser()
   if (!user) return { error: '未登入' as const }
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role, is_hq').eq('user_id', user.id).single()
+  // getVerifiedUser 已使用相同的短快取確認帳號仍啟用；這裡沿用快取取得權限，
+  // 避免每次點央廚明細又多一次 user_profiles 網路查詢。
+  const profile = await getCachedUserProfile(user.id)
   if (!profile?.is_hq && profile?.role !== '老闆') return { error: '無權限' as const }
   return { ok: true as const }
 }
@@ -44,15 +44,8 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
   ])
   if (!ckStore) return { error: '找不到央廚' as const }
 
-  let submittedByName: string | null = null
-  if (rec?.submitted_by) {
-    const { data: submitter } = await admin
-      .from('user_profiles').select('name').eq('user_id', rec.submitted_by).maybeSingle()
-    submittedByName = submitter?.name ?? null
-  }
-
   const assignedIds: string[] = (ckStore.assigned_store_ids as string[] | null) ?? []
-  const [{ data: assignedStores }, { data: extStores }, orderRes, expRes, closingRes] = await Promise.all([
+  const [{ data: assignedStores }, { data: extStores }, orderRes, expRes, closingRes, submitterRes] = await Promise.all([
     assignedIds.length > 0
       ? admin.from('stores').select('id, name').in('id', assignedIds)
       : Promise.resolve({ data: [] }),
@@ -66,7 +59,11 @@ export async function fetchCKDailyDetail(ckStoreId: string, date: string) {
           .eq('business_date', date)
           .in('status', ['submitted', 'verified', 'disputed'])
       : Promise.resolve({ data: [] }),
+    rec?.submitted_by
+      ? admin.from('user_profiles').select('name').eq('user_id', rec.submitted_by).maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
+  const submittedByName = submitterRes.data?.name ?? null
 
   const nameMap = Object.fromEntries((assignedStores ?? []).map((s: any) => [s.id, s.name as string]))
   const memberOrders = ((orderRes.data ?? []) as any[])

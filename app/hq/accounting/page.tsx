@@ -44,7 +44,11 @@ export default async function AccountingPage({
       .select('id, store_id, business_date, status, dispute_note, total_revenue, total_cost, total_expenses, expected_remit, actual_remit, should_include_delivery, variance, remittance_adjustments, reserve_items, cash_counts(large_expenses)')
       .eq('business_date', date),
     admin.from('ck_daily_records')
-      .select('ck_store_id, status, hq_paid, ck_reimbursement_confirmed, updated_at')
+      .select(`
+        ck_store_id, status, hq_paid, ck_reimbursement_confirmed, updated_at,
+        ck_store_orders(store_id, amount, ck_confirmed_amount),
+        ck_expense_items(category, amount)
+      `)
       .eq('business_date', date),
     admin.from('store_holidays').select('store_id').eq('holiday_date', date),
     initialStoreId
