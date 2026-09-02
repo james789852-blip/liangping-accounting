@@ -11,8 +11,7 @@ import ClosingHelp from './closing-help'
 import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn, PiggyBank } from 'lucide-react'
 import { saveCashCounts, submitClosing, savePettyCounts } from '@/app/actions/closings'
 import { refreshReserveHistoryContext } from '@/app/actions/reserve-history'
-import { createSignedUploadUrl, uploadToStorage } from '@/app/actions/upload'
-import { compressImage } from '@/lib/compress-image'
+import { uploadClientPhoto } from '@/lib/client-photo-upload'
 import { isNegativeItem, normalizeItemAmount } from '@/lib/negative-items'
 import {
   applyPreReservedExpenseHints,
@@ -147,23 +146,12 @@ function SafeImage({
 }
 
 async function uploadReceiptPhoto(path: string, rawFile: File): Promise<{ publicUrl: string } | { error: string }> {
-  const file = await compressImage(rawFile)
-  const uploadPath = file.type === 'image/jpeg' ? path.replace(/\.[^.]+$/, '.jpg') : path
-  const signed = await createSignedUploadUrl('receipts', uploadPath)
-  if (!('error' in signed)) {
-    const supabase = createClient()
-    const { error } = await supabase.storage
-      .from('receipts')
-      .uploadToSignedUrl(uploadPath, signed.token, file, { contentType: file.type })
-    if (!error) {
-      const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(uploadPath)
-      return { publicUrl }
-    }
+  try {
+    const { publicUrl } = await uploadClientPhoto({ rawFile, bucket: 'receipts', path })
+    return { publicUrl }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : '照片上傳失敗，請稍後再試' }
   }
-
-  const fd = new FormData()
-  fd.append('file', file)
-  return uploadToStorage(fd, 'receipts', uploadPath)
 }
 
 function uniquePhotoFilename(prefix: string, file: File) {

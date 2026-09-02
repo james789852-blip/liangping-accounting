@@ -8,8 +8,7 @@ import { centralKitchenPhotoPath } from '@/lib/storage-paths'
 import { Plus, Trash2, Loader2, CheckCircle2, ChevronDown, ChevronUp, Save, Send, Camera, X, ZoomIn, Pencil, BarChart3, ClipboardList, Banknote, ArrowLeft, ArrowRight, ClipboardCheck } from 'lucide-react'
 import { saveCKDailyRecord, confirmCKReimbursementHandoff } from '@/app/actions/ck'
 import CKHelp from './ck-help'
-import { uploadToStorage } from '@/app/actions/upload'
-import { compressImage } from '@/lib/compress-image'
+import { uploadClientPhoto } from '@/lib/client-photo-upload'
 import { findTaxAddonMapping as findTaxAddonByContext } from '@/lib/tax-addon'
 import SafePhotoImage from '@/components/shared/safe-photo-image'
 import { resolveCentralKitchenExpenseDocType } from '@/lib/ck-expense-doc-type'
@@ -1190,12 +1189,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     try {
       await Promise.all(pendingUploads.map(async ({ rawFile, formId, previewUrl }) => {
         try {
-          const file = await compressImage(rawFile)
-          const fd = new FormData()
-          fd.append('file', file)
           const path = centralKitchenPhotoPath(ckStoreId, date, 'expenses', `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`)
-          const result = await uploadToStorage(fd, 'receipts', path)
-          if ('error' in result) throw new Error(result.error)
+          const result = await uploadClientPhoto({ rawFile, bucket: 'receipts', path })
 
           setPhotoUrls(prev => prev.map(url => url === previewUrl ? result.publicUrl : url))
           setSelectedPhotoUrl(prev => prev === previewUrl ? result.publicUrl : prev)
@@ -1222,17 +1217,16 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     try {
       const uploaded = await Promise.all(files.map(async rawFile => {
         try {
-          const file = await compressImage(rawFile)
-          const formData = new FormData()
-          formData.append('file', file)
+          const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`
           const path = centralKitchenPhotoPath(
             ckStoreId,
             date,
             'delivery-orders',
-            `${Date.now()}-${crypto.randomUUID()}.jpg`,
+            `${Date.now()}-${uniqueId}.jpg`,
           )
-          const result = await uploadToStorage(formData, 'receipts', path)
-          if ('error' in result) throw new Error(result.error)
+          const result = await uploadClientPhoto({ rawFile, bucket: 'receipts', path })
           return result.publicUrl
         } catch (error) {
           toast.error('配送單上傳失敗：' + ((error as Error).message || '未知錯誤'))

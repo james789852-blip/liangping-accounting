@@ -4,11 +4,9 @@ import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Loader2, Banknote, Camera, X, Upload, RotateCcw, Trash2, FileSpreadsheet } from 'lucide-react'
 import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord, saveCKHQReimbursementAdjustment, saveCKHQReimbursementPhotoDraft, syncCKMonthToSheets } from '@/app/actions/ck'
-import { createSignedUploadUrl } from '@/app/actions/upload'
 import { toast } from 'sonner'
 import { centralKitchenPhotoPath } from '@/lib/storage-paths'
-import { compressImage } from '@/lib/compress-image'
-import { createClient } from '@/lib/supabase/client'
+import { uploadClientPhoto } from '@/lib/client-photo-upload'
 import {
   groupCKExpensesByReceipt,
   type CKExpenseForReceiptReview,
@@ -19,63 +17,18 @@ function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
 const MAX_REIMBURSEMENT_PHOTO_BYTES = 20 * 1024 * 1024
 
-const IMAGE_CONTENT_TYPES: Record<string, string> = {
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  webp: 'image/webp',
-  heic: 'image/heic',
-  heif: 'image/heif',
-}
-
-function reimbursementPhotoContentType(file: File) {
-  const normalized = file.type.toLowerCase().split(';', 1)[0].trim()
-  if (Object.values(IMAGE_CONTENT_TYPES).includes(normalized)) return normalized
-  const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
-  return IMAGE_CONTENT_TYPES[extension] ?? null
-}
-
 async function uploadReimbursementPhoto(ckStoreId: string, date: string, rawFile: File) {
-  if (rawFile.size > MAX_REIMBURSEMENT_PHOTO_BYTES) {
-    throw new Error('照片檔案過大，請選擇 20MB 以下的照片')
-  }
-
-  const originalContentType = reimbursementPhotoContentType(rawFile)
-  if (!originalContentType) {
-    throw new Error('只支援 JPG、PNG、WebP、HEIC 或 HEIF 圖片')
-  }
-
-  // 補款照片與店面收據共用相同策略：能壓縮就先壓縮，HEIC 等瀏覽器無法
-  // 解碼的格式則保留原檔，接著直接上傳 Storage，避免大型檔案穿過 Server Action。
-  const compressed = await compressImage(rawFile)
-  const contentType = reimbursementPhotoContentType(compressed) ?? originalContentType
-  const file = compressed.type === contentType
-    ? compressed
-    : new File([compressed], compressed.name, {
-        type: contentType,
-        lastModified: compressed.lastModified,
-      })
-  const extension = contentType === 'image/jpeg'
-    ? 'jpg'
-    : (file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg')
-  const filename = `${Date.now()}-${crypto.randomUUID()}.${extension}`
+  const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const filename = `${Date.now()}-${uniqueId}.jpg`
   const path = centralKitchenPhotoPath(ckStoreId, date, 'reimbursements', filename)
-
-  let signed: Awaited<ReturnType<typeof createSignedUploadUrl>>
-  try {
-    signed = await createSignedUploadUrl('receipts', path)
-  } catch {
-    throw new Error('無法取得照片上傳授權，請重新整理後再試')
-  }
-  if ('error' in signed) throw new Error(signed.error)
-
-  const supabase = createClient()
-  const { error } = await supabase.storage
-    .from('receipts')
-    .uploadToSignedUrl(path, signed.token, file, { contentType })
-  if (error) throw new Error(error.message || '照片傳送失敗，請檢查網路後再試')
-
-  const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(path)
+  const { publicUrl } = await uploadClientPhoto({
+    rawFile,
+    bucket: 'receipts',
+    path,
+    maxBytes: MAX_REIMBURSEMENT_PHOTO_BYTES,
+  })
   return publicUrl
 }
 
