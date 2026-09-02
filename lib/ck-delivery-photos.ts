@@ -13,6 +13,18 @@ export function ckOrderNeedsDeliveryPhoto(
   return Number(amount ?? 0) > 0 && normalizeCKDeliveryPhotoUrls(photoUrls).length === 0
 }
 
+export const normalizeCKTransferPhotoUrls = normalizeCKDeliveryPhotoUrls
+
+export function ckOrderNeedsTransferPhoto(
+  amount: number | null | undefined,
+  transferPhotoRequired: boolean | null | undefined,
+  photoUrls: unknown,
+): boolean {
+  return Boolean(transferPhotoRequired)
+    && Number(amount ?? 0) > 0
+    && normalizeCKTransferPhotoUrls(photoUrls).length === 0
+}
+
 export function memberDeliveryPhotosFromStoreClosings(
   closings: Array<{ store_id?: string | null; ck_delivery_photo_url?: string | null }>,
 ): Record<string, string[]> {

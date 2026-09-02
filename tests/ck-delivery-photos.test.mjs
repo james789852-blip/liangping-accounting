@@ -4,8 +4,10 @@ import test from 'node:test'
 
 import {
   ckOrderNeedsDeliveryPhoto,
+  ckOrderNeedsTransferPhoto,
   memberDeliveryPhotosFromStoreClosings,
   normalizeCKDeliveryPhotoUrls,
+  normalizeCKTransferPhotoUrls,
 } from '../lib/ck-delivery-photos.ts'
 
 test('有叫貨金額但沒有配送單照片時不可送出', () => {
@@ -22,6 +24,17 @@ test('零元或已附配送單的叫貨可送出', () => {
 test('配送單網址會去除空白、空值與重複項目', () => {
   assert.deepEqual(
     normalizeCKDeliveryPhotoUrls([' a.jpg ', '', null, 'a.jpg', 'b.jpg']),
+    ['a.jpg', 'b.jpg'],
+  )
+})
+
+test('只有開啟要求且有叫貨金額時，才必須上傳轉帳成功照片', () => {
+  assert.equal(ckOrderNeedsTransferPhoto(1200, true, []), true)
+  assert.equal(ckOrderNeedsTransferPhoto(1200, true, ['https://example.com/transfer.jpg']), false)
+  assert.equal(ckOrderNeedsTransferPhoto(1200, false, []), false)
+  assert.equal(ckOrderNeedsTransferPhoto(0, true, []), false)
+  assert.deepEqual(
+    normalizeCKTransferPhotoUrls([' a.jpg ', '', null, 'a.jpg', 'b.jpg']),
     ['a.jpg', 'b.jpg'],
   )
 })
@@ -72,4 +85,34 @@ test('總公司央廚對帳表使用固定欄寬並明確區分兩邊輸入', ()
   assert.match(overviewSource, /店面輸入<\/span>/)
   assert.match(overviewSource, /央廚輸入<\/span>/)
   assert.match(overviewSource, /memberTotalDiff === 0 \? '相符'/)
+})
+
+test('體系外店家可個別要求轉帳照片，伺服器強制驗證並保留每日快照', () => {
+  const actionSource = fs.readFileSync(new URL('../app/actions/ck.ts', import.meta.url), 'utf8')
+  const formSource = fs.readFileSync(new URL('../components/manager/ck-daily-form.tsx', import.meta.url), 'utf8')
+  const editorSource = fs.readFileSync(new URL('../components/hq/store-editor.tsx', import.meta.url), 'utf8')
+  const migrationSource = fs.readFileSync(new URL('../supabase/migrations/067_ck_external_transfer_photos.sql', import.meta.url), 'utf8')
+
+  assert.match(editorSource, /要求轉帳照片/)
+  assert.match(editorSource, /updateCKExternalStoreTransferPhotoRequirement/)
+  assert.match(formSource, /轉帳成功照片/)
+  assert.match(formSource, /transfer-records/)
+  assert.match(actionSource, /ckOrderNeedsTransferPhoto/)
+  assert.match(actionSource, /請先上傳轉帳成功照片/)
+  assert.match(actionSource, /existingRequirementByName\.has\(name\)/)
+  assert.match(actionSource, /transfer_photo_required: o\.transferPhotoRequired/)
+  assert.match(migrationSource, /ck_external_stores[\s\S]*transfer_photo_required boolean NOT NULL DEFAULT false/)
+  assert.match(migrationSource, /ck_store_orders[\s\S]*transfer_photo_required boolean NOT NULL DEFAULT false/)
+  assert.match(migrationSource, /transfer_photo_urls jsonb NOT NULL DEFAULT '\[\]'::jsonb/)
+})
+
+test('總公司可同時查看體系外配送單與轉帳成功紀錄', () => {
+  const pageSource = fs.readFileSync(new URL('../app/hq/ck/page.tsx', import.meta.url), 'utf8')
+  const overviewSource = fs.readFileSync(new URL('../components/hq/ck-overview.tsx', import.meta.url), 'utf8')
+  const documentsSource = fs.readFileSync(new URL('../app/hq/accounting/documents/page.tsx', import.meta.url), 'utf8')
+
+  assert.match(pageSource, /transfer_photo_required, transfer_photo_urls/)
+  assert.match(overviewSource, /轉帳成功紀錄/)
+  assert.match(documentsSource, /category: 'remittance'/)
+  assert.match(documentsSource, /轉帳成功紀錄/)
 })

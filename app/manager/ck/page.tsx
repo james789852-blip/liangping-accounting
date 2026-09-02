@@ -8,7 +8,7 @@ import { sortStores } from '@/lib/store-order'
 import { getReceiptSettings } from '@/app/actions/receipt-settings'
 import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment'
 import { confirmedMemberAmountMap } from '@/lib/ck-member-amounts'
-import { normalizeCKDeliveryPhotoUrls } from '@/lib/ck-delivery-photos'
+import { normalizeCKDeliveryPhotoUrls, normalizeCKTransferPhotoUrls } from '@/lib/ck-delivery-photos'
 import { getCachedStoreFull, getCachedUserProfile } from '@/lib/cached-queries'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 
@@ -62,7 +62,7 @@ export default async function CKPage({
     assignedStoreIds.length > 0
       ? admin.from('stores').select('id, name').in('id', assignedStoreIds)
       : Promise.resolve({ data: [] }),
-    admin.from('ck_external_stores').select('id, name').eq('ck_store_id', storeId).order('created_at'),
+    admin.from('ck_external_stores').select('id, name, transfer_photo_required').eq('ck_store_id', storeId).order('created_at'),
     admin.from('ck_daily_records')
       .select('id, payer_name, note, status, review_note, reviewed_at, updated_at, receipt_photo_urls, hq_paid, hq_paid_at, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
       .eq('ck_store_id', storeId)
@@ -106,7 +106,13 @@ export default async function CKPage({
     hq_reimbursement_adjustment_note?: string
     ck_reimbursement_confirmed?: boolean
     ck_reimbursement_confirmed_at?: string | null
-    externalOrders: { name: string; amount: number; delivery_photo_urls: string[] }[]
+    externalOrders: {
+      name: string
+      amount: number
+      delivery_photo_urls: string[]
+      transfer_photo_required: boolean
+      transfer_photo_urls: string[]
+    }[]
     expenses: { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string; vendor_group: string; doc_type: string; note: string; receipt_photo_url?: string }[]
     receiptPhotoUrls?: string[]
   } | null = null
@@ -119,7 +125,7 @@ export default async function CKPage({
     ] = await Promise.all([
       admin.from('ck_store_orders').select('store_id, ck_confirmed_amount')
         .eq('ck_daily_record_id', ckRecord.id).not('store_id', 'is', null),
-      admin.from('ck_store_orders').select('external_store_name, amount, delivery_photo_urls')
+      admin.from('ck_store_orders').select('external_store_name, amount, delivery_photo_urls, transfer_photo_required, transfer_photo_urls')
         .eq('ck_daily_record_id', ckRecord.id).is('store_id', null),
       admin.from('ck_expense_items').select('id, category, item_name, amount, payer_name, vendor_group, doc_type, note, receipt_photo_url')
         .eq('ck_daily_record_id', ckRecord.id).order('sort_order'),
@@ -149,6 +155,8 @@ export default async function CKPage({
         name: o.external_store_name as string,
         amount: o.amount as number,
         delivery_photo_urls: normalizeCKDeliveryPhotoUrls(o.delivery_photo_urls),
+        transfer_photo_required: Boolean(o.transfer_photo_required),
+        transfer_photo_urls: normalizeCKTransferPhotoUrls(o.transfer_photo_urls),
       })),
       expenses: (expenseItems ?? []).map((e: any) => ({
         id: e.id as string,

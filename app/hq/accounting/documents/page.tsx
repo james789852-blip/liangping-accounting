@@ -97,6 +97,7 @@ type CKOrderPhotoRow = {
   amount: number | string | null
   ck_confirmed_amount: number | string | null
   delivery_photo_urls: unknown
+  transfer_photo_urls: unknown
 }
 
 function extraPhotos(value: unknown) {
@@ -244,7 +245,7 @@ export default async function AccountingDocumentsPage({
         .in('ck_daily_record_id', recordIds)
         .not('receipt_photo_url', 'is', null),
       admin.from('ck_store_orders')
-        .select('id, ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount, delivery_photo_urls')
+        .select('id, ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount, delivery_photo_urls, transfer_photo_urls')
         .in('ck_daily_record_id', recordIds),
     ])
     if (expensesResult.error) throw new Error(`無法載入央廚支出單據：${expensesResult.error.message}`)
@@ -419,6 +420,20 @@ export default async function AccountingDocumentsPage({
       title: `${targetName} 配送單`,
       subtitle: '體系外叫貨',
       documentTypeLabel: '配送單',
+      vendorGroup: '央廚配送',
+      amount: Number(order.ck_confirmed_amount ?? order.amount ?? 0),
+    }))
+    normalizeAccountingPhotoUrls(order.transfer_photo_urls).forEach((url, index) => addDocument({
+      id: `ck-order:${order.id}:transfer:${index}`,
+      url,
+      locationId: record.ck_store_id,
+      locationName: storeNameById[record.ck_store_id] ?? '央廚',
+      locationKind: 'ck',
+      businessDate: record.business_date,
+      category: 'remittance',
+      title: `${targetName} 轉帳成功紀錄`,
+      subtitle: '體系外叫貨',
+      documentTypeLabel: '轉帳成功紀錄',
       vendorGroup: '央廚配送',
       amount: Number(order.ck_confirmed_amount ?? order.amount ?? 0),
     }))

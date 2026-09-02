@@ -112,7 +112,13 @@ interface MemberStore {
   ck_amount: number | null
   deliveryPhotoUrls: string[]
 }
-interface ExternalOrder { name: string; amount: number; deliveryPhotoUrls: string[] }
+interface ExternalOrder {
+  name: string
+  amount: number
+  deliveryPhotoUrls: string[]
+  transferPhotoRequired: boolean
+  transferPhotoUrls: string[]
+}
 type Expense = CKExpenseForReceiptReview
 
 interface CKStoreData {
@@ -137,7 +143,7 @@ interface CKStoreData {
   balance: number
   memberStores: MemberStore[]
   externalOrders: ExternalOrder[]
-  externalStores: { id: string; name: string; deductFromReimbursement?: boolean }[]
+  externalStores: { id: string; name: string; deductFromReimbursement?: boolean; transferPhotoRequired?: boolean }[]
   expenses: Expense[]
   receiptPhotoUrls?: string[]
 }
@@ -722,15 +728,34 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                 <Section title="體系外叫貨">
                   {d.externalOrders.map(o => (
                     <div key={o.name} className="flex items-center gap-3 px-3 py-2.5" style={{ borderBottom: '1px solid #f4f4f5' }}>
-                      {o.deliveryPhotoUrls[0] ? (
-                        <button type="button" onClick={() => setLightboxUrl(o.deliveryPhotoUrls[0])}
-                          className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg" style={{ border: '1px solid #e4e4e7' }}>
-                          <SafePhotoImage src={o.deliveryPhotoUrls[0]} alt={`${o.name} 配送單`} thumb width={120} height={120} className="h-full w-full object-cover" />
-                          {o.deliveryPhotoUrls.length > 1 && <span className="absolute bottom-0 right-0 px-1 text-[9px] font-bold" style={{ background: 'rgba(0,0,0,.65)', color: 'white' }}>+{o.deliveryPhotoUrls.length - 1}</span>}
-                        </button>
-                      ) : (
-                        <div className="h-11 w-11 shrink-0 rounded-lg flex items-center justify-center text-[9px] font-bold text-center" style={{ background: '#fef2f2', color: '#dc2626', border: '1px dashed #fca5a5' }}>無照片</div>
-                      )}
+                      <div className="flex shrink-0 gap-1.5">
+                        <div>
+                          {o.deliveryPhotoUrls[0] ? (
+                            <button type="button" onClick={() => setLightboxUrl(o.deliveryPhotoUrls[0])}
+                              className="relative h-11 w-11 overflow-hidden rounded-lg" style={{ border: '1px solid #e4e4e7' }}>
+                              <SafePhotoImage src={o.deliveryPhotoUrls[0]} alt={`${o.name} 配送單`} thumb width={120} height={120} className="h-full w-full object-cover" />
+                              {o.deliveryPhotoUrls.length > 1 && <span className="absolute bottom-0 right-0 px-1 text-[9px] font-bold" style={{ background: 'rgba(0,0,0,.65)', color: 'white' }}>+{o.deliveryPhotoUrls.length - 1}</span>}
+                            </button>
+                          ) : (
+                            <div className="h-11 w-11 rounded-lg flex items-center justify-center text-[9px] font-bold text-center" style={{ background: '#fef2f2', color: '#dc2626', border: '1px dashed #fca5a5' }}>無配送</div>
+                          )}
+                          <p className="mt-0.5 text-center text-[9px]" style={{ color: '#71717a' }}>配送單</p>
+                        </div>
+                        {o.transferPhotoRequired && (
+                          <div>
+                            {o.transferPhotoUrls[0] ? (
+                              <button type="button" onClick={() => setLightboxUrl(o.transferPhotoUrls[0])}
+                                className="relative h-11 w-11 overflow-hidden rounded-lg" style={{ border: '1px solid #ddd6fe' }}>
+                                <SafePhotoImage src={o.transferPhotoUrls[0]} alt={`${o.name} 轉帳成功紀錄`} thumb width={120} height={120} className="h-full w-full object-cover" />
+                                {o.transferPhotoUrls.length > 1 && <span className="absolute bottom-0 right-0 px-1 text-[9px] font-bold" style={{ background: 'rgba(0,0,0,.65)', color: 'white' }}>+{o.transferPhotoUrls.length - 1}</span>}
+                              </button>
+                            ) : (
+                              <div className="h-11 w-11 rounded-lg flex items-center justify-center text-[9px] font-bold text-center" style={{ background: '#faf5ff', color: '#7c3aed', border: '1px dashed #c4b5fd' }}>無轉帳</div>
+                            )}
+                            <p className="mt-0.5 text-center text-[9px]" style={{ color: '#7c3aed' }}>轉帳</p>
+                          </div>
+                        )}
+                      </div>
                       <span className="flex-1 text-sm font-medium" style={{ color: '#18181b' }}>{o.name}</span>
                       <span className="text-sm font-bold tabular-nums">${fmt(o.amount)}</span>
                     </div>
@@ -931,8 +956,12 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
       key: `external-${item.name}`,
       kind: 'external' as const,
       title: `體系外叫貨：${item.name}`,
-      photoUrls: item.deliveryPhotoUrls,
-      rows: [{ label: item.name, amount: item.amount }],
+      photoUrls: [...item.deliveryPhotoUrls, ...item.transferPhotoUrls],
+      rows: [
+        { label: item.name, amount: item.amount },
+        { label: '配送單', value: `${item.deliveryPhotoUrls.length} 張` },
+        ...(item.transferPhotoRequired ? [{ label: '轉帳成功紀錄', value: `${item.transferPhotoUrls.length} 張` }] : []),
+      ],
       total: item.amount,
     })),
     ...expenseGroups.map(group => ({

@@ -10,6 +10,7 @@ import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment
 import {
   memberDeliveryPhotosFromStoreClosings,
   normalizeCKDeliveryPhotoUrls,
+  normalizeCKTransferPhotoUrls,
 } from '@/lib/ck-delivery-photos'
 
 export const dynamic = 'force-dynamic'
@@ -93,7 +94,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     { data: submitterProfiles },
   ] = await Promise.all([
     recordIds.length > 0
-      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount, delivery_photo_urls').in('ck_daily_record_id', recordIds)
+      ? admin.from('ck_store_orders').select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount, delivery_photo_urls, transfer_photo_required, transfer_photo_urls').in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
       ? admin.from('ck_expense_items').select('ck_daily_record_id, category, item_name, amount, payer_name, vendor_group, doc_type, note, receipt_photo_url').in('ck_daily_record_id', recordIds).order('sort_order')
@@ -126,7 +127,13 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     const extStores = (externalStores ?? []).filter((s: any) => s.ck_store_id === ckStore.id)
 
     let memberOrders: { store_id: string; store_name: string; ck_amount: number | null; deliveryPhotoUrls: string[] }[] = []
-    let externalOrders: { name: string; amount: number; deliveryPhotoUrls: string[] }[] = []
+    let externalOrders: {
+      name: string
+      amount: number
+      deliveryPhotoUrls: string[]
+      transferPhotoRequired: boolean
+      transferPhotoUrls: string[]
+    }[] = []
     let expenses: { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }[] = []
 
     if (record) {
@@ -145,6 +152,8 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
           name: o.external_store_name,
           amount: Number(o.amount ?? 0),
           deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(o.delivery_photo_urls),
+          transferPhotoRequired: Boolean(o.transfer_photo_required),
+          transferPhotoUrls: normalizeCKTransferPhotoUrls(o.transfer_photo_urls),
         }))
       expenses = (expenseItems ?? [])
         .filter((e: any) => e.ck_daily_record_id === record.id)
@@ -197,6 +206,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
         deductFromReimbursement: s.deduct_from_reimbursement ?? (
           ckStore.name.trim().startsWith('泉州') && String(s.name ?? '').trim() === '食咣雞'
         ),
+        transferPhotoRequired: s.transfer_photo_required ?? false,
       })),
       expenses,
       receiptPhotoUrls: ((record as any)?.receipt_photo_urls as string[] | null) ?? [],

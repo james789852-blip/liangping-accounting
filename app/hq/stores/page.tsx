@@ -101,6 +101,7 @@ export default async function StoresPage() {
                       deductFromReimbursement: e.deduct_from_reimbursement ?? (
                         String((store as any).name ?? '').trim().startsWith('泉州') && String(e.name ?? '').trim() === '食咣雞'
                       ),
+                      transferPhotoRequired: e.transfer_photo_required ?? false,
                     })) : []}
                   />
                 ))}

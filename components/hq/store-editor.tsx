@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react'
 import { activateStore, deactivateStore, deleteStorePermanently, updateStoreSettings } from '@/app/actions/stores'
-import { updateCKAssignedStores, addCKExternalStore, deleteCKExternalStore, updateCKExternalStore, updateCKExternalStoreDeduction } from '@/app/actions/ck'
+import { updateCKAssignedStores, addCKExternalStore, deleteCKExternalStore, updateCKExternalStore, updateCKExternalStoreDeduction, updateCKExternalStoreTransferPhotoRequirement } from '@/app/actions/ck'
 import { toast } from 'sonner'
 import { ChevronDown, ChevronUp, Plus, X, Loader2, Check, Pencil, RotateCcw, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -20,7 +20,7 @@ interface Props {
   canEdit: boolean
   canEditCKRelations?: boolean
   memberStoreOptions?: { id: string; name: string }[]
-  externalStores?: { id: string; name: string; deductFromReimbursement?: boolean }[]
+  externalStores?: { id: string; name: string; deductFromReimbursement?: boolean; transferPhotoRequired?: boolean }[]
 }
 
 function Toggle({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -72,8 +72,12 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
   const [storeType, setStoreType] = useState(store.type ?? '店面')
   const [assignedStoreIds, setAssignedStoreIds] = useState<string[]>(store.assigned_store_ids ?? [])
   const [googleSheetsId, setGoogleSheetsId] = useState(store.google_sheets_id ?? '')
-  const [extStores, setExtStores] = useState<{ id: string; name: string; deductFromReimbursement: boolean }[]>(
-    initExternal.map(s => ({ ...s, deductFromReimbursement: s.deductFromReimbursement ?? false }))
+  const [extStores, setExtStores] = useState<{ id: string; name: string; deductFromReimbursement: boolean; transferPhotoRequired: boolean }[]>(
+    initExternal.map(s => ({
+      ...s,
+      deductFromReimbursement: s.deductFromReimbursement ?? false,
+      transferPhotoRequired: s.transferPhotoRequired ?? false,
+    }))
   )
   const [newExtName, setNewExtName] = useState('')
   const [addingExt, setAddingExt] = useState(false)
@@ -98,7 +102,12 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
     const r = await addCKExternalStore(store.id, name)
     if (r.error) { toast.error(r.error) }
     else {
-      setExtStores(prev => [...prev, { id: (r as any).store?.id ?? 'pending-' + Date.now(), name: (r as any).store?.name ?? name, deductFromReimbursement: false }])
+      setExtStores(prev => [...prev, {
+        id: (r as any).store?.id ?? 'pending-' + Date.now(),
+        name: (r as any).store?.name ?? name,
+        deductFromReimbursement: false,
+        transferPhotoRequired: false,
+      }])
       setNewExtName('')
       setAddingExt(false)
       toast.success(`已新增「${name}」`)
@@ -139,6 +148,18 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
     } else {
       setExtStores(prev => prev.map(s => s.id === id ? { ...s, deductFromReimbursement: enabled } : s))
       toast.success(enabled ? '已啟用扣除央廚包款' : '已停用扣除央廚包款')
+    }
+    setExtLoading(null)
+  }
+
+  async function handleToggleExtTransferPhoto(id: string, enabled: boolean) {
+    setExtLoading(`transfer:${id}`)
+    const r = await updateCKExternalStoreTransferPhotoRequirement(id, enabled)
+    if (r.error) {
+      toast.error(r.error)
+    } else {
+      setExtStores(prev => prev.map(s => s.id === id ? { ...s, transferPhotoRequired: enabled } : s))
+      toast.success(enabled ? '已要求上傳轉帳成功照片' : '已取消轉帳照片要求')
     }
     setExtLoading(null)
   }
@@ -387,7 +408,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                           style={{ background: '#f4f4f5', color: '#52525b' }}>取消</button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2 px-3 py-2.5">
+                      <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
                         <span className="flex-1 text-sm font-medium" style={{ color: '#18181b' }}>{s.name}</span>
                         {canConfigureCKRelations && (
                           <Toggle
@@ -395,6 +416,14 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                             checked={s.deductFromReimbursement}
                             onChange={v => handleToggleExtDeduction(s.id, v)}
                             disabled={extLoading === `deduct:${s.id}`}
+                          />
+                        )}
+                        {canConfigureCKRelations && (
+                          <Toggle
+                            label="要求轉帳照片"
+                            checked={s.transferPhotoRequired}
+                            onChange={v => handleToggleExtTransferPhoto(s.id, v)}
+                            disabled={extLoading === `transfer:${s.id}`}
                           />
                         )}
                         {canConfigureCKRelations && (
@@ -453,7 +482,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                 </button>
               )}
               <p className="text-xs" style={{ color: '#a1a1aa' }}>
-                開啟「扣除包款」後，該店家每日叫貨收入會從央廚應包／點交金額扣除；未開啟則只列入收入統計。
+                「扣除包款」控制叫貨收入是否從央廚應包／點交金額扣除；開啟「要求轉帳照片」後，該店家之後有叫貨金額時，央廚必須同時上傳配送單與轉帳成功照片才能送出。
               </p>
             </div>
           )}

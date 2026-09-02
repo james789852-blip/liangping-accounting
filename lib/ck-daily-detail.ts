@@ -5,6 +5,7 @@ import { getCKReimbursementAdjustments } from '@/lib/ck-reimbursement-adjustment
 import {
   memberDeliveryPhotosFromStoreClosings,
   normalizeCKDeliveryPhotoUrls,
+  normalizeCKTransferPhotoUrls,
 } from '@/lib/ck-delivery-photos'
 
 /**
@@ -42,7 +43,7 @@ export async function loadCKDailyDetails(ckStoreIds: string[], date: string) {
     admin.from('ck_external_stores').select('*').in('ck_store_id', ids),
     recordIds.length > 0
       ? admin.from('ck_store_orders')
-          .select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount, delivery_photo_urls')
+          .select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount, delivery_photo_urls, transfer_photo_required, transfer_photo_urls')
           .in('ck_daily_record_id', recordIds)
       : Promise.resolve({ data: [] }),
     recordIds.length > 0
@@ -92,6 +93,8 @@ export async function loadCKDailyDetails(ckStoreIds: string[], date: string) {
         name: order.external_store_name,
         amount: Number(order.amount ?? 0),
         deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(order.delivery_photo_urls),
+        transferPhotoRequired: Boolean(order.transfer_photo_required),
+        transferPhotoUrls: normalizeCKTransferPhotoUrls(order.transfer_photo_urls),
       }))
     const expenses = (expenseRes.data ?? [])
       .filter(expense => expense.ck_daily_record_id === record.id)
@@ -148,6 +151,7 @@ export async function loadCKDailyDetails(ckStoreIds: string[], date: string) {
           deductFromReimbursement: store.deduct_from_reimbursement ?? (
             ckStore.name.trim().startsWith('泉州') && String(store.name ?? '').trim() === '食咣雞'
           ),
+          transferPhotoRequired: store.transfer_photo_required ?? false,
         })),
       expenses,
       receiptPhotoUrls: (record.receipt_photo_urls as string[] | null) ?? [],

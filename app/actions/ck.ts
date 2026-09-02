@@ -9,7 +9,9 @@ import { logAudit } from '@/lib/audit'
 import { recordCKReimbursementAdjustment } from '@/lib/ck-reimbursement-adjustment'
 import {
   ckOrderNeedsDeliveryPhoto,
+  ckOrderNeedsTransferPhoto,
   normalizeCKDeliveryPhotoUrls,
+  normalizeCKTransferPhotoUrls,
 } from '@/lib/ck-delivery-photos'
 import {
   canManageCKSettings as canManageCKSettingsPermission,
@@ -105,7 +107,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
   note?: string
   status?: 'draft' | 'submitted'
   memberOrders?: { storeId: string; confirmedAmount: number | null }[]
-  externalOrders?: { name: string; amount: number; deliveryPhotoUrls?: string[] }[]
+  externalOrders?: { name: string; amount: number; deliveryPhotoUrls?: string[]; transferPhotoUrls?: string[] }[]
   expenses?: { category: string; item_name: string; amount: number; payer_name?: string; vendor_group?: string; doc_type?: string; note?: string; receipt_photo_url?: string }[]
   receiptPhotoUrls?: string[]
 }) {
@@ -115,10 +117,62 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
 
   const admin = createAdminClient()
   const memberOrders = data.memberOrders
-  const externalOrders = data.externalOrders?.map(order => ({
-    ...order,
-    deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(order.deliveryPhotoUrls),
-  }))
+  let externalOrders: Array<{
+    name: string
+    amount: number
+    deliveryPhotoUrls: string[]
+    transferPhotoUrls: string[]
+    transferPhotoRequired: boolean
+  }> | undefined
+
+  if (data.externalOrders !== undefined) {
+    if (data.externalOrders.length === 0) {
+      externalOrders = []
+    } else {
+      const [configuredStoresResult, existingRecordResult] = await Promise.all([
+        admin.from('ck_external_stores')
+          .select('name, transfer_photo_required')
+          .eq('ck_store_id', ckStoreId),
+        admin.from('ck_daily_records')
+          .select('id')
+          .eq('ck_store_id', ckStoreId)
+          .eq('business_date', date)
+          .maybeSingle(),
+      ])
+      if (configuredStoresResult.error) return { error: configuredStoresResult.error.message }
+      if (existingRecordResult.error) return { error: existingRecordResult.error.message }
+      const configuredStores = configuredStoresResult.data
+      const existingRecord = existingRecordResult.data
+      const existingOrdersResult = existingRecord
+        ? await admin.from('ck_store_orders')
+            .select('external_store_name, transfer_photo_required')
+            .eq('ck_daily_record_id', existingRecord.id)
+            .is('store_id', null)
+        : { data: [] }
+      if ('error' in existingOrdersResult && existingOrdersResult.error) return { error: existingOrdersResult.error.message }
+      const existingOrders = existingOrdersResult.data
+      const configuredRequirementByName = new Map(
+        (configuredStores ?? []).map(store => [String(store.name ?? '').trim(), Boolean(store.transfer_photo_required)]),
+      )
+      const existingRequirementByName = new Map(
+        (existingOrders ?? []).map(order => [String(order.external_store_name ?? '').trim(), Boolean(order.transfer_photo_required)]),
+      )
+
+      externalOrders = data.externalOrders.map(order => {
+        const name = order.name.trim()
+        const transferPhotoRequired = existingRequirementByName.has(name)
+          ? Boolean(existingRequirementByName.get(name))
+          : Boolean(configuredRequirementByName.get(name))
+        return {
+          name,
+          amount: Number(order.amount) || 0,
+          deliveryPhotoUrls: normalizeCKDeliveryPhotoUrls(order.deliveryPhotoUrls),
+          transferPhotoUrls: normalizeCKTransferPhotoUrls(order.transferPhotoUrls),
+          transferPhotoRequired,
+        }
+      })
+    }
+  }
 
   if (data.status === 'submitted') {
     const missingExternalPhotos = externalOrders?.filter(order =>
@@ -126,6 +180,12 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
     ).length ?? 0
     if (missingExternalPhotos > 0) {
       return { error: `有 ${missingExternalPhotos} 筆體系外叫貨尚未上傳配送單照片` }
+    }
+    const missingTransferPhotos = externalOrders?.filter(order =>
+      ckOrderNeedsTransferPhoto(order.amount, order.transferPhotoRequired, order.transferPhotoUrls),
+    ).map(order => order.name) ?? []
+    if (missingTransferPhotos.length > 0) {
+      return { error: `請先上傳轉帳成功照片：${missingTransferPhotos.join('、')}` }
     }
   }
 
@@ -168,6 +228,8 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
           external_store_name: o.name,
           amount: o.amount,
           delivery_photo_urls: o.deliveryPhotoUrls,
+          transfer_photo_required: o.transferPhotoRequired,
+          transfer_photo_urls: o.transferPhotoUrls,
         }))
       )
       if (externalInsertErr) return { error: externalInsertErr.message }
@@ -250,6 +312,8 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
         name: order.name,
         amount: order.amount,
         delivery_photo_count: order.deliveryPhotoUrls.length,
+        transfer_photo_required: order.transferPhotoRequired,
+        transfer_photo_count: order.transferPhotoUrls.length,
       })) ?? null,
     },
   })
@@ -465,6 +529,37 @@ export async function updateCKExternalStoreDeduction(id: string, deductFromReimb
     userId: ctx.userId,
     description: `${ctx.userName ?? ctx.userEmail ?? '未知'} ${deductFromReimbursement ? '啟用' : '停用'}體系外店家扣除央廚補款`,
     metadata: { external_store_id: id, deduct_from_reimbursement: deductFromReimbursement },
+  })
+
+  revalidatePath('/manager/ck')
+  revalidatePath('/hq/stores')
+  revalidatePath('/hq/ck')
+  revalidatePath('/hq/accounting')
+  return { success: true }
+}
+
+// 設定體系外店家新帳目是否必須附上轉帳成功照片。
+export async function updateCKExternalStoreTransferPhotoRequirement(id: string, required: boolean) {
+  const ctx = await getAuthContext()
+  if (!ctx) return { error: '未登入' }
+
+  const admin = createAdminClient()
+  const { data: ext } = await admin.from('ck_external_stores').select('ck_store_id, name').eq('id', id).single()
+  if (!ext) return { error: '找不到此體系外店家' }
+  if (!(await canManageCKStoreSettings(ctx))) return { error: '權限不足，請先開啟「可管理央廚店家」權限' }
+
+  const { error } = await admin
+    .from('ck_external_stores')
+    .update({ transfer_photo_required: required })
+    .eq('id', id)
+  if (error) return { error: error.message }
+
+  await logAudit({
+    eventType: 'store_update',
+    storeId: ext.ck_store_id,
+    userId: ctx.userId,
+    description: `${ctx.userName ?? ctx.userEmail ?? '未知'} ${required ? '啟用' : '停用'}體系外店家轉帳照片要求`,
+    metadata: { external_store_id: id, external_store_name: ext.name, transfer_photo_required: required },
   })
 
   revalidatePath('/manager/ck')

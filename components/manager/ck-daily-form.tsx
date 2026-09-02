@@ -61,13 +61,30 @@ function MemberAmountRow({ order, value, onChange, disabled }: {
   )
 }
 
-function DeliveryPhotoField({ photoUrls, disabled, uploading, onUpload, onRemove, onPreview }: {
+function OrderPhotoField({
+  photoUrls,
+  disabled,
+  uploading,
+  onUpload,
+  onRemove,
+  onPreview,
+  title,
+  requiredMessage,
+  uploadLabel,
+  emptyLabel,
+  photoLabel,
+}: {
   photoUrls: string[]
   disabled: boolean
   uploading: boolean
   onUpload: (files: File[]) => Promise<void>
   onRemove: (url: string) => void
   onPreview: (url: string) => void
+  title: string
+  requiredMessage: string
+  uploadLabel: string
+  emptyLabel: string
+  photoLabel: string
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -75,8 +92,8 @@ function DeliveryPhotoField({ photoUrls, disabled, uploading, onUpload, onRemove
     <div className="mt-2.5 rounded-xl p-2.5" style={{ background: '#f8fafc', border: '1px solid #e4e4e7' }}>
       <div className="flex items-center justify-between gap-2 mb-2">
         <div>
-          <p className="text-xs font-bold" style={{ color: '#52525b' }}>配送單照片</p>
-          <p className="text-[10px]" style={{ color: '#a1a1aa' }}>{photoUrls.length ? `${photoUrls.length} 張已上傳` : '有叫貨金額時必須上傳'}</p>
+          <p className="text-xs font-bold" style={{ color: '#52525b' }}>{title}</p>
+          <p className="text-[10px]" style={{ color: '#a1a1aa' }}>{photoUrls.length ? `${photoUrls.length} 張已上傳` : requiredMessage}</p>
         </div>
         {!disabled && (
           <>
@@ -90,7 +107,7 @@ function DeliveryPhotoField({ photoUrls, disabled, uploading, onUpload, onRemove
               className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold disabled:opacity-50"
               style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
               {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
-              {uploading ? '上傳中' : photoUrls.length ? '加照片' : '上傳配送單'}
+              {uploading ? '上傳中' : photoUrls.length ? '加照片' : uploadLabel}
             </button>
           </>
         )}
@@ -100,10 +117,10 @@ function DeliveryPhotoField({ photoUrls, disabled, uploading, onUpload, onRemove
           {photoUrls.map((url, index) => (
             <div key={url} className="relative aspect-square overflow-hidden rounded-lg" style={{ background: '#e4e4e7' }}>
               <button type="button" onClick={() => onPreview(url)} className="h-full w-full">
-                <SafePhotoImage src={url} alt={`配送單 ${index + 1}`} thumb width={180} height={180} className="h-full w-full object-cover" />
+                <SafePhotoImage src={url} alt={`${photoLabel} ${index + 1}`} thumb width={180} height={180} className="h-full w-full object-cover" />
               </button>
               {!disabled && (
-                <button type="button" onClick={() => onRemove(url)} aria-label={`移除配送單照片 ${index + 1}`}
+                <button type="button" onClick={() => onRemove(url)} aria-label={`移除${photoLabel}照片 ${index + 1}`}
                   className="absolute right-1 top-1 h-5 w-5 rounded-full flex items-center justify-center"
                   style={{ background: 'rgba(0,0,0,.68)', color: 'white' }}>
                   <X className="h-3 w-3" />
@@ -115,7 +132,7 @@ function DeliveryPhotoField({ photoUrls, disabled, uploading, onUpload, onRemove
       ) : (
         <div className="rounded-lg px-3 py-2 text-center text-[11px] font-semibold"
           style={{ background: '#fff', color: '#a1a1aa', border: '1px dashed #d4d4d8' }}>
-          尚未上傳配送單
+          {emptyLabel}
         </div>
       )}
     </div>
@@ -123,8 +140,14 @@ function DeliveryPhotoField({ photoUrls, disabled, uploading, onUpload, onRemove
 }
 
 interface MemberOrder { store_id: string; store_name: string; confirmed_amount?: number | null }
-interface ExternalStore { id: string; name: string }
-interface ExternalOrder { name: string; amount: number; delivery_photo_urls: string[] }
+interface ExternalStore { id: string; name: string; transfer_photo_required?: boolean }
+interface ExternalOrder {
+  name: string
+  amount: number
+  delivery_photo_urls: string[]
+  transfer_photo_required: boolean
+  transfer_photo_urls: string[]
+}
 interface Expense { id: string; category: '食材' | '耗材' | '雜項'; item_name: string; amount: number; payer_name: string; vendor_group: string; doc_type: string; note: string; receipt_photo_url?: string }
 interface PhotoExpenseItem {
   id: string
@@ -365,14 +388,25 @@ function mergeExternalOrders(configuredStores: ExternalStore[], existingOrders?:
   const byName = new Map<string, ExternalOrder>()
   for (const store of configuredStores) {
     const name = store.name.trim()
-    if (name) byName.set(name, { name, amount: 0, delivery_photo_urls: [] })
+    if (name) byName.set(name, {
+      name,
+      amount: 0,
+      delivery_photo_urls: [],
+      transfer_photo_required: Boolean(store.transfer_photo_required),
+      transfer_photo_urls: [],
+    })
   }
   for (const order of existingOrders ?? []) {
     const name = order.name.trim()
+    const configured = byName.get(name)
     if (name) byName.set(name, {
       name,
       amount: Number(order.amount) || 0,
       delivery_photo_urls: order.delivery_photo_urls ?? [],
+      transfer_photo_required: typeof order.transfer_photo_required === 'boolean'
+        ? order.transfer_photo_required
+        : Boolean(configured?.transfer_photo_required),
+      transfer_photo_urls: order.transfer_photo_urls ?? [],
     })
   }
   return Array.from(byName.values())
@@ -780,10 +814,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         return
       }
       if (Array.isArray(draft.extOrders)) {
-        setExtOrders(draft.extOrders.map((order: ExternalOrder) => ({
-          ...order,
-          delivery_photo_urls: Array.isArray(order.delivery_photo_urls) ? order.delivery_photo_urls : [],
-        })))
+        setExtOrders(mergeExternalOrders(externalStores, draft.extOrders))
       }
       if (Array.isArray(draft.expenses)) setExpenses(draft.expenses)
       if (Array.isArray(draft.photoUrls)) setPhotoUrls(draft.photoUrls)
@@ -862,6 +893,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
   const expenseReviewSections = buildExpenseReviewSections(expensesForSave, photoUrls)
   const balance = revenueTotal - expenseTotal
   const deliveryPhotoCount = extOrders.reduce((sum, order) => sum + order.delivery_photo_urls.length, 0)
+  const transferPhotoCount = extOrders.reduce((sum, order) => sum + order.transfer_photo_urls.length, 0)
   const deliveryReviewOrders = extOrders
       .filter(order => order.amount > 0)
       .map(order => ({
@@ -870,6 +902,8 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         kind: '體系外',
         amount: order.amount,
         photoUrls: order.delivery_photo_urls,
+        transferPhotoRequired: order.transfer_photo_required,
+        transferPhotoUrls: order.transfer_photo_urls,
       }))
 
   function getExpensesForSave() {
@@ -1211,7 +1245,11 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
     }
   }
 
-  async function uploadDeliveryPhotos(files: File[]): Promise<string[]> {
+  async function uploadOrderPhotos(
+    files: File[],
+    category: 'delivery-orders' | 'transfer-records',
+    errorLabel: string,
+  ): Promise<string[]> {
     if (files.length === 0) return []
     setDeliveryPhotoUploadsInFlight(count => count + 1)
     try {
@@ -1223,13 +1261,13 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
           const path = centralKitchenPhotoPath(
             ckStoreId,
             date,
-            'delivery-orders',
+            category,
             `${Date.now()}-${uniqueId}.jpg`,
           )
           const result = await uploadClientPhoto({ rawFile, bucket: 'receipts', path })
           return result.publicUrl
         } catch (error) {
-          toast.error('配送單上傳失敗：' + ((error as Error).message || '未知錯誤'))
+          toast.error(`${errorLabel}上傳失敗：` + ((error as Error).message || '未知錯誤'))
           return null
         }
       }))
@@ -1254,6 +1292,14 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         setCurrentStep(2)
         return false
       }
+      const missingExternalTransferPhotos = extOrders
+        .filter(order => Number(order.amount || 0) > 0 && order.transfer_photo_required && order.transfer_photo_urls.length === 0)
+        .map(order => order.name)
+      if (missingExternalTransferPhotos.length > 0) {
+        toast.error(`請先上傳轉帳成功照片：${missingExternalTransferPhotos.join('、')}`)
+        setCurrentStep(2)
+        return false
+      }
     }
 
     if ((asSubmit || !opts.silent) && backgroundSaveTimerRef.current) {
@@ -1275,6 +1321,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         name: order.name,
         amount: order.amount,
         deliveryPhotoUrls: order.delivery_photo_urls,
+        transferPhotoUrls: order.transfer_photo_urls,
       })),
       expenses: expensesForSave.map(e => ({
         category: e.category,
@@ -1547,12 +1594,12 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                     />
                   )}
                 </div>
-                <DeliveryPhotoField
+                <OrderPhotoField
                   photoUrls={o.delivery_photo_urls}
                   disabled={isLocked}
                   uploading={deliveryPhotoUploadsInFlight > 0}
                   onUpload={async files => {
-                    const uploaded = await uploadDeliveryPhotos(files)
+                    const uploaded = await uploadOrderPhotos(files, 'delivery-orders', '配送單')
                     if (uploaded.length) {
                       setExtOrders(prev => prev.map(order => order.name === o.name
                         ? { ...order, delivery_photo_urls: [...order.delivery_photo_urls, ...uploaded] }
@@ -1563,7 +1610,36 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                     ? { ...order, delivery_photo_urls: order.delivery_photo_urls.filter(item => item !== url) }
                     : order))}
                   onPreview={setLightboxUrl}
+                  title="配送單照片"
+                  requiredMessage="有叫貨金額時必須上傳"
+                  uploadLabel="上傳配送單"
+                  emptyLabel="尚未上傳配送單"
+                  photoLabel="配送單"
                 />
+                {o.transfer_photo_required && (
+                  <OrderPhotoField
+                    photoUrls={o.transfer_photo_urls}
+                    disabled={isLocked}
+                    uploading={deliveryPhotoUploadsInFlight > 0}
+                    onUpload={async files => {
+                      const uploaded = await uploadOrderPhotos(files, 'transfer-records', '轉帳成功照片')
+                      if (uploaded.length) {
+                        setExtOrders(prev => prev.map(order => order.name === o.name
+                          ? { ...order, transfer_photo_urls: [...order.transfer_photo_urls, ...uploaded] }
+                          : order))
+                      }
+                    }}
+                    onRemove={url => setExtOrders(prev => prev.map(order => order.name === o.name
+                      ? { ...order, transfer_photo_urls: order.transfer_photo_urls.filter(item => item !== url) }
+                      : order))}
+                    onPreview={setLightboxUrl}
+                    title="轉帳成功照片"
+                    requiredMessage="此店家已開啟要求，有叫貨金額時必須上傳"
+                    uploadLabel="上傳轉帳紀錄"
+                    emptyLabel="尚未上傳轉帳成功照片"
+                    photoLabel="轉帳成功紀錄"
+                  />
+                )}
               </div>
             ))}
             {!isLocked && (
@@ -2115,7 +2191,9 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="rounded-2xl p-4" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
                 <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>單據照片</p>
-                <p className="font-bold" style={{ color: '#18181b' }}>支出 {photoUrls.length} 張 · 體系外配送 {deliveryPhotoCount} 張</p>
+                <p className="font-bold" style={{ color: '#18181b' }}>
+                  支出 {photoUrls.length} 張 · 體系外配送 {deliveryPhotoCount} 張{transferPhotoCount > 0 ? ` · 轉帳 ${transferPhotoCount} 張` : ''}
+                </p>
               </div>
               <div className="rounded-2xl p-4" style={{ background: '#fafafa', border: '1px solid #f4f4f5' }}>
                 <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>貨款代墊人</p>
@@ -2146,6 +2224,24 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
                           </div>
                         ) : (
                           <p className="text-xs font-bold mt-2" style={{ color: '#dc2626' }}>尚未上傳配送單</p>
+                        )}
+                        {order.transferPhotoRequired && (
+                          <div className="mt-3 pt-3" style={{ borderTop: '1px dashed #d4d4d8' }}>
+                            <p className="text-[11px] font-bold" style={{ color: '#7c3aed' }}>
+                              轉帳成功照片 · {order.transferPhotoUrls.length} 張
+                            </p>
+                            {order.transferPhotoUrls.length > 0 ? (
+                              <div className="grid grid-cols-4 gap-2 mt-2">
+                                {order.transferPhotoUrls.map((url, index) => (
+                                  <button key={url} type="button" onClick={() => setLightboxUrl(url)} className="aspect-square overflow-hidden rounded-lg">
+                                    <SafePhotoImage src={url} alt={`${order.name} 轉帳成功紀錄 ${index + 1}`} thumb width={180} height={180} className="h-full w-full object-cover" />
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs font-bold mt-2" style={{ color: '#dc2626' }}>尚未上傳轉帳成功照片</p>
+                            )}
+                          </div>
                         )}
                       </div>
                       <span className="text-sm font-extrabold tabular-nums" style={{ color: '#1d4ed8' }}>${fmt(order.amount)}</span>
