@@ -42,6 +42,17 @@ test('店面直接輸入類別會依品項管理設定即時轉換整張單據�
   assert.match(closingUI, /if \(receiptFormForcesNegativeTotal\(form, mappingColumns\)\) return amount < 0/)
 })
 
+test('同張單據混合正數與退貨負數時，以品項合計判斷且仍可儲存', () => {
+  const forceNegativeBlock = closingUI.slice(
+    closingUI.indexOf('function receiptFormForcesNegativeTotal'),
+    closingUI.indexOf('function editReceiptForcesNegativeTotal'),
+  )
+  assert.match(closingUI, /const selectedItems = \(form\.items \?\? \[\]\)\.filter\(item => item\.item_name\.trim\(\)\)/)
+  assert.match(forceNegativeBlock, /selectedItems\.length > 0 && selectedItems\.every/)
+  assert.doesNotMatch(forceNegativeBlock, /\.some\(/)
+  assert.match(closingUI, /const total = newItems\.filter\(i => i\.amount !== 0\)\.reduce\(\(s, i\) => s \+ i\.amount, 0\)/)
+})
+
 test('分類同名的其他可轉成正式品項並傳到店面表單', () => {
   assert.match(actions, /recordMappingExplicitItem/)
   assert.match(actions, /convertedPlaceholder/)

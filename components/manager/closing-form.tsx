@@ -501,7 +501,8 @@ function receiptFormForcesNegativeTotal(
   form: Pick<ReceiptForm, 'category' | 'vendor_name' | 'items'>,
   mappingColumns: MappingColumn[],
 ) {
-  return (form.items ?? []).some(item =>
+  const selectedItems = (form.items ?? []).filter(item => item.item_name.trim())
+  return selectedItems.length > 0 && selectedItems.every(item =>
     receiptItemSignMode(item, form.vendor_name, form.category, mappingColumns) === 'negative',
   )
 }
@@ -512,7 +513,9 @@ function editReceiptForcesNegativeTotal(
   items: ReceiptFormItem[],
   mappingColumns: MappingColumn[],
 ) {
-  return items.some(item => receiptItemSignMode(item, vendorName, category, mappingColumns) === 'negative')
+  const selectedItems = items.filter(item => item.item_name.trim())
+  return selectedItems.length > 0
+    && selectedItems.every(item => receiptItemSignMode(item, vendorName, category, mappingColumns) === 'negative')
 }
 
 function requiresPurchaseRepairNote(categoryName: string | undefined) {
