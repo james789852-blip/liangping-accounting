@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useTransition } from 'react'
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image, FileText, AlertTriangle, Check, CheckCircle2, X, Camera, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image, FileText, AlertTriangle, Check, CheckCircle2, X, Camera, Loader2, ZoomIn } from 'lucide-react'
 import ReviewActions from './review-actions'
 import PhotoLightbox from './photo-lightbox'
 import SafePhotoImage from './safe-photo-image'
@@ -323,7 +323,18 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
           </div>
 
           <div className="overflow-y-auto p-4 grid sm:grid-cols-2 gap-4">
-            <div className="relative min-h-64 rounded-2xl overflow-hidden flex items-center justify-center" style={{ background: '#18181b' }}>
+            <div
+              className="group relative min-h-64 rounded-2xl overflow-hidden flex items-center justify-center"
+              style={{ background: '#18181b', cursor: currentPhoto ? 'zoom-in' : 'default' }}
+              role={currentPhoto ? 'button' : undefined}
+              tabIndex={currentPhoto ? 0 : undefined}
+              aria-label={currentPhoto ? `放大檢視${currentPhoto.label}` : undefined}
+              onClick={() => currentPhoto && setLightboxIdx(reviewIndex)}
+              onKeyDown={event => {
+                if (!currentPhoto || (event.key !== 'Enter' && event.key !== ' ')) return
+                event.preventDefault()
+                setLightboxIdx(reviewIndex)
+              }}>
               {currentPhoto ? (
                 <>
                   <div className="absolute inset-0 flex items-center justify-center gap-2 text-xs" style={{ color: '#a1a1aa' }}>
@@ -341,6 +352,10 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                     quality={72}
                     className="relative z-[1] w-full h-full max-h-[55dvh] object-contain"
                   />
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] flex items-center justify-center gap-1.5 py-2 text-xs font-semibold text-white opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                    style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.68), transparent)' }}>
+                    <ZoomIn className="h-4 w-4" />點擊放大
+                  </div>
                 </>
               ) : (
                 <div className="text-center p-8" style={{ color: '#d4d4d8' }}><FileText className="h-10 w-10 mx-auto mb-2" /><p className="text-sm">沒有照片需要核對</p></div>

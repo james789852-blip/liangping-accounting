@@ -52,6 +52,7 @@ export default function SafePhotoImage({
   quality = 55,
   loading = 'lazy',
   fallbackText = '照片',
+  draggable,
   onClick,
 }: {
   src?: string | null
@@ -65,6 +66,7 @@ export default function SafePhotoImage({
   quality?: number
   loading?: 'eager' | 'lazy'
   fallbackText?: string
+  draggable?: boolean
   onClick?: MouseEventHandler<HTMLElement>
 }) {
   const nodeRef = useRef<HTMLImageElement | HTMLDivElement | null>(null)
@@ -107,6 +109,7 @@ export default function SafePhotoImage({
       style={style}
       onClick={onClick as MouseEventHandler<HTMLImageElement>}
       loading={loading}
+      draggable={draggable}
       decoding="async"
       fetchPriority={loading === 'eager' ? 'high' : 'low'}
       onError={() => {

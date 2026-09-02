@@ -39,3 +39,22 @@ test('總公司逐張核對使用閱讀版圖片並預先載入相鄰照片', ()
   assert.match(source, /resize="contain"/)
   assert.match(source, /quality=\{72\}/)
 })
+
+test('總公司逐張核對照片可開啟所有裝置共用的放大檢視器', () => {
+  const source = fs.readFileSync(new URL('../components/hq/review-card.tsx', import.meta.url), 'utf8')
+  assert.match(source, /onClick=\{\(\) => currentPhoto && setLightboxIdx\(reviewIndex\)\}/)
+  assert.match(source, /點擊放大/)
+  assert.match(source, /aria-label=\{currentPhoto \? `放大檢視\$\{currentPhoto\.label\}`/)
+})
+
+test('照片檢視器支援按鈕、滾輪、雙指縮放與拖曳', () => {
+  const source = fs.readFileSync(new URL('../components/hq/photo-lightbox.tsx', import.meta.url), 'utf8')
+  assert.match(source, /const MAX_SCALE = 5/)
+  assert.match(source, /onWheel=\{event =>/)
+  assert.match(source, /onPointerDown=\{handlePointerDown\}/)
+  assert.match(source, /pinchDistance\.current/)
+  assert.match(source, /touchAction: 'none'/)
+  assert.match(source, /aria-label="放大照片"/)
+  assert.match(source, /aria-label="縮小照片"/)
+  assert.match(source, /aria-label="恢復原始大小"/)
+})
