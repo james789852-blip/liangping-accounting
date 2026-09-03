@@ -5,6 +5,7 @@ import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { canManageCKSettings, canManageStoreSettings } from '@/lib/user-permissions'
+import { buildAuditChanges, logAudit } from '@/lib/audit'
 
 interface StoreSettings {
   mode: string
@@ -42,7 +43,12 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
   if (error) return { error }
 
   const admin = createAdminClient()
-  const { data: currentStore } = await admin.from('stores').select('type').eq('id', storeId).single()
+  const { data: currentStore } = await admin
+    .from('stores')
+    .select('id, name, type, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled, petty_cash, google_sheets_id, active')
+    .eq('id', storeId)
+    .single()
+  if (!currentStore) return { error: '找不到店家' }
   const targetType = settings.type ?? currentStore?.type ?? '店面'
   if (!canManageStoreType(profile, targetType)) {
     return { error: targetType === '央廚' ? '權限不足，未開啟「可管理央廚店家」權限' : '權限不足，未開啟「可管理店面店家」權限' }
@@ -67,6 +73,35 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
     .eq('id', storeId)
 
   if (dbErr) return { error: dbErr.message }
+
+  const after = {
+    ...currentStore,
+    ...(settings.name ? { name: settings.name.trim() } : {}),
+    ...(settings.type ? { type: settings.type } : {}),
+    mode: settings.mode,
+    ichef_uber_linked: settings.ichef_uber_linked,
+    uber_enabled: settings.uber_enabled,
+    uber_accounts: settings.uber_accounts,
+    panda_enabled: settings.panda_enabled,
+    twpay_enabled: settings.twpay_enabled,
+    online_enabled: settings.online_enabled,
+    online_cash_enabled: settings.online_cash_enabled,
+    petty_cash: settings.petty_cash,
+    ...('google_sheets_id' in settings ? { google_sheets_id: settings.google_sheets_id ?? null } : {}),
+  }
+  await logAudit({
+    eventType: 'store_update',
+    storeId,
+    userId: profile!.user_id,
+    description: `${profile!.name ?? '未知'} 修改店家設定（${after.name}）`,
+    metadata: {
+      action: 'update_settings',
+      entity: { type: after.type === '央廚' ? 'central_kitchen' : 'store', id: storeId, name: after.name },
+      before: currentStore,
+      after,
+      changes: buildAuditChanges(currentStore, after),
+    },
+  })
 
   revalidatePath('/hq/stores')
   revalidatePath('/manager', 'layout')
@@ -93,6 +128,18 @@ export async function createStore(name: string, mode: string, type = '店面') {
     .single()
 
   if (dbErr) return { error: dbErr.message }
+
+  await logAudit({
+    eventType: 'store_update',
+    storeId: data.id,
+    userId: profile!.user_id,
+    description: `${profile!.name ?? '未知'} 新增${type === '央廚' ? '央廚' : '店家'}（${trimmed}）`,
+    metadata: {
+      action: 'create',
+      entity: { type: type === '央廚' ? 'central_kitchen' : 'store', id: data.id, name: trimmed },
+      after: { name: trimmed, mode, type, active: true },
+    },
+  })
 
   revalidatePath('/hq/stores')
   revalidatePath('/manager', 'layout')
@@ -127,6 +174,21 @@ export async function deactivateStore(storeId: string) {
 
   if (dbErr) return { error: dbErr.message }
   if (!deactivated) return { error: '停用失敗，店家狀態沒有更新，請重新整理後再試一次' }
+
+  await logAudit({
+    eventType: 'store_update',
+    severity: 'warn',
+    storeId,
+    userId: profile!.user_id,
+    description: `${profile!.name ?? '未知'} 停用${store.type === '央廚' ? '央廚' : '店家'}（${store.name}）`,
+    metadata: {
+      action: 'deactivate',
+      entity: { type: store.type === '央廚' ? 'central_kitchen' : 'store', id: storeId, name: store.name },
+      before: { active: true },
+      after: { active: false },
+      changes: buildAuditChanges({ active: true }, { active: false }, { active: '啟用狀態' }),
+    },
+  })
 
   revalidatePath('/hq/stores')
   revalidatePath('/hq/users')
@@ -164,6 +226,20 @@ export async function activateStore(storeId: string) {
 
   if (dbErr) return { error: dbErr.message }
   if (!activated) return { error: '重新啟用失敗，店家狀態沒有更新，請重新整理後再試一次' }
+
+  await logAudit({
+    eventType: 'store_update',
+    storeId,
+    userId: profile!.user_id,
+    description: `${profile!.name ?? '未知'} 重新啟用${store.type === '央廚' ? '央廚' : '店家'}（${store.name}）`,
+    metadata: {
+      action: 'activate',
+      entity: { type: store.type === '央廚' ? 'central_kitchen' : 'store', id: storeId, name: store.name },
+      before: { active: false },
+      after: { active: true },
+      changes: buildAuditChanges({ active: false }, { active: true }, { active: '啟用狀態' }),
+    },
+  })
 
   revalidatePath('/hq/stores')
   revalidatePath('/hq/users')
@@ -219,6 +295,18 @@ export async function deleteStorePermanently(storeId: string) {
 
   if (dbErr) return { error: '這間店仍有關聯設定或資料，無法永久刪除；請維持停用狀態' }
   if (!deleted) return { error: '永久刪除失敗，店家可能已被修改，請重新整理後再試一次' }
+
+  await logAudit({
+    eventType: 'store_update',
+    severity: 'warn',
+    userId: profile!.user_id,
+    description: `${profile!.name ?? '未知'} 永久刪除${store.type === '央廚' ? '央廚' : '店家'}（${store.name}）`,
+    metadata: {
+      action: 'delete',
+      entity: { type: store.type === '央廚' ? 'central_kitchen' : 'store', id: storeId, name: store.name },
+      before: store,
+    },
+  })
 
   revalidatePath('/hq/stores')
   revalidatePath('/hq/users')

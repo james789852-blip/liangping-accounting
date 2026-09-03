@@ -7,7 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { after } from 'next/server'
 import { syncClosingToSheets, syncMonthToSheets } from '@/lib/google-sheets'
-import { logAudit } from '@/lib/audit'
+import { buildAuditChanges, logAudit } from '@/lib/audit'
 import { getAuthContext, canAccessStore, getClosingMeta } from '@/lib/permissions'
 import { canReviewClosings } from '@/lib/user-permissions'
 
@@ -55,6 +55,50 @@ function objectRows(value: unknown): Array<Record<string, unknown>> {
   return value.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object')
 }
 
+const CLOSING_STATUS_LABELS = { status: '帳目狀態' }
+
+async function loadClosingAuditSnapshot(
+  admin: ReturnType<typeof createAdminClient>,
+  closingId: string,
+  storeId: string,
+  businessDate: string,
+) {
+  const [{ data: closing }, { data: receipts }] = await Promise.all([
+    admin
+      .from('daily_closings')
+      .select('*, revenue_items(*), cash_counts(*), expense_items(*), order_items(*), handwrite_orders(*), platform_screenshots(*)')
+      .eq('id', closingId)
+      .maybeSingle(),
+    admin
+      .from('receipts')
+      .select('*, receipt_items(*)')
+      .eq('store_id', storeId)
+      .eq('business_date', businessDate)
+      .order('created_at'),
+  ])
+  return closing ? { ...closing, receipts: receipts ?? [] } : null
+}
+
+async function detachClosingAuditLogs(
+  admin: ReturnType<typeof createAdminClient>,
+  closingId: string,
+) {
+  const { data: logs } = await admin
+    .from('audit_logs')
+    .select('id, metadata')
+    .eq('closing_id', closingId)
+  await Promise.all((logs ?? []).map(log => admin
+    .from('audit_logs')
+    .update({
+      closing_id: null,
+      metadata: {
+        ...((log.metadata as Record<string, unknown> | null) ?? {}),
+        original_closing_id: closingId,
+      },
+    })
+    .eq('id', log.id)))
+}
+
 async function cleanupClosingRelations(admin: ReturnType<typeof createAdminClient>, closing: ClosingForDelete) {
   const [{ data: receiptsByDate }, { data: orderItems }, { data: screenshots }] = await Promise.all([
     admin.from('receipts').select('id').eq('store_id', closing.store_id).eq('business_date', closing.business_date),
@@ -79,8 +123,8 @@ async function cleanupClosingRelations(admin: ReturnType<typeof createAdminClien
     await admin.from('review_logs').delete().in('screenshot_id', screenshotIds)
   }
 
+  await detachClosingAuditLogs(admin, closing.id)
   await Promise.all([
-    admin.from('audit_logs').delete().eq('closing_id', closing.id),
     admin.from('revenue_items').delete().eq('closing_id', closing.id),
     admin.from('cash_counts').delete().eq('closing_id', closing.id),
     admin.from('expense_items').delete().eq('closing_id', closing.id),
@@ -220,6 +264,13 @@ export async function verifyClosing(closingId: string) {
     userId: user.id,
     closingId,
     description: `${profile.name ?? user.email ?? '未知'} 審核 ${closing.business_date} 帳目`,
+    metadata: {
+      entity: { type: 'store_closing', id: closingId },
+      business_date: closing.business_date,
+      before: { status: closing.status },
+      after: { status: 'verified' },
+      changes: buildAuditChanges({ status: closing.status }, { status: 'verified' }, CLOSING_STATUS_LABELS),
+    },
   })
 
   // 核准先回應畫面，Google Sheets 在 response 後繼續同步。同步失敗
@@ -282,6 +333,13 @@ export async function verifyClosingsBatch(closingIds: string[]) {
       eventType: 'closing_verify',
       storeId: c.store_id, userId: user.id, closingId: id,
       description: `${profile.name ?? user.email ?? '未知'} 批次審核 ${c.business_date} 帳目`,
+      metadata: {
+        entity: { type: 'store_closing', id },
+        business_date: c.business_date,
+        before: { status: c.status },
+        after: { status: 'verified' },
+        changes: buildAuditChanges({ status: c.status }, { status: 'verified' }, CLOSING_STATUS_LABELS),
+      },
     })
   }))
 
@@ -331,11 +389,26 @@ export async function deleteClosingDraft(closingId: string) {
   if (closing.status !== 'draft') return { error: '只能刪除草稿狀態的帳目' }
 
   const admin = createAdminClient()
+  const snapshot = await loadClosingAuditSnapshot(admin, closingId, closing.store_id, closing.business_date)
   await cleanupClosingRelations(admin, closing as ClosingForDelete)
   await cleanupLinkedCKOrder(admin, closing as ClosingForDelete)
 
   const { error } = await admin.from('daily_closings').delete().eq('id', closingId)
   if (error) return { error: error.message }
+
+  await logAudit({
+    eventType: 'closing_delete',
+    severity: 'warn',
+    storeId: closing.store_id,
+    userId: user.id,
+    description: `${user.email ?? '未知'} 刪除 ${closing.business_date} 草稿帳目`,
+    metadata: {
+      entity: { type: 'store_closing', id: closingId },
+      business_date: closing.business_date,
+      before: snapshot,
+      changes: [{ field: 'status', label: '帳目狀態', before: 'draft', after: '已刪除' }],
+    },
+  })
 
   revalidateClosingDeletePaths()
   return { success: true }
@@ -353,11 +426,12 @@ export async function deleteClosing(closingId: string) {
   const admin = createAdminClient()
   const { data: closing } = await admin
     .from('daily_closings')
-    .select('id, store_id, business_date')
+    .select('id, store_id, business_date, status')
     .eq('id', closingId)
     .maybeSingle()
   if (!closing) return { error: '找不到此帳目' }
 
+  const snapshot = await loadClosingAuditSnapshot(admin, closingId, closing.store_id, closing.business_date)
   await cleanupClosingRelations(admin, closing as ClosingForDelete)
   await cleanupLinkedCKOrder(admin, closing as ClosingForDelete)
 
@@ -365,6 +439,19 @@ export async function deleteClosing(closingId: string) {
     .from('daily_closings').delete().eq('id', closingId)
 
   if (error) return { error: error.message }
+  await logAudit({
+    eventType: 'closing_delete',
+    severity: 'warn',
+    storeId: closing.store_id,
+    userId: user.id,
+    description: `${profile.name ?? user.email ?? '未知'} 刪除 ${closing.business_date} 帳目`,
+    metadata: {
+      entity: { type: 'store_closing', id: closingId },
+      business_date: closing.business_date,
+      before: snapshot,
+      changes: [{ field: 'status', label: '帳目狀態', before: closing.status, after: '已刪除' }],
+    },
+  })
   revalidateClosingDeletePaths()
   return { success: true }
 }
@@ -389,22 +476,7 @@ export async function disputeClosing(closingId: string, note: string) {
   // 退回前先保留完整帳務快照。日後即使店長端裝置或網路發生異常，
   // 也能依稽核紀錄精確還原退回當下的內容，而不是只剩彙總數字可推算。
   const admin = createAdminClient()
-  const [{ data: closingSnapshot }, { data: receiptSnapshot }] = await Promise.all([
-    admin
-      .from('daily_closings')
-      .select('*, revenue_items(*), cash_counts(*), expense_items(*), order_items(*), handwrite_orders(*), platform_screenshots(*)')
-      .eq('id', closingId)
-      .maybeSingle(),
-    admin
-      .from('receipts')
-      .select('*, receipt_items(*)')
-      .eq('store_id', closing.store_id)
-      .eq('business_date', closing.business_date)
-      .order('created_at'),
-  ])
-  const preDisputeSnapshot = closingSnapshot
-    ? { ...closingSnapshot, receipts: receiptSnapshot ?? [] }
-    : null
+  const preDisputeSnapshot = await loadClosingAuditSnapshot(admin, closingId, closing.store_id, closing.business_date)
 
   const cleanNote = note.trim()
   const { data: updated, error } = await admin
@@ -432,6 +504,9 @@ export async function disputeClosing(closingId: string, note: string) {
       note: cleanNote || null,
       previous_status: closing.status,
       pre_dispute_snapshot: preDisputeSnapshot ?? null,
+      before: { status: closing.status },
+      after: { status: 'disputed' },
+      changes: buildAuditChanges({ status: closing.status }, { status: 'disputed' }, CLOSING_STATUS_LABELS),
     },
   })
 
@@ -561,7 +636,16 @@ export async function submitClosing(closingId: string) {
     userId: ctx.userId,
     closingId,
     description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 送出 ${c.business_date} 帳目（營業額 $${Math.round((c.total_revenue as number) ?? 0).toLocaleString()}，誤差 $${Math.round((c.variance as number) ?? 0).toLocaleString()}）`,
-    metadata: { variance: c.variance, total_revenue: c.total_revenue, previous_status: meta.status },
+    metadata: {
+      entity: { type: 'store_closing', id: closingId },
+      business_date: c.business_date,
+      variance: c.variance,
+      total_revenue: c.total_revenue,
+      previous_status: meta.status,
+      before: { status: meta.status },
+      after: { status: 'submitted' },
+      changes: buildAuditChanges({ status: meta.status }, { status: 'submitted' }, CLOSING_STATUS_LABELS),
+    },
   })
 
   revalidatePath('/manager/dashboard')

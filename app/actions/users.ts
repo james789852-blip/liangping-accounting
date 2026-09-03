@@ -7,6 +7,7 @@ import { revalidatePath, revalidateTag } from 'next/cache'
 import { canManageUsers } from '@/lib/user-permissions'
 import { inferSystemRole } from '@/lib/account-access'
 import { resolvePrimaryStoreId } from '@/lib/user-primary-store'
+import { buildAuditChanges, logAudit } from '@/lib/audit'
 
 function getAdminClient() {
   return createAdminClient(
@@ -43,6 +44,18 @@ function readableUserCreateError(message: string) {
     return '資料庫權限不足，請確認管理權限設定'
   }
   return message
+}
+
+function safeUserSnapshot(profile: Record<string, unknown> | null | undefined) {
+  if (!profile) return null
+  const allowed = [
+    'user_id', 'name', 'role', 'title', 'employee_id', 'store_ids', 'primary_store_id',
+    'is_hq', 'active', 'can_manage_users', 'can_manage_stores', 'can_manage_store_settings',
+    'can_manage_ck_settings', 'can_manage_items', 'can_manage_store_items', 'can_manage_ck_items',
+    'can_manage_store_receipts', 'can_manage_ck_receipts', 'can_manage_ck_prices',
+    'can_review_closings', 'can_export_reports',
+  ]
+  return Object.fromEntries(allowed.filter(key => key in profile).map(key => [key, profile[key]]))
 }
 
 export async function createUser(formData: {
@@ -123,6 +136,27 @@ export async function createUser(formData: {
     return { error: readableUserCreateError(profileError.message) }
   }
 
+  await logAudit({
+    eventType: 'user_create',
+    userId: caller!.user_id,
+    description: `${caller!.name ?? '未知'} 新增管理人員（${formData.name}）`,
+    metadata: {
+      entity: { type: 'user', id: authUser.user.id, name: formData.name },
+      after: safeUserSnapshot({
+        user_id: authUser.user.id,
+        name: formData.name,
+        role: systemRole,
+        title: formData.title ?? null,
+        employee_id: formData.employee_id ?? null,
+        store_ids: storeIds,
+        primary_store_id: primary,
+        is_hq: isOwner || formData.is_hq === true,
+        active: true,
+      }),
+      account_created: true,
+    },
+  })
+
   revalidatePath('/hq/users')
   revalidateTag('user-profile', 'default')
   return { success: true }
@@ -155,6 +189,12 @@ export async function updateUser(userId: string, formData: {
   if (!canManageUsers(caller)) return { error: '權限不足' }
 
   const admin = getAdminClient()
+  const { data: currentProfile } = await admin
+    .from('user_profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (!currentProfile) return { error: '找不到管理人員' }
 
   // 若帳號有異動，先更新 Supabase auth email
   if (formData.account !== undefined) {
@@ -217,6 +257,22 @@ export async function updateUser(userId: string, formData: {
     .eq('user_id', userId)
 
   if (error) return { error: error.message }
+  const before = safeUserSnapshot(currentProfile) ?? {}
+  const after = safeUserSnapshot({ ...currentProfile, ...patch }) ?? {}
+  await logAudit({
+    eventType: 'user_update',
+    userId: caller!.user_id,
+    description: `${caller!.name ?? '未知'} 修改管理人員（${String(after.name ?? currentProfile.name)}）`,
+    metadata: {
+      entity: { type: 'user', id: userId, name: after.name ?? currentProfile.name },
+      before,
+      after,
+      changes: [
+        ...buildAuditChanges(before, after),
+        ...(formData.account !== undefined ? [{ field: 'account', label: '登入帳號', before: '原帳號', after: '已更新（內容不記錄）' }] : []),
+      ],
+    },
+  })
   revalidatePath('/hq/users')
   revalidateTag('user-profile', 'default')
   return { success: true }
@@ -229,6 +285,17 @@ export async function updateUserPassword(userId: string, newPassword: string) {
   const admin = getAdminClient()
   const { error } = await admin.auth.admin.updateUserById(userId, { password: newPassword })
   if (error) return { error: error.message }
+  await logAudit({
+    eventType: 'user_password_reset',
+    severity: 'warn',
+    userId: caller!.user_id,
+    description: `${caller!.name ?? '未知'} 重設管理人員密碼`,
+    metadata: {
+      entity: { type: 'user', id: userId },
+      password_changed: true,
+      password_value: '[敏感資料已遮蔽]',
+    },
+  })
   return { success: true }
 }
 
@@ -237,9 +304,22 @@ export async function updateUserStatus(userId: string, active: boolean) {
   if (!canManageUsers(caller)) return { error: '權限不足' }
 
   const admin = getAdminClient()
+  const { data: target } = await admin.from('user_profiles').select('name, active').eq('user_id', userId).maybeSingle()
   const { error } = await admin
     .from('user_profiles').update({ active }).eq('user_id', userId)
   if (error) return { error: error.message }
+  await logAudit({
+    eventType: 'user_status_update',
+    severity: active ? 'info' : 'warn',
+    userId: caller!.user_id,
+    description: `${caller!.name ?? '未知'} ${active ? '啟用' : '停用'}管理人員（${target?.name ?? '未知'}）`,
+    metadata: {
+      entity: { type: 'user', id: userId, name: target?.name ?? null },
+      before: { active: target?.active ?? null },
+      after: { active },
+      changes: buildAuditChanges({ active: target?.active ?? null }, { active }, { active: '啟用狀態' }),
+    },
+  })
   revalidatePath('/hq/users')
   revalidateTag('user-profile', 'default')
   return { success: true }
@@ -250,8 +330,19 @@ export async function deleteUser(userId: string) {
   if (!canManageUsers(caller)) return { error: '權限不足' }
 
   const admin = getAdminClient()
+  const { data: target } = await admin.from('user_profiles').select('*').eq('user_id', userId).maybeSingle()
   const { error } = await admin.auth.admin.deleteUser(userId)
   if (error) return { error: error.message }
+  await logAudit({
+    eventType: 'user_delete',
+    severity: 'warn',
+    userId: caller!.user_id,
+    description: `${caller!.name ?? '未知'} 刪除管理人員（${target?.name ?? '未知'}）`,
+    metadata: {
+      entity: { type: 'user', id: userId, name: target?.name ?? null },
+      before: safeUserSnapshot(target),
+    },
+  })
   revalidatePath('/hq/users')
   revalidateTag('user-profile', 'default')
   return { success: true }
@@ -264,9 +355,21 @@ export async function updateUserHQ(userId: string, isHQ: boolean) {
   }
 
   const admin = getAdminClient()
+  const { data: target } = await admin.from('user_profiles').select('name, is_hq').eq('user_id', userId).maybeSingle()
   const { error } = await admin
     .from('user_profiles').update({ is_hq: isHQ }).eq('user_id', userId)
   if (error) return { error: error.message }
+  await logAudit({
+    eventType: 'user_update',
+    userId: callerProfile!.user_id,
+    description: `${callerProfile!.name ?? '未知'} 修改管理人員總公司權限（${target?.name ?? '未知'}）`,
+    metadata: {
+      entity: { type: 'user', id: userId, name: target?.name ?? null },
+      before: { is_hq: target?.is_hq ?? null },
+      after: { is_hq: isHQ },
+      changes: buildAuditChanges({ is_hq: target?.is_hq ?? null }, { is_hq: isHQ }, { is_hq: '總公司身分' }),
+    },
+  })
   revalidatePath('/hq/users')
   revalidateTag('user-profile', 'default')
   return { success: true }

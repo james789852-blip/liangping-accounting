@@ -3,7 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { getAuthContext, canAccessStore } from '@/lib/permissions'
-import { logAudit } from '@/lib/audit'
+import { buildAuditChanges, logAudit } from '@/lib/audit'
 import { normalizeItemAmount } from '@/lib/negative-items'
 import { getNegativeItemMappingIds } from '@/lib/item-mapping-negative'
 import { receiptDateWriteError } from '@/lib/receipt-write-access'
@@ -33,6 +33,45 @@ interface SaveReceiptPayload {
   notes: string
   items: ReceiptItemPayload[]
   expectedUpdatedAt?: string | null
+}
+
+const RECEIPT_AUDIT_LABELS: Record<string, string> = {
+  business_date: '帳目日期',
+  vendor_name: '廠商／分類',
+  actual_vendor_name: '實際廠商',
+  receipt_type: '單據類型',
+  total_amount: '單據總額',
+  tax_amount: '稅額',
+  notes: '備註',
+  has_photo: '是否有照片',
+  items: '品項明細',
+  status: '狀態',
+}
+
+function receiptAuditSnapshot(
+  receipt: Record<string, unknown>,
+  items: Array<Record<string, unknown>>,
+) {
+  return {
+    business_date: receipt.business_date ?? null,
+    vendor_name: receipt.vendor_name ?? null,
+    actual_vendor_name: receipt.actual_vendor_name ?? null,
+    receipt_type: receipt.receipt_type ?? null,
+    total_amount: receipt.total_amount ?? null,
+    tax_amount: receipt.tax_amount ?? null,
+    notes: receipt.notes ?? null,
+    has_photo: Boolean(receipt.photo_url),
+    status: receipt.status ?? null,
+    items: items.map(item => ({
+      item_name: item.item_name ?? null,
+      item_category: item.item_category ?? null,
+      amount: item.amount ?? null,
+      quantity: item.quantity ?? null,
+      unit: item.unit ?? null,
+      unit_price: item.unit_price ?? null,
+      excel_column: item.excel_column ?? null,
+    })),
+  }
 }
 
 function normalizeActualVendorName(name?: string | null) {
@@ -82,15 +121,15 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
   if (rErr || !receipt) return { error: rErr?.message ?? '儲存失敗' }
 
   const normalizedItems = syncSingleReceiptItemAmount(payload.items, payload.totalAmount, payload.taxAmount)
+  let persistedItems: Array<Record<string, unknown>> = []
   if (normalizedItems.length > 0) {
     const negativeMappingIds = await getNegativeItemMappingIds(admin, payload.storeId)
-    const { error: itemError } = await admin.from('receipt_items').insert(
-      normalizedItems.map(item => ({
-        ...item,
-        amount: normalizeItemAmount(item.item_name, item.amount, !!item.item_mapping_id && negativeMappingIds.has(item.item_mapping_id)),
-        receipt_id: receipt.id,
-      }))
-    )
+    persistedItems = normalizedItems.map(item => ({
+      ...item,
+      amount: normalizeItemAmount(item.item_name, item.amount, !!item.item_mapping_id && negativeMappingIds.has(item.item_mapping_id)),
+      receipt_id: receipt.id,
+    }))
+    const { error: itemError } = await admin.from('receipt_items').insert(persistedItems)
     if (itemError) {
       // receipts -> receipt_items 是 cascade 關聯；刪除主檔可完整回滾本次新增。
       await admin.from('receipts').delete().eq('id', receipt.id)
@@ -100,12 +139,28 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
 
   await rememberActualVendor(admin, payload.storeId, payload.vendorName, payload.actualVendorName)
 
+  const after = receiptAuditSnapshot({
+    business_date: payload.businessDate,
+    vendor_name: payload.vendorName,
+    actual_vendor_name: normalizeActualVendorName(payload.actualVendorName) || null,
+    receipt_type: payload.receiptType,
+    total_amount: payload.totalAmount,
+    tax_amount: payload.taxAmount,
+    photo_url: payload.photoUrl,
+    notes: payload.notes,
+    status: 'draft',
+  }, persistedItems)
   await logAudit({
     eventType: 'receipt_create',
     storeId: payload.storeId,
     userId: ctx.userId,
     description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 新增收據（${payload.vendorName} $${Math.round(payload.totalAmount).toLocaleString()}）`,
-    metadata: { receipt_id: receipt.id, business_date: payload.businessDate, vendor: payload.vendorName, amount: payload.totalAmount },
+    metadata: {
+      entity: { type: 'receipt', id: receipt.id },
+      business_date: payload.businessDate,
+      after,
+      changes: buildAuditChanges({}, after, RECEIPT_AUDIT_LABELS),
+    },
   })
 
   revalidatePath('/manager/receipts')
@@ -119,7 +174,7 @@ export async function deleteReceipt(receiptId: string) {
   const admin = createAdminClient()
   const { data: existing, error: readError } = await admin
     .from('receipts')
-    .select('store_id, vendor_name, total_amount, business_date, receipt_items(*)')
+    .select('store_id, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, business_date, photo_url, notes, status, receipt_items(*)')
     .eq('id', receiptId)
     .single()
   if (readError || !existing) return { error: '找不到此收據' }
@@ -153,13 +208,19 @@ export async function deleteReceipt(receiptId: string) {
     return { error: error.message }
   }
 
+  const before = receiptAuditSnapshot(existing, previousItems)
   await logAudit({
     eventType: 'receipt_delete',
     severity: 'warn',
     storeId,
     userId: ctx.userId,
     description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 刪除收據（${existing?.vendor_name ?? '?'} $${Math.round((existing?.total_amount as number) ?? 0).toLocaleString()}）`,
-    metadata: { receipt_id: receiptId, business_date: existing?.business_date, vendor: existing?.vendor_name, amount: existing?.total_amount },
+    metadata: {
+      entity: { type: 'receipt', id: receiptId },
+      business_date: existing.business_date,
+      before,
+      changes: buildAuditChanges(before, {}, RECEIPT_AUDIT_LABELS),
+    },
   })
 
   revalidatePath('/manager/receipts')
@@ -176,7 +237,7 @@ export async function updateReceipt(
   const admin = createAdminClient()
   const { data: existing, error: readError } = await admin
     .from('receipts')
-    .select('store_id, business_date, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, photo_url, notes, updated_at, receipt_items(*)')
+    .select('store_id, business_date, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, photo_url, notes, status, updated_at, receipt_items(*)')
     .eq('id', receiptId)
     .single()
   if (readError || !existing) return { error: '找不到此收據' }
@@ -231,15 +292,15 @@ export async function updateReceipt(
   }
 
   const normalizedItems = syncSingleReceiptItemAmount(payload.items, payload.totalAmount, payload.taxAmount)
+  let persistedItems: Array<Record<string, unknown>> = []
   if (normalizedItems.length > 0) {
     const negativeMappingIds = await getNegativeItemMappingIds(admin, storeId)
-    const { error: itemError } = await admin.from('receipt_items').insert(
-      normalizedItems.map(item => ({
-        ...item,
-        amount: normalizeItemAmount(item.item_name, item.amount, !!item.item_mapping_id && negativeMappingIds.has(item.item_mapping_id)),
-        receipt_id: receiptId,
-      }))
-    )
+    persistedItems = normalizedItems.map(item => ({
+      ...item,
+      amount: normalizeItemAmount(item.item_name, item.amount, !!item.item_mapping_id && negativeMappingIds.has(item.item_mapping_id)),
+      receipt_id: receiptId,
+    }))
+    const { error: itemError } = await admin.from('receipt_items').insert(persistedItems)
     if (itemError) {
       await admin.from('receipts').update({
         business_date: existing.business_date,
@@ -273,12 +334,30 @@ export async function updateReceipt(
 
   await rememberActualVendor(admin, storeId, payload.vendorName, payload.actualVendorName)
 
+  const before = receiptAuditSnapshot(existing, Array.isArray(existing.receipt_items) ? existing.receipt_items : [])
+  const after = receiptAuditSnapshot({
+    business_date: payload.businessDate,
+    vendor_name: payload.vendorName,
+    actual_vendor_name: normalizeActualVendorName(payload.actualVendorName) || null,
+    receipt_type: payload.receiptType,
+    total_amount: payload.totalAmount,
+    tax_amount: payload.taxAmount,
+    photo_url: payload.photoUrl,
+    notes: payload.notes,
+    status: existing.status,
+  }, persistedItems)
   await logAudit({
     eventType: 'receipt_update',
     storeId,
     userId: ctx.userId,
     description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 修改收據（${payload.vendorName} $${Math.round(payload.totalAmount).toLocaleString()}）`,
-    metadata: { receipt_id: receiptId, business_date: payload.businessDate, vendor: payload.vendorName, amount: payload.totalAmount },
+    metadata: {
+      entity: { type: 'receipt', id: receiptId },
+      business_date: payload.businessDate,
+      before,
+      after,
+      changes: buildAuditChanges(before, after, RECEIPT_AUDIT_LABELS),
+    },
   })
 
   revalidatePath('/manager/receipts')

@@ -12,7 +12,11 @@ const EVENT_TYPES = [
   'closing_submit', 'closing_verify', 'closing_dispute', 'closing_edit', 'closing_delete',
   'receipt_create', 'receipt_update', 'receipt_delete',
   'ck_record_update', 'ck_hq_paid',
-  'sheets_sync_failed', 'variance_alert', 'ck_price_update', 'store_update',
+  'sheets_sync_failed', 'variance_alert', 'ck_price_update', 'ck_price_created', 'ck_price_updated', 'store_update',
+  'item_mapping_disabled', 'item_mapping_reactivated', 'item_mapping_archived',
+  'item_mapping_negative_enabled', 'item_mapping_negative_disabled', 'item_mapping_sign_flexible',
+  'item_mapping_explicit_item',
+  'user_create', 'user_update', 'user_password_reset', 'user_status_update', 'user_delete',
 ] as const
 
 export default async function HQAuditPage({
@@ -49,7 +53,8 @@ export default async function HQAuditPage({
 
   const [{ data: logs }, { data: stores }, { data: users }] = await Promise.all([
     query,
-    admin.from('stores').select('id, name, type').eq('active', true),
+    // 停用店家也必須保留在操作軌跡的名稱解析與篩選中。
+    admin.from('stores').select('id, name, type'),
     admin.from('user_profiles').select('user_id, name'),
   ])
 

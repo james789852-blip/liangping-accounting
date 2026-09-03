@@ -44,7 +44,21 @@ const EVENT_LABELS: Record<string, string> = {
   sheets_sync_failed: '試算表同步失敗',
   variance_alert: '誤差警報',
   ck_price_update: '央廚單價變更',
+  ck_price_created: '新增央廚單價',
+  ck_price_updated: '修改央廚單價',
   store_update: '店家資料修改',
+  item_mapping_disabled: '停用品項',
+  item_mapping_reactivated: '重新啟用品項',
+  item_mapping_archived: '刪除品項（保留歷史）',
+  item_mapping_negative_enabled: '品項固定負數',
+  item_mapping_negative_disabled: '品項固定正數',
+  item_mapping_sign_flexible: '品項每筆正負',
+  item_mapping_explicit_item: '設定正式品項',
+  user_create: '新增管理人員',
+  user_update: '修改管理人員',
+  user_password_reset: '重設管理人員密碼',
+  user_status_update: '管理人員狀態變更',
+  user_delete: '刪除管理人員',
 }
 
 const EVENT_COLORS: Record<string, string> = {
@@ -61,7 +75,21 @@ const EVENT_COLORS: Record<string, string> = {
   sheets_sync_failed: '#f59e0b',
   variance_alert: '#ef4444',
   ck_price_update: '#8b5cf6',
+  ck_price_created: '#0ea5e9',
+  ck_price_updated: '#8b5cf6',
   store_update: '#8b5cf6',
+  item_mapping_disabled: '#f59e0b',
+  item_mapping_reactivated: '#10b981',
+  item_mapping_archived: '#ef4444',
+  item_mapping_negative_enabled: '#ef4444',
+  item_mapping_negative_disabled: '#10b981',
+  item_mapping_sign_flexible: '#8b5cf6',
+  item_mapping_explicit_item: '#0ea5e9',
+  user_create: '#0ea5e9',
+  user_update: '#8b5cf6',
+  user_password_reset: '#f59e0b',
+  user_status_update: '#f59e0b',
+  user_delete: '#ef4444',
 }
 
 function formatTime(iso: string): { date: string; time: string } {
@@ -249,11 +277,7 @@ export default function AuditClient({
                           </Link>
                         } />
                       )}
-                      {Object.keys(log.metadata).length > 0 && (
-                        <Row label="附加資訊" value={
-                          <pre className="text-[11px] overflow-x-auto p-2 rounded bg-slate-50 font-mono">{JSON.stringify(log.metadata, null, 2)}</pre>
-                        } />
-                      )}
+                      {Object.keys(log.metadata).length > 0 && <AuditMetadataDetails metadata={log.metadata} stores={stores} />}
                     </div>
                   </div>
                 )}
@@ -277,4 +301,168 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
       <div className="flex-1 min-w-0" style={{ color: '#18181b' }}>{value}</div>
     </div>
   )
+}
+
+const METADATA_LABELS: Record<string, string> = {
+  action: '執行動作',
+  entity: '操作對象',
+  entity_type: '資料類型',
+  entity_id: '資料編號',
+  receipt_id: '收據編號',
+  original_closing_id: '原帳目編號',
+  business_date: '帳目日期',
+  month: '月份',
+  vendor: '廠商／分類',
+  actual_vendor_name: '實際廠商',
+  receipt_type: '單據類型',
+  amount: '金額',
+  total_amount: '單據總額',
+  tax_amount: '稅額',
+  note: '備註',
+  notes: '備註',
+  status: '狀態',
+  previous_status: '原狀態',
+  decision: '審核結果',
+  before: '修改前',
+  after: '修改後',
+  changes: '變更欄位',
+  items: '品項明細',
+  receipt_items: '收據品項',
+  item_name: '品項名稱',
+  item_category: '品項分類',
+  excel_column: '報表欄位',
+  quantity: '數量',
+  unit: '單位',
+  unit_price: '單價',
+  member_orders: '體系內店家金額',
+  external_orders: '體系外店家金額',
+  confirmed_amount: '央廚確認金額',
+  delivery_photo_count: '配送單照片數',
+  transfer_photo_required: '需轉帳照片',
+  transfer_photo_count: '轉帳照片數',
+  photo_count: '照片數',
+  assigned_store_ids: '指派店家',
+  error: '錯誤內容',
+  source: '操作裝置',
+  device: '裝置',
+  browser: '瀏覽器',
+  os: '作業系統',
+  pre_dispute_snapshot: '退回前完整帳目',
+  audit_version: '紀錄格式版本',
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  draft: '草稿',
+  submitted: '待審核',
+  verified: '已核准',
+  disputed: '已退回',
+  true: '是',
+  false: '否',
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function metadataLabel(key: string) {
+  return METADATA_LABELS[key] ?? key.replaceAll('_', ' ')
+}
+
+function primitiveText(value: unknown) {
+  if (value === null || value === undefined || value === '') return '—'
+  if (typeof value === 'boolean') return value ? '是' : '否'
+  if (typeof value === 'number') return Number.isFinite(value) ? value.toLocaleString('zh-TW') : String(value)
+  if (typeof value === 'string') return STATUS_LABELS[value] ?? value
+  return String(value)
+}
+
+function AuditMetadataDetails({ metadata, stores }: { metadata: Record<string, unknown>; stores: Props['stores'] }) {
+  const storeNames = new Map(stores.map(store => [store.id, store.name]))
+  const changes = Array.isArray(metadata.changes) ? metadata.changes.filter(isRecord) : []
+  const remaining = Object.entries(metadata).filter(([key]) => key !== 'changes' && key !== 'audit_version')
+
+  return (
+    <div className="mt-3 space-y-3">
+      {changes.length > 0 && (
+        <section>
+          <p className="text-xs font-bold mb-1.5" style={{ color: '#52525b' }}>變更欄位（{changes.length}）</p>
+          <div className="space-y-1.5">
+            {changes.map((change, index) => {
+              const field = typeof change.field === 'string' ? change.field : `change_${index}`
+              const label = typeof change.label === 'string' ? change.label : metadataLabel(field)
+              return (
+                <div key={`${field}-${index}`} className="rounded-lg px-3 py-2" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
+                  <p className="text-[11px] font-bold mb-1" style={{ color: '#92400e' }}>{label}</p>
+                  <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2 text-xs">
+                    <AuditValue value={change.before} field={field} storeNames={storeNames} />
+                    <span style={{ color: '#a1a1aa' }}>→</span>
+                    <AuditValue value={change.after} field={field} storeNames={storeNames} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+      {remaining.length > 0 && (
+        <section>
+          <p className="text-xs font-bold mb-1.5" style={{ color: '#52525b' }}>完整操作內容</p>
+          <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #e4e4e7' }}>
+            {remaining.map(([key, value]) => (
+              <div key={key} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 px-3 py-2 text-xs" style={{ borderBottom: '1px solid #f4f4f5' }}>
+                <span className="font-semibold" style={{ color: '#71717a' }}>{metadataLabel(key)}</span>
+                <AuditValue value={value} field={key} storeNames={storeNames} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      <p className="text-[10px]" style={{ color: '#a1a1aa' }}>安全保護：密碼、登入憑證、Token 與金鑰不會顯示或保存於操作明細。</p>
+    </div>
+  )
+}
+
+function AuditValue({ value, field, storeNames }: {
+  value: unknown
+  field: string
+  storeNames: Map<string, string>
+}) {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span style={{ color: '#a1a1aa' }}>無</span>
+    return (
+      <div className="space-y-1.5 min-w-0">
+        {value.map((item, index) => (
+          <div key={index} className="rounded-md px-2 py-1.5 min-w-0" style={{ background: '#f8fafc', border: '1px solid #f1f5f9' }}>
+            <span className="text-[10px] font-semibold mr-2" style={{ color: '#a1a1aa' }}>#{index + 1}</span>
+            <AuditValue value={item} field={field.replace(/s$/, '')} storeNames={storeNames} />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (isRecord(value)) {
+    return (
+      <div className="space-y-1 min-w-0">
+        {Object.entries(value).map(([key, child]) => (
+          <div key={key} className="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
+            <span className="font-medium" style={{ color: '#71717a' }}>{metadataLabel(key)}</span>
+            <AuditValue value={child} field={key} storeNames={storeNames} />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (typeof value === 'string') {
+    const storeName = (field === 'store_id' || field === 'store_ids' || field === 'assigned_store_id' || field === 'assigned_store_ids')
+      ? storeNames.get(value)
+      : undefined
+    if (/photo.*url|photo_url/i.test(field) && /^https?:\/\//.test(value)) {
+      return <a href={value} target="_blank" rel="noreferrer" className="text-blue-600 underline">查看保存的照片</a>
+    }
+    return <span className="break-words">{storeName ? `${storeName}（${value.slice(0, 8)}）` : primitiveText(value)}</span>
+  }
+
+  return <span className="break-words">{primitiveText(value)}</span>
 }

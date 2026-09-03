@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { getAuthContext, canAccessStore } from '@/lib/permissions'
-import { logAudit } from '@/lib/audit'
+import { buildAuditChanges, logAudit } from '@/lib/audit'
 import { recordCKReimbursementAdjustment } from '@/lib/ck-reimbursement-adjustment'
 import {
   ckOrderNeedsDeliveryPhoto,
@@ -315,6 +315,17 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
         transfer_photo_required: order.transferPhotoRequired,
         transfer_photo_count: order.transferPhotoUrls.length,
       })) ?? null,
+      expenses: data.expenses?.map(expense => ({
+        category: expense.category,
+        item_name: expense.item_name,
+        amount: normalizeItemAmount(expense.item_name, expense.amount),
+        payer_name: expense.payer_name ?? null,
+        vendor_group: expense.vendor_group ?? null,
+        doc_type: expense.doc_type ?? null,
+        note: expense.note ?? null,
+        has_receipt_photo: Boolean(expense.receipt_photo_url),
+      })) ?? null,
+      receipt_photo_count: data.receiptPhotoUrls?.length ?? null,
     },
   })
 
@@ -365,7 +376,19 @@ export async function reviewCKDailyRecord(
     storeId: ckStoreId,
     userId: ctx.userId,
     description: `${ctx.userName ?? ctx.userEmail ?? '未知'} ${decision === 'verified' ? '審核通過' : '退回'}央廚 ${date} 帳目`,
-    metadata: { business_date: date, decision, note: note ?? null },
+    metadata: {
+      entity: { type: 'ck_daily_record', id: existing.id },
+      business_date: date,
+      decision,
+      note: note ?? null,
+      before: { status: existing.status },
+      after: { status: decision },
+      changes: buildAuditChanges(
+        { status: existing.status },
+        { status: decision },
+        { status: '帳目狀態' },
+      ),
+    },
   })
 
   // 核准後加入正式帳本；若原本已核准後又退回，也要立即重建並移除該日。
@@ -405,12 +428,18 @@ export async function deleteCKDailyRecord(ckStoreId: string, date: string) {
   const admin = createAdminClient()
   const { data: existing, error: findError } = await admin
     .from('ck_daily_records')
-    .select('id')
+    .select('*')
     .eq('ck_store_id', ckStoreId)
     .eq('business_date', date)
     .maybeSingle()
   if (findError) return { error: findError.message }
   if (!existing) return { error: '找不到央廚帳目' }
+
+  const [{ data: orders }, { data: expenses }] = await Promise.all([
+    admin.from('ck_store_orders').select('*').eq('ck_daily_record_id', existing.id),
+    admin.from('ck_expense_items').select('*').eq('ck_daily_record_id', existing.id),
+  ])
+  const snapshot = { ...existing, orders: orders ?? [], expenses: expenses ?? [] }
 
   const { error } = await admin.from('ck_daily_records').delete().eq('id', existing.id)
   if (error) return { error: error.message }
@@ -420,7 +449,12 @@ export async function deleteCKDailyRecord(ckStoreId: string, date: string) {
     storeId: ckStoreId,
     userId: ctx.userId,
     description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 刪除央廚 ${date} 帳目`,
-    metadata: { business_date: date },
+    metadata: {
+      entity: { type: 'ck_daily_record', id: existing.id },
+      business_date: date,
+      before: snapshot,
+      changes: [{ field: 'status', label: '帳目狀態', before: existing.status, after: '已刪除' }],
+    },
   })
 
   revalidatePath('/hq/ck')
