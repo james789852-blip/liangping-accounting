@@ -6,6 +6,8 @@ import { CheckSquare, AlertTriangle, ClipboardCheck } from 'lucide-react'
 import ReviewActions from '@/components/hq/review-actions'
 import ReviewsList from '@/components/hq/reviews-list'
 import { canReviewClosings } from '@/lib/user-permissions'
+import { resolveReceiptDocumentTypeInfo } from '@/lib/receipt-document-type'
+import { fetchAllPaged } from '@/lib/supabase-paged'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,16 +67,25 @@ export default async function ReviewsPage() {
     const storeIds = [...new Set(pending.map((c: any) => (c.stores as any)?.id).filter(Boolean))]
     const dates = [...new Set(pending.map((c: any) => c.business_date as string))]
     if (storeIds.length > 0 && dates.length > 0) {
-      const { data: receiptsBulk } = await admin
-        .from('receipts')
-        .select('id, store_id, business_date, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, notes, photo_url, receipt_items(item_name, unit, quantity, unit_price, amount), created_at')
-        .in('store_id', storeIds).in('business_date', dates)
-        .order('created_at', { ascending: true })
+      const [{ data: receiptsBulk }, documentTypeMappings] = await Promise.all([
+        admin
+          .from('receipts')
+          .select('id, store_id, business_date, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, notes, photo_url, receipt_items(item_name, unit, quantity, unit_price, amount, item_mapping_id, vendor_group_snapshot), created_at')
+          .in('store_id', storeIds).in('business_date', dates)
+          .order('created_at', { ascending: true }),
+        fetchAllPaged<any>(() => admin
+          .from('item_column_mappings')
+          .select('id, store_id, item_name, vendor_group, doc_type_override')
+          .in('store_id', storeIds)),
+      ])
       const recMap: Record<string, any[]> = {}
       for (const r of (receiptsBulk ?? []) as any[]) {
         const k = `${r.store_id}|${r.business_date}`
         if (!recMap[k]) recMap[k] = []
-        recMap[k].push(r)
+        recMap[k].push({
+          ...r,
+          ...resolveReceiptDocumentTypeInfo(r, documentTypeMappings),
+        })
       }
       for (const c of pending) {
         const sId = (c.stores as any)?.id

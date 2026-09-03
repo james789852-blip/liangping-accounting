@@ -20,6 +20,7 @@ interface ReceiptItem { item_name: string; amount: number; unit?: string; quanti
 interface Receipt {
   id: string; vendor_name: string; actual_vendor_name?: string; receipt_type: string
   total_amount: number; tax_amount?: number; notes?: string; photo_url: string; receipt_items: ReceiptItem[]
+  expectedDocumentTypes?: string[]; configuredVendorGroups?: string[]
 }
 interface ReserveItem { reason: string; amount: number }
 interface Closing {
@@ -109,6 +110,35 @@ function InfoRow({ label, value, muted, accent }: { label: string; value: string
       <span style={{ color: muted ? '#a1a1aa' : '#52525b' }}>{label}</span>
       <span className="tabular-nums font-medium" style={{ color: accent ?? '#18181b' }}>{value}</span>
     </div>
+  )
+}
+
+function ReceiptDocumentTypeRows({ receipt }: { receipt: Receipt }) {
+  const actualVendor = receipt.actual_vendor_name?.trim()
+  const category = receipt.vendor_name?.trim()
+  const vendorLabel = actualVendor && category && actualVendor !== category
+    ? `${actualVendor}（${category}）`
+    : actualVendor || category || '未填寫'
+  const expectedTypes = receipt.expectedDocumentTypes ?? []
+  const expectedLabel = expectedTypes.length > 0 ? expectedTypes.join('／') : '未設定'
+
+  return (
+    <>
+      <div className="flex items-start justify-between gap-3 text-xs">
+        <span className="shrink-0" style={{ color: '#52525b' }}>廠商／分類</span>
+        <div className="min-w-0 text-right">
+          <p className="font-medium break-words" style={{ color: '#18181b' }}>{vendorLabel}</p>
+          <span className="inline-flex mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+            style={{
+              color: expectedTypes.length > 0 ? '#6d28d9' : '#71717a',
+              background: expectedTypes.length > 0 ? '#f3e8ff' : '#f4f4f5',
+              border: `1px solid ${expectedTypes.length > 0 ? '#ddd6fe' : '#e4e4e7'}`,
+            }}>
+            單據類型：{expectedLabel}
+          </span>
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -371,7 +401,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                 <p className="text-xs font-bold" style={{ color: '#52525b' }}>分店輸入內容</p>
                 {currentReceipt ? (
                   <>
-                    <InfoRow label="廠商" value={currentReceipt.actual_vendor_name || currentReceipt.vendor_name || '未填寫'} />
+                    <ReceiptDocumentTypeRows receipt={currentReceipt} />
                     <InfoRow label="單據總額" value={`$${fmt(currentReceipt.total_amount)}`} accent="#92400e" />
                     {!!currentReceipt.tax_amount && <InfoRow label="稅額" value={`$${fmt(currentReceipt.tax_amount)}`} />}
                     {currentReceiptItems.map((item, i) => (
@@ -688,7 +718,14 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                       <button type="button" onClick={() => toggleReceipt(r.id)} className="w-full flex items-center gap-2 px-3 py-2 text-left" style={{ background: '#fafafa' }}>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs font-medium" style={{ color: '#18181b' }}>{r.vendor_name || '（未填廠商）'}</span>
+                            <span className="text-xs font-medium" style={{ color: '#18181b' }}>{r.actual_vendor_name || r.vendor_name || '（未填廠商）'}</span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                              style={{
+                                color: r.expectedDocumentTypes?.length ? '#6d28d9' : '#71717a',
+                                background: r.expectedDocumentTypes?.length ? '#f3e8ff' : '#f4f4f5',
+                              }}>
+                              單據類型：{r.expectedDocumentTypes?.join('／') || '未設定'}
+                            </span>
                           </div>
                           {r.receipt_items.length > 0 && (
                             <p className="text-[10px] mt-0.5 truncate" style={{ color: '#a1a1aa' }}>
@@ -716,7 +753,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                       </button>
                       {isOpen && (
                         <div className="px-3 py-3 space-y-2" style={{ borderTop: '1px solid #f4f4f5', background: 'white' }}>
-                          <InfoRow label="廠商" value={r.actual_vendor_name || r.vendor_name || '未填寫'} />
+                          <ReceiptDocumentTypeRows receipt={r} />
                           {!!r.tax_amount && <InfoRow label="稅額" value={`$${fmt(r.tax_amount)}`} />}
                           {displayedItems.length > 0 ? displayedItems.map((item, i) => (
                             <div key={i} className="pt-2" style={{ borderTop: '1px solid #f4f4f5' }}>
