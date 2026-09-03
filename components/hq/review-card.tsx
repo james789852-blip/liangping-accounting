@@ -9,6 +9,7 @@ import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 import { disputeClosing } from '@/app/actions/closings'
 import { toast } from 'sonner'
 import { supabasePreviewUrl } from '@/lib/photo-image-url'
+import { syncSingleReceiptItemAmount } from '@/lib/receipt-amount-consistency'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -145,6 +146,9 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const currentReceipt = currentPhoto
     ? receipts.find(r => r.photo_url === currentPhoto.url)
     : undefined
+  const currentReceiptItems = currentReceipt
+    ? syncSingleReceiptItemAmount(currentReceipt.receipt_items, currentReceipt.total_amount, currentReceipt.tax_amount)
+    : []
   const currentChannelItems = currentPhoto?.kind === 'channel'
     ? closing.revenue_items.filter(item => matchesChannelPhoto(item, currentPhoto.channel))
     : []
@@ -370,7 +374,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                     <InfoRow label="廠商" value={currentReceipt.actual_vendor_name || currentReceipt.vendor_name || '未填寫'} />
                     <InfoRow label="單據總額" value={`$${fmt(currentReceipt.total_amount)}`} accent="#92400e" />
                     {!!currentReceipt.tax_amount && <InfoRow label="稅額" value={`$${fmt(currentReceipt.tax_amount)}`} />}
-                    {currentReceipt.receipt_items.map((item, i) => (
+                    {currentReceiptItems.map((item, i) => (
                       <div key={i} className="pt-2" style={{ borderTop: '1px solid #e4e4e7' }}>
                         <InfoRow label={item.item_name || `品項 ${i + 1}`} value={`$${fmt(item.amount)}`} />
                         {(item.quantity || item.unit || item.unit_price) && <p className="text-[11px] mt-0.5" style={{ color: '#a1a1aa' }}>{item.quantity ? `${item.quantity}` : ''}{item.unit || ''}{item.unit_price ? ` × $${fmt(item.unit_price)}` : ''}</p>}
@@ -678,6 +682,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                 <div className="space-y-2">
                   {receipts.map(r => {
                     const isOpen = openReceiptIds.has(r.id)
+                    const displayedItems = syncSingleReceiptItemAmount(r.receipt_items, r.total_amount, r.tax_amount)
                     return (
                     <div key={r.id} className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
                       <button type="button" onClick={() => toggleReceipt(r.id)} className="w-full flex items-center gap-2 px-3 py-2 text-left" style={{ background: '#fafafa' }}>
@@ -713,7 +718,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                         <div className="px-3 py-3 space-y-2" style={{ borderTop: '1px solid #f4f4f5', background: 'white' }}>
                           <InfoRow label="廠商" value={r.actual_vendor_name || r.vendor_name || '未填寫'} />
                           {!!r.tax_amount && <InfoRow label="稅額" value={`$${fmt(r.tax_amount)}`} />}
-                          {r.receipt_items.length > 0 ? r.receipt_items.map((item, i) => (
+                          {displayedItems.length > 0 ? displayedItems.map((item, i) => (
                             <div key={i} className="pt-2" style={{ borderTop: '1px solid #f4f4f5' }}>
                               <InfoRow label={item.item_name || `品項 ${i + 1}`} value={`$${fmt(item.amount)}`} />
                               {(item.quantity || item.unit || item.unit_price) && <p className="text-[10px]" style={{ color: '#a1a1aa' }}>{item.quantity ? item.quantity : ''}{item.unit || ''}{item.unit_price ? ` × $${fmt(item.unit_price)}` : ''}</p>}

@@ -11,6 +11,7 @@ import { Camera, Loader2, CheckCircle2, Plus, Trash2, X, Sparkles } from 'lucide
 import { Separator } from '@/components/ui/separator'
 import { storePhotoPath } from '@/lib/storage-paths'
 import { isNegativeItem, normalizeItemAmount } from '@/lib/negative-items'
+import { syncSingleReceiptItemAmount } from '@/lib/receipt-amount-consistency'
 
 interface MappingOption {
   id?: string; item_name: string; excel_column: string; item_category: string; vendor_group?: string | null; is_negative?: boolean; sign_mode?: 'positive' | 'negative' | 'flexible'
@@ -224,7 +225,11 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
   function handleSave() {
     startTransition(async () => {
       setStep('saving')
-      const validItems = items.filter(it => it.name.trim())
+      const validItems = syncSingleReceiptItemAmount(
+        items.filter(it => it.name.trim()).map(item => ({ ...item, item_name: item.name })),
+        totalAmount,
+        taxAmount,
+      ).map(({ item_name: _itemName, ...item }) => item)
 
       // Save new mappings for items that now have a column assigned
       const newMappings = validItems

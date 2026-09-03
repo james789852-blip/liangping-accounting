@@ -28,6 +28,8 @@ import { shouldRestoreRemittanceAdjustmentDraft } from '@/lib/remittance-adjustm
 import { prepareReserveDraftItems } from '@/lib/reserve-draft'
 import { getEnvelopePackingState } from '@/lib/envelope-packing'
 import { hasSelectableVendorItems } from '@/lib/vendor-only-mapping'
+import { syncSingleReceiptItemAmount } from '@/lib/receipt-amount-consistency'
+import { updateReceipt } from '@/app/actions/receipts'
 
 interface RemittanceAdjustment {
   id: string
@@ -769,14 +771,6 @@ function resetReceiptItemsForContext(
     const stillValid = options.some(c => c.name === name && (!item.vendor_group_hint || c.vendor_group === item.vendor_group_hint))
     return stillValid ? item : { ...item, item_name: '', vendor_group_hint: undefined, item_mapping_id: null }
   })
-}
-
-function fillSingleReceiptItemAmount(items: ReceiptFormItem[], totalAmount: number, taxAmount = 0): ReceiptFormItem[] {
-  const validItems = items.filter(i => i.item_name.trim())
-  const untaxedTotal = Math.round(totalAmount - taxAmount)
-  const itemTotal = validItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
-  if (validItems.length !== 1 || untaxedTotal === 0 || itemTotal !== 0) return validItems
-  return validItems.map(item => ({ ...item, amount: untaxedTotal }))
 }
 
 function needsExternalTaxInvoiceReminder(items: ReceiptFormItem[]): boolean {
@@ -2474,8 +2468,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (!oldReceipt) return
     if (!await handleSave(true)) return
     setEditUploading(true)
-    const supabase = createClient()
-
     // 照片上傳
     let newPhotoUrl = oldReceipt.photo_url
     if (editPhotoFile) {
@@ -2492,7 +2484,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const taxMapping = findTaxAddonMapping(mappingColumns, editVendor, editCategory, editItems)
     const taxAmount = taxMapping && editHasTax ? Math.max(0, editTaxAmount) : 0
     const finalTotal = editAmount + taxAmount
-    let validItems = fillSingleReceiptItemAmount(editItems.filter(item => !mappingColumns.some(column => column.is_tax_addon && column.name === item.item_name)), finalTotal, taxAmount)
+    let validItems = syncSingleReceiptItemAmount(editItems.filter(item => !mappingColumns.some(column => column.is_tax_addon && column.name === item.item_name)), finalTotal, taxAmount)
     if (validItems.length === 0 && (isNoItemMode || mappingColumns.some(c => c.name === editVendor.trim()))) {
       validItems = [{ id: crypto.randomUUID(), item_name: editVendor.trim(), unit: '', quantity: 1, unit_price: 0, amount: editAmount }]
     }
@@ -2510,28 +2502,35 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return { ...item, item_name: match?.name ?? item.item_name.trim(), item_mapping_id: match?.mapping_id ?? null, vendor_group_hint: match?.vendor_group ?? item.vendor_group_hint }
     })
 
-    const receiptUpdatedAt = new Date().toISOString()
-    let receiptUpdateQuery = supabase.from('receipts').update({
-      vendor_name: editVendor,
-      actual_vendor_name: normalizeActualVendorName(editActualVendor) || null,
-      total_amount: finalTotal,
-      tax_amount: taxAmount,
-      photo_url: newPhotoUrl,
-      notes: editNotes.trim() || null,
-      updated_at: receiptUpdatedAt,
-    }).eq('id', editingReceiptId)
-    if (oldReceipt.updated_at) receiptUpdateQuery = receiptUpdateQuery.eq('updated_at', oldReceipt.updated_at)
-    const { data: updatedReceipt, error: receiptUpdateError } = await receiptUpdateQuery
-      .select('updated_at')
-      .maybeSingle()
-    if (receiptUpdateError) {
+    const updateResult = await updateReceipt(editingReceiptId, {
+      businessDate: today,
+      vendorName: editVendor,
+      actualVendorName: normalizeActualVendorName(editActualVendor),
+      receiptType: oldReceipt.receipt_type,
+      totalAmount: finalTotal,
+      taxAmount,
+      photoUrl: newPhotoUrl ?? '',
+      notes: editNotes.trim(),
+      expectedUpdatedAt: oldReceipt.updated_at,
+      items: canonicalItems.map(item => {
+        const match = resolveEditItemMapping(item)
+        return {
+          item_name: item.item_name,
+          item_category: match?.category ?? '食材',
+          amount: normalizeItemAmount(item.item_name, item.amount, !!match?.is_negative),
+          excel_column: match?.excel_column ?? match?.name ?? '',
+          quantity: item.quantity ?? 1,
+          unit: item.unit ?? '',
+          unit_price: item.unit_price ?? 0,
+          item_mapping_id: item.item_mapping_id ?? null,
+          vendor_group_snapshot: item.vendor_group_hint ?? editVendor ?? null,
+        }
+      }),
+    })
+    if (updateResult?.error) {
       setEditUploading(false)
-      toast.error('單據更新失敗：' + receiptUpdateError.message)
-      return
-    }
-    if (!updatedReceipt) {
-      setEditUploading(false)
-      markEditConflict(null, null)
+      if (updateResult.error.includes('其他人更新')) markEditConflict(null, null)
+      else toast.error('單據更新失敗：' + updateResult.error)
       return
     }
 
@@ -2542,34 +2541,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         receipt_type: r.receipt_type,
         photo_url: newPhotoUrl,
         notes: editNotes.trim() || undefined,
-        updated_at: updatedReceipt.updated_at ?? receiptUpdatedAt,
+        updated_at: updateResult.updatedAt ?? oldReceipt.updated_at,
         receipt_items: canonicalItems.map(i => ({ item_name: i.item_name, unit: i.unit ?? '', quantity: i.quantity ?? 1, unit_price: i.unit_price ?? 0, amount: normalizeItemAmount(i.item_name, i.amount, !!resolveEditItemMapping(i)?.is_negative), item_mapping_id: i.item_mapping_id ?? null, vendor_group_snapshot: i.vendor_group_hint ?? editVendor ?? null })),
       } : r
     )
     setLocalReceipts(updatedReceipts)
     setExpenses(receiptsToExpenses(updatedReceipts, ckPrices))
 
-    await rememberActualVendor(supabase, editVendor, editActualVendor)
-    await supabase.from('receipt_items').delete().eq('receipt_id', editingReceiptId)
-    if (canonicalItems.length > 0) {
-      await supabase.from('receipt_items').insert(
-        canonicalItems.map(i => {
-          const match = resolveEditItemMapping(i)
-          return {
-            receipt_id: editingReceiptId,
-            item_name: i.item_name,
-            unit: i.unit ?? '',
-            quantity: i.quantity ?? 1,
-            unit_price: i.unit_price ?? 0,
-            amount: normalizeItemAmount(i.item_name, i.amount, !!match?.is_negative),
-            item_category: match?.category ?? '食材',
-            excel_column: match?.excel_column ?? match?.name ?? '',
-            item_mapping_id: match?.mapping_id ?? null,
-            vendor_group_snapshot: match?.vendor_group ?? editVendor ?? null,
-          }
-        })
-      )
-    }
     setEditUploading(false)
     setEditingReceiptId(null)
     setEditPhotoFile(null)
@@ -2884,7 +2862,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return
     }
     await rememberActualVendor(supabase, form.vendor_name, form.actual_vendor_name)
-    let validItems = fillSingleReceiptItemAmount((form.items ?? []).filter(item => !mappingColumns.some(column => column.is_tax_addon && column.name === item.item_name)), finalTotal, taxAmount)
+    let validItems = syncSingleReceiptItemAmount((form.items ?? []).filter(item => !mappingColumns.some(column => column.is_tax_addon && column.name === item.item_name)), finalTotal, taxAmount)
     if (validItems.length === 0 && (isNoItemMode || mappingColumns.some(c => c.name === form.vendor_name.trim()))) {
       // 廠商本身就是品項 → 自動用 vendor_name 建 1 個 item
       validItems = [{ id: crypto.randomUUID(), item_name: form.vendor_name.trim(), unit: '', quantity: 1, unit_price: 0, amount: form.total_amount }]

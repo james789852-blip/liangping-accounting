@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { verifyClosing, disputeClosing, deleteClosing } from '@/app/actions/closings'
 import SafePhotoImage from './safe-photo-image'
 import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
+import { syncSingleReceiptItemAmount } from '@/lib/receipt-amount-consistency'
 
 interface Store { id: string; name: string; type?: string }
 interface RemittanceAdjustment {
@@ -31,7 +32,7 @@ interface Closing {
   expense_items?: { description: string; amount: number }[]
 }
 interface ReceiptRow {
-  id: string; vendor_name: string; receipt_type?: string; total_amount: number
+  id: string; vendor_name: string; receipt_type?: string; total_amount: number; tax_amount?: number
   photo_url?: string; receipt_items?: { item_name: string; quantity: number; unit: string; unit_price: number; amount: number }[]
 }
 interface Props {
@@ -517,7 +518,9 @@ function ClosingCard({
               <SectionLabel icon={<FileText className="h-3.5 w-3.5" />} color="#0ea5e9"
                 title={`當日收據（${receipts.length} 筆 · $${fmt(receipts.reduce((s, r) => s + r.total_amount, 0))}）`} />
               <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
-                {receipts.map((r, idx) => (
+                {receipts.map((r, idx) => {
+                  const displayedItems = syncSingleReceiptItemAmount(r.receipt_items ?? [], r.total_amount, r.tax_amount)
+                  return (
                   <div key={r.id} style={{ borderBottom: idx !== receipts.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
                     <div className="flex items-center gap-2.5 px-3 py-2.5">
                       {/* 縮圖 */}
@@ -552,9 +555,9 @@ function ClosingCard({
                             </span>
                           )}
                         </div>
-                        {(r.receipt_items ?? []).length > 0 && (
+                        {displayedItems.length > 0 && (
                           <div className="mt-1.5 space-y-0.5">
-                            {(r.receipt_items ?? []).map((item, ii) => (
+                            {displayedItems.map((item, ii) => (
                               <div key={ii} className="flex items-center gap-1.5 text-[11px]" style={{ color: '#71717a' }}>
                                 <span style={{ flex: '1 1 0', minWidth: 0, fontWeight: 500, color: '#52525b' }}>{item.item_name}</span>
                                 {item.quantity > 0 && (
@@ -572,7 +575,8 @@ function ClosingCard({
                       <span className="text-xs font-bold tabular-nums shrink-0" style={{ color: '#18181b' }}>${fmt(r.total_amount)}</span>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

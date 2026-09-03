@@ -7,12 +7,16 @@ import { logAudit } from '@/lib/audit'
 import { normalizeItemAmount } from '@/lib/negative-items'
 import { getNegativeItemMappingIds } from '@/lib/item-mapping-negative'
 import { receiptDateWriteError } from '@/lib/receipt-write-access'
+import { syncSingleReceiptItemAmount } from '@/lib/receipt-amount-consistency'
 
 interface ReceiptItemPayload {
   item_name: string
   item_category: string
   amount: number
   excel_column: string
+  quantity?: number
+  unit?: string
+  unit_price?: number
   item_mapping_id?: string | null
   vendor_group_snapshot?: string | null
 }
@@ -28,14 +32,7 @@ interface SaveReceiptPayload {
   photoUrl: string
   notes: string
   items: ReceiptItemPayload[]
-}
-
-function normalizeReceiptItemsForTotal(items: ReceiptItemPayload[], totalAmount: number, taxAmount = 0): ReceiptItemPayload[] {
-  const validItems = items.filter(item => item.item_name.trim())
-  const untaxedTotal = Math.round(totalAmount - taxAmount)
-  const itemTotal = validItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
-  if (validItems.length !== 1 || untaxedTotal <= 0 || itemTotal !== 0) return validItems
-  return validItems.map(item => ({ ...item, amount: untaxedTotal }))
+  expectedUpdatedAt?: string | null
 }
 
 function normalizeActualVendorName(name?: string | null) {
@@ -84,7 +81,7 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
 
   if (rErr || !receipt) return { error: rErr?.message ?? '儲存失敗' }
 
-  const normalizedItems = normalizeReceiptItemsForTotal(payload.items, payload.totalAmount, payload.taxAmount)
+  const normalizedItems = syncSingleReceiptItemAmount(payload.items, payload.totalAmount, payload.taxAmount)
   if (normalizedItems.length > 0) {
     const negativeMappingIds = await getNegativeItemMappingIds(admin, payload.storeId)
     const { error: itemError } = await admin.from('receipt_items').insert(
@@ -179,13 +176,16 @@ export async function updateReceipt(
   const admin = createAdminClient()
   const { data: existing, error: readError } = await admin
     .from('receipts')
-    .select('store_id, business_date, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, notes, receipt_items(*)')
+    .select('store_id, business_date, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, photo_url, notes, updated_at, receipt_items(*)')
     .eq('id', receiptId)
     .single()
   if (readError || !existing) return { error: '找不到此收據' }
 
   const storeId = existing.store_id as string
   if (!canAccessStore(ctx, storeId)) return { error: '無權限存取此收據' }
+  if (payload.expectedUpdatedAt && existing.updated_at !== payload.expectedUpdatedAt) {
+    return { error: '這筆單據已被其他人更新，請重新整理後再修改' }
+  }
 
   const currentDateLockError = await receiptDateWriteError(admin, storeId, existing.business_date as string)
   if (currentDateLockError) return { error: currentDateLockError }
@@ -194,7 +194,8 @@ export async function updateReceipt(
     if (targetDateLockError) return { error: targetDateLockError }
   }
 
-  const { error: rErr } = await admin
+  const receiptUpdatedAt = new Date().toISOString()
+  let receiptUpdateQuery = admin
     .from('receipts')
     .update({
       business_date: payload.businessDate,
@@ -203,12 +204,16 @@ export async function updateReceipt(
       receipt_type: payload.receiptType,
       total_amount: payload.totalAmount,
       tax_amount: payload.taxAmount,
+      photo_url: payload.photoUrl,
       notes: payload.notes,
-      updated_at: new Date().toISOString(),
+      updated_at: receiptUpdatedAt,
     })
     .eq('id', receiptId)
+  if (payload.expectedUpdatedAt) receiptUpdateQuery = receiptUpdateQuery.eq('updated_at', payload.expectedUpdatedAt)
+  const { data: updatedReceipt, error: rErr } = await receiptUpdateQuery.select('updated_at').maybeSingle()
 
   if (rErr) return { error: rErr.message }
+  if (!updatedReceipt) return { error: '這筆單據已被其他人更新，請重新整理後再修改' }
   const { error: deleteItemsError } = await admin.from('receipt_items').delete().eq('receipt_id', receiptId)
   if (deleteItemsError) {
     await admin.from('receipts').update({
@@ -218,12 +223,14 @@ export async function updateReceipt(
       receipt_type: existing.receipt_type,
       total_amount: existing.total_amount,
       tax_amount: existing.tax_amount,
+      photo_url: existing.photo_url,
       notes: existing.notes,
+      updated_at: existing.updated_at,
     }).eq('id', receiptId)
     return { error: `品項更新失敗：${deleteItemsError.message}` }
   }
 
-  const normalizedItems = normalizeReceiptItemsForTotal(payload.items, payload.totalAmount, payload.taxAmount)
+  const normalizedItems = syncSingleReceiptItemAmount(payload.items, payload.totalAmount, payload.taxAmount)
   if (normalizedItems.length > 0) {
     const negativeMappingIds = await getNegativeItemMappingIds(admin, storeId)
     const { error: itemError } = await admin.from('receipt_items').insert(
@@ -241,7 +248,9 @@ export async function updateReceipt(
         receipt_type: existing.receipt_type,
         total_amount: existing.total_amount,
         tax_amount: existing.tax_amount,
+        photo_url: existing.photo_url,
         notes: existing.notes,
+        updated_at: existing.updated_at,
       }).eq('id', receiptId)
       const previousItems = Array.isArray(existing.receipt_items) ? existing.receipt_items : []
       if (previousItems.length > 0) {
@@ -274,7 +283,7 @@ export async function updateReceipt(
 
   revalidatePath('/manager/receipts')
   revalidatePath('/manager/order')
-  return { success: true }
+  return { success: true, updatedAt: updatedReceipt.updated_at ?? receiptUpdatedAt }
 }
 
 export async function updateReceiptStatus(receiptId: string, status: string) {

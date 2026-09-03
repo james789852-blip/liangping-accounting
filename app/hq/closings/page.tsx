@@ -100,7 +100,7 @@ export default async function ClosingsPage({
     const dates = [...new Set(closings.map((c: any) => c.business_date as string))]
     if (storeIds.length > 0 && dates.length > 0) {
       const { data: receiptsBulk } = await admin.from('receipts')
-        .select('id, store_id, business_date, vendor_name, receipt_type, total_amount, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
+        .select('id, store_id, business_date, vendor_name, receipt_type, total_amount, tax_amount, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
         .in('store_id', storeIds).in('business_date', dates)
         .order('created_at')
 

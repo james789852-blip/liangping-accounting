@@ -25,6 +25,6 @@ test('載入時尚無帳目但別頁已建立時不可直接接手覆蓋', () =>
 
 test('零用金與單據修改也必須帶版本條件', () => {
   assert.match(closingActionsSource, /if \(expectedUpdatedAt\) updateQuery = updateQuery\.eq\('updated_at', expectedUpdatedAt\)/)
-  assert.match(closingFormSource, /receiptUpdateQuery = receiptUpdateQuery\.eq\('updated_at', oldReceipt\.updated_at\)/)
+  assert.match(closingFormSource, /expectedUpdatedAt: oldReceipt\.updated_at/)
   assert.match(closingFormSource, /deleteQuery = deleteQuery\.eq\('updated_at', receipt\.updated_at\)/)
 })

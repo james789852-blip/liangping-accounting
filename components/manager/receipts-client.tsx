@@ -8,6 +8,7 @@ import Link from 'next/link'
 import SafePhotoImage from '@/components/shared/safe-photo-image'
 import { isReceiptDateLocked } from '@/lib/receipt-guards'
 import { isNegativeItem, normalizeItemAmount } from '@/lib/negative-items'
+import { syncSingleReceiptItemAmount } from '@/lib/receipt-amount-consistency'
 
 interface ReceiptItem {
   id: string; item_name: string; quantity?: number; unit?: string; unit_price?: number; amount: number; excel_column: string; item_category: string
@@ -50,7 +51,7 @@ function formatDate(d: string) {
   return `${dt.getMonth() + 1}/${dt.getDate()}（${['日','一','二','三','四','五','六'][dt.getDay()]}）`
 }
 
-interface EditItem { item_name: string; amount: number; excel_column: string; item_category: string; vendor_group?: string | null; item_mapping_id?: string | null }
+interface EditItem { item_name: string; amount: number; excel_column: string; item_category: string; vendor_group?: string | null; item_mapping_id?: string | null; quantity?: number; unit?: string; unit_price?: number }
 
 function mappingKey(item: MappingOption) { return `${item.vendor_group ?? ''}::${item.item_name}` }
 function findMapping(mappings: MappingOption[], itemName: string, vendorGroup?: string | null) {
@@ -116,6 +117,7 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
       excel_column: i.excel_column ?? '', item_category: i.item_category ?? '食材',
       vendor_group: findMapping(mappings, i.item_name, receipt.vendor_name)?.vendor_group ?? null,
       item_mapping_id: i.item_mapping_id ?? findMapping(mappings, i.item_name, receipt.vendor_name)?.id ?? null,
+      quantity: i.quantity, unit: i.unit, unit_price: i.unit_price,
     }))
   )
 
@@ -130,13 +132,14 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
       excel_column: i.excel_column ?? '', item_category: i.item_category ?? '食材',
       vendor_group: findMapping(mappings, i.item_name, receipt.vendor_name)?.vendor_group ?? null,
       item_mapping_id: i.item_mapping_id ?? findMapping(mappings, i.item_name, receipt.vendor_name)?.id ?? null,
+      quantity: i.quantity, unit: i.unit, unit_price: i.unit_price,
     })))
     setEditing(true); setExpanded(true)
   }
 
   async function handleSave() {
     setSaving(true)
-    const filteredItems = editItems.filter(i => i.item_name.trim())
+    const filteredItems = syncSingleReceiptItemAmount(editItems, editTotal, editTax)
     const result = await updateReceipt(receipt.id, {
       businessDate: editDate, vendorName: editVendor, actualVendorName: editActualVendor, receiptType: editType,
       totalAmount: editTotal, taxAmount: editTax, photoUrl: receipt.photo_url,
@@ -148,6 +151,9 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
         excel_column: item.excel_column,
         item_mapping_id: item.item_mapping_id ?? null,
         vendor_group_snapshot: item.vendor_group ?? editVendor ?? null,
+        quantity: item.quantity,
+        unit: item.unit,
+        unit_price: item.unit_price,
       })),
     })
     setSaving(false)
@@ -163,9 +169,9 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
         excel_column: item.excel_column, item_category: item.item_category,
         item_mapping_id: item.item_mapping_id ?? null,
         vendor_group_snapshot: item.vendor_group ?? editVendor ?? null,
-        quantity: receipt.receipt_items[idx]?.quantity ?? 0,
-        unit: receipt.receipt_items[idx]?.unit ?? '',
-        unit_price: receipt.receipt_items[idx]?.unit_price ?? 0,
+        quantity: item.quantity ?? receipt.receipt_items[idx]?.quantity ?? 0,
+        unit: item.unit ?? receipt.receipt_items[idx]?.unit ?? '',
+        unit_price: item.unit_price ?? receipt.receipt_items[idx]?.unit_price ?? 0,
       })),
     })
   }
