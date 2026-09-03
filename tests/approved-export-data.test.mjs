@@ -25,6 +25,9 @@ test('央廚正式報表與舊版匯出也只查詢已核准帳目', () => {
   assert.ok((ckWorkbook.match(/\{ verifiedOnly: true \}/g) ?? []).length >= 3)
   assert.match(ckCsv, /getCKMonthlyStats\(storeId, year, monthNum, \{ verifiedOnly: true \}\)/)
   assert.match(legacyCkExport, /\.eq\('status', 'verified'\)/)
+  assert.match(ckWorkbook, /const isApprovedDay = dd\?\.status === 'verified'/)
+  assert.match(ckWorkbook, /c\.kind === 'stat' && c\.statKey && isApprovedDay/)
+  assert.doesNotMatch(ckWorkbook, /c\.kind === 'member' && dd/)
 })
 
 test('單筆同步入口拒絕尚未核准的店面帳目', () => {

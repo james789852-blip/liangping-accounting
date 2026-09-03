@@ -723,6 +723,9 @@ export async function addCKSheet(
     const rowNum = DATA_START + dayIdx
     const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(dayIdx + 1).padStart(2, '0')}`
     const dd = dayByDate.get(dateStr)
+    // 正式報表只能顯示已核准日期的金額。verifiedOnly 聚合會把
+    // 草稿／待審／退回日期還原成 none，這些日期不可留下 0、公式或舊值。
+    const isApprovedDay = dd?.status === 'verified'
     const dt = new Date(year, monthNum - 1, dayIdx + 1)
     const dow = dt.getDay()
     const isWeekend = dow === 0 || dow === 6
@@ -736,15 +739,15 @@ export async function addCKSheet(
       } else if (c.kind === 'weekday') {
         cell.value = `星期${WEEKDAYS[dow]}`
         if (isWeekend) cell.font = { color: { argb: dow === 0 ? 'FFDC2626' : 'FF0369A1' }, bold: true }
-    } else if (c.kind === 'member' && dd) {
-      const v = dd.memberOrders.find(o => o.store_id === c.itemKey)?.amount ?? 0
-      cell.value = v
-      cell.numFmt = '#,##0;-#,##0;0'
-    } else if (c.kind === 'external' && dd) {
-      const v = dd.externalOrders.find(o => o.name === c.itemKey)?.amount ?? 0
-      cell.value = v
-      cell.numFmt = '#,##0;-#,##0;0'
-    } else if (c.kind === 'expense' && dd) {
+      } else if (c.kind === 'member' && isApprovedDay) {
+        const v = dd.memberOrders.find(o => o.store_id === c.itemKey)?.amount ?? 0
+        if (v !== 0) cell.value = v
+        cell.numFmt = '#,##0;-#,##0;0'
+      } else if (c.kind === 'external' && isApprovedDay) {
+        const v = dd.externalOrders.find(o => o.name === c.itemKey)?.amount ?? 0
+        if (v !== 0) cell.value = v
+        cell.numFmt = '#,##0;-#,##0;0'
+      } else if (c.kind === 'expense' && isApprovedDay) {
         const matchingExpenses = dd.expenses.filter(e =>
           expenseKey(e.category, e.vendor_group, e.doc_type, e.item_name) === c.itemKey
         )
@@ -757,7 +760,7 @@ export async function addCKSheet(
         ))
         if (notes.length > 0) cell.note = notes.join('\n')
         cell.numFmt = '#,##0;-#,##0;'
-      } else if (c.kind === 'stat' && c.statKey) {
+      } else if (c.kind === 'stat' && c.statKey && isApprovedDay) {
         // 每日小計用 SUM range 公式
         const letter = colLetter(c.index)
         const formula = statFormula(c.statKey, rowNum, TOTAL_ROW, memberColStart, memberColEnd, extColStart, extColEnd, expenseCols, foodExpCols, packExpCols, miscExpCols, cols)
