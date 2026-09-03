@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
   const { data: storeRow } = await admin.from('stores').select('name').eq('id', storeId).single()
   const storeName = storeRow?.name ?? 'export'
 
-  const monthly = await getMonthlyStats(storeId, year, monthNum)
+  const monthly = await getMonthlyStats(storeId, year, monthNum, { verifiedOnly: true })
 
   const lines: string[] = []
   // Section 1: 每日主要欄位

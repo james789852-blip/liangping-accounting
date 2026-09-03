@@ -33,10 +33,10 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
 
   const { data: closing } = await admin
     .from('daily_closings')
-    .select('store_id, business_date')
+    .select('store_id, business_date, status')
     .eq('id', closingId)
     .single()
-  if (!closing) return
+  if (!closing || closing.status !== 'verified') return
 
   const storeId = closing.store_id as string
   const businessDate = closing.business_date as string

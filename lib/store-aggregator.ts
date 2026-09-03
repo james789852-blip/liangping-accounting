@@ -129,6 +129,11 @@ export interface MonthlyStats {
   liangpingRefund: number  // 梁平退稅 = 發票+退稅（doc_type=發票 且 vg=退稅 or 稅金）
 }
 
+export interface AccountingDataScope {
+  /** Excel / Google Sheets 正式帳本只可寫入總公司已核准的帳目。 */
+  verifiedOnly?: boolean
+}
+
 function newEmptyDay(date: string): DailyStats {
   const dt = new Date(date + 'T12:00:00+08:00')
   return {
@@ -158,18 +163,22 @@ export async function getRangeStats(
   storeId: string,
   firstDay: string,
   lastDay: string,
+  scope: AccountingDataScope = {},
 ): Promise<{ store: StoreInfo; items: ResolvedStoreItem[]; days: DailyStats[] }> {
   const admin = createAdminClient()
+  let closingsQuery = admin.from('daily_closings')
+    .select('business_date, status, updated_at, actual_remit, total_revenue, total_cost, variance, revenue_items(channel, account_name, gross_amount), order_items(item_name, total_amount, item_mapping_id, vendor_group_snapshot)')
+    .eq('store_id', storeId)
+    .gte('business_date', firstDay).lte('business_date', lastDay)
+    .order('updated_at', { ascending: true })
+  if (scope.verifiedOnly) closingsQuery = closingsQuery.eq('status', 'verified')
+
   const [{ data: storeRow }, resolved, { data: closings }, { data: receipts }, { data: holidays }] = await Promise.all([
     admin.from('stores')
       .select('id, name, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled')
       .eq('id', storeId).single(),
     getStoreItemsFromMappings(storeId, { reportMonth: firstDay.slice(0, 7) }),  // 歷史月份保留當時仍有效的欄位
-    admin.from('daily_closings')
-      .select('business_date, status, updated_at, actual_remit, total_revenue, total_cost, variance, revenue_items(channel, account_name, gross_amount), order_items(item_name, total_amount, item_mapping_id, vendor_group_snapshot)')
-      .eq('store_id', storeId)
-      .gte('business_date', firstDay).lte('business_date', lastDay)
-      .order('updated_at', { ascending: true }),
+    closingsQuery,
     admin.from('receipts')
       .select('business_date, vendor_name, actual_vendor_name, total_amount, tax_amount, notes, receipt_type, receipt_items(item_name, amount, item_category, excel_column, item_mapping_id, vendor_group_snapshot)')
       .eq('store_id', storeId)
@@ -308,6 +317,8 @@ export async function getRangeStats(
 
   // 收據併入
   for (const r of (receipts ?? []) as any[]) {
+    // 收據在草稿階段已獨立保存；正式報表必須等同日帳目核准後才能納入。
+    if (scope.verifiedOnly && !byDate[r.business_date]) continue
     const dd = byDate[r.business_date] ?? (byDate[r.business_date] = newEmptyDay(r.business_date))
     const noteText = (r.notes as string | null | undefined)?.trim() ?? ''
     const notedItemNames = new Set<string>()
@@ -481,10 +492,15 @@ export async function getRangeStats(
 }
 
 /** 月度統計（含月合計 + 品項月合計 + 特殊統計欄） */
-export async function getMonthlyStats(storeId: string, year: number, monthNum: number): Promise<MonthlyStats> {
+export async function getMonthlyStats(
+  storeId: string,
+  year: number,
+  monthNum: number,
+  scope: AccountingDataScope = {},
+): Promise<MonthlyStats> {
   const firstDay = `${year}-${String(monthNum).padStart(2, '0')}-01`
   const lastDay = getMonthLastDay(year, monthNum)
-  const { store, items, days } = await getRangeStats(storeId, firstDay, lastDay)
+  const { store, items, days } = await getRangeStats(storeId, firstDay, lastDay, scope)
   const itemMeta = new Map(items.map(i => [i.name, i] as const))
   const scopedKey = (vendorGroup: string, itemName: string) => `${vendorGroup}|${itemName}`
 

@@ -175,6 +175,7 @@ export async function GET(req: NextRequest) {
     .from('ck_daily_records')
     .select('id, business_date')
     .eq('ck_store_id', ckStoreId)
+    .eq('status', 'verified')
     .gte('business_date', firstDay)
     .lte('business_date', lastDay)
 

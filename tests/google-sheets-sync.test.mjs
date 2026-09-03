@@ -28,11 +28,11 @@ test('店面與央廚手動同步 action 都會驗證權限與月份', () => {
   assert.match(ckAction, /MONTH_PATTERN\.test\(month\)/)
 })
 
-test('央廚審核通過後會自動同步 Google Sheets', () => {
-  assert.match(ckAction, /if \(decision === 'verified'\)/)
+test('央廚審核通過後會自動同步，已核准帳目退回也會清除', () => {
+  assert.match(ckAction, /if \(decision === 'verified' \|\| existing\.status === 'verified'\)/)
   assert.match(ckAction, /import \{ after \} from 'next\/server'/)
   assert.match(ckAction, /after\(async \(\) => \{\s*try \{\s*await syncCKMonthToSheetsImpl\(ckStoreId, date\.slice\(0, 7\)\)/)
-  assert.match(ckAction, /央廚 \$\{date\.slice\(0, 7\)\} 審核後試算表同步失敗/)
+  assert.match(ckAction, /decision === 'verified' \? '核准後' : '退回後'/)
 })
 
 test('單筆、批次與央廚核准都在回應後同步試算表，不阻塞核准畫面', () => {

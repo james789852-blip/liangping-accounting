@@ -435,6 +435,28 @@ export async function disputeClosing(closingId: string, note: string) {
     },
   })
 
+  // 已核准帳目被退回時，立即重建該月正式試算表，讓這一天從帳本移除。
+  // 草稿／待審資料本來就不在正式帳本內，不需要額外同步。
+  if (closing.status === 'verified') {
+    after(async () => {
+      try {
+        await syncMonthToSheets(closing.store_id, String(closing.business_date).slice(0, 7))
+      } catch (syncError) {
+        const message = syncError instanceof Error ? syncError.message : String(syncError)
+        console.error('[disputeClosing] Google Sheets cleanup sync failed:', syncError)
+        await logAudit({
+          eventType: 'sheets_sync_failed',
+          severity: 'warn',
+          storeId: closing.store_id,
+          userId: user.id,
+          closingId,
+          description: `${closing.business_date} 退回後試算表清除失敗`,
+          metadata: { error: message, month: String(closing.business_date).slice(0, 7) },
+        })
+      }
+    })
+  }
+
   revalidatePath('/hq/reviews')
   revalidatePath('/hq/closings')
   revalidatePath('/hq/audit')

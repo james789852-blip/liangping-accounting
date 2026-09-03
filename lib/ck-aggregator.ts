@@ -102,14 +102,18 @@ export async function getCKRangeStats(
   ckStoreId: string,
   firstDay: string,
   lastDay: string,
+  scope: { verifiedOnly?: boolean } = {},
 ): Promise<{ ckStore: CKStoreInfo; days: CKDailyStats[] }> {
   const admin = createAdminClient()
+  let recordsQuery = admin.from('ck_daily_records')
+    .select('id, business_date, status, payer_name, hq_paid, ck_reimbursement_confirmed, receipt_photo_urls')
+    .eq('ck_store_id', ckStoreId)
+    .gte('business_date', firstDay).lte('business_date', lastDay)
+  if (scope.verifiedOnly) recordsQuery = recordsQuery.eq('status', 'verified')
+
   const [{ data: storeRow }, { data: records }, mappingItems] = await Promise.all([
     admin.from('stores').select('id, name, assigned_store_ids').eq('id', ckStoreId).single(),
-    admin.from('ck_daily_records')
-      .select('id, business_date, status, payer_name, hq_paid, ck_reimbursement_confirmed, receipt_photo_urls')
-      .eq('ck_store_id', ckStoreId)
-      .gte('business_date', firstDay).lte('business_date', lastDay),
+    recordsQuery,
     getStoreItemsFromMappings(ckStoreId, { reportMonth: firstDay.slice(0, 7) }),
   ])
   const ckStore = (storeRow ?? { id: ckStoreId, name: '' }) as CKStoreInfo
@@ -249,10 +253,15 @@ export async function getCKRangeStats(
   return { ckStore, days }
 }
 
-export async function getCKMonthlyStats(ckStoreId: string, year: number, monthNum: number): Promise<CKMonthlyStats> {
+export async function getCKMonthlyStats(
+  ckStoreId: string,
+  year: number,
+  monthNum: number,
+  scope: { verifiedOnly?: boolean } = {},
+): Promise<CKMonthlyStats> {
   const firstDay = `${year}-${String(monthNum).padStart(2, '0')}-01`
   const lastDay = getMonthLastDay(year, monthNum)
-  const { ckStore, days } = await getCKRangeStats(ckStoreId, firstDay, lastDay)
+  const { ckStore, days } = await getCKRangeStats(ckStoreId, firstDay, lastDay, scope)
 
   // 撈成員店家 (assigned_store_ids) 名字，用來確保就算某店該月沒訂單，仍顯示欄
   const admin = createAdminClient()

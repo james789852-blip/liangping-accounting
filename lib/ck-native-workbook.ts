@@ -400,7 +400,7 @@ export async function addCKSheet(
   monthNum: number,
 ): Promise<void> {
   const [monthly, mappingItems] = await Promise.all([
-    getCKMonthlyStats(ckStoreId, year, monthNum),
+    getCKMonthlyStats(ckStoreId, year, monthNum, { verifiedOnly: true }),
     getStoreItemsFromMappings(ckStoreId, { reportMonth: `${year}-${String(monthNum).padStart(2, '0')}` }),
   ])
 
@@ -842,7 +842,7 @@ export async function buildCKNativeWorkbook(
   wb.created = new Date()
   ;(wb as any).calcProperties = { fullCalcOnLoad: true }
   await addCKSheet(wb, ckStoreId, year, monthNum)
-  const monthly = await getCKMonthlyStats(ckStoreId, year, monthNum)
+  const monthly = await getCKMonthlyStats(ckStoreId, year, monthNum, { verifiedOnly: true })
   addCKVendorAnalysisSheet(wb, `${monthNum}月廠商分析`, buildCKVendorAnalysisRows([monthly], false), false)
   return wb
 }
@@ -863,7 +863,7 @@ export async function buildAnnualCKWorkbook(
   const monthlies: CKMonthlyStats[] = []
   for (let m = 1; m <= 12; m++) {
     await addCKSheet(wb, ckStoreId, year, m)
-    monthlies.push(await getCKMonthlyStats(ckStoreId, year, m))
+    monthlies.push(await getCKMonthlyStats(ckStoreId, year, m, { verifiedOnly: true }))
   }
   addCKVendorAnalysisSheet(wb, '年度廠商分析', buildCKVendorAnalysisRows(monthlies, true), true)
 

@@ -368,7 +368,8 @@ export async function reviewCKDailyRecord(
     metadata: { business_date: date, decision, note: note ?? null },
   })
 
-  if (decision === 'verified') {
+  // 核准後加入正式帳本；若原本已核准後又退回，也要立即重建並移除該日。
+  if (decision === 'verified' || existing.status === 'verified') {
     after(async () => {
       try {
         await syncCKMonthToSheetsImpl(ckStoreId, date.slice(0, 7))
@@ -380,8 +381,8 @@ export async function reviewCKDailyRecord(
           severity: 'warn',
           storeId: ckStoreId,
           userId: ctx.userId,
-          description: `央廚 ${date.slice(0, 7)} 審核後試算表同步失敗`,
-          metadata: { error: message, month: date.slice(0, 7), business_date: date },
+          description: `央廚 ${date.slice(0, 7)} ${decision === 'verified' ? '核准後' : '退回後'}試算表同步失敗`,
+          metadata: { error: message, month: date.slice(0, 7), business_date: date, decision },
         })
       }
     })

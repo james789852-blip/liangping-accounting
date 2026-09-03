@@ -537,7 +537,7 @@ export async function addFoodCostSheet(
   year: number,
   monthNum: number,
 ): Promise<void> {
-  const monthly = await getMonthlyStats(store.id, year, monthNum)
+  const monthly = await getMonthlyStats(store.id, year, monthNum, { verifiedOnly: true })
 
   const ws = wb.addWorksheet(`${monthNum}月食耗成本`, {
     views: [{ state: 'frozen', xSplit: 2, ySplit: 4, showGridLines: false }],
@@ -945,7 +945,7 @@ export async function buildFoodCostNativeWorkbook(
   const reportMonth = `${year}-${String(monthNum).padStart(2, '0')}`
   const items = await getStoreItemsFromMappings(storeId, { reportMonth })
   await addFoodCostSheet(wb, store, items, year, monthNum)
-  const monthly = await getMonthlyStats(storeId, year, monthNum)
+  const monthly = await getMonthlyStats(storeId, year, monthNum, { verifiedOnly: true })
   addVendorAnalysisSheet(wb, store, `${monthNum}月廠商分析`, buildVendorAnalysisRows([monthly], items, false, store.name), false)
   return wb
 }
@@ -972,7 +972,7 @@ export async function buildAnnualFoodCostWorkbook(
     const monthItems = await getStoreItemsFromMappings(storeId, { reportMonth })
     for (const item of monthItems) annualItemsById.set(item.mapping_id ?? item.id, item)
     await addFoodCostSheet(wb, store, monthItems, year, m)
-    monthlies.push(await getMonthlyStats(storeId, year, m))
+    monthlies.push(await getMonthlyStats(storeId, year, m, { verifiedOnly: true }))
   }
   const items = [...annualItemsById.values()].sort(compareResolvedItemsByMappingOrder)
   addVendorAnalysisSheet(wb, store, '年度廠商分析', buildVendorAnalysisRows(monthlies, items, true, store.name), true)
