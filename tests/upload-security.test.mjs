@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  extractTrustedReceiptPath,
   isAllowedExcelFile,
   isAllowedImageMimeType,
   isUuid,
@@ -27,24 +26,6 @@ test('storage paths resolve only explicit store and central-kitchen namespaces',
   })
   assert.equal(parseStorageTarget('receipts', `other/${storeId}/a.jpg`), null)
   assert.equal(parseStorageTarget('receipts', 'stores/not-a-uuid/a.jpg'), null)
-})
-
-test('AI image URLs must come from the configured Supabase receipts bucket', () => {
-  const origin = 'https://example.supabase.co'
-  const valid = `${origin}/storage/v1/object/public/receipts/stores/${storeId}/2026-08-14/receipts/a.jpg`
-  assert.equal(
-    extractTrustedReceiptPath(valid, origin),
-    `stores/${storeId}/2026-08-14/receipts/a.jpg`,
-  )
-  assert.equal(extractTrustedReceiptPath('https://attacker.example/a.jpg', origin), null)
-  assert.equal(
-    extractTrustedReceiptPath(`${origin}/storage/v1/object/public/meeting-reports/${storeId}/a.jpg`, origin),
-    null,
-  )
-  assert.equal(
-    extractTrustedReceiptPath(`${origin}/storage/v1/object/public/receipts/stores/${storeId}/../secret.jpg`, origin),
-    null,
-  )
 })
 
 test('uploads accept supported images and xlsx files only', () => {

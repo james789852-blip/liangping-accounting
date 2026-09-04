@@ -92,7 +92,7 @@ export default async function ClosingsPage({
     profiles?.forEach((p: any) => { if (p.name) submitterNames[p.user_id] = p.name })
   }
 
-  // 收據與菜單影片：一次撈完，JS 端 group by (store_id, business_date)
+  // 收據一次撈完，JS 端 group by (store_id, business_date)
   // 避免每筆 closing 都各發一次 query（10 店 × 30 天 = 600+ roundtrip）
   const receiptsByClosing: Record<string, any[]> = {}
   if (closings && closings.length > 0) {
@@ -125,7 +125,7 @@ export default async function ClosingsPage({
         <div className="max-w-4xl mx-auto">
           <p className="text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>總公司</p>
           <h1 className="text-xl font-bold" style={{ color: '#18181b', letterSpacing: '-0.01em' }}>店面帳目</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>查看店面帳目數字、所有照片與影片，並進行審核</p>
+          <p className="text-sm mt-0.5" style={{ color: '#a1a1aa' }}>查看店面帳目數字與所有照片，並進行審核</p>
         </div>
       </div>
       <div className="max-w-4xl mx-auto px-4 py-5 pb-28">

@@ -7,7 +7,7 @@ import { compressImage } from '@/lib/compress-image'
 import { saveReceipt } from '@/app/actions/receipts'
 import { saveItemMappingsBatch } from '@/app/actions/item-mappings'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
-import { Camera, Loader2, CheckCircle2, Plus, Trash2, X, Sparkles } from 'lucide-react'
+import { Camera, Loader2, CheckCircle2, Plus, Trash2, X } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { storePhotoPath } from '@/lib/storage-paths'
 import { isNegativeItem, normalizeItemAmount } from '@/lib/negative-items'
@@ -55,7 +55,7 @@ function flexibleFormItem(item: FormItem, mappings: MappingOption[]) {
   return formItemMapping(item, mappings)?.sign_mode === 'flexible' && !isNegativeItem(item.name)
 }
 export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCancel }: Props) {
-  const [step, setStep] = useState<'upload' | 'recognizing' | 'review' | 'saving'>('upload')
+  const [step, setStep] = useState<'upload' | 'uploading' | 'review' | 'saving'>('upload')
   const [photoUrl, setPhotoUrl] = useState('')
   const [photoPreview, setPhotoPreview] = useState('')
   const [vendorName, setVendorName] = useState('')
@@ -146,66 +146,37 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
     setOpenItemIdx(null)
   }
 
-  function applyMappings(rawItems: { name: string; amount: number }[], vendorGroup = ''): FormItem[] {
-    return rawItems.map(item => {
-      const sameName = mappings.filter(option => option.item_name === item.name)
-      const m = sameName.find(option => !!vendorGroup && option.vendor_group === vendorGroup)
-        ?? (sameName.length === 1 ? sameName[0] : undefined)
-      return {
-        name: item.name,
-        amount: normalizeItemAmount(item.name, item.amount, !!m?.is_negative),
-        excel_column: m?.excel_column ?? '',
-        item_category: m?.item_category ?? '食材',
-        vendor_group: m?.vendor_group ?? null,
-        item_mapping_id: m?.id ?? null,
-      }
-    })
-  }
-
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const rawFile = e.target.files?.[0]
     e.target.value = ''
     if (!rawFile) return
     setError('')
-
-    const file = await compressImage(rawFile)
-
-    const reader = new FileReader()
-    reader.onload = ev => setPhotoPreview(ev.target?.result as string)
-    reader.readAsDataURL(file)
-
-    setStep('recognizing')
-    const supabase = createClient()
-    const ext = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
-    const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const path = storePhotoPath(storeId, today, 'receipts', `receipt-${uniqueId}.${ext}`)
-    const { error: upErr } = await supabase.storage.from('receipts').upload(path, file)
-    if (upErr) { setError('上傳失敗：' + upErr.message); setStep('upload'); return }
-
-    const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(path)
-    setPhotoUrl(publicUrl)
+    setStep('uploading')
 
     try {
-      const res = await fetch('/api/recognize-receipt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: publicUrl }),
-      })
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
-      setVendorName(data.vendor_name ?? '')
-      setReceiptType(data.receipt_type ?? 'receipt')
-      setTotalAmount(data.total_amount ?? 0)
-      setTaxAmount(data.tax_amount ?? 0)
-      setItems(applyMappings(data.items ?? [], data.vendor_name ?? ''))
+      const file = await compressImage(rawFile)
+      const reader = new FileReader()
+      reader.onload = ev => setPhotoPreview(ev.target?.result as string)
+      reader.readAsDataURL(file)
+
+      const supabase = createClient()
+      const ext = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
+      const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const path = storePhotoPath(storeId, today, 'receipts', `receipt-${uniqueId}.${ext}`)
+      const { error: upErr } = await supabase.storage.from('receipts').upload(path, file)
+      if (upErr) throw new Error(upErr.message)
+
+      const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(path)
+      setPhotoUrl(publicUrl)
+      setStep('review')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '未知錯誤'
-      setError('AI 辨識失敗，請手動輸入：' + message)
-      setItems([])
+      setError('照片上傳失敗：' + message)
+      setPhotoPreview('')
+      setStep('upload')
     }
-    setStep('review')
   }
 
   function updateItem(i: number, field: keyof FormItem, val: string | number) {
@@ -300,10 +271,10 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
     </div>
   )
 
-  if (step === 'recognizing') return (
+  if (step === 'uploading') return (
     <div className="py-12 flex flex-col items-center gap-3 text-slate-500">
       <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-      <p className="text-sm">AI 辨識中，請稍候…</p>
+      <p className="text-sm">照片上傳中，請稍候…</p>
       {photoPreview && <img src={photoPreview} alt="preview" className="w-32 h-32 object-cover rounded-xl opacity-50" />}
     </div>
   )
@@ -311,12 +282,7 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h2 className="text-base font-semibold text-slate-800">確認辨識結果</h2>
-          <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-            <Sparkles className="h-3 w-3" /> AI 已辨識
-          </span>
-        </div>
+        <h2 className="text-base font-semibold text-slate-800">新增收據 / 發票</h2>
         <button onClick={handleCancel}><X className="h-5 w-5 text-slate-400" /></button>
       </div>
 

@@ -53,24 +53,3 @@ export function isAllowedImageMimeType(mimeType: string | null | undefined): boo
 export function isAllowedExcelFile(name: string, mimeType: string): boolean {
   return name.toLowerCase().endsWith('.xlsx') && EXCEL_MIME_TYPES.has(mimeType.toLowerCase())
 }
-
-export function extractTrustedReceiptPath(imageUrl: string, supabaseUrl: string): string | null {
-  try {
-    const decodedInput = decodeURIComponent(imageUrl)
-    if (decodedInput.includes('/../') || decodedInput.includes('/./')) return null
-
-    const url = new URL(imageUrl)
-    const trusted = new URL(supabaseUrl)
-    if (url.protocol !== 'https:' || url.origin !== trusted.origin) return null
-    if (url.username || url.password) return null
-
-    const prefix = '/storage/v1/object/public/receipts/'
-    if (!url.pathname.startsWith(prefix)) return null
-
-    const path = decodeURIComponent(url.pathname.slice(prefix.length))
-    if (!path || path.includes('..') || path.startsWith('/')) return null
-    return path
-  } catch {
-    return null
-  }
-}

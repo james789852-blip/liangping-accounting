@@ -5,7 +5,7 @@ import { canAccessStore, getAuthContext } from '@/lib/permissions'
 import { isAllowedExcelFile, isAllowedImageMimeType, parseStorageTarget } from '@/lib/upload-security'
 
 // 允許上傳的 bucket 與最大檔案大小（位元組）
-// 不再允許 menu-videos 上傳；歷史影片仍可從顯示頁面查看
+// 影片功能已移除，只保留帳目照片、Excel 模板與會議報告圖片上傳。
 const ALLOWED_BUCKETS = new Set(['receipts', 'excel-templates', 'meeting-reports'])
 // 圖片：壓縮後通常 < 500KB，5 MB 已是寬鬆上限
 const MAX_FILE_BYTES = 5 * 1024 * 1024  // 5 MB
