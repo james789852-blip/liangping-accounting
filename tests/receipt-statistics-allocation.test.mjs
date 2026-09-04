@@ -56,9 +56,13 @@ test('景新8月雜貨拆分為米78000與其他雜貨24600', () => {
   assert.equal(allocations.reduce((sum, row) => sum + row.amount, 0), 102_600)
 })
 
-test('總公司統計中心與店長營運統計共用米免稅拆分規則', () => {
+test('米免稅統計放在雜貨展開明細，且不重複計算單據筆數', () => {
   assert.match(hqDashboardSource, /receipt_items\(item_name, amount\)/)
   assert.match(hqDashboardSource, /allocateReceiptStatistics\(sourceGroup, amount, receipt\.receipt_items\)/)
+  assert.match(hqDashboardSource, /group: sourceGroup/)
+  assert.match(hqDashboardSource, /detailName = allocation\.group === TAX_EXEMPT_RICE_GROUP/)
   assert.match(managerAnalyticsSource, /allocateReceiptStatistics\(sourceGroup, Number\(receipt\.total_amount \?\? 0\), receipt\.receipt_items\)/)
+  assert.match(managerAnalyticsSource, /currentCounts\.set\(sourceGroup/)
+  assert.match(managerAnalyticsSource, /count: currentCounts\.get\(name\) \?\? 0/)
   assert.match(managerAnalyticsSource, /const vendorReceiptCount = currentReceiptCount/)
 })

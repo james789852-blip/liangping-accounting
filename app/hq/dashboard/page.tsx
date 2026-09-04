@@ -14,7 +14,7 @@ import {
   receiptStatisticsCategoryOrder,
   resolveReceiptStatisticsCategory,
 } from '@/lib/receipt-statistics-hierarchy'
-import { allocateReceiptStatistics } from '@/lib/receipt-statistics-allocation'
+import { allocateReceiptStatistics, TAX_EXEMPT_RICE_GROUP } from '@/lib/receipt-statistics-allocation'
 
 export const dynamic = 'force-dynamic'
 
@@ -204,37 +204,40 @@ export default async function HQDashboard({
       '',
     )
     const allocations = allocateReceiptStatistics(sourceGroup, amount, receipt.receipt_items)
+    const key = `${receipt.store_id}|${category}|${sourceGroup}`
+    const row: VendorGroupDraft = vendorMap.get(key) ?? {
+      storeId: receipt.store_id,
+      storeName: storeMap[receipt.store_id] ?? '未知店家',
+      category,
+      group: sourceGroup,
+      total: 0,
+      count: 0,
+      vendors: [],
+      details: [],
+      vendorMap: new Map<string, VendorDetail>(),
+    }
+    row.total += amount
+    row.count += 1
     for (const allocation of allocations) {
-      const key = `${receipt.store_id}|${category}|${allocation.group}`
-      const row: VendorGroupDraft = vendorMap.get(key) ?? {
-        storeId: receipt.store_id,
-        storeName: storeMap[receipt.store_id] ?? '未知店家',
-        category,
-        group: allocation.group,
-        total: 0,
-        count: 0,
-        vendors: [],
-        details: [],
-        vendorMap: new Map<string, VendorDetail>(),
-      }
-      row.total += allocation.amount
-      row.count += 1
-      if (actualVendor) {
-        const detail = row.vendorMap.get(actualVendor) ?? { name: actualVendor, total: 0, count: 0 }
+      const detailName = allocation.group === TAX_EXEMPT_RICE_GROUP
+        ? TAX_EXEMPT_RICE_GROUP
+        : actualVendor
+      if (detailName) {
+        const detail = row.vendorMap.get(detailName) ?? { name: detailName, total: 0, count: 0 }
         detail.total += allocation.amount
         detail.count += 1
-        row.vendorMap.set(actualVendor, detail)
+        row.vendorMap.set(detailName, detail)
       }
-      row.details.push({
-        id: String(receipt.id),
-        date: String(receipt.business_date ?? ''),
-        total: allocation.amount,
-        actualVendor,
-        note: String(receipt.notes ?? '').trim(),
-        items: allocation.itemNames,
-      })
-      vendorMap.set(key, row)
     }
+    row.details.push({
+      id: String(receipt.id),
+      date: String(receipt.business_date ?? ''),
+      total: amount,
+      actualVendor,
+      note: String(receipt.notes ?? '').trim(),
+      items: Array.from(new Set(allocations.flatMap(allocation => allocation.itemNames))),
+    })
+    vendorMap.set(key, row)
     costByStore[receipt.store_id] = (costByStore[receipt.store_id] || 0) + amount
   }
   // 央廚採購支出記在 ck_expense_items，不在店面收據表；補入同一份廠商明細。
