@@ -15,6 +15,7 @@ import {
   resolveReceiptStatisticsCategory,
 } from '@/lib/receipt-statistics-hierarchy'
 import { allocateReceiptStatistics, TAX_EXEMPT_RICE_GROUP } from '@/lib/receipt-statistics-allocation'
+import { resolveCentralKitchenStatisticsVendor } from '@/lib/ck-statistics-vendor'
 
 export const dynamic = 'force-dynamic'
 
@@ -255,6 +256,7 @@ export default async function HQDashboard({
   // 央廚採購支出記在 ck_expense_items，不在店面收據表；補入同一份廠商明細。
   for (const expense of ckExpenseRows) {
     const category = resolveReceiptStatisticsCategory(receiptHierarchy, expense.storeId, expense.group)
+    const actualVendor = resolveCentralKitchenStatisticsVendor(category, expense.items[0])
     const key = `${expense.storeId}|${category}|${expense.group}`
     const row: VendorGroupDraft = vendorMap.get(key) ?? {
       storeId: expense.storeId,
@@ -271,11 +273,21 @@ export default async function HQDashboard({
     }
     row.total += expense.amount
     row.count += 1
+    if (actualVendor) {
+      const detail = row.vendorMap.get(actualVendor) ?? {
+        name: actualVendor,
+        total: 0,
+        count: 0,
+      }
+      detail.total += expense.amount
+      detail.count += 1
+      row.vendorMap.set(actualVendor, detail)
+    }
     row.details.push({
       id: expense.id,
       date: expense.date,
       total: expense.amount,
-      actualVendor: '',
+      actualVendor,
       note: expense.note,
       items: expense.items,
     })
