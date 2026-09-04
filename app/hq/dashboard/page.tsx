@@ -83,15 +83,15 @@ export default async function HQDashboard({
     ? today
     : `${year}-${month}-${String(lastDay).padStart(2, '0')}`
 
-  const [stores, { data: monthClosings }, { data: monthReceipts }, receiptCategories, receiptVendors, itemMappings] = await Promise.all([
+  const [stores, monthClosings, monthReceipts, receiptCategories, receiptVendors, itemMappings] = await Promise.all([
     getCachedAllStores(),
-    admin.from('daily_closings')
+    fetchAllPaged<any>(() => admin.from('daily_closings')
       .select('store_id, total_revenue, status')
       .gte('business_date', firstOfMonth).lte('business_date', selectedEnd)
-      .in('status', ['submitted', 'verified']),
-    admin.from('receipts')
+      .in('status', ['submitted', 'verified'])),
+    fetchAllPaged<any>(() => admin.from('receipts')
       .select('id, store_id, business_date, vendor_name, actual_vendor_name, total_amount, notes, receipt_items(item_name)')
-      .gte('business_date', firstOfMonth).lte('business_date', selectedEnd),
+      .gte('business_date', firstOfMonth).lte('business_date', selectedEnd)),
     fetchAllPaged<any>(() => admin.from('receipt_categories')
       .select('id, store_id, name, sort_order')
       .gte('sort_order', 0)
@@ -124,11 +124,11 @@ export default async function HQDashboard({
   const ckDeliveryStoresByKitchen = new Map<string, Map<string, DeliveryStoreStat>>()
   const ckExpenseRows: { id: string; storeId: string; date: string; group: string; amount: number; note: string; items: string[] }[] = []
   if (ckIds.length > 0) {
-    const [{ data: ckRecords }, refundEntries] = await Promise.all([
-      admin.from('ck_daily_records')
+    const [ckRecords, refundEntries] = await Promise.all([
+      fetchAllPaged<any>(() => admin.from('ck_daily_records')
         .select('id, ck_store_id, business_date')
         .in('ck_store_id', ckIds)
-        .gte('business_date', firstOfMonth).lte('business_date', selectedEnd),
+        .gte('business_date', firstOfMonth).lte('business_date', selectedEnd)),
       Promise.all(ckIds.map(async ckId => {
         const { days } = await getCKRangeStats(ckId, firstOfMonth, selectedEnd)
         return [ckId, days.reduce((sum, day) => sum + day.taxRefund, 0)] as const
@@ -137,13 +137,13 @@ export default async function HQDashboard({
     for (const [ckId, refund] of refundEntries) ckRefundByStore[ckId] = refund
     const recordIds = (ckRecords ?? []).map(record => record.id)
     if (recordIds.length > 0) {
-      const [{ data: ckOrders }, { data: ckExpenses }] = await Promise.all([
-        admin.from('ck_store_orders')
+      const [ckOrders, ckExpenses] = await Promise.all([
+        fetchAllPaged<any>(() => admin.from('ck_store_orders')
           .select('ck_daily_record_id, store_id, external_store_name, amount, ck_confirmed_amount')
-          .in('ck_daily_record_id', recordIds),
-        admin.from('ck_expense_items')
+          .in('ck_daily_record_id', recordIds)),
+        fetchAllPaged<any>(() => admin.from('ck_expense_items')
           .select('id, ck_daily_record_id, vendor_group, item_name, amount, note')
-          .in('ck_daily_record_id', recordIds),
+          .in('ck_daily_record_id', recordIds)),
       ])
       const ckIdByRecord = new Map((ckRecords ?? []).map(record => [record.id as string, record.ck_store_id as string]))
       const ckDateByRecord = new Map((ckRecords ?? []).map(record => [record.id as string, String(record.business_date ?? '')]))
@@ -222,7 +222,7 @@ export default async function HQDashboard({
       detail.count += 1
       row.vendorMap.set(actualVendor, detail)
     }
-    const itemNames = Array.from(new Set(
+    const itemNames = Array.from(new Set<string>(
       (Array.isArray(receipt.receipt_items) ? receipt.receipt_items : [])
         .map((item: { item_name?: string | null }) => String(item.item_name ?? '').trim())
         .filter(Boolean),
