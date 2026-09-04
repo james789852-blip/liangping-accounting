@@ -56,12 +56,28 @@ test('景新8月雜貨拆分為米78000與其他雜貨24600', () => {
   assert.equal(allocations.reduce((sum, row) => sum + row.amount, 0), 102_600)
 })
 
-test('米免稅統計放在雜貨展開明細，且不重複計算單據筆數', () => {
+test('府中8月名陽保留完整146940，米僅作為其下110500的小計', () => {
+  const allocations = allocateReceiptStatistics('雜貨', 146_940, [
+    { item_name: '米', amount: 110_500 },
+    { item_name: '其他雜貨', amount: 36_440 },
+  ])
+
+  assert.equal(allocations.find(row => row.group === TAX_EXEMPT_RICE_GROUP)?.amount, 110_500)
+  assert.equal(allocations.reduce((sum, row) => sum + row.amount, 0), 146_940)
+  // 畫面上的實際廠商總額使用原單據總額，不可改成扣除米後的金額。
+  assert.equal(146_940, 110_500 + 36_440)
+})
+
+test('米免稅統計放在雜貨的實際廠商底下，廠商仍保留完整單據金額', () => {
   assert.match(hqDashboardSource, /receipt_items\(item_name, amount\)/)
   assert.match(hqDashboardSource, /allocateReceiptStatistics\(sourceGroup, amount, receipt\.receipt_items\)/)
   assert.match(hqDashboardSource, /group: sourceGroup/)
-  assert.match(hqDashboardSource, /detailName = allocation\.group === TAX_EXEMPT_RICE_GROUP/)
+  assert.match(hqDashboardSource, /detail\.total \+= amount/)
+  assert.match(hqDashboardSource, /detail\.taxExemptRiceTotal \+= riceAllocation\.amount/)
+  assert.match(hqDashboardSource, /actual\.taxExemptRiceTotal/)
   assert.match(managerAnalyticsSource, /allocateReceiptStatistics\(sourceGroup, Number\(receipt\.total_amount \?\? 0\), receipt\.receipt_items\)/)
+  assert.match(managerAnalyticsSource, /row\.total \+= Number\(receipt\.total_amount \?\? 0\)/)
+  assert.match(managerAnalyticsSource, /row\.riceTotal \+= riceAllocation\.amount/)
   assert.match(managerAnalyticsSource, /currentCounts\.set\(sourceGroup/)
   assert.match(managerAnalyticsSource, /count: currentCounts\.get\(name\) \?\? 0/)
   assert.match(managerAnalyticsSource, /const vendorReceiptCount = currentReceiptCount/)

@@ -20,7 +20,13 @@ export const dynamic = 'force-dynamic'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
-type VendorDetail = { name: string; total: number; count: number }
+type VendorDetail = {
+  name: string
+  total: number
+  count: number
+  taxExemptRiceTotal: number
+  taxExemptRiceCount: number
+}
 type ReceiptDetail = {
   id: string
   date: string
@@ -218,16 +224,22 @@ export default async function HQDashboard({
     }
     row.total += amount
     row.count += 1
-    for (const allocation of allocations) {
-      const detailName = allocation.group === TAX_EXEMPT_RICE_GROUP
-        ? TAX_EXEMPT_RICE_GROUP
-        : actualVendor
-      if (detailName) {
-        const detail = row.vendorMap.get(detailName) ?? { name: detailName, total: 0, count: 0 }
-        detail.total += allocation.amount
-        detail.count += 1
-        row.vendorMap.set(detailName, detail)
+    if (actualVendor) {
+      const detail = row.vendorMap.get(actualVendor) ?? {
+        name: actualVendor,
+        total: 0,
+        count: 0,
+        taxExemptRiceTotal: 0,
+        taxExemptRiceCount: 0,
       }
+      detail.total += amount
+      detail.count += 1
+      const riceAllocation = allocations.find(allocation => allocation.group === TAX_EXEMPT_RICE_GROUP)
+      if (riceAllocation) {
+        detail.taxExemptRiceTotal += riceAllocation.amount
+        detail.taxExemptRiceCount += 1
+      }
+      row.vendorMap.set(actualVendor, detail)
     }
     row.details.push({
       id: String(receipt.id),
@@ -525,10 +537,17 @@ function StoreStatsCard({ store, rank, isKitchen }: { store: StoreSummary; rank:
                         <span className="text-sm text-right font-bold tabular-nums" style={{ color: '#c2410c' }}>${fmt(group.total)}</span>
                       </div>
                       {group.vendors.length > 0 && <div className="mx-2 mb-2 ml-5 space-y-1 pl-2.5" style={{ borderLeft: '2px solid #fed7aa' }}>
-                        {group.vendors.map(actual => <div key={actual.name} className="grid grid-cols-[1fr_55px_95px] gap-2 items-center px-2 py-1.5 rounded-md" style={{ background: '#fffbeb' }}>
-                          <span className="text-xs truncate" style={{ color: '#71717a' }}>• {actual.name}</span>
-                          <span className="text-[11px] text-center tabular-nums" style={{ color: '#a1a1aa' }}>{actual.count} 筆</span>
-                          <span className="text-xs text-right font-semibold tabular-nums" style={{ color: '#c2410c' }}>${fmt(actual.total)}</span>
+                        {group.vendors.map(actual => <div key={actual.name} className="overflow-hidden rounded-md" style={{ background: '#fffbeb' }}>
+                          <div className="grid grid-cols-[1fr_55px_95px] gap-2 items-center px-2 py-1.5">
+                            <span className="text-xs truncate" style={{ color: '#71717a' }}>• {actual.name}</span>
+                            <span className="text-[11px] text-center tabular-nums" style={{ color: '#a1a1aa' }}>{actual.count} 筆</span>
+                            <span className="text-xs text-right font-semibold tabular-nums" style={{ color: '#c2410c' }}>${fmt(actual.total)}</span>
+                          </div>
+                          {actual.taxExemptRiceTotal !== 0 && <div className="grid grid-cols-[1fr_55px_95px] gap-2 items-center mx-2 mb-1.5 px-2 py-1.5 rounded-md" style={{ background: '#fff7ed', borderLeft: '2px solid #fdba74' }}>
+                            <span className="text-[11px] truncate" style={{ color: '#9a3412' }}>↳ {TAX_EXEMPT_RICE_GROUP}</span>
+                            <span className="text-[10px] text-center tabular-nums" style={{ color: '#a1a1aa' }}>{actual.taxExemptRiceCount} 筆</span>
+                            <span className="text-[11px] text-right font-semibold tabular-nums" style={{ color: '#c2410c' }}>${fmt(actual.taxExemptRiceTotal)}</span>
+                          </div>}
                         </div>)}
                       </div>}
                       <details className="group/receipts mx-2 mb-2 overflow-hidden rounded-lg" style={{ border: '1px solid #e2e8f0', background: '#f8fafc' }}>
