@@ -14,6 +14,7 @@ import {
   receiptStatisticsCategoryOrder,
   resolveReceiptStatisticsCategory,
 } from '@/lib/receipt-statistics-hierarchy'
+import { allocateReceiptStatistics } from '@/lib/receipt-statistics-allocation'
 
 export const dynamic = 'force-dynamic'
 
@@ -90,7 +91,7 @@ export default async function HQDashboard({
       .gte('business_date', firstOfMonth).lte('business_date', selectedEnd)
       .in('status', ['submitted', 'verified'])),
     fetchAllPaged<any>(() => admin.from('receipts')
-      .select('id, store_id, business_date, vendor_name, actual_vendor_name, total_amount, notes, receipt_items(item_name)')
+      .select('id, store_id, business_date, vendor_name, actual_vendor_name, total_amount, notes, receipt_items(item_name, amount)')
       .gte('business_date', firstOfMonth).lte('business_date', selectedEnd)),
     fetchAllPaged<any>(() => admin.from('receipt_categories')
       .select('id, store_id, name, sort_order')
@@ -194,48 +195,46 @@ export default async function HQDashboard({
   for (const receipt of monthReceipts ?? []) {
     const amount = Number(receipt.total_amount ?? 0)
     if (amount <= 0) continue
-    const group = receipt.vendor_name?.trim() || '未分類'
-    const category = resolveReceiptStatisticsCategory(receiptHierarchy, receipt.store_id, group)
+    const sourceGroup = receipt.vendor_name?.trim() || '未分類'
+    const category = resolveReceiptStatisticsCategory(receiptHierarchy, receipt.store_id, sourceGroup)
     const actualVendor = resolveReportingActualVendor(
       storeMap[receipt.store_id],
-      group,
+      sourceGroup,
       receipt.actual_vendor_name,
       '',
     )
-    const key = `${receipt.store_id}|${category}|${group}`
-    const row: VendorGroupDraft = vendorMap.get(key) ?? {
-      storeId: receipt.store_id,
-      storeName: storeMap[receipt.store_id] ?? '未知店家',
-      category,
-      group,
-      total: 0,
-      count: 0,
-      vendors: [],
-      details: [],
-      vendorMap: new Map<string, VendorDetail>(),
+    const allocations = allocateReceiptStatistics(sourceGroup, amount, receipt.receipt_items)
+    for (const allocation of allocations) {
+      const key = `${receipt.store_id}|${category}|${allocation.group}`
+      const row: VendorGroupDraft = vendorMap.get(key) ?? {
+        storeId: receipt.store_id,
+        storeName: storeMap[receipt.store_id] ?? '未知店家',
+        category,
+        group: allocation.group,
+        total: 0,
+        count: 0,
+        vendors: [],
+        details: [],
+        vendorMap: new Map<string, VendorDetail>(),
+      }
+      row.total += allocation.amount
+      row.count += 1
+      if (actualVendor) {
+        const detail = row.vendorMap.get(actualVendor) ?? { name: actualVendor, total: 0, count: 0 }
+        detail.total += allocation.amount
+        detail.count += 1
+        row.vendorMap.set(actualVendor, detail)
+      }
+      row.details.push({
+        id: String(receipt.id),
+        date: String(receipt.business_date ?? ''),
+        total: allocation.amount,
+        actualVendor,
+        note: String(receipt.notes ?? '').trim(),
+        items: allocation.itemNames,
+      })
+      vendorMap.set(key, row)
     }
-    row.total += amount
-    row.count += 1
-    if (actualVendor) {
-      const detail = row.vendorMap.get(actualVendor) ?? { name: actualVendor, total: 0, count: 0 }
-      detail.total += amount
-      detail.count += 1
-      row.vendorMap.set(actualVendor, detail)
-    }
-    const itemNames = Array.from(new Set<string>(
-      (Array.isArray(receipt.receipt_items) ? receipt.receipt_items : [])
-        .map((item: { item_name?: string | null }) => String(item.item_name ?? '').trim())
-        .filter(Boolean),
-    ))
-    row.details.push({
-      id: String(receipt.id),
-      date: String(receipt.business_date ?? ''),
-      total: amount,
-      actualVendor,
-      note: String(receipt.notes ?? '').trim(),
-      items: itemNames,
-    })
-    vendorMap.set(key, row)
     costByStore[receipt.store_id] = (costByStore[receipt.store_id] || 0) + amount
   }
   // 央廚採購支出記在 ck_expense_items，不在店面收據表；補入同一份廠商明細。
@@ -287,7 +286,10 @@ export default async function HQDashboard({
     categoriesByStore.set(vendor.storeId, categories)
   }
   for (const [storeId, categories] of categoriesByStore) {
-    for (const category of categories) category.groups.sort((a, b) => b.total - a.total)
+    for (const category of categories) {
+      category.groups.sort((a, b) => b.total - a.total)
+      category.count = new Set(category.groups.flatMap(group => group.details.map(detail => detail.id))).size
+    }
     categories.sort((a, b) => {
       const orderDiff = receiptStatisticsCategoryOrder(receiptHierarchy, storeId, a.name)
         - receiptStatisticsCategoryOrder(receiptHierarchy, storeId, b.name)

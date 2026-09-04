@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { resolveReportingActualVendor } from '@/lib/reporting-actual-vendor'
+import { allocateReceiptStatistics, TAX_EXEMPT_RICE_GROUP } from '@/lib/receipt-statistics-allocation'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -182,6 +183,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
   const [dailyRevs, setDailyRevs] = useState<DayRev[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [vendorGroups, setVendorGroups] = useState<VendorGroupAnalysis[]>([])
+  const [currentReceiptCount, setCurrentReceiptCount] = useState(0)
   const [deliveryStores, setDeliveryStores] = useState<DeliveryStoreStat[]>([])
   const [bookkeepingDays, setBookkeepingDays] = useState<BookkeepingDay[]>([])
 
@@ -398,6 +400,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
         }
       }).sort((a, b) => b.cur - a.cur))
       setVendorGroups(ckVendorGroups(cur, prevData))
+      setCurrentReceiptCount(cur.expenses.length)
       setLoading(false)
       return
     }
@@ -483,16 +486,24 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
     function groupVendors(rows: any[]) {
       const map: Record<string, { total: number; items: Record<string, { sum: number; cnt: number }> }> = {}
       for (const r of rows) {
-        const group = r.vendor_name?.trim() || '未分類'
-        const actual = resolveReportingActualVendor(storeName, group, r.actual_vendor_name)
-        const v = `${group} · ${actual}`
-        if (!map[v]) map[v] = { total: 0, items: {} }
-        map[v].total += r.total_amount ?? 0
-        for (const it of r.receipt_items ?? []) {
-          const n = it.item_name
-          if (!map[v].items[n]) map[v].items[n] = { sum: 0, cnt: 0 }
-          map[v].items[n].sum += it.amount ?? 0
-          map[v].items[n].cnt += 1
+        const sourceGroup = r.vendor_name?.trim() || '未分類'
+        const actual = resolveReportingActualVendor(storeName, sourceGroup, r.actual_vendor_name)
+        for (const allocation of allocateReceiptStatistics(sourceGroup, Number(r.total_amount ?? 0), r.receipt_items)) {
+          const v = `${allocation.group} · ${actual}`
+          if (!map[v]) map[v] = { total: 0, items: {} }
+          map[v].total += allocation.amount
+          const allocationItems = (r.receipt_items ?? []).filter((item: any) => {
+            if (sourceGroup !== '雜貨') return true
+            const isRice = String(item.item_name ?? '').trim() === '米'
+            return allocation.group === TAX_EXEMPT_RICE_GROUP ? isRice : !isRice
+          })
+          for (const item of allocationItems) {
+            const itemName = String(item.item_name ?? '').trim()
+            if (!itemName) continue
+            if (!map[v].items[itemName]) map[v].items[itemName] = { sum: 0, cnt: 0 }
+            map[v].items[itemName].sum += Number(item?.amount ?? 0)
+            map[v].items[itemName].cnt += 1
+          }
         }
       }
       return map
@@ -501,21 +512,25 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
       const current = new Map<string, Map<string, { total: number; count: number; notes: Set<string> }>>()
       const previous = new Map<string, Map<string, number>>()
       for (const receipt of rows) {
-        const group = receipt.vendor_name?.trim() || '未分類'
-        const actual = resolveReportingActualVendor(storeName, group, receipt.actual_vendor_name)
-        if (!current.has(group)) current.set(group, new Map())
-        const row = current.get(group)!.get(actual) ?? { total: 0, count: 0, notes: new Set<string>() }
-        row.total += Number(receipt.total_amount ?? 0)
-        row.count += 1
-        const note = String(receipt.notes ?? '').trim()
-        if (note) row.notes.add(note)
-        current.get(group)!.set(actual, row)
+        const sourceGroup = receipt.vendor_name?.trim() || '未分類'
+        const actual = resolveReportingActualVendor(storeName, sourceGroup, receipt.actual_vendor_name)
+        for (const allocation of allocateReceiptStatistics(sourceGroup, Number(receipt.total_amount ?? 0), receipt.receipt_items)) {
+          if (!current.has(allocation.group)) current.set(allocation.group, new Map())
+          const row = current.get(allocation.group)!.get(actual) ?? { total: 0, count: 0, notes: new Set<string>() }
+          row.total += allocation.amount
+          row.count += 1
+          const note = String(receipt.notes ?? '').trim()
+          if (note) row.notes.add(note)
+          current.get(allocation.group)!.set(actual, row)
+        }
       }
       for (const receipt of prevRows) {
-        const group = receipt.vendor_name?.trim() || '未分類'
-        const actual = resolveReportingActualVendor(storeName, group, receipt.actual_vendor_name)
-        if (!previous.has(group)) previous.set(group, new Map())
-        previous.get(group)!.set(actual, (previous.get(group)!.get(actual) ?? 0) + Number(receipt.total_amount ?? 0))
+        const sourceGroup = receipt.vendor_name?.trim() || '未分類'
+        const actual = resolveReportingActualVendor(storeName, sourceGroup, receipt.actual_vendor_name)
+        for (const allocation of allocateReceiptStatistics(sourceGroup, Number(receipt.total_amount ?? 0), receipt.receipt_items)) {
+          if (!previous.has(allocation.group)) previous.set(allocation.group, new Map())
+          previous.get(allocation.group)!.set(actual, (previous.get(allocation.group)!.get(actual) ?? 0) + allocation.amount)
+        }
       }
       const names = new Set([...current.keys(), ...previous.keys()])
       return Array.from(names).map(name => {
@@ -560,6 +575,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
     }).sort((a, b) => b.cur - a.cur)
     setVendors(vList)
     setVendorGroups(receiptVendorGroups(curRec.data ?? [], prevRec.data ?? []))
+    setCurrentReceiptCount((curRec.data ?? []).length)
     setDeliveryStores([])
     setLoading(false)
   }, [storeId, storeName, storeType, start, end, ichefUberLinked, memberStoreNames])
@@ -586,7 +602,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
   const storePrev = ichefUberLinked ? Math.max(totalRevenuePrev - platformPrev, 0) : prevRev.pos + prevRev.handwrite
   const totalCost = vendors.reduce((s, v) => s + v.cur, 0)
   const visibleVendorGroups = vendorGroups.filter(group => group.cur > 0)
-  const vendorReceiptCount = visibleVendorGroups.reduce((sum, group) => sum + group.count, 0)
+  const vendorReceiptCount = currentReceiptCount
   const deliveryTotal = deliveryStores.reduce((sum, row) => sum + row.cur, 0)
   const statusCounts = bookkeepingDays.reduce((acc, day) => {
     acc[day.status] = (acc[day.status] ?? 0) + 1
