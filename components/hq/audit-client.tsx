@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Filter, ChevronDown, ChevronUp, AlertCircle, AlertTriangle, Info } from 'lucide-react'
 import Link from 'next/link'
+import { auditMetadataLabel, auditPrimitiveText, deriveLegacyCKRecordChanges } from '@/lib/audit-display'
 
 interface AuditLog {
   id: string
@@ -92,6 +93,12 @@ const EVENT_COLORS: Record<string, string> = {
   user_delete: '#ef4444',
 }
 
+const SEVERITY_LABELS: Record<AuditLog['severity'], string> = {
+  info: '一般',
+  warn: '警告',
+  error: '錯誤',
+}
+
 function formatTime(iso: string): { date: string; time: string } {
   const d = new Date(iso)
   const date = d.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei', month: '2-digit', day: '2-digit' })
@@ -163,14 +170,14 @@ export default function AuditClient({
             <select value={currentEvent} onChange={e => applyFilter({ event: e.target.value })}
               className="text-sm px-3 py-2 rounded-xl outline-none border" style={{ border: '1.5px solid #e4e4e7', background: 'white', color: '#18181b', fontFamily: 'inherit' }}>
               <option value="">所有事件</option>
-              {eventTypes.map(t => <option key={t} value={t}>{EVENT_LABELS[t] ?? t}</option>)}
+              {eventTypes.map(t => <option key={t} value={t}>{EVENT_LABELS[t] ?? '其他操作'}</option>)}
             </select>
             <select value={currentSeverity} onChange={e => applyFilter({ severity: e.target.value })}
               className="text-sm px-3 py-2 rounded-xl outline-none border" style={{ border: '1.5px solid #e4e4e7', background: 'white', color: '#18181b', fontFamily: 'inherit' }}>
               <option value="">所有等級</option>
-              <option value="info">一般 info</option>
-              <option value="warn">警告 warn</option>
-              <option value="error">錯誤 error</option>
+              <option value="info">一般</option>
+              <option value="warn">警告</option>
+              <option value="error">錯誤</option>
             </select>
             <div className="flex items-center gap-2 rounded-xl border" style={{ border: '1.5px solid #e4e4e7', background: 'white' }}>
               <label className="flex items-center gap-2 flex-1 px-3 py-2 text-sm" style={{ fontFamily: 'inherit', cursor: 'pointer' }}>
@@ -226,10 +233,10 @@ export default function AuditClient({
         </div>
       ) : (
         <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-          {logs.map(log => {
+          {logs.map((log, logIndex) => {
             const { date, time } = formatTime(log.createdAt)
             const expanded = expandedId === log.id
-            const eventLabel = EVENT_LABELS[log.eventType] ?? log.eventType
+            const eventLabel = EVENT_LABELS[log.eventType] ?? '其他操作'
             const eventColor = EVENT_COLORS[log.eventType] ?? '#71717a'
             const SeverityIcon = log.severity === 'error' ? AlertCircle : log.severity === 'warn' ? AlertTriangle : Info
             const severityColor = log.severity === 'error' ? '#ef4444' : log.severity === 'warn' ? '#f59e0b' : '#71717a'
@@ -265,8 +272,8 @@ export default function AuditClient({
                   <div className="px-4 pb-3" style={{ background: '#fafafa' }}>
                     <div className="rounded-xl p-3 space-y-1" style={{ background: 'white', border: '1px solid #f4f4f5' }}>
                       <Row label="事件 ID" value={<code className="text-xs">{log.id}</code>} />
-                      <Row label="事件類型" value={log.eventType} />
-                      <Row label="等級" value={log.severity} />
+                      <Row label="事件類型" value={eventLabel} />
+                      <Row label="等級" value={SEVERITY_LABELS[log.severity]} />
                       <Row label="時間" value={new Date(log.createdAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })} />
                       <Row label="店家" value={log.storeName} />
                       <Row label="使用者" value={log.userName} />
@@ -277,7 +284,19 @@ export default function AuditClient({
                           </Link>
                         } />
                       )}
-                      {Object.keys(log.metadata).length > 0 && <AuditMetadataDetails metadata={log.metadata} stores={stores} />}
+                      {Object.keys(log.metadata).length > 0 && (
+                        <AuditMetadataDetails
+                          metadata={log.metadata}
+                          stores={stores}
+                          olderComparableMetadata={log.eventType === 'ck_record_update'
+                            ? logs.slice(logIndex + 1)
+                                .filter(older => older.eventType === log.eventType
+                                  && older.storeId === log.storeId
+                                  && older.metadata.business_date === log.metadata.business_date)
+                                .map(older => older.metadata)
+                            : []}
+                        />
+                      )}
                     </div>
                   </div>
                 )}
@@ -303,82 +322,21 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-const METADATA_LABELS: Record<string, string> = {
-  action: '執行動作',
-  entity: '操作對象',
-  entity_type: '資料類型',
-  entity_id: '資料編號',
-  receipt_id: '收據編號',
-  original_closing_id: '原帳目編號',
-  business_date: '帳目日期',
-  month: '月份',
-  vendor: '廠商／分類',
-  actual_vendor_name: '實際廠商',
-  receipt_type: '單據類型',
-  amount: '金額',
-  total_amount: '單據總額',
-  tax_amount: '稅額',
-  note: '備註',
-  notes: '備註',
-  status: '狀態',
-  previous_status: '原狀態',
-  decision: '審核結果',
-  before: '修改前',
-  after: '修改後',
-  changes: '變更欄位',
-  items: '品項明細',
-  receipt_items: '收據品項',
-  item_name: '品項名稱',
-  item_category: '品項分類',
-  excel_column: '報表欄位',
-  quantity: '數量',
-  unit: '單位',
-  unit_price: '單價',
-  member_orders: '體系內店家金額',
-  external_orders: '體系外店家金額',
-  confirmed_amount: '央廚確認金額',
-  delivery_photo_count: '配送單照片數',
-  transfer_photo_required: '需轉帳照片',
-  transfer_photo_count: '轉帳照片數',
-  photo_count: '照片數',
-  assigned_store_ids: '指派店家',
-  error: '錯誤內容',
-  source: '操作裝置',
-  device: '裝置',
-  browser: '瀏覽器',
-  os: '作業系統',
-  pre_dispute_snapshot: '退回前完整帳目',
-  audit_version: '紀錄格式版本',
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: '草稿',
-  submitted: '待審核',
-  verified: '已核准',
-  disputed: '已退回',
-  true: '是',
-  false: '否',
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-function metadataLabel(key: string) {
-  return METADATA_LABELS[key] ?? key.replaceAll('_', ' ')
-}
-
-function primitiveText(value: unknown) {
-  if (value === null || value === undefined || value === '') return '—'
-  if (typeof value === 'boolean') return value ? '是' : '否'
-  if (typeof value === 'number') return Number.isFinite(value) ? value.toLocaleString('zh-TW') : String(value)
-  if (typeof value === 'string') return STATUS_LABELS[value] ?? value
-  return String(value)
-}
-
-function AuditMetadataDetails({ metadata, stores }: { metadata: Record<string, unknown>; stores: Props['stores'] }) {
+function AuditMetadataDetails({ metadata, stores, olderComparableMetadata }: {
+  metadata: Record<string, unknown>
+  stores: Props['stores']
+  olderComparableMetadata: Record<string, unknown>[]
+}) {
   const storeNames = new Map(stores.map(store => [store.id, store.name]))
-  const changes = Array.isArray(metadata.changes) ? metadata.changes.filter(isRecord) : []
+  const recordedChanges = Array.isArray(metadata.changes) ? metadata.changes.filter(isRecord) : []
+  const derivedChanges = recordedChanges.length === 0
+    ? deriveLegacyCKRecordChanges(metadata, olderComparableMetadata)
+    : []
+  const changes = recordedChanges.length > 0 ? recordedChanges : derivedChanges
   const remaining = Object.entries(metadata).filter(([key]) => key !== 'changes' && key !== 'audit_version')
 
   return (
@@ -386,13 +344,24 @@ function AuditMetadataDetails({ metadata, stores }: { metadata: Record<string, u
       {changes.length > 0 && (
         <section>
           <p className="text-xs font-bold mb-1.5" style={{ color: '#52525b' }}>變更欄位（{changes.length}）</p>
+          {derivedChanges.length > 0 && (
+            <p className="text-[10px] mb-1.5" style={{ color: '#71717a' }}>依同一店家、同一日期的上一筆操作紀錄比較</p>
+          )}
           <div className="space-y-1.5">
             {changes.map((change, index) => {
               const field = typeof change.field === 'string' ? change.field : `change_${index}`
-              const label = typeof change.label === 'string' ? change.label : metadataLabel(field)
+              const suppliedLabel = typeof change.label === 'string' ? change.label.trim() : ''
+              const label = suppliedLabel && /[\u3400-\u9fff]/u.test(suppliedLabel)
+                ? suppliedLabel
+                : auditMetadataLabel(field)
               return (
                 <div key={`${field}-${index}`} className="rounded-lg px-3 py-2" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
                   <p className="text-[11px] font-bold mb-1" style={{ color: '#92400e' }}>{label}</p>
+                  <div className="grid grid-cols-[1fr_auto_1fr] gap-2 text-[10px] font-bold mb-1">
+                    <span style={{ color: '#dc2626' }}>修改前</span>
+                    <span aria-hidden="true" />
+                    <span style={{ color: '#059669' }}>修改後</span>
+                  </div>
                   <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2 text-xs">
                     <AuditValue value={change.before} field={field} storeNames={storeNames} />
                     <span style={{ color: '#a1a1aa' }}>→</span>
@@ -406,11 +375,11 @@ function AuditMetadataDetails({ metadata, stores }: { metadata: Record<string, u
       )}
       {remaining.length > 0 && (
         <section>
-          <p className="text-xs font-bold mb-1.5" style={{ color: '#52525b' }}>完整操作內容</p>
+          <p className="text-xs font-bold mb-1.5" style={{ color: '#52525b' }}>本次操作的完整內容</p>
           <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #e4e4e7' }}>
             {remaining.map(([key, value]) => (
               <div key={key} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 px-3 py-2 text-xs" style={{ borderBottom: '1px solid #f4f4f5' }}>
-                <span className="font-semibold" style={{ color: '#71717a' }}>{metadataLabel(key)}</span>
+                <span className="font-semibold" style={{ color: '#71717a' }}>{auditMetadataLabel(key)}</span>
                 <AuditValue value={value} field={key} storeNames={storeNames} />
               </div>
             ))}
@@ -446,7 +415,7 @@ function AuditValue({ value, field, storeNames }: {
       <div className="space-y-1 min-w-0">
         {Object.entries(value).map(([key, child]) => (
           <div key={key} className="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
-            <span className="font-medium" style={{ color: '#71717a' }}>{metadataLabel(key)}</span>
+            <span className="font-medium" style={{ color: '#71717a' }}>{auditMetadataLabel(key)}</span>
             <AuditValue value={child} field={key} storeNames={storeNames} />
           </div>
         ))}
@@ -461,8 +430,8 @@ function AuditValue({ value, field, storeNames }: {
     if (/photo.*url|photo_url/i.test(field) && /^https?:\/\//.test(value)) {
       return <a href={value} target="_blank" rel="noreferrer" className="text-blue-600 underline">查看保存的照片</a>
     }
-    return <span className="break-words">{storeName ? `${storeName}（${value.slice(0, 8)}）` : primitiveText(value)}</span>
+    return <span className="break-words">{storeName ? `${storeName}（${value.slice(0, 8)}）` : auditPrimitiveText(value)}</span>
   }
 
-  return <span className="break-words">{primitiveText(value)}</span>
+  return <span className="break-words">{auditPrimitiveText(value)}</span>
 }
