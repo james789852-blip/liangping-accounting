@@ -8,6 +8,7 @@ import { normalizeItemAmount } from '@/lib/negative-items'
 import { getNegativeItemMappingIds } from '@/lib/item-mapping-negative'
 import { receiptDateWriteError } from '@/lib/receipt-write-access'
 import { syncSingleReceiptItemAmount } from '@/lib/receipt-amount-consistency'
+import { normalizeActualVendorName, requiredActualVendorError } from '@/lib/required-actual-vendor'
 
 interface ReceiptItemPayload {
   item_name: string
@@ -74,10 +75,6 @@ function receiptAuditSnapshot(
   }
 }
 
-function normalizeActualVendorName(name?: string | null) {
-  return (name ?? '').replace(/[\s　]+/g, '').trim()
-}
-
 async function rememberActualVendor(admin: ReturnType<typeof createAdminClient>, storeId: string, vendorGroup: string, name?: string) {
   const trimmed = normalizeActualVendorName(name)
   if (!trimmed) return
@@ -94,6 +91,8 @@ export async function saveReceipt(payload: SaveReceiptPayload) {
   const ctx = await getAuthContext()
   if (!ctx) return { error: '未登入' }
   if (!canAccessStore(ctx, payload.storeId)) return { error: '無權限存取此店家' }
+  const actualVendorError = requiredActualVendorError(payload.vendorName, payload.actualVendorName)
+  if (actualVendorError) return { error: actualVendorError }
 
   const admin = createAdminClient()
   const lockError = await receiptDateWriteError(admin, payload.storeId, payload.businessDate)
@@ -244,6 +243,8 @@ export async function updateReceipt(
 
   const storeId = existing.store_id as string
   if (!canAccessStore(ctx, storeId)) return { error: '無權限存取此收據' }
+  const actualVendorError = requiredActualVendorError(payload.vendorName, payload.actualVendorName)
+  if (actualVendorError) return { error: actualVendorError }
   if (payload.expectedUpdatedAt && existing.updated_at !== payload.expectedUpdatedAt) {
     return { error: '這筆單據已被其他人更新，請重新整理後再修改' }
   }

@@ -29,7 +29,8 @@ import { prepareReserveDraftItems } from '@/lib/reserve-draft'
 import { getEnvelopePackingState } from '@/lib/envelope-packing'
 import { hasSelectableVendorItems } from '@/lib/vendor-only-mapping'
 import { syncSingleReceiptItemAmount } from '@/lib/receipt-amount-consistency'
-import { updateReceipt } from '@/app/actions/receipts'
+import { saveReceipt, updateReceipt } from '@/app/actions/receipts'
+import { normalizeActualVendorName, requiredActualVendorError, requiresActualVendorName } from '@/lib/required-actual-vendor'
 
 interface RemittanceAdjustment {
   id: string
@@ -301,10 +302,6 @@ function formatTaipeiEditTime(value?: string | null) {
 }
 
 const NEW_ACTUAL_VENDOR_VALUE = '__new_actual_vendor__'
-
-function normalizeActualVendorName(name?: string | null) {
-  return (name ?? '').replace(/[\s　]+/g, '').trim()
-}
 
 interface FormData {
   pos_cash: number
@@ -2445,6 +2442,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       return
     }
     if (!editingReceiptId) return
+    const actualVendorError = requiredActualVendorError(editVendor, editActualVendor)
+    if (actualVendorError) {
+      toast.error(actualVendorError)
+      return
+    }
     const editAmountValid = isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns)
     if (!editAmountValid) {
       toast.error(editReceiptForcesNegativeTotal(editCategory, editVendor, editItems, mappingColumns)
@@ -2772,21 +2774,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     if (name) onSelect(name)
   }
 
-  async function rememberActualVendor(supabase: ReturnType<typeof createClient>, vendorGroup: string, name?: string) {
-    const trimmed = normalizeActualVendorName(name)
-    if (!trimmed) return
-    addKnownActualVendor(vendorGroup, trimmed)
-    await supabase.from('store_actual_vendors').upsert({
-      store_id: store.id,
-      vendor_group: vendorGroup.trim() || '未分類',
-      name: trimmed,
-      active: true,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'store_id,vendor_group,name' })
-  }
-
-
-
   function removeReceiptForm(id: string) {
     setReceiptForms(prev => {
       const form = prev.find(f => f.id === id)
@@ -2798,6 +2785,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   async function saveReceiptForm(form: ReceiptForm) {
     if (editConflictRef.current) {
       toast.error('請先重新整理最新資料，再新增單據。')
+      return
+    }
+    const actualVendorError = requiredActualVendorError(form.vendor_name, form.actual_vendor_name)
+    if (actualVendorError) {
+      toast.error(actualVendorError)
       return
     }
     const amountValid = isReceiptFormAmountValid(form, mappingColumns)
@@ -2832,7 +2824,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
     if (!await handleSave(true)) return
     setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: true } : f))
-    const supabase = createClient()
     let photo_url = form.uploadedPhotoUrl ?? ''
     if (!photo_url && form.file) {
       const path = storePhotoPath(store.id, today, 'receipts', uniquePhotoFilename(`receipt-${form.id}`, form.file))
@@ -2842,26 +2833,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     const taxMapping = findTaxAddonMapping(mappingColumns, form.vendor_name, form.category, form.items ?? [])
     const taxAmount = taxMapping && form.has_tax ? Math.max(0, form.tax_amount) : 0
     const finalTotal = form.total_amount + taxAmount
-    const receiptUpdatedAt = new Date().toISOString()
-    const { data: saved, error } = await supabase.from('receipts').insert({
-      store_id: store.id,
-      business_date: today,
-      vendor_name: form.vendor_name.trim(),
-      actual_vendor_name: normalizeActualVendorName(form.actual_vendor_name) || null,
-      receipt_type: 'receipt',
-      total_amount: finalTotal,
-      tax_amount: taxAmount,
-      photo_url: photo_url || null,
-      notes: form.notes.trim() || null,
-      created_by: userId,
-      updated_at: receiptUpdatedAt,
-    }).select('id, updated_at').single()
-    if (error) {
-      toast.error('儲存失敗：' + error.message)
-      setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: false } : f))
-      return
-    }
-    await rememberActualVendor(supabase, form.vendor_name, form.actual_vendor_name)
     let validItems = syncSingleReceiptItemAmount((form.items ?? []).filter(item => !mappingColumns.some(column => column.is_tax_addon && column.name === item.item_name)), finalTotal, taxAmount)
     if (validItems.length === 0 && (isNoItemMode || mappingColumns.some(c => c.name === form.vendor_name.trim()))) {
       // 廠商本身就是品項 → 自動用 vendor_name 建 1 個 item
@@ -2880,28 +2851,41 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       const match = resolveFormItemMapping(item)
       return { ...item, item_name: match?.name ?? item.item_name.trim(), item_mapping_id: match?.mapping_id ?? null, vendor_group_hint: match?.vendor_group ?? item.vendor_group_hint }
     })
-    if (canonicalItems.length > 0) {
-      await supabase.from('receipt_items').insert(
-        canonicalItems.map(i => {
-          const match = resolveFormItemMapping(i)
-          return {
-            receipt_id: saved.id,
-            item_name: i.item_name.trim(),
-            unit: i.unit,
-            quantity: i.quantity,
-            unit_price: i.unit_price ?? 0,
-            amount: normalizeItemAmount(i.item_name, i.amount, !!match?.is_negative),
-            item_category: match?.category ?? '食材',
-            excel_column: match?.excel_column ?? match?.name ?? '',
-            item_mapping_id: match?.mapping_id ?? null,
-            vendor_group_snapshot: match?.vendor_group ?? form.vendor_name ?? null,
-          }
-        })
-      )
+    const receiptUpdatedAt = new Date().toISOString()
+    const saveResult = await saveReceipt({
+      storeId: store.id,
+      businessDate: today,
+      vendorName: form.vendor_name.trim(),
+      actualVendorName: normalizeActualVendorName(form.actual_vendor_name),
+      receiptType: 'receipt',
+      totalAmount: finalTotal,
+      taxAmount,
+      photoUrl: photo_url,
+      notes: form.notes.trim(),
+      items: canonicalItems.map(item => {
+        const match = resolveFormItemMapping(item)
+        return {
+          item_name: item.item_name.trim(),
+          unit: item.unit,
+          quantity: item.quantity,
+          unit_price: item.unit_price ?? 0,
+          amount: normalizeItemAmount(item.item_name, item.amount, !!match?.is_negative),
+          item_category: match?.category ?? '食材',
+          excel_column: match?.excel_column ?? match?.name ?? '',
+          item_mapping_id: match?.mapping_id ?? null,
+          vendor_group_snapshot: match?.vendor_group ?? form.vendor_name ?? null,
+        }
+      }),
+    })
+    if (saveResult.error || !saveResult.id) {
+      toast.error('儲存失敗：' + (saveResult.error ?? '找不到新增後的單據'))
+      setReceiptForms(prev => prev.map(f => f.id === form.id ? { ...f, uploading: false } : f))
+      return
     }
+    addKnownActualVendor(form.vendor_name, form.actual_vendor_name)
 
     const newR: TodayReceipt = {
-      id: saved.id,
+      id: saveResult.id,
       vendor_name: form.vendor_name.trim(),
       actual_vendor_name: normalizeActualVendorName(form.actual_vendor_name) || null,
       total_amount: finalTotal,
@@ -2909,7 +2893,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
       receipt_type: 'receipt',
       photo_url,
       notes: form.notes.trim() || undefined,
-      updated_at: saved.updated_at ?? receiptUpdatedAt,
+      updated_at: receiptUpdatedAt,
       receipt_items: canonicalItems,
     }
     const updated = [...localReceipts, newR]
@@ -3513,6 +3497,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     }
     if (hasPendingPhotoUploads) {
       toast.error('照片仍在上傳中，請等候上傳完成後再送出')
+      return
+    }
+    const missingActualVendorCount = localReceipts.filter(receipt =>
+      requiredActualVendorError(receipt.vendor_name, receipt.actual_vendor_name),
+    ).length
+    if (missingActualVendorCount > 0) {
+      toast.error(`仍有 ${missingActualVendorCount} 筆菜商、雜貨或免洗單據尚未填寫實際廠商`)
+      goToStep(STEPS.findIndex(step => step.id === 'receipts'))
       return
     }
     if (!pettyIsComplete) {
@@ -4312,16 +4304,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         </div>
 
                         {/* 實際廠商 */}
-                        {!isDirectReceiptCategory(form.category) && <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', border: '1.5px solid #93c5fd', borderRadius: '10px', background: '#eff6ff' }}>
-                          <label style={{ fontSize: '13px', color: '#1d4ed8', fontWeight: 800 }}>實際廠商名稱（選填）</label>
-                          <p style={{ fontSize: '11px', color: '#2563eb', fontWeight: 600 }}>可輸入此類別的廠商名稱，方便後續統計；沒有需要統計時可留白。</p>
+                        {!isDirectReceiptCategory(form.category) && <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', border: `1.5px solid ${requiresActualVendorName(form.vendor_name) && !normalizeActualVendorName(form.actual_vendor_name) ? '#f87171' : '#93c5fd'}`, borderRadius: '10px', background: requiresActualVendorName(form.vendor_name) && !normalizeActualVendorName(form.actual_vendor_name) ? '#fef2f2' : '#eff6ff' }}>
+                          <label style={{ fontSize: '13px', color: requiresActualVendorName(form.vendor_name) ? '#dc2626' : '#1d4ed8', fontWeight: 800 }}>實際廠商名稱（{requiresActualVendorName(form.vendor_name) ? '必填' : '選填'}）</label>
+                          <p style={{ fontSize: '11px', color: requiresActualVendorName(form.vendor_name) ? '#dc2626' : '#2563eb', fontWeight: 600 }}>{requiresActualVendorName(form.vendor_name) ? '菜商、雜貨、免洗必須選擇實際廠商，才能儲存。' : '可輸入此類別的廠商名稱，方便後續統計；沒有需要統計時可留白。'}</p>
                           {(() => {
                             const options = actualVendorOptions(form.vendor_name)
                             const current = normalizeActualVendorName(form.actual_vendor_name)
                             return (
                               <select
                                 className="receipt-field"
-                                style={{ padding: '10px 12px', minHeight: '42px', border: '2px solid #60a5fa', borderRadius: '8px', fontSize: '14px', fontWeight: 700, fontFamily: 'inherit', background: 'white', outline: 'none', color: current ? '#18181b' : '#1d4ed8' }}
+                                required={requiresActualVendorName(form.vendor_name)}
+                                aria-required={requiresActualVendorName(form.vendor_name)}
+                                style={{ padding: '10px 12px', minHeight: '42px', border: `2px solid ${requiresActualVendorName(form.vendor_name) && !current ? '#ef4444' : '#60a5fa'}`, borderRadius: '8px', fontSize: '14px', fontWeight: 700, fontFamily: 'inherit', background: 'white', outline: 'none', color: current ? '#18181b' : requiresActualVendorName(form.vendor_name) ? '#dc2626' : '#1d4ed8' }}
                                 value={current}
                                 disabled={!form.vendor_name.trim()}
                                 onChange={e => {
@@ -4661,13 +4655,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: '4px 8px', fontFamily: 'inherit' }}>
                             <Trash2 className="h-3 w-3" />刪除
                           </button>
-                          <button onClick={() => saveReceiptForm(form)} disabled={form.uploading || !isReceiptFormAmountValid(form, mappingColumns)}
+                          <button onClick={() => saveReceiptForm(form)} disabled={form.uploading || !isReceiptFormAmountValid(form, mappingColumns) || !!requiredActualVendorError(form.vendor_name, form.actual_vendor_name)}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
                             style={{
-                              background: isReceiptFormAmountValid(form, mappingColumns) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
-                              cursor: isReceiptFormAmountValid(form, mappingColumns) ? 'pointer' : 'not-allowed',
+                              background: isReceiptFormAmountValid(form, mappingColumns) && !requiredActualVendorError(form.vendor_name, form.actual_vendor_name) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
+                              cursor: isReceiptFormAmountValid(form, mappingColumns) && !requiredActualVendorError(form.vendor_name, form.actual_vendor_name) ? 'pointer' : 'not-allowed',
                               opacity: form.uploading ? 0.7 : 1, border: 'none', fontFamily: 'inherit',
-                              boxShadow: isReceiptFormAmountValid(form, mappingColumns) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
+                              boxShadow: isReceiptFormAmountValid(form, mappingColumns) && !requiredActualVendorError(form.vendor_name, form.actual_vendor_name) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
                             }}>
                             {form.uploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />儲存中…</> : '儲存'}
                           </button>
@@ -4804,16 +4798,18 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             </div>
 
                             {/* 實際廠商 */}
-                            {!isDirectReceiptCategory(editCategory) && <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '13px', color: '#1d4ed8', fontWeight: 800 }}>實際廠商名稱（選填）</label>
-                              <p style={{ fontSize: '11px', color: '#2563eb', fontWeight: 600 }}>可輸入此類別的廠商名稱，方便後續統計；沒有需要統計時可留白。</p>
+                            {!isDirectReceiptCategory(editCategory) && <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: '4px', padding: requiresActualVendorName(editVendor) ? '10px 12px' : 0, border: requiresActualVendorName(editVendor) ? `1.5px solid ${normalizeActualVendorName(editActualVendor) ? '#93c5fd' : '#f87171'}` : 'none', borderRadius: requiresActualVendorName(editVendor) ? '10px' : 0, background: requiresActualVendorName(editVendor) && !normalizeActualVendorName(editActualVendor) ? '#fef2f2' : 'transparent' }}>
+                              <label style={{ fontSize: '13px', color: requiresActualVendorName(editVendor) ? '#dc2626' : '#1d4ed8', fontWeight: 800 }}>實際廠商名稱（{requiresActualVendorName(editVendor) ? '必填' : '選填'}）</label>
+                              <p style={{ fontSize: '11px', color: requiresActualVendorName(editVendor) ? '#dc2626' : '#2563eb', fontWeight: 600 }}>{requiresActualVendorName(editVendor) ? '菜商、雜貨、免洗必須選擇實際廠商，才能儲存。' : '可輸入此類別的廠商名稱，方便後續統計；沒有需要統計時可留白。'}</p>
                               {(() => {
                                 const options = actualVendorOptions(editVendor)
                                 const current = normalizeActualVendorName(editActualVendor)
                                 return (
                                   <select
                                     className="receipt-field"
-                                    style={{ padding: '10px 12px', minHeight: '42px', border: '2px solid #60a5fa', borderRadius: '8px', fontSize: '14px', fontWeight: 700, fontFamily: 'inherit', background: 'white', outline: 'none', color: current ? '#18181b' : '#1d4ed8' }}
+                                    required={requiresActualVendorName(editVendor)}
+                                    aria-required={requiresActualVendorName(editVendor)}
+                                    style={{ padding: '10px 12px', minHeight: '42px', border: `2px solid ${requiresActualVendorName(editVendor) && !current ? '#ef4444' : '#60a5fa'}`, borderRadius: '8px', fontSize: '14px', fontWeight: 700, fontFamily: 'inherit', background: 'white', outline: 'none', color: current ? '#18181b' : requiresActualVendorName(editVendor) ? '#dc2626' : '#1d4ed8' }}
                                     value={current}
                                     disabled={!editVendor.trim()}
                                     onChange={e => {
@@ -5135,13 +5131,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: '4px 8px', fontFamily: 'inherit' }}>
                                 <X className="h-3 w-3" />取消
                               </button>
-                              <button onClick={handleSaveReceiptEdit} disabled={!isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns) || editUploading}
+                              <button onClick={handleSaveReceiptEdit} disabled={!isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns) || editUploading || !!requiredActualVendorError(editVendor, editActualVendor)}
                                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
                                 style={{
-                                  background: isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
-                                  cursor: isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns) ? 'pointer' : 'not-allowed',
+                                  background: isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns) && !requiredActualVendorError(editVendor, editActualVendor) ? 'linear-gradient(135deg,#F59E0B,#F97316)' : '#d4d4d8',
+                                  cursor: isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns) && !requiredActualVendorError(editVendor, editActualVendor) ? 'pointer' : 'not-allowed',
                                   opacity: editUploading ? 0.7 : 1, border: 'none', fontFamily: 'inherit',
-                                  boxShadow: isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
+                                  boxShadow: isEditReceiptAmountValid(editCategory, editVendor, editItems, editAmount, mappingColumns) && !requiredActualVendorError(editVendor, editActualVendor) ? '0 4px 12px rgba(245,158,11,0.3)' : 'none',
                                 }}>
                                 {editUploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />儲存中…</> : '儲存'}
                               </button>

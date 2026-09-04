@@ -10,6 +10,7 @@ import { syncClosingToSheets, syncMonthToSheets } from '@/lib/google-sheets'
 import { buildAuditChanges, logAudit } from '@/lib/audit'
 import { getAuthContext, canAccessStore, getClosingMeta } from '@/lib/permissions'
 import { canReviewClosings } from '@/lib/user-permissions'
+import { requiredActualVendorError } from '@/lib/required-actual-vendor'
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
 
@@ -560,19 +561,37 @@ export async function submitClosing(closingId: string) {
   }
 
   const admin = createAdminClient()
-  // 送出前再由伺服器檢查「永久照片網址」是否已寫入帳目。Client 的 blob 預覽
-  // 既不能跨裝置，也會在重新整理後失效，絕不能被視為已完成上傳。
-  const { data: submission, error: submissionError } = await admin
-    .from('daily_closings')
-    .select(`
-      actual_remit, remittance_adjustments, reserve_items,
-      envelope_photo_url, ck_delivery_photo_url, channel_photo_urls,
-      cash_counts(large_expenses), order_items(vendor, quantity),
-      revenue_items(channel, account_name, gross_amount)
-    `)
-    .eq('id', closingId)
-    .maybeSingle()
+  // 兩項送出前檢查彼此獨立，同時查詢以避免增加店長等待時間。
+  const [
+    { data: receiptsForSubmission, error: receiptsError },
+    { data: submission, error: submissionError },
+  ] = await Promise.all([
+    admin
+      .from('receipts')
+      .select('vendor_name, actual_vendor_name')
+      .eq('store_id', meta.storeId)
+      .eq('business_date', meta.businessDate),
+    admin
+      .from('daily_closings')
+      .select(`
+        actual_remit, remittance_adjustments, reserve_items,
+        envelope_photo_url, ck_delivery_photo_url, channel_photo_urls,
+        cash_counts(large_expenses), order_items(vendor, quantity),
+        revenue_items(channel, account_name, gross_amount)
+      `)
+      .eq('id', closingId)
+      .maybeSingle(),
+  ])
+  if (receiptsError) return { error: `檢查實際廠商失敗：${receiptsError.message}` }
+  const missingActualVendorCount = (receiptsForSubmission ?? []).filter(receipt =>
+    requiredActualVendorError(receipt.vendor_name, receipt.actual_vendor_name),
+  ).length
+  if (missingActualVendorCount > 0) {
+    return { error: `仍有 ${missingActualVendorCount} 筆菜商、雜貨或免洗單據尚未填寫實際廠商` }
+  }
 
+  // 伺服器檢查「永久照片網址」已寫入帳目。Client 的 blob 預覽既不能跨裝置，
+  // 也會在重新整理後失效，絕不能被視為已完成上傳。
   if (submissionError) return { error: submissionError.message }
   if (!submission) return { error: '找不到此帳目' }
 

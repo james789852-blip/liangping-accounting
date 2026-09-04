@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator'
 import { storePhotoPath } from '@/lib/storage-paths'
 import { isNegativeItem, normalizeItemAmount } from '@/lib/negative-items'
 import { syncSingleReceiptItemAmount } from '@/lib/receipt-amount-consistency'
+import { requiredActualVendorError, requiresActualVendorName } from '@/lib/required-actual-vendor'
 
 interface MappingOption {
   id?: string; item_name: string; excel_column: string; item_category: string; vendor_group?: string | null; is_negative?: boolean; sign_mode?: 'positive' | 'negative' | 'flexible'
@@ -223,6 +224,11 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
   }
 
   function handleSave() {
+    const actualVendorError = requiredActualVendorError(vendorName, actualVendorName)
+    if (actualVendorError) {
+      setError(actualVendorError)
+      return
+    }
     startTransition(async () => {
       setStep('saving')
       const validItems = syncSingleReceiptItemAmount(
@@ -342,9 +348,11 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
             value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="例：菜商、央廚配送" />
         </div>
         <div>
-          <label className="text-xs text-slate-500 mb-1 block">實際廠商（可空）</label>
+          <label className="text-xs text-slate-500 mb-1 block">實際廠商（{requiresActualVendorName(vendorName) ? '必填' : '可空'}）</label>
           <input className="w-full h-9 px-3 text-sm rounded-lg border border-slate-200 outline-none focus:border-blue-500"
+            required={requiresActualVendorName(vendorName)} aria-required={requiresActualVendorName(vendorName)}
             value={actualVendorName} onChange={e => setActualVendorName(e.target.value)} placeholder="例：昇威、有厲、某某菜行" />
+          {requiresActualVendorName(vendorName) && !actualVendorName.trim() && <p className="mt-1 text-[11px] font-semibold text-red-500">此分類必須填寫實際廠商</p>}
         </div>
         <div>
           <label className="text-xs text-slate-500 mb-1 block">單據類型</label>
