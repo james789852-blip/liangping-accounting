@@ -24,8 +24,6 @@ type VendorDetail = {
   name: string
   total: number
   count: number
-  taxExemptRiceTotal: number
-  taxExemptRiceCount: number
 }
 type ReceiptDetail = {
   id: string
@@ -42,6 +40,8 @@ type VendorStat = {
   group: string
   total: number
   count: number
+  taxExemptRiceTotal: number
+  taxExemptRiceCount: number
   vendors: VendorDetail[]
   details: ReceiptDetail[]
 }
@@ -218,27 +218,27 @@ export default async function HQDashboard({
       group: sourceGroup,
       total: 0,
       count: 0,
+      taxExemptRiceTotal: 0,
+      taxExemptRiceCount: 0,
       vendors: [],
       details: [],
       vendorMap: new Map<string, VendorDetail>(),
     }
     row.total += amount
     row.count += 1
+    const riceAllocation = allocations.find(allocation => allocation.group === TAX_EXEMPT_RICE_GROUP)
+    if (riceAllocation) {
+      row.taxExemptRiceTotal += riceAllocation.amount
+      row.taxExemptRiceCount += 1
+    }
     if (actualVendor) {
       const detail = row.vendorMap.get(actualVendor) ?? {
         name: actualVendor,
         total: 0,
         count: 0,
-        taxExemptRiceTotal: 0,
-        taxExemptRiceCount: 0,
       }
       detail.total += amount
       detail.count += 1
-      const riceAllocation = allocations.find(allocation => allocation.group === TAX_EXEMPT_RICE_GROUP)
-      if (riceAllocation) {
-        detail.taxExemptRiceTotal += riceAllocation.amount
-        detail.taxExemptRiceCount += 1
-      }
       row.vendorMap.set(actualVendor, detail)
     }
     row.details.push({
@@ -263,6 +263,8 @@ export default async function HQDashboard({
       group: expense.group,
       total: 0,
       count: 0,
+      taxExemptRiceTotal: 0,
+      taxExemptRiceCount: 0,
       vendors: [],
       details: [],
       vendorMap: new Map<string, VendorDetail>(),
@@ -532,7 +534,12 @@ function StoreStatsCard({ store, rank, isKitchen }: { store: StoreSummary; rank:
                   {category.groups.map(group => (
                     <div key={`${group.storeId}-${category.name}-${group.group}`} className="rounded-lg overflow-hidden" style={{ background: 'white', border: '1px solid #f1f5f9' }}>
                       <div className="grid grid-cols-[1fr_55px_95px] gap-2 items-center px-2.5 py-2">
-                        <span className="text-sm font-semibold truncate" style={{ color: '#52525b' }}>↳ {group.group}</span>
+                        <div className="min-w-0 flex flex-wrap items-center gap-1.5">
+                          <span className="text-sm font-semibold truncate" style={{ color: '#52525b' }}>↳ {group.group}</span>
+                          {group.taxExemptRiceTotal !== 0 && <span className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
+                            {TAX_EXEMPT_RICE_GROUP} ${fmt(group.taxExemptRiceTotal)}
+                          </span>}
+                        </div>
                         <span className="text-xs text-center tabular-nums" style={{ color: '#a1a1aa' }}>{group.count} 筆</span>
                         <span className="text-sm text-right font-bold tabular-nums" style={{ color: '#c2410c' }}>${fmt(group.total)}</span>
                       </div>
@@ -543,11 +550,6 @@ function StoreStatsCard({ store, rank, isKitchen }: { store: StoreSummary; rank:
                             <span className="text-[11px] text-center tabular-nums" style={{ color: '#a1a1aa' }}>{actual.count} 筆</span>
                             <span className="text-xs text-right font-semibold tabular-nums" style={{ color: '#c2410c' }}>${fmt(actual.total)}</span>
                           </div>
-                          {actual.taxExemptRiceTotal !== 0 && <div className="grid grid-cols-[1fr_55px_95px] gap-2 items-center mx-2 mb-1.5 px-2 py-1.5 rounded-md" style={{ background: '#fff7ed', borderLeft: '2px solid #fdba74' }}>
-                            <span className="text-[11px] truncate" style={{ color: '#9a3412' }}>↳ {TAX_EXEMPT_RICE_GROUP}</span>
-                            <span className="text-[10px] text-center tabular-nums" style={{ color: '#a1a1aa' }}>{actual.taxExemptRiceCount} 筆</span>
-                            <span className="text-[11px] text-right font-semibold tabular-nums" style={{ color: '#c2410c' }}>${fmt(actual.taxExemptRiceTotal)}</span>
-                          </div>}
                         </div>)}
                       </div>}
                       <details className="group/receipts mx-2 mb-2 overflow-hidden rounded-lg" style={{ border: '1px solid #e2e8f0', background: '#f8fafc' }}>

@@ -56,7 +56,7 @@ test('景新8月雜貨拆分為米78000與其他雜貨24600', () => {
   assert.equal(allocations.reduce((sum, row) => sum + row.amount, 0), 102_600)
 })
 
-test('府中8月名陽保留完整146940，米僅作為其下110500的小計', () => {
+test('府中8月雜貨保留完整146940，米在分類旁顯示110500小計', () => {
   const allocations = allocateReceiptStatistics('雜貨', 146_940, [
     { item_name: '米', amount: 110_500 },
     { item_name: '其他雜貨', amount: 36_440 },
@@ -68,16 +68,19 @@ test('府中8月名陽保留完整146940，米僅作為其下110500的小計', (
   assert.equal(146_940, 110_500 + 36_440)
 })
 
-test('米免稅統計放在雜貨的實際廠商底下，廠商仍保留完整單據金額', () => {
+test('米免稅統計放在雜貨分類旁，不會錯誤歸給其中一間廠商', () => {
   assert.match(hqDashboardSource, /receipt_items\(item_name, amount\)/)
   assert.match(hqDashboardSource, /allocateReceiptStatistics\(sourceGroup, amount, receipt\.receipt_items\)/)
   assert.match(hqDashboardSource, /group: sourceGroup/)
   assert.match(hqDashboardSource, /detail\.total \+= amount/)
-  assert.match(hqDashboardSource, /detail\.taxExemptRiceTotal \+= riceAllocation\.amount/)
-  assert.match(hqDashboardSource, /actual\.taxExemptRiceTotal/)
+  assert.match(hqDashboardSource, /row\.taxExemptRiceTotal \+= riceAllocation\.amount/)
+  assert.match(hqDashboardSource, /group\.taxExemptRiceTotal/)
+  assert.doesNotMatch(hqDashboardSource, /actual\.taxExemptRiceTotal/)
   assert.match(managerAnalyticsSource, /allocateReceiptStatistics\(sourceGroup, Number\(receipt\.total_amount \?\? 0\), receipt\.receipt_items\)/)
   assert.match(managerAnalyticsSource, /row\.total \+= Number\(receipt\.total_amount \?\? 0\)/)
-  assert.match(managerAnalyticsSource, /row\.riceTotal \+= riceAllocation\.amount/)
+  assert.match(managerAnalyticsSource, /currentRice\.set\(sourceGroup, rice\)/)
+  assert.match(managerAnalyticsSource, /group\.taxExemptRiceCur/)
+  assert.doesNotMatch(managerAnalyticsSource, /vendor\.taxExemptRiceCur/)
   assert.match(managerAnalyticsSource, /currentCounts\.set\(sourceGroup/)
   assert.match(managerAnalyticsSource, /count: currentCounts\.get\(name\) \?\? 0/)
   assert.match(managerAnalyticsSource, /const vendorReceiptCount = currentReceiptCount/)

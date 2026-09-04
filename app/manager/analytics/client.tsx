@@ -86,11 +86,17 @@ interface ActualVendor {
   prev: number
   count: number
   notes: string[]
+}
+interface VendorGroupAnalysis {
+  name: string
+  cur: number
+  prev: number
+  count: number
   taxExemptRiceCur: number
   taxExemptRicePrev: number
   taxExemptRiceCount: number
+  vendors: ActualVendor[]
 }
-interface VendorGroupAnalysis { name: string; cur: number; prev: number; count: number; vendors: ActualVendor[] }
 interface BookkeepingDay { date: string; status: string; revenue: number; cost: number }
 interface DeliveryStoreStat { name: string; cur: number; prev: number; count: number }
 
@@ -378,15 +384,15 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
             prev: prevMap.get(actual) ?? 0,
             count: curMap.get(actual)?.count ?? 0,
             notes: Array.from(curMap.get(actual)?.notes ?? []).filter((note): note is string => typeof note === 'string'),
-            taxExemptRiceCur: 0,
-            taxExemptRicePrev: 0,
-            taxExemptRiceCount: 0,
           })).sort((a, b) => b.cur - a.cur)
           return {
             name,
             cur: vendors.reduce((sum, vendor) => sum + vendor.cur, 0),
             prev: vendors.reduce((sum, vendor) => sum + vendor.prev, 0),
             count: vendors.reduce((sum, vendor) => sum + vendor.count, 0),
+            taxExemptRiceCur: 0,
+            taxExemptRicePrev: 0,
+            taxExemptRiceCount: 0,
             vendors,
           }
         }).sort((a, b) => b.cur - a.cur)
@@ -514,9 +520,11 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
       return map
     }
     function receiptVendorGroups(rows: any[], prevRows: any[]): VendorGroupAnalysis[] {
-      const current = new Map<string, Map<string, { total: number; count: number; notes: Set<string>; riceTotal: number; riceCount: number }>>()
-      const previous = new Map<string, Map<string, { total: number; riceTotal: number }>>()
+      const current = new Map<string, Map<string, { total: number; count: number; notes: Set<string> }>>()
+      const previous = new Map<string, Map<string, number>>()
       const currentCounts = new Map<string, number>()
+      const currentRice = new Map<string, { total: number; count: number }>()
+      const previousRice = new Map<string, number>()
       for (const receipt of rows) {
         const sourceGroup = receipt.vendor_name?.trim() || '未分類'
         const actual = resolveReportingActualVendor(storeName, sourceGroup, receipt.actual_vendor_name)
@@ -524,12 +532,14 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
         const allocations = allocateReceiptStatistics(sourceGroup, Number(receipt.total_amount ?? 0), receipt.receipt_items)
         const riceAllocation = allocations.find(allocation => allocation.group === TAX_EXEMPT_RICE_GROUP)
         if (!current.has(sourceGroup)) current.set(sourceGroup, new Map())
-        const row = current.get(sourceGroup)!.get(actual) ?? { total: 0, count: 0, notes: new Set<string>(), riceTotal: 0, riceCount: 0 }
+        const row = current.get(sourceGroup)!.get(actual) ?? { total: 0, count: 0, notes: new Set<string>() }
         row.total += Number(receipt.total_amount ?? 0)
         row.count += 1
         if (riceAllocation) {
-          row.riceTotal += riceAllocation.amount
-          row.riceCount += 1
+          const rice = currentRice.get(sourceGroup) ?? { total: 0, count: 0 }
+          rice.total += riceAllocation.amount
+          rice.count += 1
+          currentRice.set(sourceGroup, rice)
         }
         const note = String(receipt.notes ?? '').trim()
         if (note) row.notes.add(note)
@@ -541,10 +551,8 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
         const allocations = allocateReceiptStatistics(sourceGroup, Number(receipt.total_amount ?? 0), receipt.receipt_items)
         const riceAllocation = allocations.find(allocation => allocation.group === TAX_EXEMPT_RICE_GROUP)
         if (!previous.has(sourceGroup)) previous.set(sourceGroup, new Map())
-        const row = previous.get(sourceGroup)!.get(actual) ?? { total: 0, riceTotal: 0 }
-        row.total += Number(receipt.total_amount ?? 0)
-        if (riceAllocation) row.riceTotal += riceAllocation.amount
-        previous.get(sourceGroup)!.set(actual, row)
+        previous.get(sourceGroup)!.set(actual, (previous.get(sourceGroup)!.get(actual) ?? 0) + Number(receipt.total_amount ?? 0))
+        if (riceAllocation) previousRice.set(sourceGroup, (previousRice.get(sourceGroup) ?? 0) + riceAllocation.amount)
       }
       const names = new Set([...current.keys(), ...previous.keys()])
       return Array.from(names).map(name => {
@@ -554,18 +562,18 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
         const vendors = Array.from(actualNames).map(actual => ({
           name: actual,
           cur: curMap.get(actual)?.total ?? 0,
-          prev: prevMap.get(actual)?.total ?? 0,
+          prev: prevMap.get(actual) ?? 0,
           count: curMap.get(actual)?.count ?? 0,
           notes: Array.from(curMap.get(actual)?.notes ?? []).filter((note): note is string => typeof note === 'string'),
-          taxExemptRiceCur: curMap.get(actual)?.riceTotal ?? 0,
-          taxExemptRicePrev: prevMap.get(actual)?.riceTotal ?? 0,
-          taxExemptRiceCount: curMap.get(actual)?.riceCount ?? 0,
         })).sort((a, b) => b.cur - a.cur)
         return {
           name,
           cur: vendors.reduce((sum, vendor) => sum + vendor.cur, 0),
           prev: vendors.reduce((sum, vendor) => sum + vendor.prev, 0),
           count: currentCounts.get(name) ?? 0,
+          taxExemptRiceCur: currentRice.get(name)?.total ?? 0,
+          taxExemptRicePrev: previousRice.get(name) ?? 0,
+          taxExemptRiceCount: currentRice.get(name)?.count ?? 0,
           vendors,
         }
       }).sort((a, b) => b.cur - a.cur)
@@ -857,8 +865,13 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
                       return (
                         <section key={group.name} className="rounded-2xl overflow-hidden" style={{ border: '1px solid #e4e4e7' }}>
                           <div className="flex items-center justify-between gap-3 px-4 py-3" style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa' }}>
-                            <div>
-                              <p className="text-sm font-extrabold" style={{ color: '#9a3412' }}>{group.name}</p>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-extrabold" style={{ color: '#9a3412' }}>{group.name}</p>
+                                {group.taxExemptRiceCur !== 0 && <span className="rounded-md px-2 py-1 text-xs font-bold tabular-nums" style={{ background: '#ffedd5', color: '#c2410c', border: '1px solid #fdba74' }}>
+                                  {TAX_EXEMPT_RICE_GROUP} ${fmt(group.taxExemptRiceCur)}
+                                </span>}
+                              </div>
                               <p className="text-[11px]" style={{ color: '#c2410c' }}>
                                 {groupVendors.length} {storeType === '央廚' ? '項採購品項' : '家實際廠商'} · {group.count} 筆單據
                               </p>
@@ -889,15 +902,6 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
                                   <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#f4f4f5' }}>
                                     <div className="h-full rounded-full" style={{ width: `${barW}%`, background: AVATAR_GRADS[(groupIndex + vendorIndex) % AVATAR_GRADS.length] }} />
                                   </div>
-                                  {vendor.taxExemptRiceCur !== 0 && (
-                                    <div className="mt-2.5 flex items-center justify-between gap-3 rounded-lg px-3 py-2" style={{ background: '#fff7ed', borderLeft: '2px solid #fb923c' }}>
-                                      <div>
-                                        <p className="text-xs font-bold" style={{ color: '#9a3412' }}>↳ {TAX_EXEMPT_RICE_GROUP}</p>
-                                        <p className="text-[10px]" style={{ color: '#a1a1aa' }}>{vendor.taxExemptRiceCount} 筆</p>
-                                      </div>
-                                      <p className="text-sm font-extrabold tabular-nums" style={{ color: '#c2410c' }}>${fmt(vendor.taxExemptRiceCur)}</p>
-                                    </div>
-                                  )}
                                 </div>
                               )
                             })}
