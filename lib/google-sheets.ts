@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { extractValues, extractColWidths, extractMerges } from '@/lib/food-cost-template'
 import { buildFoodCostNativeWorkbook } from '@/lib/food-cost-native-workbook'
 import { buildCKNativeWorkbook } from '@/lib/ck-native-workbook'
+import { googleSheetsRowData, type GoogleSheetsInputValue } from '@/lib/google-sheets-values'
 
 function getAuth() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_CREDENTIALS
@@ -28,7 +29,7 @@ function getAuth() {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRecord = Record<string, any>
 
-export async function syncClosingToSheets(closingId: string): Promise<void> {
+export async function syncClosingToSheets(closingId: string): Promise<boolean> {
   const admin = createAdminClient()
 
   const { data: closing } = await admin
@@ -36,11 +37,11 @@ export async function syncClosingToSheets(closingId: string): Promise<void> {
     .select('store_id, business_date, status')
     .eq('id', closingId)
     .single()
-  if (!closing || closing.status !== 'verified') return
+  if (!closing || closing.status !== 'verified') return false
 
   const storeId = closing.store_id as string
   const businessDate = closing.business_date as string
-  await syncStoreMonthToSheetsImpl(storeId, businessDate.slice(0, 7), true)
+  return syncStoreMonthToSheetsImpl(storeId, businessDate.slice(0, 7), true)
 }
 
 /**
@@ -52,7 +53,7 @@ async function syncStoreMonthToSheetsImpl(
   storeId: string,
   month: string,
   allowUnbound: boolean,
-): Promise<void> {
+): Promise<boolean> {
   const admin = createAdminClient()
   const [yearStr, monthStr] = month.split('-')
   const year = parseInt(yearStr)
@@ -70,7 +71,7 @@ async function syncStoreMonthToSheetsImpl(
   if (!store) throw new Error('找不到店家')
   const sheetsId = store?.google_sheets_id as string | null
   if (!sheetsId) {
-    if (allowUnbound) return
+    if (allowUnbound) return false
     throw new Error('此店家尚未綁定 Google 試算表（請至「店家管理」設定試算表 ID）')
   }
 
@@ -135,36 +136,14 @@ async function syncStoreMonthToSheetsImpl(
 
     if (sheetId == null) throw new Error(`無法建立 Google 試算表分頁：${tabName}`)
 
-    // Values cannot be pasted into a range that only partially overlaps an old
-    // merge, so remove the previous layout before writing the native workbook.
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: sheetsId,
-      requestBody: {
-        requests: [{
-          unmergeCells: {
-            range: {
-              sheetId,
-              startRowIndex: 0,
-              endRowIndex: gridRowCount,
-              startColumnIndex: 0,
-              endColumnIndex: gridColumnCount,
-            },
-          },
-        }],
-      },
-    })
-
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId: sheetsId,
-      range: `'${tabName.replace(/'/g, "''")}'`,
-    })
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: sheetsId,
-      range: `'${tabName.replace(/'/g, "''")}'!A1`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: extractValues(worksheet) },
-    })
-    await writeDateColumnsAsText(sheets, sheetsId, tabName, worksheet)
+    await replaceWorksheetValues(
+      sheets,
+      sheetsId,
+      sheetId,
+      extractValues(worksheet),
+      gridRowCount,
+      gridColumnCount,
+    )
 
     await applyTemplateFormatting(
       sheets,
@@ -189,6 +168,7 @@ async function syncStoreMonthToSheetsImpl(
       `[syncStoreMonthToSheets] ${store?.name ?? storeId} ${month} → sheet "${tabName}" done (native workbook)`,
     )
   }
+  return true
 }
 
 export async function syncStoreMonthToSheets(storeId: string, month: string): Promise<void> {
@@ -197,52 +177,42 @@ export async function syncStoreMonthToSheets(storeId: string, month: string): Pr
 type SheetsAPI = ReturnType<typeof google.sheets>
 type RGB = { red: number; green: number; blue: number }
 
-function columnNumberToA1(columnNumber: number): string {
-  let result = ''
-  let value = columnNumber
-  while (value > 0) {
-    value--
-    result = String.fromCharCode(65 + (value % 26)) + result
-    value = Math.floor(value / 26)
-  }
-  return result
-}
-
 /**
- * USER_ENTERED is required for formulas, but it also makes Google Sheets parse
- * strings such as "8月1日" as dates. Rewrite only 日期 columns with RAW values so
- * their visible contents stay identical to the generated Excel workbook.
+ * Replace all values in one atomic Sheets batch update. The previous two-step
+ * clear + update flow briefly exposed an empty/stale sheet to already-open
+ * Google Sheets clients. UpdateCells clears uncovered old values and writes the
+ * new workbook values as one committed change.
  */
-async function writeDateColumnsAsText(
+async function replaceWorksheetValues(
   sheets: SheetsAPI,
   spreadsheetId: string,
-  tabName: string,
-  ws: ExcelJS.Worksheet,
+  sheetId: number,
+  values: GoogleSheetsInputValue[][],
+  gridRowCount: number,
+  gridColumnCount: number,
 ): Promise<void> {
-  const escapedTabName = tabName.replace(/'/g, "''")
-  const maxHeaderRow = Math.min(ws.rowCount, 10)
-  for (let rowNumber = 1; rowNumber <= maxHeaderRow; rowNumber++) {
-    const row = ws.getRow(rowNumber)
-    for (let columnNumber = 1; columnNumber <= ws.columnCount; columnNumber++) {
-      const header = row.getCell(columnNumber).text.replace(/[\s　]/g, '')
-      if (header !== '日期') continue
-
-      const values: string[][] = []
-      for (let dataRow = rowNumber + 1; dataRow <= ws.rowCount; dataRow++) {
-        const cell = ws.getRow(dataRow).getCell(columnNumber)
-        values.push([cell.value == null ? '' : cell.text])
-      }
-      if (values.length === 0) continue
-
-      const column = columnNumberToA1(columnNumber)
-      await sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: `'${escapedTabName}'!${column}${rowNumber + 1}:${column}${ws.rowCount}`,
-        valueInputOption: 'RAW',
-        requestBody: { values },
-      })
-    }
+  const fullGridRange = {
+    sheetId,
+    startRowIndex: 0,
+    endRowIndex: gridRowCount,
+    startColumnIndex: 0,
+    endColumnIndex: gridColumnCount,
   }
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        { unmergeCells: { range: fullGridRange } },
+        {
+          updateCells: {
+            range: fullGridRange,
+            rows: googleSheetsRowData(values, gridColumnCount),
+            fields: 'userEnteredValue',
+          },
+        },
+      ],
+    },
+  })
 }
 
 function inferNumFmtType(pattern: string): string {
@@ -278,7 +248,6 @@ async function applyTemplateFormatting(
   // Remove formatting and merges left behind by an older sync before applying the
   // current native workbook. Resetting the entire tab also handles a workbook
   // that became smaller since the previous sync.
-  reqs.push({ unmergeCells: { range: { sheetId, startRowIndex: 0, endRowIndex: gridRowCount, startColumnIndex: 0, endColumnIndex: gridColumnCount } } })
   reqs.push({ repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: gridRowCount, startColumnIndex: 0, endColumnIndex: gridColumnCount }, cell: { userEnteredFormat: {} }, fields: 'userEnteredFormat' } })
   reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: gridColumnCount }, properties: { hiddenByUser: false }, fields: 'hiddenByUser' } })
   reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 0, endIndex: gridRowCount }, properties: { hiddenByUser: false }, fields: 'hiddenByUser' } })
@@ -555,24 +524,14 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
     }
     if (sheetId == null) throw new Error(`無法建立 Google 試算表分頁：${tabName}`)
 
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: sheetsId,
-      requestBody: { requests: [{ unmergeCells: { range: {
-        sheetId,
-        startRowIndex: 0,
-        endRowIndex: gridRowCount,
-        startColumnIndex: 0,
-        endColumnIndex: gridColumnCount,
-      } } }] },
-    })
-    await sheets.spreadsheets.values.clear({ spreadsheetId: sheetsId, range: `'${tabName.replace(/'/g, "''")}'` })
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: sheetsId,
-      range: `'${tabName.replace(/'/g, "''")}'!A1`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: extractValues(ws) },
-    })
-    await writeDateColumnsAsText(sheets, sheetsId, tabName, ws)
+    await replaceWorksheetValues(
+      sheets,
+      sheetsId,
+      sheetId,
+      extractValues(ws),
+      gridRowCount,
+      gridColumnCount,
+    )
     await applyTemplateFormatting(
       sheets,
       sheetsId,

@@ -17,6 +17,7 @@ export type AuditEvent =
   | 'receipt_delete'
   | 'ck_record_update'
   | 'ck_hq_paid'
+  | 'sheets_sync_complete'
   | 'sheets_sync_failed'
   | 'variance_alert'
   | 'ck_price_update'

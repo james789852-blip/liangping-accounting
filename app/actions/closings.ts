@@ -21,7 +21,16 @@ async function syncVerifiedClosingToSheets(input: {
   userId: string
 }) {
   try {
-    await syncClosingToSheets(input.closingId)
+    const synced = await syncClosingToSheets(input.closingId)
+    if (!synced) return
+    await logAudit({
+      eventType: 'sheets_sync_complete',
+      storeId: input.storeId,
+      userId: input.userId,
+      closingId: input.closingId,
+      description: `${input.businessDate} 試算表同步完成`,
+      metadata: { month: input.businessDate.slice(0, 7), business_date: input.businessDate },
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error('[syncVerifiedClosingToSheets] failed:', error)
@@ -788,6 +797,13 @@ export async function reSyncMonthToSheets(storeId: string, month: string) {
 
   try {
     await syncMonthToSheets(storeId, month)
+    await logAudit({
+      eventType: 'sheets_sync_complete',
+      storeId,
+      userId: user.id,
+      description: `${month} 試算表手動同步完成`,
+      metadata: { month, manual: true },
+    })
     return { success: true as const }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
 
+import { googleSheetsRowData } from '../lib/google-sheets-values.ts'
+
 const closingsAction = fs.readFileSync(new URL('../app/actions/closings.ts', import.meta.url), 'utf8')
 const ckAction = fs.readFileSync(new URL('../app/actions/ck.ts', import.meta.url), 'utf8')
 const accountingUI = fs.readFileSync(new URL('../components/hq/accounting-client.tsx', import.meta.url), 'utf8')
@@ -17,6 +19,7 @@ test('店面帳目核准後會同步 Google Sheets，失敗時留下操作軌跡
   assert.match(closingsAction, /import \{ after \} from 'next\/server'/)
   assert.match(closingsAction, /after\(async \(\) => \{\s*await syncVerifiedClosingToSheets\(/)
   assert.match(closingsAction, /eventType: 'sheets_sync_failed'/)
+  assert.match(closingsAction, /eventType: 'sheets_sync_complete'/)
 })
 
 test('店面與央廚手動同步 action 都會驗證權限與月份', () => {
@@ -33,6 +36,7 @@ test('央廚審核通過後會自動同步，已核准帳目退回也會清除',
   assert.match(ckAction, /import \{ after \} from 'next\/server'/)
   assert.match(ckAction, /after\(async \(\) => \{\s*try \{\s*await syncCKMonthToSheetsImpl\(ckStoreId, date\.slice\(0, 7\)\)/)
   assert.match(ckAction, /decision === 'verified' \? '核准後' : '退回後'/)
+  assert.match(ckAction, /eventType: 'sheets_sync_complete'/)
 })
 
 test('單筆、批次與央廚核准都在回應後同步試算表，不阻塞核准畫面', () => {
@@ -80,14 +84,36 @@ test('店面 Google Sheets 與當月 Excel 共用原生活頁簿', () => {
   assert.match(sheetsModule, /await buildFoodCostNativeWorkbook\(storeId, year, monthNum\)/)
   assert.match(sheetsModule, /for \(const worksheet of workbook\.worksheets\)/)
   assert.match(sheetsModule, /const tabName = `\$\{year\}年\$\{worksheet\.name\}`/)
-  assert.match(sheetsModule, /await writeDateColumnsAsText\(sheets, sheetsId, tabName, worksheet\)/)
-  assert.match(sheetsModule, /valueInputOption: 'RAW'/)
+  assert.match(sheetsModule, /await replaceWorksheetValues\(/)
   assert.doesNotMatch(sheetsModule, /EXCEL_COLUMNS/)
+})
+
+test('試算表以單次原子更新清除舊值並寫入新值', () => {
+  const rows = googleSheetsRowData([
+    ['日期', '=SUM(B2:B3)', null],
+    ['8月1日', 100, ''],
+  ], 3)
+
+  assert.deepEqual(rows, [
+    { values: [
+      { userEnteredValue: { stringValue: '日期' } },
+      { userEnteredValue: { formulaValue: '=SUM(B2:B3)' } },
+      {},
+    ] },
+    { values: [
+      { userEnteredValue: { stringValue: '8月1日' } },
+      { userEnteredValue: { numberValue: 100 } },
+      { userEnteredValue: { stringValue: '' } },
+    ] },
+  ])
+  assert.match(sheetsModule, /updateCells:[\s\S]*rows: googleSheetsRowData\(values, gridColumnCount\)[\s\S]*fields: 'userEnteredValue'/)
+  assert.doesNotMatch(sheetsModule, /spreadsheets\.values\.clear/)
+  assert.doesNotMatch(sheetsModule, /writeDateColumnsAsText/)
 })
 
 test('新月份即使尚無帳目，也能直接由 Excel 工作簿建立試算表分頁', () => {
   assert.match(sheetsModule, /export async function syncStoreMonthToSheets\(storeId: string, month: string\)/)
-  assert.match(sheetsModule, /await syncStoreMonthToSheetsImpl\(storeId, businessDate\.slice\(0, 7\), true\)/)
+  assert.match(sheetsModule, /return syncStoreMonthToSheetsImpl\(storeId, businessDate\.slice\(0, 7\), true\)/)
   assert.match(sheetsModule, /await syncStoreMonthToSheets\(storeId, month\)/)
   assert.doesNotMatch(sheetsModule, /此月份無帳目資料/)
 })

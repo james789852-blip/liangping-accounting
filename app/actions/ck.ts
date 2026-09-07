@@ -51,6 +51,13 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string) {
 
   try {
     await syncCKMonthToSheetsImpl(ckStoreId, month)
+    await logAudit({
+      eventType: 'sheets_sync_complete',
+      storeId: ckStoreId,
+      userId: ctx.userId,
+      description: `央廚 ${month} 試算表手動同步完成`,
+      metadata: { month, manual: true },
+    })
     return { success: true as const }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -396,6 +403,13 @@ export async function reviewCKDailyRecord(
     after(async () => {
       try {
         await syncCKMonthToSheetsImpl(ckStoreId, date.slice(0, 7))
+        await logAudit({
+          eventType: 'sheets_sync_complete',
+          storeId: ckStoreId,
+          userId: ctx.userId,
+          description: `央廚 ${date.slice(0, 7)} ${decision === 'verified' ? '核准後' : '退回後'}試算表同步完成`,
+          metadata: { month: date.slice(0, 7), business_date: date, decision },
+        })
       } catch (syncError) {
         const message = syncError instanceof Error ? syncError.message : String(syncError)
         console.error('[reviewCKDailyRecord] Google Sheets sync failed:', syncError)
