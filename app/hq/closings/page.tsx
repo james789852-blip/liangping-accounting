@@ -6,6 +6,8 @@ import ClosingsBrowser from '@/components/hq/closings-browser'
 import { getMonthLastDay } from '@/lib/business-date'
 import { sortStores } from '@/lib/store-order'
 import { canReviewClosings } from '@/lib/user-permissions'
+import { resolveReceiptDocumentTypeInfo } from '@/lib/receipt-document-type'
+import { fetchAllPaged } from '@/lib/supabase-paged'
 
 export const dynamic = 'force-dynamic'
 
@@ -99,17 +101,26 @@ export default async function ClosingsPage({
     const storeIds = [...new Set(closings.map((c: any) => (c.stores as any)?.id).filter(Boolean))]
     const dates = [...new Set(closings.map((c: any) => c.business_date as string))]
     if (storeIds.length > 0 && dates.length > 0) {
-      const { data: receiptsBulk } = await admin.from('receipts')
-        .select('id, store_id, business_date, vendor_name, receipt_type, total_amount, tax_amount, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
-        .in('store_id', storeIds).in('business_date', dates)
-        .order('created_at')
+      const [{ data: receiptsBulk }, documentTypeMappings] = await Promise.all([
+        admin.from('receipts')
+          .select('id, store_id, business_date, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, notes, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount, item_mapping_id, vendor_group_snapshot), created_at')
+          .in('store_id', storeIds).in('business_date', dates)
+          .order('created_at'),
+        fetchAllPaged<any>(() => admin
+          .from('item_column_mappings')
+          .select('id, store_id, item_name, vendor_group, doc_type_override')
+          .in('store_id', storeIds)),
+      ])
 
       const recKey = (sId: string, d: string) => `${sId}|${d}`
       const recMap: Record<string, any[]> = {}
       for (const r of (receiptsBulk ?? []) as any[]) {
         const k = recKey(r.store_id, r.business_date)
         if (!recMap[k]) recMap[k] = []
-        recMap[k].push(r)
+        recMap[k].push({
+          ...r,
+          ...resolveReceiptDocumentTypeInfo(r, documentTypeMappings),
+        })
       }
       for (const c of closings) {
         const sId = (c.stores as any)?.id

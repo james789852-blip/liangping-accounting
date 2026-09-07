@@ -3,6 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { resolveReceiptDocumentTypeInfo } from '@/lib/receipt-document-type'
+import { fetchAllPaged } from '@/lib/supabase-paged'
 import { getRangeStats, getMonthlyStats, type DailyStats, type MonthlyStats } from '@/lib/store-aggregator'
 
 type AccountingItemMeta = {
@@ -329,7 +331,7 @@ export async function fetchDailyClosingWithReceipts(storeId: string, date: strin
   if (!storeId || !date) return { error: '缺少參數' as const }
 
   const admin = createAdminClient()
-  const [closingsRes, receiptsRes] = await Promise.all([
+  const [closingsRes, receiptsRes, documentTypeMappings] = await Promise.all([
     admin.from('daily_closings')
       .select(`
         id, business_date, status, note, dispute_note, submitted_by,
@@ -347,14 +349,21 @@ export async function fetchDailyClosingWithReceipts(storeId: string, date: strin
       .eq('store_id', storeId)
       .eq('business_date', date),
     admin.from('receipts')
-      .select('id, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, notes, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount), created_at')
+      .select('id, vendor_name, actual_vendor_name, receipt_type, total_amount, tax_amount, notes, photo_url, receipt_items(item_name, quantity, unit, unit_price, amount, item_mapping_id, vendor_group_snapshot), created_at')
       .eq('store_id', storeId)
       .eq('business_date', date)
       .order('created_at'),
+    fetchAllPaged<any>(() => admin
+      .from('item_column_mappings')
+      .select('id, store_id, item_name, vendor_group, doc_type_override')
+      .eq('store_id', storeId)),
   ])
 
   const closing = closingsRes.data?.[0] ?? null
-  let receipts: any[] = receiptsRes.data ?? []
+  const receipts = (receiptsRes.data ?? []).map(receipt => ({
+    ...receipt,
+    ...resolveReceiptDocumentTypeInfo({ ...receipt, store_id: storeId }, documentTypeMappings),
+  }))
   let submitterName: string | null = null
   if (closing) {
     if (includeSubmitter && closing.submitted_by) {

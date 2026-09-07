@@ -89,6 +89,8 @@ test('HQ review displays the configured document type without an editable choice
   const reviewPage = fs.readFileSync(new URL('../app/hq/reviews/page.tsx', import.meta.url), 'utf8')
   const reviewCard = fs.readFileSync(new URL('../components/hq/review-card.tsx', import.meta.url), 'utf8')
   const mappingActions = fs.readFileSync(new URL('../app/actions/item-mappings.ts', import.meta.url), 'utf8')
+  const overviewActions = fs.readFileSync(new URL('../app/actions/store-overview.ts', import.meta.url), 'utf8')
+  const closingsPage = fs.readFileSync(new URL('../app/hq/closings/page.tsx', import.meta.url), 'utf8')
 
   assert.match(reviewPage, /item_mapping_id, vendor_group_snapshot/)
   assert.match(reviewPage, /resolveReceiptDocumentTypeInfo/)
@@ -96,4 +98,7 @@ test('HQ review displays the configured document type without an editable choice
   assert.doesNotMatch(reviewCard, /店長選擇/)
   assert.match(mappingActions, /revalidatePath\('\/hq\/reviews'\)/)
   assert.match(mappingActions, /revalidatePath\('\/hq\/accounting\/documents'\)/)
+  assert.match(overviewActions, /fetchDailyClosingWithReceipts[\s\S]*resolveReceiptDocumentTypeInfo/)
+  assert.match(overviewActions, /receipt_items\(item_name, quantity, unit, unit_price, amount, item_mapping_id, vendor_group_snapshot\)/)
+  assert.match(closingsPage, /resolveReceiptDocumentTypeInfo\(r, documentTypeMappings\)/)
 })
