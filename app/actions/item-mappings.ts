@@ -136,13 +136,17 @@ function revalidate() {
   revalidatePath('/manager/edit', 'layout')
   revalidatePath('/hq/item-mappings')
   revalidatePath('/hq/receipt-settings')
+  revalidatePath('/hq/reviews')
+  revalidatePath('/hq/accounting/documents')
   revalidatePath('/hq/food-cost-preview')
   revalidateTag('item-mappings', 'default')
 }
 
-// 單據類型異動只需刷新品項管理頁，不需觸及店長端
+// 單據類型異動不需刷新店長填寫頁，但總公司核對與單據照片頁必須立即更新。
 function revalidateLight() {
   revalidatePath('/hq/item-mappings')
+  revalidatePath('/hq/reviews')
+  revalidatePath('/hq/accounting/documents')
   revalidateTag('item-mappings', 'default')
 }
 

@@ -57,7 +57,11 @@ export function resolveReceiptDocumentTypeInfo(
     let resolved = item.item_mapping_id
       ? mappings.find(mapping => mapping.id === item.item_mapping_id)
       : undefined
-    if (!item.item_mapping_id) {
+
+    // 品項管理曾重建或搬移過 mapping 時，舊帳目可能仍保存已失效的 mapping id。
+    // 只要目前設定可由「品名＋當時分類快照」唯一命中，就應使用目前正式設定，
+    // 不可因為舊 id 存在便直接顯示「未設定」。
+    if (!resolved) {
       const compatible = mappings.filter(mapping =>
         itemNameCompatibilityKey(mapping.name) === itemNameCompatibilityKey(itemName)
         && (!item.vendor_group_snapshot || mapping.vendor_group === item.vendor_group_snapshot),
@@ -67,7 +71,7 @@ export function resolveReceiptDocumentTypeInfo(
 
     // 更舊的帳目尚未保存 mapping id／分類快照。只有品名在該店唯一，或能由
     // 收據分類明確縮小到一筆時才採用；禁止同名時任選第一筆。
-    if (!resolved && !item.item_mapping_id && !item.vendor_group_snapshot) {
+    if (!resolved && !item.vendor_group_snapshot) {
       const candidates = mappings.filter(mapping =>
         itemNameCompatibilityKey(mapping.name) === itemNameCompatibilityKey(itemName),
       )

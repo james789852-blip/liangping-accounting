@@ -31,6 +31,27 @@ test('review document type uses vendor snapshot for historical rows without mapp
   assert.deepEqual(info.configuredVendorGroups, ['有厲'])
 })
 
+test('stale mapping id falls back to the current item and vendor snapshot', () => {
+  const info = resolveReceiptDocumentTypeInfo({
+    store_id: 'store-a',
+    vendor_name: '有厲',
+    receipt_items: [{ item_name: '900碗', item_mapping_id: 'deleted-mapping', vendor_group_snapshot: '有厲' }],
+  }, mappings)
+
+  assert.deepEqual(info.expectedDocumentTypes, ['估價單'])
+  assert.deepEqual(info.configuredVendorGroups, ['有厲'])
+})
+
+test('stale mapping id without a snapshot never guesses between duplicate item names', () => {
+  const info = resolveReceiptDocumentTypeInfo({
+    store_id: 'store-a',
+    vendor_name: '未知廠商',
+    receipt_items: [{ item_name: '900碗', item_mapping_id: 'deleted-mapping' }],
+  }, mappings)
+
+  assert.deepEqual(info.expectedDocumentTypes, [])
+})
+
 test('duplicate item names never leak another vendor document type', () => {
   const info = resolveReceiptDocumentTypeInfo({
     store_id: 'store-a',
@@ -67,9 +88,12 @@ test('custom configured document types stay available for read-only review displ
 test('HQ review displays the configured document type without an editable choice', () => {
   const reviewPage = fs.readFileSync(new URL('../app/hq/reviews/page.tsx', import.meta.url), 'utf8')
   const reviewCard = fs.readFileSync(new URL('../components/hq/review-card.tsx', import.meta.url), 'utf8')
+  const mappingActions = fs.readFileSync(new URL('../app/actions/item-mappings.ts', import.meta.url), 'utf8')
 
   assert.match(reviewPage, /item_mapping_id, vendor_group_snapshot/)
   assert.match(reviewPage, /resolveReceiptDocumentTypeInfo/)
   assert.match(reviewCard, /單據類型：\{expectedLabel\}/)
   assert.doesNotMatch(reviewCard, /店長選擇/)
+  assert.match(mappingActions, /revalidatePath\('\/hq\/reviews'\)/)
+  assert.match(mappingActions, /revalidatePath\('\/hq\/accounting\/documents'\)/)
 })
