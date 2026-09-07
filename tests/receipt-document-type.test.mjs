@@ -85,6 +85,25 @@ test('custom configured document types stay available for read-only review displ
   assert.deepEqual(info.expectedDocumentTypes, ['公司開'])
 })
 
+test('mixed receipt exposes each item document type in the original item order', () => {
+  const info = resolveReceiptDocumentTypeInfo({
+    store_id: 'store-a',
+    vendor_name: '廠商／雜貨',
+    receipt_items: [
+      { item_name: '米', item_mapping_id: 'rice' },
+      { item_name: '咖哩－佛蒙特', item_mapping_id: 'curry' },
+      { item_name: '尚未設定', item_mapping_id: 'unknown' },
+    ],
+  }, [
+    ...mappings,
+    { id: 'rice', store_id: 'store-a', item_name: '米', vendor_group: '廠商／雜貨', doc_type_override: '梁鑫開' },
+    { id: 'curry', store_id: 'store-a', item_name: '咖哩－佛蒙特', vendor_group: '廠商／雜貨', doc_type_override: '公司開' },
+  ])
+
+  assert.deepEqual(info.expectedDocumentTypes, ['梁鑫開', '公司開'])
+  assert.deepEqual(info.expectedItemDocumentTypes, ['梁鑫開', '公司開', null])
+})
+
 test('HQ review displays the configured document type without an editable choice', () => {
   const reviewPage = fs.readFileSync(new URL('../app/hq/reviews/page.tsx', import.meta.url), 'utf8')
   const reviewCard = fs.readFileSync(new URL('../components/hq/review-card.tsx', import.meta.url), 'utf8')
@@ -95,6 +114,7 @@ test('HQ review displays the configured document type without an editable choice
   assert.match(reviewPage, /item_mapping_id, vendor_group_snapshot/)
   assert.match(reviewPage, /resolveReceiptDocumentTypeInfo/)
   assert.match(reviewCard, /單據類型：\{expectedLabel\}/)
+  assert.match(reviewCard, /單據類型：\{documentType\}/)
   assert.doesNotMatch(reviewCard, /店長選擇/)
   assert.match(mappingActions, /revalidatePath\('\/hq\/reviews'\)/)
   assert.match(mappingActions, /revalidatePath\('\/hq\/accounting\/documents'\)/)

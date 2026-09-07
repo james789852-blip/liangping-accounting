@@ -48,11 +48,9 @@ export function resolveReceiptDocumentTypeInfo(
       mapping_id: mapping.id,
     }))
   const receiptItems = receipt.receipt_items ?? []
-  const resolvedMappings: typeof mappings = []
-
-  for (const item of receiptItems) {
+  const resolvedMappingByItem = receiptItems.map(item => {
     const itemName = item.item_name?.trim() ?? ''
-    if (!itemName) continue
+    if (!itemName) return undefined
 
     let resolved = item.item_mapping_id
       ? mappings.find(mapping => mapping.id === item.item_mapping_id)
@@ -84,13 +82,14 @@ export function resolveReceiptDocumentTypeInfo(
       }
     }
 
-    if (resolved && !resolvedMappings.some(mapping => mapping.id === resolved.id)) {
-      resolvedMappings.push(resolved)
-    }
-  }
+    return resolved
+  })
+  const resolvedMappings = resolvedMappingByItem.filter((mapping): mapping is (typeof mappings)[number] => !!mapping)
+    .filter((mapping, index, values) => values.findIndex(value => value.id === mapping.id) === index)
 
   // 沒有品項明細（或舊資料無法對到品項）時，若整個廠商分類只有一種正式
   // 單據類型，仍可安全顯示該分類設定。
+  let vendorFallbackDocumentType: string | null = null
   if (resolvedMappings.length === 0 && receipt.vendor_name) {
     const vendorName = compact(receipt.vendor_name)
     const vendorMappings = mappings.filter(mapping => compact(mapping.vendor_group) === vendorName)
@@ -99,6 +98,7 @@ export function resolveReceiptDocumentTypeInfo(
       .filter((value): value is string => !!value))
     if (vendorMappings.length > 0 && vendorDocTypes.size === 1) {
       resolvedMappings.push(...vendorMappings)
+      vendorFallbackDocumentType = [...vendorDocTypes][0]
     }
   }
 
@@ -111,6 +111,9 @@ export function resolveReceiptDocumentTypeInfo(
 
   return {
     expectedDocumentTypes,
+    expectedItemDocumentTypes: resolvedMappingByItem.map(mapping =>
+      mapping?.doc_type_override?.trim() || vendorFallbackDocumentType,
+    ),
     configuredVendorGroups,
   }
 }

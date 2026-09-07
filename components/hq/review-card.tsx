@@ -16,11 +16,18 @@ function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 interface RevenueItem { channel: string; account_name?: string; gross_amount: number }
 interface ExpenseItem { description: string; amount: number }
 interface OrderItem { item_name: string; quantity: number; total_amount: number }
-interface ReceiptItem { item_name: string; amount: number; unit?: string; quantity?: number; unit_price?: number }
+interface ReceiptItem {
+  item_name: string
+  amount: number
+  unit?: string
+  quantity?: number
+  unit_price?: number
+  expectedDocumentType?: string | null
+}
 interface Receipt {
   id: string; vendor_name: string; actual_vendor_name?: string; receipt_type: string
   total_amount: number; tax_amount?: number; notes?: string; photo_url: string; receipt_items: ReceiptItem[]
-  expectedDocumentTypes?: string[]; configuredVendorGroups?: string[]
+  expectedDocumentTypes?: string[]; expectedItemDocumentTypes?: (string | null)[]; configuredVendorGroups?: string[]
 }
 interface ReserveItem { reason: string; amount: number }
 interface Closing {
@@ -142,6 +149,37 @@ function ReceiptDocumentTypeRows({ receipt }: { receipt: Receipt }) {
   )
 }
 
+function receiptItemsWithDocumentTypes(receipt: Receipt) {
+  return receipt.receipt_items.map((item, index) => ({
+    ...item,
+    expectedDocumentType: receipt.expectedItemDocumentTypes?.[index] ?? null,
+  }))
+}
+
+function ReceiptItemRow({ item, index, borderColor }: { item: ReceiptItem; index: number; borderColor: string }) {
+  const documentType = item.expectedDocumentType?.trim() || '未設定'
+  const isConfigured = documentType !== '未設定'
+  return (
+    <div className="pt-2" style={{ borderTop: `1px solid ${borderColor}` }}>
+      <div className="flex items-start justify-between gap-3 text-xs">
+        <div className="min-w-0">
+          <p className="font-medium break-words" style={{ color: '#52525b' }}>{item.item_name || `品項 ${index + 1}`}</p>
+          <span className="inline-flex mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+            style={{
+              color: isConfigured ? '#6d28d9' : '#71717a',
+              background: isConfigured ? '#f3e8ff' : '#f4f4f5',
+              border: `1px solid ${isConfigured ? '#ddd6fe' : '#e4e4e7'}`,
+            }}>
+            單據類型：{documentType}
+          </span>
+        </div>
+        <span className="shrink-0 tabular-nums font-medium" style={{ color: '#18181b' }}>${fmt(item.amount)}</span>
+      </div>
+      {(item.quantity || item.unit || item.unit_price) && <p className="text-[11px] mt-0.5" style={{ color: '#a1a1aa' }}>{item.quantity ? `${item.quantity}` : ''}{item.unit || ''}{item.unit_price ? ` × $${fmt(item.unit_price)}` : ''}</p>}
+    </div>
+  )
+}
+
 export default function ReviewCard({ closing, receipts, canReview, canDispute, selected, onToggleSelect, onProcessed, defaultExpanded }: Props) {
   const shouldAutoExpand = defaultExpanded ?? (closing.variance !== 0 || closing.status === 'disputed')
   const [expanded, setExpanded] = useState(shouldAutoExpand)
@@ -177,7 +215,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
     ? receipts.find(r => r.photo_url === currentPhoto.url)
     : undefined
   const currentReceiptItems = currentReceipt
-    ? syncSingleReceiptItemAmount(currentReceipt.receipt_items, currentReceipt.total_amount, currentReceipt.tax_amount)
+    ? syncSingleReceiptItemAmount(receiptItemsWithDocumentTypes(currentReceipt), currentReceipt.total_amount, currentReceipt.tax_amount)
     : []
   const currentChannelItems = currentPhoto?.kind === 'channel'
     ? closing.revenue_items.filter(item => matchesChannelPhoto(item, currentPhoto.channel))
@@ -405,10 +443,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                     <InfoRow label="單據總額" value={`$${fmt(currentReceipt.total_amount)}`} accent="#92400e" />
                     {!!currentReceipt.tax_amount && <InfoRow label="稅額" value={`$${fmt(currentReceipt.tax_amount)}`} />}
                     {currentReceiptItems.map((item, i) => (
-                      <div key={i} className="pt-2" style={{ borderTop: '1px solid #e4e4e7' }}>
-                        <InfoRow label={item.item_name || `品項 ${i + 1}`} value={`$${fmt(item.amount)}`} />
-                        {(item.quantity || item.unit || item.unit_price) && <p className="text-[11px] mt-0.5" style={{ color: '#a1a1aa' }}>{item.quantity ? `${item.quantity}` : ''}{item.unit || ''}{item.unit_price ? ` × $${fmt(item.unit_price)}` : ''}</p>}
-                      </div>
+                      <ReceiptItemRow key={i} item={item} index={i} borderColor="#e4e4e7" />
                     ))}
                     {currentReceipt.notes && <p className="text-xs pt-2" style={{ borderTop: '1px solid #e4e4e7', color: '#52525b' }}>備註：{currentReceipt.notes}</p>}
                   </>
@@ -712,7 +747,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                 <div className="space-y-2">
                   {receipts.map(r => {
                     const isOpen = openReceiptIds.has(r.id)
-                    const displayedItems = syncSingleReceiptItemAmount(r.receipt_items, r.total_amount, r.tax_amount)
+                    const displayedItems = syncSingleReceiptItemAmount(receiptItemsWithDocumentTypes(r), r.total_amount, r.tax_amount)
                     return (
                     <div key={r.id} className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
                       <button type="button" onClick={() => toggleReceipt(r.id)} className="w-full flex items-center gap-2 px-3 py-2 text-left" style={{ background: '#fafafa' }}>
@@ -756,10 +791,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                           <ReceiptDocumentTypeRows receipt={r} />
                           {!!r.tax_amount && <InfoRow label="稅額" value={`$${fmt(r.tax_amount)}`} />}
                           {displayedItems.length > 0 ? displayedItems.map((item, i) => (
-                            <div key={i} className="pt-2" style={{ borderTop: '1px solid #f4f4f5' }}>
-                              <InfoRow label={item.item_name || `品項 ${i + 1}`} value={`$${fmt(item.amount)}`} />
-                              {(item.quantity || item.unit || item.unit_price) && <p className="text-[10px]" style={{ color: '#a1a1aa' }}>{item.quantity ? item.quantity : ''}{item.unit || ''}{item.unit_price ? ` × $${fmt(item.unit_price)}` : ''}</p>}
-                            </div>
+                            <ReceiptItemRow key={i} item={item} index={i} borderColor="#f4f4f5" />
                           )) : <p className="text-xs" style={{ color: '#a1a1aa' }}>未輸入品項明細</p>}
                           {r.notes && <p className="text-xs pt-2" style={{ borderTop: '1px solid #f4f4f5', color: '#52525b' }}>備註：{r.notes}</p>}
                         </div>
