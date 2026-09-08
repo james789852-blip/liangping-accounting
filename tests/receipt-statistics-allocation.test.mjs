@@ -85,3 +85,9 @@ test('米免稅統計放在雜貨分類旁，不會錯誤歸給其中一間廠�
   assert.match(managerAnalyticsSource, /count: currentCounts\.get\(name\) \?\? 0/)
   assert.match(managerAnalyticsSource, /const vendorReceiptCount = currentReceiptCount/)
 })
+
+test('雜貨分類旁同時顯示米免稅與扣除米後的雜貨金額', () => {
+  assert.equal(34_600 - 24_700, 9_900)
+  assert.match(hqDashboardSource, /雜 \$\{fmt\(group\.total - group\.taxExemptRiceTotal\)\}/)
+  assert.match(managerAnalyticsSource, /雜 \$\{fmt\(group\.cur - group\.taxExemptRiceCur\)\}/)
+})

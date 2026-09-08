@@ -871,6 +871,9 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
                                 {group.taxExemptRiceCur !== 0 && <span className="rounded-md px-2 py-1 text-xs font-bold tabular-nums" style={{ background: '#ffedd5', color: '#c2410c', border: '1px solid #fdba74' }}>
                                   {TAX_EXEMPT_RICE_GROUP} ${fmt(group.taxExemptRiceCur)}
                                 </span>}
+                                {group.taxExemptRiceCur !== 0 && <span className="rounded-md px-2 py-1 text-xs font-bold tabular-nums" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1' }}>
+                                  雜 ${fmt(group.cur - group.taxExemptRiceCur)}
+                                </span>}
                               </div>
                               <p className="text-[11px]" style={{ color: '#c2410c' }}>
                                 {groupVendors.length} {storeType === '央廚' ? '項採購品項' : '家實際廠商'} · {group.count} 筆單據

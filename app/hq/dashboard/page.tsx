@@ -551,6 +551,9 @@ function StoreStatsCard({ store, rank, isKitchen }: { store: StoreSummary; rank:
                           {group.taxExemptRiceTotal !== 0 && <span className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
                             {TAX_EXEMPT_RICE_GROUP} ${fmt(group.taxExemptRiceTotal)}
                           </span>}
+                          {group.taxExemptRiceTotal !== 0 && <span className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1' }}>
+                            雜 ${fmt(group.total - group.taxExemptRiceTotal)}
+                          </span>}
                         </div>
                         <span className="text-xs text-center tabular-nums" style={{ color: '#a1a1aa' }}>{group.count} 筆</span>
                         <span className="text-sm text-right font-bold tabular-nums" style={{ color: '#c2410c' }}>${fmt(group.total)}</span>
