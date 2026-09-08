@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 
 import {
-  buildPdfDailyComparisonRows,
   buildPdfRevenueRows,
   choosePdfDensity,
   photoGridClass,
@@ -67,27 +67,29 @@ test('未啟用的平台不會出現在會議 PDF', () => {
   assert.equal(rows.some(row => row.label === '優步外送'), true)
 })
 
+test('會議報告以週對週合計比較，且每日明細不再依日序配對', async () => {
+  const [pdfRoute, submittedView, editView] = await Promise.all([
+    readFile(new URL('../app/api/meeting-report/[id]/pdf/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/manager/meeting-report/[id]/submitted-report-view.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/manager/meeting-report/[id]/edit-client.tsx', import.meta.url), 'utf8'),
+  ])
+
+  assert.match(pdfRoute, /兩週之間的營業額與通路對比/)
+  assert.match(pdfRoute, /本期週/)
+  assert.match(pdfRoute, /前期週/)
+  assert.match(pdfRoute, /較前期/)
+  assert.match(pdfRoute, /兩週各自的每日營業明細/)
+  assert.doesNotMatch(pdfRoute, /相同日序配對|第 \$\{sequence\} 日/)
+  assert.match(pdfRoute, /\.page-start \{ break-before:page; page-break-before:always;/)
+  assert.match(pdfRoute, /\.period-daily-block \{ break-inside:avoid-page; page-break-inside:avoid;/)
+  assert.match(pdfRoute, /\.action \{ break-inside:avoid-page; page-break-inside:avoid;/)
+  assert.match(submittedView, /WeeklyRevenueComparison/)
+  assert.match(editView, /WeeklyRevenueComparison/)
+})
+
 test('單張照片使用較大的完整照片版位', () => {
   assert.equal(photoGridClass(1), 'photos photos-single')
   assert.equal(photoGridClass(2), 'photos')
-})
-
-test('每日營業額依本期與前期的日期序次配對', () => {
-  const current = [
-    { date: '2026-08-17', hasData: true, total: 100, onsite: 60, uber: 20, panda: 10, online: 5, storeDelivery: 10, deliveryTotal: 40 },
-    { date: '2026-08-18', hasData: true, total: 120, onsite: 70, uber: 25, panda: 10, online: 5, storeDelivery: 15, deliveryTotal: 50 },
-  ]
-  const previous = [
-    { date: '2026-08-03', hasData: true, total: 90, onsite: 55, uber: 15, panda: 10, online: 5, storeDelivery: 10, deliveryTotal: 35 },
-  ]
-
-  const rows = buildPdfDailyComparisonRows(current, previous)
-
-  assert.equal(rows.length, 2)
-  assert.deepEqual(rows.map(row => [row.sequence, row.current?.date, row.previous?.date ?? null]), [
-    [1, '2026-08-17', '2026-08-03'],
-    [2, '2026-08-18', null],
-  ])
 })
 
 test('PDF 依內容量選擇可讀的字體與段落密度', () => {

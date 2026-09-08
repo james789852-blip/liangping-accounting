@@ -27,24 +27,6 @@ export interface PdfRevenueRow {
   emphasized?: boolean
 }
 
-export interface PdfDailyRevenueRow {
-  date: string
-  hasData: boolean
-  total: number
-  onsite: number
-  uber: number
-  panda: number
-  online: number
-  storeDelivery: number
-  deliveryTotal: number
-}
-
-export interface PdfDailyComparisonRow {
-  sequence: number
-  current: PdfDailyRevenueRow | null
-  previous: PdfDailyRevenueRow | null
-}
-
 export interface PdfDensityInput {
   dailyRowCount: number
   entryCount: number
@@ -82,18 +64,6 @@ export function buildPdfRevenueRows(comparison: PdfRevenueComparison): PdfRevenu
     difference: current - previous,
     percentage: formatRevenuePercentage(current, previous),
     emphasized,
-  }))
-}
-
-export function buildPdfDailyComparisonRows(
-  current: PdfDailyRevenueRow[],
-  previous: PdfDailyRevenueRow[],
-): PdfDailyComparisonRow[] {
-  const rowCount = Math.max(current.length, previous.length)
-  return Array.from({ length: rowCount }, (_, index) => ({
-    sequence: index + 1,
-    current: current[index] ?? null,
-    previous: previous[index] ?? null,
   }))
 }
 

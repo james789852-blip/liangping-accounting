@@ -9,6 +9,7 @@ import {
   RefreshCw, Save, Send, Store, Target, Trash2, UserRound, Users, X,
 } from 'lucide-react'
 import SectionPhotoGrid from '@/components/manager/section-photo-grid'
+import WeeklyRevenueComparison from '@/components/manager/weekly-revenue-comparison'
 import SubmittedReportView from './submitted-report-view'
 import {
   addActionItem,
@@ -166,17 +167,6 @@ function isInitialTrackingItem(item: ActionItem) {
 
 function money(value: number) {
   return `NT$ ${Math.round(value).toLocaleString('zh-TW')}`
-}
-
-function signedMoney(value: number) {
-  if (value === 0) return 'NT$ 0'
-  return `${value > 0 ? '+' : '-'}NT$ ${Math.abs(Math.round(value)).toLocaleString('zh-TW')}`
-}
-
-function trend(current: number, previous: number) {
-  if (previous === 0) return { label: current > 0 ? '本期新增' : '—', positive: null as boolean | null }
-  const value = ((current - previous) / previous) * 100
-  return { label: `${value > 0 ? '+' : ''}${value.toFixed(1)}%`, positive: value >= 0 }
 }
 
 export default function EditClient({
@@ -586,7 +576,7 @@ export default function EditClient({
       <main className="mx-auto max-w-7xl px-4 py-5 lg:px-8">
         {activeStep === 1 && (
           <div className="space-y-5">
-            <SectionHeader number="01" title="營運分析" description="自行選擇兩個獨立區間，比較各通路與每天的營業額，並整理本期營業額分析。" />
+            <SectionHeader number="01" title="營運分析" description="選擇本期週與前期週，比較兩週之間各項營業數據的合計、差額與變動率。" />
             <Card>
               <div className="grid gap-4 lg:grid-cols-2">
                 <div className="rounded-2xl border border-orange-200 bg-orange-50/40 p-4">
@@ -619,7 +609,10 @@ export default function EditClient({
               </div>
             </Card>
 
-            {comparison ? <><RevenueCards comparison={comparison} /><DailyRevenueComparison comparison={comparison} /></> : <div className="rounded-2xl border border-dashed border-zinc-200 bg-white p-10 text-center text-sm text-zinc-500">日期已變更，請按「重新統計」查看兩個區間的營業資料</div>}
+            {comparison ? <>
+              <WeeklyRevenueComparison comparison={comparison} currentStart={report.period_start} currentEnd={report.period_end} previousStart={report.comparison_period_start} previousEnd={report.comparison_period_end} />
+              <DailyRevenueComparison comparison={comparison} />
+            </> : <div className="rounded-2xl border border-dashed border-zinc-200 bg-white p-10 text-center text-sm text-zinc-500">日期已變更，請按「重新統計」查看兩個區間的營業資料</div>}
 
             <Card>
               <Field label="營業額分析" hint="請說明現場、外送平台、店內外送及線上點餐上升或下降的主要原因，例如活動、天氣、商圈人流、外送促銷或人力影響。">
@@ -822,28 +815,12 @@ export default function EditClient({
   )
 }
 
-function RevenueCards({ comparison }: { comparison: MeetingRevenueComparison }) {
-  const items = [
-    { label: '總營業額', current: comparison.current.total, previous: comparison.previous.total, icon: BarChart3 },
-    { label: '現場', current: comparison.current.onsite, previous: comparison.previous.onsite, icon: Store },
-    ...(comparison.channels.uber ? [{ label: '優步外送', current: comparison.current.uber, previous: comparison.previous.uber, icon: ArrowRight }] : []),
-    ...(comparison.channels.panda ? [{ label: '熊貓外送', current: comparison.current.panda, previous: comparison.previous.panda, icon: ArrowRight }] : []),
-    { label: '店內外送', current: comparison.current.storeDelivery, previous: comparison.previous.storeDelivery, icon: ArrowRight },
-    { label: '外送合計', current: comparison.current.deliveryTotal, previous: comparison.previous.deliveryTotal, icon: ArrowRight },
-    ...(comparison.channels.online ? [{ label: '線上點餐', current: comparison.current.online, previous: comparison.previous.online, icon: ArrowRight }] : []),
-  ]
-  return <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{items.map(item => {
-    const delta = trend(item.current, item.previous)
-    const Icon = item.icon
-    return <div key={item.label} className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><span className="text-sm font-semibold text-zinc-500">{item.label}</span><Icon className="h-4 w-4 text-orange-500" /></div><div className="mt-3 space-y-1"><p className="text-xs font-bold text-orange-600">本期 <span className="ml-1 text-lg font-extrabold tabular-nums text-zinc-900">{money(item.current)}</span></p><p className="text-xs font-bold text-sky-600">前期 <span className="ml-1 text-sm font-bold tabular-nums text-zinc-600">{money(item.previous)}</span></p></div><div className={`mt-3 border-t border-zinc-100 pt-2 ${delta.positive === null ? 'text-zinc-500' : delta.positive ? 'text-emerald-600' : 'text-rose-600'}`}><p className="text-sm font-extrabold tabular-nums">差異 {signedMoney(item.current - item.previous)}</p><p className="mt-0.5 text-xs font-bold">較前期 {delta.label}</p></div></div>
-  })}</div>
-}
-
 function DailyRevenueComparison({ comparison }: { comparison: MeetingRevenueComparison }) {
-  return <div className="grid gap-4 xl:grid-cols-2">
-    <DailyRevenueTable title="本期每日營業額" tone="orange" rows={comparison.current.daily} channels={comparison.channels} />
-    <DailyRevenueTable title="前期每日營業額" tone="sky" rows={comparison.previous.daily} channels={comparison.channels} />
-  </div>
+  return <section className="space-y-4 rounded-2xl border border-zinc-100 bg-zinc-50/60 p-4">
+    <div><h3 className="text-sm font-extrabold text-zinc-900">兩週各自的每日明細（僅供查閱）</h3><p className="mt-1 text-xs leading-5 text-zinc-500">以下依實際日期分開列示，不以第 1 日、第 2 日互相比較。</p></div>
+    <DailyRevenueTable title="本期週｜每日營業明細" tone="orange" rows={comparison.current.daily} channels={comparison.channels} />
+    <DailyRevenueTable title="前期週｜每日營業明細" tone="sky" rows={comparison.previous.daily} channels={comparison.channels} />
+  </section>
 }
 
 function DailyRevenueTable({ title, tone, rows, channels }: { title: string; tone: 'orange' | 'sky'; rows: DailyRevenueSummary[]; channels: MeetingRevenueComparison['channels'] }) {

@@ -3,9 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import {
-  ArrowDownRight,
   ArrowLeft,
-  ArrowUpRight,
   CalendarDays,
   CheckCircle2,
   ClipboardCheck,
@@ -16,6 +14,7 @@ import {
   Target,
   UserRound,
 } from 'lucide-react'
+import WeeklyRevenueComparison from '@/components/manager/weekly-revenue-comparison'
 import type {
   ActionItem,
   DailyRevenueSummary,
@@ -121,25 +120,23 @@ export default function SubmittedReportView({
             <p className="mt-2 whitespace-pre-wrap text-base font-semibold leading-7 text-zinc-800">{report.revenue_difference_note || '本次尚未填寫營業額分析'}</p>
           </div>
           <div className="mt-7 border-t border-zinc-100 pt-7">
-            <Subheading title="兩期營業額與通路差異" />
+            <Subheading title="兩週之間的營業額與通路對比" />
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <PeriodCard tone="orange" label="本期（報告區間）" start={report.period_start} end={report.period_end} total={comparison?.current.total} />
             <PeriodCard tone="sky" label="前期（比較區間）" start={report.comparison_period_start} end={report.comparison_period_end} total={comparison?.previous.total} />
           </div>
           {comparison ? <>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <ChannelCard label="總營業額" current={comparison.current.total} previous={comparison.previous.total} />
-              <ChannelCard label="現場" current={comparison.current.onsite} previous={comparison.previous.onsite} />
-              {comparison.channels.uber && <ChannelCard label="優步外送" current={comparison.current.uber} previous={comparison.previous.uber} />}
-              {comparison.channels.panda && <ChannelCard label="熊貓外送" current={comparison.current.panda} previous={comparison.previous.panda} />}
-              <ChannelCard label="店內外送" current={comparison.current.storeDelivery} previous={comparison.previous.storeDelivery} />
-              <ChannelCard label="外送合計" current={comparison.current.deliveryTotal} previous={comparison.previous.deliveryTotal} />
-              {comparison.channels.online && <ChannelCard label="線上點餐" current={comparison.current.online} previous={comparison.previous.online} />}
+            <div className="mt-5">
+              <WeeklyRevenueComparison comparison={comparison} currentStart={report.period_start} currentEnd={report.period_end} previousStart={report.comparison_period_start} previousEnd={report.comparison_period_end} />
             </div>
-            <div className="mt-5 grid gap-5 xl:grid-cols-2">
-              <DailyTable title="本期｜每日營業額" tone="orange" rows={comparison.current.daily} channels={comparison.channels} />
-              <DailyTable title="前期｜每日營業額" tone="sky" rows={comparison.previous.daily} channels={comparison.channels} />
+            <div className="mt-7 border-t border-zinc-100 pt-7">
+              <Subheading title="兩週各自的每日明細（僅供查閱）" />
+              <p className="mb-4 mt-1 text-xs leading-5 text-zinc-500">以下依實際日期分開列示，不以第 1 日、第 2 日互相比較。</p>
+              <div className="space-y-5">
+                <DailyTable title="本期週｜每日營業明細" tone="orange" rows={comparison.current.daily} channels={comparison.channels} />
+                <DailyTable title="前期週｜每日營業明細" tone="sky" rows={comparison.previous.daily} channels={comparison.channels} />
+              </div>
             </div>
           </> : <Empty text="目前沒有可顯示的營業資料" />}
         </ReportSection>
@@ -204,16 +201,9 @@ function PeriodCard({ tone, label, start, end, total }: { tone: 'orange' | 'sky'
   return <div className={`rounded-2xl border p-5 ${tone === 'orange' ? 'border-orange-200 bg-orange-50/50' : 'border-sky-200 bg-sky-50/50'}`}><div className="flex items-start justify-between gap-3"><div><p className={`text-xs font-extrabold uppercase tracking-wider ${tone === 'orange' ? 'text-orange-600' : 'text-sky-600'}`}>{label}</p><p className="mt-2 text-sm font-bold text-zinc-700">{formatDate(start)} → {formatDate(end)}</p></div><p className="text-xl font-black tabular-nums text-zinc-900">{total === undefined ? '—' : money(total)}</p></div></div>
 }
 
-function ChannelCard({ label, current, previous }: { label: string; current: number; previous: number }) {
-  const delta = change(current, previous)
-  const TrendIcon = delta.positive === false ? ArrowDownRight : ArrowUpRight
-  const trendColor = delta.positive === false ? 'text-rose-600' : delta.positive === true ? 'text-emerald-600' : 'text-zinc-500'
-  return <div className="rounded-2xl border border-zinc-100 p-4"><p className="text-xs font-extrabold text-zinc-700">{label}</p><div className="mt-3 space-y-2"><div className="flex items-end justify-between gap-2"><span className="text-[11px] font-bold text-orange-600">本期</span><span className="text-base font-black tabular-nums text-zinc-900">{money(current)}</span></div><div className="flex items-end justify-between gap-2"><span className="text-[11px] font-bold text-sky-600">前期</span><span className="text-sm font-bold tabular-nums text-zinc-600">{money(previous)}</span></div></div><div className="mt-3 flex items-center justify-between border-t border-zinc-100 pt-2 text-[11px]"><span className="font-bold text-zinc-400">差額 {signedMoney(current - previous)}</span><span className={`inline-flex items-center gap-1 font-extrabold ${trendColor}`}><TrendIcon className="h-3.5 w-3.5" />較前期 {delta.text}</span></div></div>
-}
-
 function DailyTable({ title, tone, rows, channels }: { title: string; tone: 'orange' | 'sky'; rows: DailyRevenueSummary[]; channels: MeetingRevenueComparison['channels'] }) {
   const valueColumns = 4 + Number(channels.uber) + Number(channels.panda) + Number(channels.online)
-  return <div className="overflow-hidden rounded-2xl border border-zinc-200"><div className={`px-4 py-3 ${tone === 'orange' ? 'bg-orange-50 text-orange-700' : 'bg-sky-50 text-sky-700'}`}><p className="text-sm font-extrabold">{title}</p></div><div className="max-h-[430px] overflow-auto"><table className="w-full min-w-[760px] text-xs"><thead className="sticky top-0 bg-zinc-50 text-zinc-500"><tr><th className="p-2.5 text-left">日期</th><th className="p-2.5 text-right">總額</th><th className="p-2.5 text-right">現場</th>{channels.uber && <th className="p-2.5 text-right">優步外送</th>}{channels.panda && <th className="p-2.5 text-right">熊貓外送</th>}<th className="p-2.5 text-right">店內外送</th><th className="p-2.5 text-right">外送合計</th>{channels.online && <th className="p-2.5 text-right">線上點餐</th>}</tr></thead><tbody>{rows.map(row => <tr key={row.date} className="border-t border-zinc-100"><td className="p-2.5 font-bold">{formatDate(row.date)}</td>{row.hasData ? <><NumberCell value={row.total} strong /><NumberCell value={row.onsite} />{channels.uber && <NumberCell value={row.uber} />}{channels.panda && <NumberCell value={row.panda} />}<NumberCell value={row.storeDelivery} /><NumberCell value={row.deliveryTotal} strong />{channels.online && <NumberCell value={row.online} />}</> : <td colSpan={valueColumns} className="p-2.5 text-center text-zinc-400">尚無資料</td>}</tr>)}</tbody></table></div></div>
+  return <div className="overflow-hidden rounded-2xl border border-zinc-200"><div className={`px-4 py-3 ${tone === 'orange' ? 'bg-orange-50 text-orange-700' : 'bg-sky-50 text-sky-700'}`}><p className="text-sm font-extrabold">{title}</p></div><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-xs"><thead className="bg-zinc-50 text-zinc-500"><tr><th className="p-2.5 text-left">日期</th><th className="p-2.5 text-right">總額</th><th className="p-2.5 text-right">現場</th>{channels.uber && <th className="p-2.5 text-right">優步外送</th>}{channels.panda && <th className="p-2.5 text-right">熊貓外送</th>}<th className="p-2.5 text-right">店內外送</th><th className="p-2.5 text-right">外送合計</th>{channels.online && <th className="p-2.5 text-right">線上點餐</th>}</tr></thead><tbody>{rows.map(row => <tr key={row.date} className="border-t border-zinc-100"><td className="p-2.5 font-bold">{formatDate(row.date)}</td>{row.hasData ? <><NumberCell value={row.total} strong /><NumberCell value={row.onsite} />{channels.uber && <NumberCell value={row.uber} />}{channels.panda && <NumberCell value={row.panda} />}<NumberCell value={row.storeDelivery} /><NumberCell value={row.deliveryTotal} strong />{channels.online && <NumberCell value={row.online} />}</> : <td colSpan={valueColumns} className="p-2.5 text-center text-zinc-400">尚無資料</td>}</tr>)}</tbody></table></div></div>
 }
 
 function NumberCell({ value, strong = false }: { value: number; strong?: boolean }) {

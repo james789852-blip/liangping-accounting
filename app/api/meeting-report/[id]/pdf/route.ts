@@ -7,11 +7,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { canAccessStore, getAuthContext } from '@/lib/permissions'
 import { getMeetingRevenueComparison, type MeetingRevenueComparison } from '@/app/actions/meeting-reports'
 import {
-  buildPdfDailyComparisonRows,
   buildPdfRevenueRows,
   choosePdfDensity,
   photoGridClass,
-  type PdfDailyRevenueRow,
 } from '@/lib/meeting-report-pdf-layout'
 
 export const runtime = 'nodejs'
@@ -230,7 +228,7 @@ function buildHtml({
   h4 { break-after:avoid-page; page-break-after:avoid; margin:0 0 7px; color:#52525b; font-size:10px; font-weight:900; }
   p { margin:5px 0; }
   section { margin-bottom:20px; }
-  .page-start { padding-top:3mm; }
+  .page-start { break-before:page; page-break-before:always; padding-top:3mm; }
   .section-heading { break-after:avoid-page; page-break-after:avoid; display:flex; align-items:center; gap:12px; margin-bottom:14px; padding:0 0 9px; border-bottom:2px solid #27272a; }
   .section-heading + * { break-before:avoid-page; page-break-before:avoid; }
   .section-number { display:inline-flex; width:34px; height:34px; flex:0 0 34px; align-items:center; justify-content:center; border-radius:9px; background:var(--ink); color:#fb923c; font-size:10px; font-weight:950; }
@@ -244,26 +242,29 @@ function buildHtml({
   .callout { break-inside:avoid-page; page-break-inside:avoid; position:relative; margin-top:10px; border:1px solid #fed7aa; border-radius:10px; padding:11px 13px 11px 17px; background:linear-gradient(90deg,#fff7ed,#fff); }
   .callout:before { position:absolute; top:10px; bottom:10px; left:7px; width:3px; border-radius:9px; background:#f97316; content:""; }
   .callout .label { color:var(--orange); font-size:9px; font-weight:900; letter-spacing:.06em; }
-  .revenue-summary { break-inside:auto; page-break-inside:auto; }
+  .revenue-summary { break-inside:avoid-page; page-break-inside:avoid; }
   .periods { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:11px; }
   .period { border:1px solid var(--line); border-radius:9px; padding:9px 11px; background:#fafafa; }
   .period.a { border-left:4px solid #f97316; background:#fffaf5; }
   .period.b { border-left:4px solid #0284c7; background:#f7fcff; }
   .period strong { display:block; margin-top:2px; color:var(--ink); font-size:10.5px; }
-  .revenue-cards { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
-  .revenue-card { break-inside:avoid-page; page-break-inside:avoid; border:1px solid var(--line); border-radius:10px; padding:10px 11px; background:#fff; box-shadow:0 1px 0 rgba(24,24,27,.03); }
-  .revenue-card.emphasis { grid-column:1 / -1; border-color:#fdba74; background:#fffaf5; }
-  .revenue-card:last-child:not(.emphasis) { grid-column:1 / -1; }
-  .revenue-card-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding-bottom:7px; border-bottom:1px solid #f0f0f1; }
-  .revenue-card-label { color:#27272a; font-size:11px; font-weight:950; }
-  .revenue-card-percent { border-radius:99px; padding:3px 8px; background:#f4f4f5; font-size:8.5px; font-weight:900; }
-  .revenue-values { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
-  .revenue-value small { display:block; color:#a1a1aa; font-size:7.5px; font-weight:800; }
-  .revenue-value strong { display:block; margin-top:2px; color:#27272a; font-size:11px; font-weight:950; font-variant-numeric:tabular-nums; }
-  .revenue-difference { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:8px; border-radius:7px; padding:6px 8px; background:#fafafa; color:#71717a; font-size:8.5px; font-weight:800; }
-  .revenue-difference strong { font-size:10px; font-variant-numeric:tabular-nums; }
-  .daily-table-block { margin-top:16px; padding-top:1mm; }
-  .daily-subsection { break-inside:auto; page-break-inside:auto; margin-top:13px; }
+  .weekly-comparison { break-inside:avoid-page; page-break-inside:avoid; }
+  .weekly-comparison-table { table-layout:fixed; }
+  .weekly-comparison-table th:first-child { width:22%; }
+  .weekly-comparison-table th span { display:block; }
+  .weekly-comparison-table th small { display:block; margin-top:2px; color:#a1a1aa; font-size:6.8px; font-weight:650; white-space:nowrap; }
+  .weekly-comparison-table td { padding-top:7px; padding-bottom:7px; }
+  .weekly-comparison-table .weekly-current { color:#c2410c; font-weight:900; }
+  .weekly-comparison-table .weekly-previous { color:#0369a1; font-weight:850; }
+  .weekly-comparison-table .emphasis td { background:#fff7ed; font-weight:950; }
+  .comparison-note { margin:4px 0 9px; color:#71717a; font-size:9px; }
+  .daily-table-block { margin-top:0; }
+  .period-daily-block { break-inside:avoid-page; page-break-inside:avoid; margin-top:13px; }
+  .period-daily-block + .period-daily-block { break-before:page; page-break-before:always; }
+  .period-daily-head { break-after:avoid-page; page-break-after:avoid; display:flex; align-items:flex-end; justify-content:space-between; gap:10px; margin-bottom:8px; border-bottom:2px solid var(--line); padding-bottom:7px; }
+  .period-daily-head strong { color:var(--ink); font-size:12px; font-weight:950; }
+  .period-daily-head span { color:var(--muted); font-size:8.5px; font-weight:750; }
+  .daily-subsection { break-inside:avoid-page; page-break-inside:avoid; margin-top:11px; }
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
   .box { break-inside:avoid-page; page-break-inside:avoid; border:1px solid var(--line); border-radius:9px; padding:10px 12px; background:#fff; box-shadow:0 1px 0 rgba(24,24,27,.03); }
   .label { color:var(--muted); font-size:8.5px; font-weight:900; letter-spacing:.02em; }
@@ -277,23 +278,9 @@ function buildHtml({
   th { background:#27272a; color:#f4f4f5; font-size:8px; font-weight:850; letter-spacing:.025em; }
   td:first-child { color:#3f3f46; font-weight:700; }
   td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
-  .comparison-table { table-layout:fixed; }
-  .comparison-table th:first-child { width:17%; }
-  .compare-date { font-size:8.8px; line-height:1.45; }
-  .compare-date span { display:block; white-space:nowrap; }
-  .compare-date .current { color:#c2410c; font-weight:900; }
-  .compare-date .previous { color:#0369a1; font-weight:800; }
-  .compare-cell { text-align:right; font-size:9px; line-height:1.45; font-variant-numeric:tabular-nums; }
-  .compare-cell span { display:block; white-space:nowrap; }
-  .compare-cell i { display:inline-block; min-width:1.7em; margin-right:2px; color:#a1a1aa; font-size:.82em; font-style:normal; font-weight:900; text-align:left; }
-  .compare-cell .current { color:#27272a; font-weight:900; }
-  .compare-cell .previous { color:#71717a; }
-  .compare-cell .difference { margin-top:2px; border-top:1px solid #eeeeef; padding-top:2px; font-weight:900; }
-  .comparison-note { margin:4px 0 8px; color:#71717a; font-size:9px; }
-  body.density-balanced .compare-date { font-size:8.5px; }
-  body.density-balanced .compare-cell { font-size:8.7px; }
-  body.density-dense .compare-date { font-size:8.2px; }
-  body.density-dense .compare-cell { font-size:8.35px; }
+  .daily-period-table { table-layout:fixed; }
+  .daily-period-table th:first-child { width:20%; }
+  .daily-period-table tfoot td { border-top:2px solid #d4d4d8; background:#f4f4f5; font-weight:950; }
   .up { color:var(--green); font-weight:900; }
   .down { color:#be123c; font-weight:900; }
   .photos { break-inside:auto; page-break-inside:auto; margin-top:10px; padding-top:2px; }
@@ -304,7 +291,7 @@ function buildHtml({
   .photos-single .photo-frame { height:230px; }
   .photo-card img { display:block; width:100%; height:100%; border:0; border-radius:5px; background:#f6f6f7; object-fit:contain; object-position:center; }
   .photo-card figcaption { border-top:1px solid #eeeeef; padding:5px 7px; background:#fff; color:#a1a1aa; font-size:7.5px; font-weight:700; text-align:center; }
-  .action { break-inside:auto; page-break-inside:auto; margin-bottom:12px; overflow:visible; border:1px solid var(--line); border-left:4px solid #f97316; border-radius:10px; padding:12px 13px; background:#fff; box-decoration-break:clone; -webkit-box-decoration-break:clone; }
+  .action { break-inside:avoid-page; page-break-inside:avoid; margin-bottom:12px; overflow:visible; border:1px solid var(--line); border-left:4px solid #f97316; border-radius:10px; padding:12px 13px; background:#fff; box-decoration-break:clone; -webkit-box-decoration-break:clone; }
   .action.done { border-color:#a7f3d0; border-left-color:#10b981; background:#fbfffd; }
   .action.dropped { border-color:#d4d4d8; border-left-color:#a1a1aa; background:#fafafa; }
   .action-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
@@ -343,13 +330,13 @@ function buildHtml({
   </section>
 
   <section class="page-start">
-    <h3>營運分析｜兩期營業額與通路差異</h3>
+    <h3>營運分析｜兩週之間的營業額與通路對比</h3>
     <div class="revenue-summary">
-      <div class="periods"><div class="period a"><span class="label">本期區間</span><strong>${escapeHtml(stringValue(report.period_start))} → ${escapeHtml(stringValue(report.period_end))}</strong></div><div class="period b"><span class="label">前期區間</span><strong>${escapeHtml(stringValue(report.comparison_period_start))} → ${escapeHtml(stringValue(report.comparison_period_end))}</strong></div></div>
-      ${revenueRows.length ? `<div class="revenue-cards">${revenueRows.map(row => `<article class="revenue-card ${row.emphasized ? 'emphasis' : ''}"><div class="revenue-card-head"><span class="revenue-card-label">${escapeHtml(row.label)}</span><span class="revenue-card-percent ${row.difference >= 0 ? 'up' : 'down'}">${escapeHtml(row.percentage)}</span></div><div class="revenue-values"><div class="revenue-value"><small>本期金額</small><strong>${formatMoney(row.current)}</strong></div><div class="revenue-value"><small>前期金額</small><strong>${formatMoney(row.previous)}</strong></div></div><div class="revenue-difference"><span>兩期差異金額</span><strong class="${row.difference >= 0 ? 'up' : 'down'}">${formatSignedMoney(row.difference)}</strong></div></article>`).join('')}</div>` : '<p class="empty">沒有可顯示的營業資料</p>'}
+      <div class="periods"><div class="period a"><span class="label">本期週</span><strong>${escapeHtml(stringValue(report.period_start))} → ${escapeHtml(stringValue(report.period_end))}</strong></div><div class="period b"><span class="label">前期週</span><strong>${escapeHtml(stringValue(report.comparison_period_start))} → ${escapeHtml(stringValue(report.comparison_period_end))}</strong></div></div>
+      ${revenueRows.length ? weeklyRevenueComparisonHtml(revenueRows, report) : '<p class="empty">沒有可顯示的營業資料</p>'}
     </div>
   </section>
-  ${comparison ? `<section class="daily-table-block"><h3>每日營業額差異比較</h3>${dailyRevenueComparisonHtml(comparison)}</section>` : ''}
+  ${comparison ? `<section class="page-start daily-table-block"><h3>附錄｜兩週各自的每日營業明細</h3><p class="comparison-note">以下依兩個週區間與實際日期分開列示，僅供查閱，不以第 1 日、第 2 日互相比較。</p>${dailyRevenueAppendixHtml(comparison, report)}</section>` : ''}
 
   <section class="page-start">
     ${sectionHeading(customerSectionNumber, '顧客回饋', '網路評論與客訴')}
@@ -417,62 +404,70 @@ function sectionHeading(number: string, eyebrow: string, title: string) {
   return `<div class="section-heading"><span class="section-number">${escapeHtml(number)}</span><div><div class="section-eyebrow">${escapeHtml(eyebrow)}</div><h2>${escapeHtml(title)}</h2></div></div>`
 }
 
-function dailyRevenueComparisonHtml(comparison: MeetingRevenueComparison) {
-  const rows = buildPdfDailyComparisonRows(comparison.current.daily, comparison.previous.daily)
+function weeklyRevenueComparisonHtml(
+  rows: ReturnType<typeof buildPdfRevenueRows>,
+  report: Record<string, unknown>,
+) {
+  const currentRange = `${stringValue(report.period_start)}－${stringValue(report.period_end)}`
+  const previousRange = `${stringValue(report.comparison_period_start)}－${stringValue(report.comparison_period_end)}`
+  return `<div class="weekly-comparison"><p class="comparison-note">各項數據以兩個所選週區間的合計進行週對週比較；差額為本期週減前期週。</p><table class="weekly-comparison-table"><thead><tr><th>比較項目</th><th class="num"><span>本期週</span><small>${escapeHtml(currentRange)}</small></th><th class="num"><span>前期週</span><small>${escapeHtml(previousRange)}</small></th><th class="num">差額</th><th class="num">較前期</th></tr></thead><tbody>${rows.map(row => `<tr class="${row.emphasized ? 'emphasis' : ''}"><td>${escapeHtml(row.label)}</td><td class="num weekly-current">${formatMoney(row.current)}</td><td class="num weekly-previous">${formatMoney(row.previous)}</td><td class="num ${row.difference >= 0 ? 'up' : 'down'}">${formatSignedMoney(row.difference)}</td><td class="num ${row.difference >= 0 ? 'up' : 'down'}">${escapeHtml(row.percentage)}</td></tr>`).join('')}</tbody></table></div>`
+}
+
+function dailyRevenueAppendixHtml(
+  comparison: MeetingRevenueComparison,
+  report: Record<string, unknown>,
+) {
+  return [
+    dailyPeriodBlock('本期週', stringValue(report.period_start), stringValue(report.period_end), comparison.current.daily, comparison.channels),
+    dailyPeriodBlock('前期週', stringValue(report.comparison_period_start), stringValue(report.comparison_period_end), comparison.previous.daily, comparison.channels),
+  ].join('')
+}
+
+function dailyPeriodBlock(
+  title: string,
+  start: string,
+  end: string,
+  rows: MeetingRevenueComparison['current']['daily'],
+  channels: MeetingRevenueComparison['channels'],
+) {
   const overviewMetrics: Array<[string, PdfDailyMetric]> = [
     ['總營業額', 'total'],
     ['現場', 'onsite'],
     ['外送合計', 'deliveryTotal'],
-    ...(comparison.channels.online
+    ...(channels.online
       ? [['線上點餐', 'online'] as [string, PdfDailyMetric]]
       : []),
   ]
   const deliveryMetrics: Array<[string, PdfDailyMetric]> = [
-    ...(comparison.channels.uber
+    ...(channels.uber
       ? [['優步外送', 'uber'] as [string, PdfDailyMetric]]
       : []),
-    ...(comparison.channels.panda
+    ...(channels.panda
       ? [['熊貓外送', 'panda'] as [string, PdfDailyMetric]]
       : []),
     ['店內外送', 'storeDelivery'],
   ]
-
-  return `<p class="comparison-note">每列依兩個區間的相同日序配對；各欄依序顯示「本期、前期、差額與變動率」，金額單位為新台幣。正成長以綠色、下降以紅色標示。</p>${dailyComparisonTable('每日營業總覽比較', rows, overviewMetrics)}${dailyComparisonTable('每日外送平台比較', rows, deliveryMetrics)}`
+  return `<div class="period-daily-block"><div class="period-daily-head"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(start)} → ${escapeHtml(end)}</span></div>${dailyPeriodTable('每日營業總覽', rows, overviewMetrics)}${dailyPeriodTable('每日外送通路明細', rows, deliveryMetrics)}</div>`
 }
 
-function dailyComparisonTable(
+function dailyPeriodTable(
   title: string,
-  rows: ReturnType<typeof buildPdfDailyComparisonRows>,
+  rows: MeetingRevenueComparison['current']['daily'],
   metrics: Array<[string, PdfDailyMetric]>,
 ) {
-  const body = rows.map(row => `<tr>${comparisonDateCell(row.sequence, row.current?.date, row.previous?.date)}${metrics.map(([, key]) => comparisonValueCell(row.current, row.previous, key)).join('')}</tr>`).join('')
-  return `<div class="daily-subsection"><h4>${escapeHtml(title)}</h4><table class="comparison-table"><thead><tr><th>比較日</th>${metrics.map(([label]) => `<th class="num">${escapeHtml(label)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`
+  const body = rows.map(row => `<tr><td>${escapeHtml(row.date.replaceAll('-', '/'))}</td>${metrics.map(([, key]) => dailyValueCell(row, key)).join('')}</tr>`).join('')
+  const totals = metrics.map(([, key]) => `<td class="num">${formatMoney(rows.reduce((sum, row) => sum + (row.hasData ? Number(row[key]) : 0), 0))}</td>`).join('')
+  return `<div class="daily-subsection"><h4>${escapeHtml(title)}</h4><table class="daily-period-table"><thead><tr><th>日期</th>${metrics.map(([label]) => `<th class="num">${escapeHtml(label)}</th>`).join('')}</tr></thead><tbody>${body}</tbody><tfoot><tr><td>週合計</td>${totals}</tr></tfoot></table></div>`
 }
 
-function comparisonDateCell(sequence: number, currentDate?: string, previousDate?: string) {
-  return `<td class="compare-date"><strong>第 ${sequence} 日</strong><span class="current">本期 ${escapeHtml(shortDate(currentDate))}</span><span class="previous">前期 ${escapeHtml(shortDate(previousDate))}</span></td>`
-}
-
-function comparisonValueCell(
-  current: ReturnType<typeof buildPdfDailyComparisonRows>[number]['current'],
-  previous: ReturnType<typeof buildPdfDailyComparisonRows>[number]['previous'],
+function dailyValueCell(
+  row: MeetingRevenueComparison['current']['daily'][number],
   key: PdfDailyMetric,
 ) {
-  const currentValue = current?.hasData && typeof current[key] === 'number' ? Number(current[key]) : null
-  const previousValue = previous?.hasData && typeof previous[key] === 'number' ? Number(previous[key]) : null
-  if (currentValue == null && previousValue == null) return '<td class="compare-cell">—</td>'
-  const difference = (currentValue ?? 0) - (previousValue ?? 0)
-  const percentage = currentValue == null || previousValue == null ? '—' : formatChange(currentValue, previousValue)
-  return `<td class="compare-cell"><span class="current"><i>本期</i>${currentValue == null ? '—' : formatPlainAmount(currentValue)}</span><span class="previous"><i>前期</i>${previousValue == null ? '—' : formatPlainAmount(previousValue)}</span><span class="difference ${difference >= 0 ? 'up' : 'down'}"><i>差額</i>${formatSignedPlainAmount(difference)} · ${escapeHtml(percentage)}</span></td>`
+  return `<td class="num">${row.hasData ? formatMoney(Number(row[key])) : '—'}</td>`
 }
 
-type PdfDailyMetric = Exclude<keyof PdfDailyRevenueRow, 'date' | 'hasData'>
-
-function shortDate(value?: string) {
-  if (!value) return '—'
-  const parts = value.split('-')
-  return parts.length === 3 ? `${parts[1]}/${parts[2]}` : value
-}
+type PdfDailyMetric = Exclude<keyof MeetingRevenueComparison['current']['daily'][number], 'date' | 'hasData'>
 
 function photoHtml(photos: string[]) {
   if (!photos.length) return ''
@@ -521,15 +516,6 @@ function formatMoney(value: number) {
 function formatSignedMoney(value: number) {
   if (value === 0) return 'NT$ 0'
   return `${value > 0 ? '+' : '-'}NT$ ${Math.abs(Math.round(value)).toLocaleString('zh-TW')}`
-}
-
-function formatPlainAmount(value: number) {
-  return Math.round(value).toLocaleString('zh-TW')
-}
-
-function formatSignedPlainAmount(value: number) {
-  if (value === 0) return '0'
-  return `${value > 0 ? '+' : '-'}${Math.abs(Math.round(value)).toLocaleString('zh-TW')}`
 }
 
 function formatChange(current: number, previous: number) {
