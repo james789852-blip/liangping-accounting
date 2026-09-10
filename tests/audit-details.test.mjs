@@ -6,6 +6,7 @@ import {
   auditMetadataLabel,
   auditPrimitiveText,
   deriveLegacyCKRecordChanges,
+  isTechnicalAuditField,
 } from '../lib/audit-display.ts'
 
 const auditClientSource = await readFile(
@@ -50,9 +51,19 @@ test('操作軌跡展開區使用可讀明細而非只有原始 JSON', () => {
   assert.match(auditClientSource, /變更欄位（\{changes\.length\}）/)
   assert.match(auditClientSource, />修改前</)
   assert.match(auditClientSource, />修改後</)
-  assert.match(auditClientSource, /本次操作的完整內容/)
+  assert.match(auditClientSource, /本次操作內容/)
+  assert.match(auditClientSource, /同一帳目操作時間軸/)
+  assert.match(auditClientSource, /技術資訊與事件編號/)
   assert.match(auditClientSource, /SEVERITY_LABELS\[log\.severity\]/)
   assert.doesNotMatch(auditClientSource, /JSON\.stringify\(log\.metadata/)
+})
+
+test('操作軌跡將事件編號與裝置欄位收進技術資訊', () => {
+  assert.equal(isTechnicalAuditField('entity_id'), true)
+  assert.equal(isTechnicalAuditField('source'), true)
+  assert.equal(isTechnicalAuditField('browser'), true)
+  assert.equal(isTechnicalAuditField('total_revenue'), false)
+  assert.equal(isTechnicalAuditField('variance'), false)
 })
 
 test('操作軌跡的英文欄位與系統值會顯示為繁體中文', () => {

@@ -63,6 +63,18 @@ export default async function HQAuditPage({
   const userMap: Record<string, string> = {}
   for (const u of users ?? []) userMap[u.user_id as string] = u.name as string
 
+  // 篩選後仍補齊同一筆帳目的完整操作時間軸；只取時間軸需要的輕量欄位，避免拖慢頁面。
+  const closingIds = [...new Set((logs ?? [])
+    .map(log => log.closing_id as string | null)
+    .filter((id): id is string => Boolean(id)))]
+  const { data: relatedClosingLogs } = closingIds.length > 0
+    ? await admin.from('audit_logs')
+        .select('id, event_type, user_id, closing_id, description, created_at')
+        .in('closing_id', closingIds)
+        .order('created_at', { ascending: true })
+        .limit(2000)
+    : { data: [] }
+
   const enrichedLogs = (logs ?? []).map(log => ({
     id: log.id as string,
     eventType: log.event_type as string,
@@ -92,7 +104,16 @@ export default async function HQAuditPage({
       </div>
 
       <AuditClient
+        key={`${fromDate}:${toDate}`}
         logs={enrichedLogs}
+        timelineLogs={(relatedClosingLogs ?? []).map(log => ({
+          id: log.id as string,
+          eventType: log.event_type as string,
+          userName: log.user_id ? (userMap[log.user_id as string] ?? '系統') : '系統',
+          closingId: log.closing_id as string,
+          description: log.description as string,
+          createdAt: log.created_at as string,
+        }))}
         stores={sortStores(stores ?? []).map(s => ({ id: s.id as string, name: s.name as string, type: (s as { type?: string }).type ?? '店面' }))}
         eventTypes={[...EVENT_TYPES]}
         currentStore={storeFilter}

@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Filter, ChevronDown, ChevronUp, AlertCircle, AlertTriangle, Info } from 'lucide-react'
+import { Filter, ChevronDown, ChevronUp, AlertCircle, AlertTriangle, Info, Clock3, Wrench } from 'lucide-react'
 import Link from 'next/link'
-import { auditMetadataLabel, auditPrimitiveText, deriveLegacyCKRecordChanges } from '@/lib/audit-display'
+import { auditMetadataLabel, auditPrimitiveText, deriveLegacyCKRecordChanges, isTechnicalAuditField } from '@/lib/audit-display'
 
 interface AuditLog {
   id: string
@@ -22,6 +22,7 @@ interface AuditLog {
 
 interface Props {
   logs: AuditLog[]
+  timelineLogs: AuditTimelineLog[]
   stores: { id: string; name: string; type?: string }[]
   eventTypes: string[]
   currentStore: string
@@ -29,6 +30,15 @@ interface Props {
   currentSeverity: string
   currentFrom: string
   currentTo: string
+}
+
+interface AuditTimelineLog {
+  id: string
+  eventType: string
+  userName: string
+  closingId: string
+  description: string
+  createdAt: string
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -109,7 +119,7 @@ function formatTime(iso: string): { date: string; time: string } {
 }
 
 export default function AuditClient({
-  logs, stores, eventTypes, currentStore, currentEvent, currentSeverity, currentFrom, currentTo,
+  logs, timelineLogs, stores, eventTypes, currentStore, currentEvent, currentSeverity, currentFrom, currentTo,
 }: Props) {
   const router = useRouter()
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -117,8 +127,6 @@ export default function AuditClient({
   // 日期改用 local state，按「套用」才送出 → 避免手機選日期時自動觸發 query
   const [pendingFrom, setPendingFrom] = useState(currentFrom)
   const [pendingTo, setPendingTo] = useState(currentTo)
-  useEffect(() => { setPendingFrom(currentFrom) }, [currentFrom])
-  useEffect(() => { setPendingTo(currentTo) }, [currentTo])
   const dateDirty = pendingFrom !== currentFrom || pendingTo !== currentTo
 
   function applyFilter(updates: Partial<{ store: string; event: string; severity: string; from: string; to: string }>) {
@@ -140,6 +148,8 @@ export default function AuditClient({
   }
 
   function clearFilters() {
+    setPendingFrom('')
+    setPendingTo('')
     router.push('/hq/audit')
   }
 
@@ -273,9 +283,6 @@ export default function AuditClient({
                 {expanded && (
                   <div className="px-4 pb-3" style={{ background: '#fafafa' }}>
                     <div className="rounded-xl p-3 space-y-1" style={{ background: 'white', border: '1px solid #f4f4f5' }}>
-                      <Row label="事件 ID" value={<code className="text-xs">{log.id}</code>} />
-                      <Row label="事件類型" value={eventLabel} />
-                      <Row label="等級" value={SEVERITY_LABELS[log.severity]} />
                       <Row label="時間" value={new Date(log.createdAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })} />
                       <Row label="店家" value={log.storeName} />
                       <Row label="使用者" value={log.userName} />
@@ -286,19 +293,26 @@ export default function AuditClient({
                           </Link>
                         } />
                       )}
-                      {Object.keys(log.metadata).length > 0 && (
-                        <AuditMetadataDetails
-                          metadata={log.metadata}
-                          stores={stores}
-                          olderComparableMetadata={log.eventType === 'ck_record_update'
-                            ? logs.slice(logIndex + 1)
-                                .filter(older => older.eventType === log.eventType
-                                  && older.storeId === log.storeId
-                                  && older.metadata.business_date === log.metadata.business_date)
-                                .map(older => older.metadata)
-                            : []}
+                      {log.closingId && (
+                        <ClosingTimeline
+                          currentLogId={log.id}
+                          logs={timelineLogs.filter(item => item.closingId === log.closingId)}
                         />
                       )}
+                      <AuditMetadataDetails
+                        metadata={log.metadata}
+                        stores={stores}
+                        olderComparableMetadata={log.eventType === 'ck_record_update'
+                          ? logs.slice(logIndex + 1)
+                              .filter(older => older.eventType === log.eventType
+                                && older.storeId === log.storeId
+                                && older.metadata.business_date === log.metadata.business_date)
+                              .map(older => older.metadata)
+                          : []}
+                        eventId={log.id}
+                        eventLabel={eventLabel}
+                        severityLabel={SEVERITY_LABELS[log.severity]}
+                      />
                     </div>
                   </div>
                 )}
@@ -324,14 +338,56 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
+function ClosingTimeline({ logs, currentLogId }: { logs: AuditTimelineLog[]; currentLogId: string }) {
+  if (logs.length <= 1) return null
+  const ordered = [...logs].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+
+  return (
+    <section className="mt-3 rounded-xl px-3 py-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+      <div className="flex items-center gap-2 mb-2">
+        <Clock3 className="h-3.5 w-3.5" style={{ color: '#64748b' }} />
+        <p className="text-xs font-bold" style={{ color: '#475569' }}>同一帳目操作時間軸（{ordered.length} 筆）</p>
+      </div>
+      <div className="space-y-2">
+        {ordered.map((item, index) => {
+          const active = item.id === currentLogId
+          return (
+            <div key={item.id} className="grid grid-cols-[4.5rem_0.75rem_minmax(0,1fr)] gap-2 text-xs">
+              <span className="tabular-nums" style={{ color: active ? '#c2410c' : '#71717a' }}>
+                {new Date(item.createdAt).toLocaleString('zh-TW', {
+                  timeZone: 'Asia/Taipei', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+                })}
+              </span>
+              <span className="relative flex justify-center">
+                {index < ordered.length - 1 && <span className="absolute top-2 bottom-[-0.75rem] w-px" style={{ background: '#cbd5e1' }} />}
+                <span className="relative mt-1 h-2 w-2 rounded-full" style={{ background: active ? '#f97316' : '#94a3b8' }} />
+              </span>
+              <div className="min-w-0">
+                <span className="font-semibold" style={{ color: active ? '#c2410c' : '#334155' }}>
+                  {EVENT_LABELS[item.eventType] ?? '其他操作'}
+                </span>
+                <span style={{ color: '#94a3b8' }}> · {item.userName}</span>
+                <p className="mt-0.5 break-words" style={{ color: '#64748b' }}>{item.description}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-function AuditMetadataDetails({ metadata, stores, olderComparableMetadata }: {
+function AuditMetadataDetails({ metadata, stores, olderComparableMetadata, eventId, eventLabel, severityLabel }: {
   metadata: Record<string, unknown>
   stores: Props['stores']
   olderComparableMetadata: Record<string, unknown>[]
+  eventId: string
+  eventLabel: string
+  severityLabel: string
 }) {
   const storeNames = new Map(stores.map(store => [store.id, store.name]))
   const recordedChanges = Array.isArray(metadata.changes) ? metadata.changes.filter(isRecord) : []
@@ -339,7 +395,10 @@ function AuditMetadataDetails({ metadata, stores, olderComparableMetadata }: {
     ? deriveLegacyCKRecordChanges(metadata, olderComparableMetadata)
     : []
   const changes = recordedChanges.length > 0 ? recordedChanges : derivedChanges
-  const remaining = Object.entries(metadata).filter(([key]) => key !== 'changes' && key !== 'audit_version')
+  const changedFields = new Set(changes.map(change => typeof change.field === 'string' ? change.field : ''))
+  const remaining = Object.entries(metadata).filter(([key]) => key !== 'changes' && !changedFields.has(key))
+  const businessDetails = remaining.filter(([key]) => !isTechnicalAuditField(key))
+  const technicalDetails = remaining.filter(([key]) => isTechnicalAuditField(key))
 
   return (
     <div className="mt-3 space-y-3">
@@ -375,11 +434,11 @@ function AuditMetadataDetails({ metadata, stores, olderComparableMetadata }: {
           </div>
         </section>
       )}
-      {remaining.length > 0 && (
+      {businessDetails.length > 0 && (
         <section>
-          <p className="text-xs font-bold mb-1.5" style={{ color: '#52525b' }}>本次操作的完整內容</p>
+          <p className="text-xs font-bold mb-1.5" style={{ color: '#52525b' }}>本次操作內容</p>
           <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #e4e4e7' }}>
-            {remaining.map(([key, value]) => (
+            {businessDetails.map(([key, value]) => (
               <div key={key} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 px-3 py-2 text-xs" style={{ borderBottom: '1px solid #f4f4f5' }}>
                 <span className="font-semibold" style={{ color: '#71717a' }}>{auditMetadataLabel(key)}</span>
                 <AuditValue value={value} field={key} storeNames={storeNames} />
@@ -388,6 +447,24 @@ function AuditMetadataDetails({ metadata, stores, olderComparableMetadata }: {
           </div>
         </section>
       )}
+      <details className="rounded-lg" style={{ border: '1px solid #e4e4e7', background: '#fafafa' }}>
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-semibold" style={{ color: '#71717a' }}>
+          <Wrench className="h-3.5 w-3.5" />
+          技術資訊與事件編號
+          <span className="ml-auto text-[10px]" style={{ color: '#a1a1aa' }}>系統追查時使用</span>
+        </summary>
+        <div className="border-t px-3 py-2 space-y-1.5" style={{ borderColor: '#e4e4e7' }}>
+          <Row label="事件 ID" value={<code className="text-[11px] break-all">{eventId}</code>} />
+          <Row label="事件類型" value={eventLabel} />
+          <Row label="等級" value={severityLabel} />
+          {technicalDetails.map(([key, value]) => (
+            <div key={key} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 text-xs">
+              <span className="font-semibold" style={{ color: '#a1a1aa' }}>{auditMetadataLabel(key)}</span>
+              <AuditValue value={value} field={key} storeNames={storeNames} />
+            </div>
+          ))}
+        </div>
+      </details>
       <p className="text-[10px]" style={{ color: '#a1a1aa' }}>安全保護：密碼、登入憑證、Token 與金鑰不會顯示或保存於操作明細。</p>
     </div>
   )

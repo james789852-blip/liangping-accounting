@@ -189,8 +189,19 @@ const VALUE_LABELS: Record<string, string> = {
 
 const CK_COMPARISON_FIELDS = ['status', 'member_orders', 'external_orders', 'expenses', 'receipt_photo_count'] as const
 
+const TECHNICAL_AUDIT_FIELDS = new Set([
+  'action', 'entity', 'entity_type', 'entity_id', 'id', 'type',
+  'user_id', 'manager_id', 'closing_id', 'receipt_id', 'original_closing_id',
+  'category_id', 'item_mapping_id', 'external_store_id',
+  'source', 'device', 'browser', 'os', 'audit_version',
+])
+
 export function auditMetadataLabel(key: string) {
   return AUDIT_METADATA_LABELS[key] ?? '其他資料'
+}
+
+export function isTechnicalAuditField(key: string) {
+  return TECHNICAL_AUDIT_FIELDS.has(key) || key.endsWith('_id')
 }
 
 export function auditPrimitiveText(value: unknown) {
