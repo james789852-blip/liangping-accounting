@@ -16,13 +16,13 @@ const legacyCkExport = fs.readFileSync(new URL('../app/api/export/ck/route.ts', 
 test('店面正式報表只查詢已核准帳目，且草稿收據不會單獨流入', () => {
   assert.match(storeAggregator, /if \(scope\.verifiedOnly\) closingsQuery = closingsQuery\.eq\('status', 'verified'\)/)
   assert.match(storeAggregator, /if \(scope\.verifiedOnly && !byDate\[r\.business_date\]\) continue/)
-  assert.ok((storeWorkbook.match(/\{ verifiedOnly: true \}/g) ?? []).length >= 3)
+  assert.ok((storeWorkbook.match(/\{ verifiedOnly: true \}/g) ?? []).length >= 1)
   assert.match(storeCsv, /getMonthlyStats\(storeId, year, monthNum, \{ verifiedOnly: true \}\)/)
 })
 
 test('央廚正式報表與舊版匯出也只查詢已核准帳目', () => {
   assert.match(ckAggregator, /if \(scope\.verifiedOnly\) recordsQuery = recordsQuery\.eq\('status', 'verified'\)/)
-  assert.ok((ckWorkbook.match(/\{ verifiedOnly: true \}/g) ?? []).length >= 3)
+  assert.ok((ckWorkbook.match(/\{ verifiedOnly: true \}/g) ?? []).length >= 1)
   assert.match(ckCsv, /getCKMonthlyStats\(storeId, year, monthNum, \{ verifiedOnly: true \}\)/)
   assert.match(legacyCkExport, /\.eq\('status', 'verified'\)/)
   assert.match(ckWorkbook, /const isApprovedDay = dd\?\.status === 'verified'/)

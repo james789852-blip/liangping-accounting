@@ -77,10 +77,16 @@ async function syncStoreMonthToSheetsImpl(
 
   const workbook = await buildFoodCostNativeWorkbook(storeId, year, monthNum)
   const sheets = google.sheets({ version: 'v4', auth: getAuth() })
-  const spreadsheet = await sheets.spreadsheets.get({
+  let spreadsheet = await sheets.spreadsheets.get({
     spreadsheetId: sheetsId,
-    fields: 'sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))',
+    fields: 'sheets(properties(sheetId,title,hidden,gridProperties(rowCount,columnCount)))',
   })
+  if (await ensureAnnualSpreadsheetStructure(sheets, sheetsId, year, spreadsheet.data.sheets ?? [])) {
+    spreadsheet = await sheets.spreadsheets.get({
+      spreadsheetId: sheetsId,
+      fields: 'sheets(properties(sheetId,title,hidden,gridProperties(rowCount,columnCount)))',
+    })
+  }
 
   for (const worksheet of workbook.worksheets) {
     const tabName = `${year}年${worksheet.name}`
@@ -474,14 +480,20 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
 
   const workbook = await buildCKNativeWorkbook(ckStoreId, year, monthNum)
   const sheets = google.sheets({ version: 'v4', auth: getAuth() })
-  const spreadsheet = await sheets.spreadsheets.get({
+  let spreadsheet = await sheets.spreadsheets.get({
     spreadsheetId: sheetsId,
-    fields: 'sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))',
+    fields: 'sheets(properties(sheetId,title,hidden,gridProperties(rowCount,columnCount)))',
   })
+  if (await ensureAnnualSpreadsheetStructure(sheets, sheetsId, year, spreadsheet.data.sheets ?? [])) {
+    spreadsheet = await sheets.spreadsheets.get({
+      spreadsheetId: sheetsId,
+      fields: 'sheets(properties(sheetId,title,hidden,gridProperties(rowCount,columnCount)))',
+    })
+  }
 
   for (const [worksheetIndex, ws] of workbook.worksheets.entries()) {
-    // Keep the existing main-tab name used by the business, while its contents
-    // come directly from the native worksheet. Analysis tabs mirror Excel.
+    // Keep the existing main-tab name used by the business. Its contents come
+    // directly from the same native worksheet as the downloaded Excel file.
     const tabName = worksheetIndex === 0
       ? `${year}年${monthNum}月食耗成本`
       : `${year}年${ws.name}`
@@ -572,11 +584,89 @@ export function getTaipeiCurrentMonth(now = new Date()): string {
   return `${year}-${month}`
 }
 
+type SpreadsheetSheet = {
+  properties?: {
+    sheetId?: number | null
+    title?: string | null
+    hidden?: boolean | null
+  } | null
+}
+
 /**
- * Ensure every active, bound store/central-kitchen spreadsheet has the current
- * month tab. Existing tabs are left untouched by the scheduled run. An
- * authenticated maintenance request can explicitly rebuild existing tabs from
- * the same native Excel workbook used by the download.
+ * Pre-create all twelve food-cost tabs so another spreadsheet can link the
+ * whole year immediately. Placeholder tabs intentionally contain no values or
+ * formatting. The normal approved-month sync replaces the relevant placeholder
+ * with the exact native Excel worksheet when that month begins.
+ *
+ * Historical vendor-analysis tabs are retained for safety but hidden, and new
+ * exports no longer create them.
+ */
+async function ensureAnnualSpreadsheetStructure(
+  sheets: SheetsAPI,
+  spreadsheetId: string,
+  year: number,
+  existingSheets: SpreadsheetSheet[],
+): Promise<boolean> {
+  const existingTitles = new Set(
+    existingSheets.map(sheet => sheet.properties?.title).filter((title): title is string => Boolean(title)),
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const requests: any[] = []
+
+  for (let monthNum = 1; monthNum <= 12; monthNum++) {
+    const title = `${year}年${monthNum}月食耗成本`
+    if (existingTitles.has(title)) continue
+    requests.push({
+      addSheet: {
+        properties: {
+          title,
+          gridProperties: { rowCount: 100, columnCount: 26 },
+        },
+      },
+    })
+  }
+
+  for (const sheet of existingSheets) {
+    const properties = sheet.properties
+    if (
+      properties?.sheetId == null
+      || !properties.title?.includes('廠商分析')
+      || properties.hidden === true
+    ) continue
+    requests.push({
+      updateSheetProperties: {
+        properties: { sheetId: properties.sheetId, hidden: true },
+        fields: 'hidden',
+      },
+    })
+  }
+
+  if (requests.length === 0) return false
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests },
+  })
+  return true
+}
+
+async function sheetHasContent(
+  sheets: SheetsAPI,
+  spreadsheetId: string,
+  tabName: string,
+): Promise<boolean> {
+  const escapedTitle = tabName.replace(/'/g, "''")
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${escapedTitle}'!A1:B4`,
+  })
+  return (response.data.values ?? []).some(row => row.some(value => value !== '' && value != null))
+}
+
+/**
+ * Ensure every active, bound store/central-kitchen spreadsheet has all twelve
+ * food-cost tabs for the year. Future months stay blank. The requested month is
+ * built from the native Excel workbook when missing, blank, or explicitly
+ * refreshed.
  */
 export async function ensureMonthSheetsTabs(
   month = getTaipeiCurrentMonth(),
@@ -596,7 +686,7 @@ export async function ensureMonthSheetsTabs(
 
   const [yearStr, monthStr] = month.split('-')
   const tabName = `${Number(yearStr)}年${Number(monthStr)}月食耗成本`
-  const analysisTabName = `${Number(yearStr)}年${Number(monthStr)}月廠商分析`
+  const year = Number(yearStr)
   const sheets = google.sheets({ version: 'v4', auth: getAuth() })
   const result: EnsureMonthSheetsResult = { month, created: [], synced: [], existing: [], failed: [] }
 
@@ -611,13 +701,17 @@ export async function ensureMonthSheetsTabs(
       if (!spreadsheetId) continue
       const spreadsheet = await sheets.spreadsheets.get({
         spreadsheetId,
-        fields: 'sheets(properties(title))',
+        fields: 'sheets(properties(sheetId,title,hidden,gridProperties(rowCount,columnCount)))',
       })
       const existingTitles = new Set(
         spreadsheet.data.sheets?.map(sheet => sheet.properties?.title).filter(Boolean) ?? [],
       )
-      const hasCurrentTabs = existingTitles.has(tabName) && existingTitles.has(analysisTabName)
-      if (hasCurrentTabs && !options.refreshExisting) {
+      const hadCurrentTab = existingTitles.has(tabName)
+      await ensureAnnualSpreadsheetStructure(sheets, spreadsheetId, year, spreadsheet.data.sheets ?? [])
+      const hasCurrentContent = hadCurrentTab
+        ? await sheetHasContent(sheets, spreadsheetId, tabName)
+        : false
+      if (hasCurrentContent && !options.refreshExisting) {
         result.existing.push(target)
         continue
       }
@@ -627,7 +721,7 @@ export async function ensureMonthSheetsTabs(
       } else {
         await syncStoreMonthToSheets(target.storeId, month)
       }
-      if (hasCurrentTabs) result.synced.push(target)
+      if (hadCurrentTab) result.synced.push(target)
       else result.created.push(target)
     } catch (syncError) {
       result.failed.push({

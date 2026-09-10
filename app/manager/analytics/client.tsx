@@ -1023,8 +1023,8 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
 
               <div className="text-xs px-3 py-2 rounded-xl" style={{ background: '#F4F4F5', color: '#52525b' }}>
                 {exportType === 'month'
-                  ? <>將產出 <strong>2 個分頁</strong>：{exportMonth} 月食耗成本 + 廠商分析</>
-                  : <>將產出 <strong>14 個分頁</strong>：年度總覽 + 1~12 月食耗成本 + 年度廠商分析</>}
+                  ? <>將產出 <strong>1 個分頁</strong>：{exportMonth} 月食耗成本</>
+                  : <>將產出 <strong>13 個分頁</strong>：年度總覽 + 1~12 月食耗成本</>}
               </div>
 
               <button onClick={handleExcelExport} disabled={exportLoading}

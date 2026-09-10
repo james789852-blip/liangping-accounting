@@ -845,8 +845,6 @@ export async function buildCKNativeWorkbook(
   wb.created = new Date()
   ;(wb as any).calcProperties = { fullCalcOnLoad: true }
   await addCKSheet(wb, ckStoreId, year, monthNum)
-  const monthly = await getCKMonthlyStats(ckStoreId, year, monthNum, { verifiedOnly: true })
-  addCKVendorAnalysisSheet(wb, `${monthNum}月廠商分析`, buildCKVendorAnalysisRows([monthly], false), false)
   return wb
 }
 
@@ -863,12 +861,9 @@ export async function buildAnnualCKWorkbook(
   addCKAnnualOverviewSheet(wb, year)
 
   // 12 個月 sheet
-  const monthlies: CKMonthlyStats[] = []
   for (let m = 1; m <= 12; m++) {
     await addCKSheet(wb, ckStoreId, year, m)
-    monthlies.push(await getCKMonthlyStats(ckStoreId, year, m, { verifiedOnly: true }))
   }
-  addCKVendorAnalysisSheet(wb, '年度廠商分析', buildCKVendorAnalysisRows(monthlies, true), true)
 
   return wb
 }

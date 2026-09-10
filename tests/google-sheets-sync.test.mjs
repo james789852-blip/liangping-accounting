@@ -10,6 +10,7 @@ const accountingUI = fs.readFileSync(new URL('../components/hq/accounting-client
 const ckUI = fs.readFileSync(new URL('../components/hq/ck-overview.tsx', import.meta.url), 'utf8')
 const storeEditor = fs.readFileSync(new URL('../components/hq/store-editor.tsx', import.meta.url), 'utf8')
 const sheetsModule = fs.readFileSync(new URL('../lib/google-sheets.ts', import.meta.url), 'utf8')
+const foodNativeWorkbook = fs.readFileSync(new URL('../lib/food-cost-native-workbook.ts', import.meta.url), 'utf8')
 const ckNativeWorkbook = fs.readFileSync(new URL('../lib/ck-native-workbook.ts', import.meta.url), 'utf8')
 const monthCron = fs.readFileSync(new URL('../app/api/cron/ensure-month-sheets/route.ts', import.meta.url), 'utf8')
 const vercelConfig = JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
@@ -118,7 +119,7 @@ test('新月份即使尚無帳目，也能直接由 Excel 工作簿建立試算�
   assert.doesNotMatch(sheetsModule, /此月份無帳目資料/)
 })
 
-test('每天台北時間午夜會補建所有已綁定店面與央廚的當月分頁', () => {
+test('每天台北時間午夜會補建所有已綁定店面與央廚的全年分頁', () => {
   assert.match(sheetsModule, /export async function ensureMonthSheetsTabs/)
   assert.match(sheetsModule, /timeZone: 'Asia\/Taipei'/)
   assert.match(sheetsModule, /\.eq\('active', true\)/)
@@ -128,9 +129,27 @@ test('每天台北時間午夜會補建所有已綁定店面與央廚的當月�
   assert.match(monthCron, /url\.searchParams\.get\('refresh'\) === '1'/)
   assert.match(monthCron, /scope === 'store' \? '店面'/)
   assert.match(monthCron, /await ensureMonthSheetsTabs\(month, \{ refreshExisting, type \}\)/)
-  assert.match(sheetsModule, /if \(hasCurrentTabs && !options\.refreshExisting\)/)
+  assert.match(sheetsModule, /for \(let monthNum = 1; monthNum <= 12; monthNum\+\+\)/)
+  assert.match(sheetsModule, /gridProperties: \{ rowCount: 100, columnCount: 26 \}/)
+  assert.match(sheetsModule, /await sheetHasContent\(sheets, spreadsheetId, tabName\)/)
+  assert.match(sheetsModule, /if \(hasCurrentContent && !options\.refreshExisting\)/)
+  assert.match(sheetsModule, /properties: \{ sheetId: properties\.sheetId, hidden: true \}/)
   assert.match(sheetsModule, /result\.synced\.push\(target\)/)
   assert.ok(vercelConfig.crons.some(cron => (
     cron.path === '/api/cron/ensure-month-sheets' && cron.schedule === '0 16 * * *'
   )))
+})
+
+test('店面與央廚 Excel 不再產生廠商分析頁，年度固定為總覽加十二個月份', () => {
+  const storeMonthlyBuilder = foodNativeWorkbook.match(/export async function buildFoodCostNativeWorkbook[\s\S]*?\n}/)?.[0] ?? ''
+  const storeAnnualBuilder = foodNativeWorkbook.match(/export async function buildAnnualFoodCostWorkbook[\s\S]*?\n}/)?.[0] ?? ''
+  const ckMonthlyBuilder = ckNativeWorkbook.match(/export async function buildCKNativeWorkbook[\s\S]*?\n}/)?.[0] ?? ''
+  const ckAnnualBuilder = ckNativeWorkbook.match(/export async function buildAnnualCKWorkbook[\s\S]*?\n}/)?.[0] ?? ''
+
+  assert.doesNotMatch(storeMonthlyBuilder, /addVendorAnalysisSheet/)
+  assert.doesNotMatch(storeAnnualBuilder, /addVendorAnalysisSheet/)
+  assert.doesNotMatch(ckMonthlyBuilder, /addCKVendorAnalysisSheet/)
+  assert.doesNotMatch(ckAnnualBuilder, /addCKVendorAnalysisSheet/)
+  assert.match(storeAnnualBuilder, /for \(let m = 1; m <= 12; m\+\+\)/)
+  assert.match(ckAnnualBuilder, /for \(let m = 1; m <= 12; m\+\+\)/)
 })
