@@ -4,7 +4,9 @@ import test from 'node:test'
 
 import {
   CK_REIMBURSEMENT_AUTO_CONFIRM_HOURS,
+  formatCKReimbursementCountdown,
   getCKReimbursementAutoConfirmAt,
+  getCKReimbursementRemainingMs,
   isCKReimbursementExpired,
 } from '../lib/ck-reimbursement-handoff-deadline.ts'
 
@@ -24,6 +26,15 @@ test('總公司送出補款後滿 24 小時才會自動點交', () => {
   assert.equal(isCKReimbursementExpired(sentAt, new Date('2026-09-11T01:23:45.000Z')), true)
   assert.equal(isCKReimbursementExpired(null), false)
   assert.equal(getCKReimbursementAutoConfirmAt('invalid'), null)
+})
+
+test('點交頁即時顯示 24 小時倒數並在到期時歸零', () => {
+  const sentAt = '2026-09-10T01:00:00.000Z'
+  assert.equal(getCKReimbursementRemainingMs(sentAt, new Date('2026-09-10T02:02:57.000Z')), 82_623_000)
+  assert.equal(formatCKReimbursementCountdown(82_623_000), '剩餘 22:57:03')
+  assert.equal(formatCKReimbursementCountdown(0), '正在自動完成點交…')
+  assert.match(handoffCard, /最後 6 小時/)
+  assert.match(handoffCard, /router\.refresh\(\)/)
 })
 
 test('自動點交只更新已送出、未點交且超過期限的央廚補款', () => {

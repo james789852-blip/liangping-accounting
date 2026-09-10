@@ -1,12 +1,16 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { CheckCircle2, Clock3, X } from 'lucide-react'
 import { confirmCKReimbursementHandoff } from '@/app/actions/ck'
 import SafePhotoImage from '@/components/shared/safe-photo-image'
-import { getCKReimbursementAutoConfirmAt } from '@/lib/ck-reimbursement-handoff-deadline'
+import {
+  formatCKReimbursementCountdown,
+  getCKReimbursementAutoConfirmAt,
+  getCKReimbursementRemainingMs,
+} from '@/lib/ck-reimbursement-handoff-deadline'
 
 type PendingReimbursement = {
   id: string
@@ -41,11 +45,51 @@ function formatDeadline(value: string | null) {
   })} 前點交；逾時系統將自動完成`
 }
 
+function CountdownBadge({ sentAt, now }: { sentAt: string | null; now: number }) {
+  const remainingMs = now > 0 ? getCKReimbursementRemainingMs(sentAt, now) : null
+  const urgent = remainingMs !== null && remainingMs <= 60 * 60 * 1000
+  const warning = remainingMs !== null && remainingMs <= 6 * 60 * 60 * 1000
+  const expired = remainingMs === 0
+
+  return (
+    <span
+      className="inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-black tabular-nums"
+      style={{
+        color: expired || urgent ? '#B91C1C' : warning ? '#B45309' : '#0369A1',
+        background: expired || urgent ? '#FEE2E2' : warning ? '#FEF3C7' : '#E0F2FE',
+        border: `1px solid ${expired || urgent ? '#FCA5A5' : warning ? '#FCD34D' : '#7DD3FC'}`,
+      }}
+      aria-live={urgent ? 'polite' : 'off'}
+    >
+      {formatCKReimbursementCountdown(remainingMs)}
+    </span>
+  )
+}
+
 export default function CKReimbursementHandoffCard({ ckStoreId, items }: Props) {
   const router = useRouter()
   const [pendingDate, setPendingDate] = useState<string | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [now, setNow] = useState(0)
+  const refreshedAtExpiry = useRef(false)
   const [isPending, startTransition] = useTransition()
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setNow(Date.now()))
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearInterval(timer)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (now <= 0 || refreshedAtExpiry.current) return
+    const hasExpired = items.some(item => getCKReimbursementRemainingMs(item.sent_at, now) === 0)
+    if (!hasExpired) return
+    refreshedAtExpiry.current = true
+    router.refresh()
+  }, [items, now, router])
 
   const handleConfirm = (date: string) => {
     startTransition(async () => {
@@ -76,6 +120,9 @@ export default function CKReimbursementHandoffCard({ ckStoreId, items }: Props) 
           <p className="text-sm font-bold mt-1" style={{ color: '#C2410C' }}>
             確認收到總公司補款信封後，請在 24 小時內完成點交。
           </p>
+          <p className="text-xs font-semibold mt-1" style={{ color: '#B45309' }}>
+            最後 6 小時會顯示警示，倒數結束後系統自動完成點交。
+          </p>
         </div>
         <span className="px-3 py-1 rounded-full text-sm font-black" style={{ background: '#FFEDD5', color: '#9A3412' }}>
           {items.length} 筆
@@ -91,10 +138,11 @@ export default function CKReimbursementHandoffCard({ ckStoreId, items }: Props) 
                 <div>
                   <p className="text-lg font-black text-gray-900">{item.business_date}</p>
                   <p className="text-sm font-bold mt-1" style={{ color: '#9A3412' }}>{formatSentTime(item.sent_at)}</p>
-                  <p className="text-xs font-bold mt-1 flex items-start gap-1.5" style={{ color: '#C2410C' }}>
+                  <div className="text-xs font-bold mt-1 flex flex-wrap items-center gap-2" style={{ color: '#C2410C' }}>
                     <Clock3 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                     <span>{formatDeadline(item.sent_at)}</span>
-                  </p>
+                    <CountdownBadge sentAt={item.sent_at} now={now} />
+                  </div>
                 </div>
                 <button
                   type="button"
