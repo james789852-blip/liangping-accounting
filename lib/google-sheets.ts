@@ -79,12 +79,12 @@ async function syncStoreMonthToSheetsImpl(
   const sheets = google.sheets({ version: 'v4', auth: getAuth() })
   let spreadsheet = await sheets.spreadsheets.get({
     spreadsheetId: sheetsId,
-    fields: 'sheets(properties(sheetId,title,hidden,gridProperties(rowCount,columnCount)))',
+    fields: 'sheets(properties(sheetId,title,index,hidden,gridProperties(rowCount,columnCount)))',
   })
   if (await ensureAnnualSpreadsheetStructure(sheets, sheetsId, year, spreadsheet.data.sheets ?? [])) {
     spreadsheet = await sheets.spreadsheets.get({
       spreadsheetId: sheetsId,
-      fields: 'sheets(properties(sheetId,title,hidden,gridProperties(rowCount,columnCount)))',
+      fields: 'sheets(properties(sheetId,title,index,hidden,gridProperties(rowCount,columnCount)))',
     })
   }
 
@@ -482,12 +482,12 @@ export async function syncCKMonthToSheets(ckStoreId: string, month: string): Pro
   const sheets = google.sheets({ version: 'v4', auth: getAuth() })
   let spreadsheet = await sheets.spreadsheets.get({
     spreadsheetId: sheetsId,
-    fields: 'sheets(properties(sheetId,title,hidden,gridProperties(rowCount,columnCount)))',
+    fields: 'sheets(properties(sheetId,title,index,hidden,gridProperties(rowCount,columnCount)))',
   })
   if (await ensureAnnualSpreadsheetStructure(sheets, sheetsId, year, spreadsheet.data.sheets ?? [])) {
     spreadsheet = await sheets.spreadsheets.get({
       spreadsheetId: sheetsId,
-      fields: 'sheets(properties(sheetId,title,hidden,gridProperties(rowCount,columnCount)))',
+      fields: 'sheets(properties(sheetId,title,index,hidden,gridProperties(rowCount,columnCount)))',
     })
   }
 
@@ -588,6 +588,7 @@ type SpreadsheetSheet = {
   properties?: {
     sheetId?: number | null
     title?: string | null
+    index?: number | null
     hidden?: boolean | null
   } | null
 }
@@ -641,12 +642,51 @@ async function ensureAnnualSpreadsheetStructure(
     })
   }
 
-  if (requests.length === 0) return false
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    requestBody: { requests },
-  })
-  return true
+  let structureChanged = false
+  if (requests.length > 0) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests },
+    })
+    structureChanged = true
+  }
+
+  const [currentYearText, currentMonthText] = getTaipeiCurrentMonth().split('-')
+  const focusMonth = Number(currentYearText) === year ? Number(currentMonthText) : 12
+  const orderedMonths = [
+    ...Array.from({ length: focusMonth }, (_, index) => focusMonth - index),
+    ...Array.from({ length: 12 - focusMonth }, (_, index) => focusMonth + index + 1),
+  ]
+  const desiredTitles = orderedMonths.map(monthNum => `${year}年${monthNum}月食耗成本`)
+
+  const latestSheets = structureChanged
+    ? (await sheets.spreadsheets.get({
+        spreadsheetId,
+        fields: 'sheets(properties(sheetId,title,index,hidden))',
+      })).data.sheets ?? []
+    : existingSheets
+  const byTitle = new Map(
+    latestSheets
+      .filter(sheet => sheet.properties?.title && sheet.properties.sheetId != null)
+      .map(sheet => [sheet.properties!.title!, sheet.properties!]),
+  )
+  const needsReorder = desiredTitles.some((title, index) => byTitle.get(title)?.index !== index)
+
+  if (needsReorder) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: desiredTitles.map((title, index) => ({
+          updateSheetProperties: {
+            properties: { sheetId: byTitle.get(title)!.sheetId, index },
+            fields: 'index',
+          },
+        })),
+      },
+    })
+  }
+
+  return structureChanged || needsReorder
 }
 
 async function sheetHasContent(
@@ -701,7 +741,7 @@ export async function ensureMonthSheetsTabs(
       if (!spreadsheetId) continue
       const spreadsheet = await sheets.spreadsheets.get({
         spreadsheetId,
-        fields: 'sheets(properties(sheetId,title,hidden,gridProperties(rowCount,columnCount)))',
+        fields: 'sheets(properties(sheetId,title,index,hidden,gridProperties(rowCount,columnCount)))',
       })
       const existingTitles = new Set(
         spreadsheet.data.sheets?.map(sheet => sheet.properties?.title).filter(Boolean) ?? [],

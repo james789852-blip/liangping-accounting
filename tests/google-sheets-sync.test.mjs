@@ -134,6 +134,10 @@ test('每天台北時間午夜會補建所有已綁定店面與央廚的全年�
   assert.match(sheetsModule, /await sheetHasContent\(sheets, spreadsheetId, tabName\)/)
   assert.match(sheetsModule, /if \(hasCurrentContent && !options\.refreshExisting\)/)
   assert.match(sheetsModule, /properties: \{ sheetId: properties\.sheetId, hidden: true \}/)
+  assert.match(sheetsModule, /const orderedMonths = \[/)
+  assert.match(sheetsModule, /focusMonth - index/)
+  assert.match(sheetsModule, /properties: \{ sheetId: byTitle\.get\(title\)!\.sheetId, index \}/)
+  assert.match(sheetsModule, /fields: 'index'/)
   assert.match(sheetsModule, /result\.synced\.push\(target\)/)
   assert.ok(vercelConfig.crons.some(cron => (
     cron.path === '/api/cron/ensure-month-sheets' && cron.schedule === '0 16 * * *'
