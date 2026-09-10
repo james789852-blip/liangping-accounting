@@ -10,6 +10,7 @@ import { ArrowRight, CalendarDays, ClipboardList, CheckCircle2 } from 'lucide-re
 import RecentClosingsList from '@/components/manager/recent-closings'
 import CKReimbursementHandoffCard from '@/components/manager/ck-reimbursement-handoff-card'
 import ReturnedAccountingAlert, { type ReturnedAccountingItem } from '@/components/manager/returned-accounting-alert'
+import { autoCompleteExpiredCKReimbursementHandoffs } from '@/lib/ck-reimbursement-handoff'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,6 +75,8 @@ export default async function ManagerDashboard() {
     ])
     storeName = (storeData as any)?.name ?? ''
     if ((storeData as any)?.type === '央廚') {
+      // 顯示前先補判定，確保排程稍有延遲時，逾 24 小時的資料仍會立即呈現為已點交。
+      await autoCompleteExpiredCKReimbursementHandoffs({ ckStoreId: storeId })
       const { data: ckStoreFull } = await admin
         .from('stores')
         .select('assigned_store_ids')

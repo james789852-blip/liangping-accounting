@@ -58,6 +58,7 @@ export default async function AccountingPage({
       status: detail.status,
       hq_paid: detail.hqPaid,
       ck_reimbursement_confirmed: detail.ckReimbursementConfirmed,
+      ck_reimbursement_auto_confirmed: detail.ckReimbursementAutoConfirmed,
     }] : []
   })
 

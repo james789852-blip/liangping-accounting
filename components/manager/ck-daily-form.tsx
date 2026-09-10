@@ -188,6 +188,7 @@ interface ExistingRecord {
   hq_reimbursement_adjustment_note?: string
   ck_reimbursement_confirmed?: boolean
   ck_reimbursement_confirmed_at?: string | null
+  ck_reimbursement_auto_confirmed?: boolean
   externalOrders: ExternalOrder[]
   expenses: Array<Expense & { receipt_photo_url?: string }>
   receiptPhotoUrls?: string[]
@@ -504,6 +505,7 @@ function CKDoneCard({
   hqReimbursementAdjustmentNote,
   ckReimbursementConfirmed,
   ckReimbursementConfirmedAt,
+  ckReimbursementAutoConfirmed,
 }: {
   ckStoreId: string
   ckStoreName: string
@@ -519,6 +521,7 @@ function CKDoneCard({
   hqReimbursementAdjustmentNote?: string
   ckReimbursementConfirmed: boolean
   ckReimbursementConfirmedAt?: string | null
+  ckReimbursementAutoConfirmed?: boolean
 }) {
   const router = useRouter()
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -580,7 +583,9 @@ function CKDoneCard({
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold" style={{ color: confirmed ? '#15803d' : '#92400e' }}>
-                  {confirmed ? '補款已點交完成' : '總公司已補款，請點交確認'}
+                  {confirmed
+                    ? (ckReimbursementAutoConfirmed ? '補款已由系統自動完成點交' : '補款已點交完成')
+                    : '總公司已補款，請點交確認'}
                 </p>
                 <p className="text-xs mt-0.5" style={{ color: confirmed ? '#16a34a' : '#a16207' }}>
                   {hqReimbursementSentAt ? `送出時間：${new Date(hqReimbursementSentAt).toLocaleString('zh-TW')}` : '請確認信封金額與照片內容'}
@@ -593,7 +598,12 @@ function CKDoneCard({
                 )}
                 {confirmed && ckReimbursementConfirmedAt && (
                   <p className="text-xs mt-0.5" style={{ color: '#16a34a' }}>
-                    點交時間：{new Date(ckReimbursementConfirmedAt).toLocaleString('zh-TW')}
+                    {ckReimbursementAutoConfirmed ? '自動點交時間' : '點交時間'}：{new Date(ckReimbursementConfirmedAt).toLocaleString('zh-TW')}
+                  </p>
+                )}
+                {!confirmed && hqReimbursementSentAt && (
+                  <p className="text-xs mt-1 font-semibold" style={{ color: '#C2410C' }}>
+                    請於 {new Date(new Date(hqReimbursementSentAt).getTime() + 24 * 60 * 60 * 1000).toLocaleString('zh-TW')} 前完成；逾時系統將自動點交。
                   </p>
                 )}
               </div>
@@ -1402,6 +1412,7 @@ export default function CKDailyForm({ ckStoreId, ckStoreName, date, realToday, i
         hqReimbursementAdjustmentNote={existing?.hq_reimbursement_adjustment_note ?? ''}
         ckReimbursementConfirmed={existing?.ck_reimbursement_confirmed ?? false}
         ckReimbursementConfirmedAt={existing?.ck_reimbursement_confirmed_at ?? null}
+        ckReimbursementAutoConfirmed={existing?.ck_reimbursement_auto_confirmed ?? false}
       />
     )
   }

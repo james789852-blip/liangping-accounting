@@ -130,8 +130,7 @@ test('每天台北時間午夜會補建所有已綁定店面與央廚的當月�
   assert.match(monthCron, /await ensureMonthSheetsTabs\(month, \{ refreshExisting, type \}\)/)
   assert.match(sheetsModule, /if \(hasCurrentTabs && !options\.refreshExisting\)/)
   assert.match(sheetsModule, /result\.synced\.push\(target\)/)
-  assert.deepEqual(vercelConfig.crons, [{
-    path: '/api/cron/ensure-month-sheets',
-    schedule: '0 16 * * *',
-  }])
+  assert.ok(vercelConfig.crons.some(cron => (
+    cron.path === '/api/cron/ensure-month-sheets' && cron.schedule === '0 16 * * *'
+  )))
 })

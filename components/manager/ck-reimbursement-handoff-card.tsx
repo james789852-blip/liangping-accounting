@@ -3,9 +3,10 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { CheckCircle2, X } from 'lucide-react'
+import { CheckCircle2, Clock3, X } from 'lucide-react'
 import { confirmCKReimbursementHandoff } from '@/app/actions/ck'
 import SafePhotoImage from '@/components/shared/safe-photo-image'
+import { getCKReimbursementAutoConfirmAt } from '@/lib/ck-reimbursement-handoff-deadline'
 
 type PendingReimbursement = {
   id: string
@@ -27,6 +28,17 @@ function formatSentTime(value: string | null) {
     hour: '2-digit',
     minute: '2-digit',
   })}`
+}
+
+function formatDeadline(value: string | null) {
+  const deadline = getCKReimbursementAutoConfirmAt(value)
+  if (!deadline) return '送出滿 24 小時後，系統會自動完成點交'
+  return `請於 ${new Date(deadline).toLocaleString('zh-TW', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })} 前點交；逾時系統將自動完成`
 }
 
 export default function CKReimbursementHandoffCard({ ckStoreId, items }: Props) {
@@ -62,7 +74,7 @@ export default function CKReimbursementHandoffCard({ ckStoreId, items }: Props) 
             有補款等待點交
           </p>
           <p className="text-sm font-bold mt-1" style={{ color: '#C2410C' }}>
-            確認收到總公司補款信封後，直接在這裡完成點交。
+            確認收到總公司補款信封後，請在 24 小時內完成點交。
           </p>
         </div>
         <span className="px-3 py-1 rounded-full text-sm font-black" style={{ background: '#FFEDD5', color: '#9A3412' }}>
@@ -79,6 +91,10 @@ export default function CKReimbursementHandoffCard({ ckStoreId, items }: Props) 
                 <div>
                   <p className="text-lg font-black text-gray-900">{item.business_date}</p>
                   <p className="text-sm font-bold mt-1" style={{ color: '#9A3412' }}>{formatSentTime(item.sent_at)}</p>
+                  <p className="text-xs font-bold mt-1 flex items-start gap-1.5" style={{ color: '#C2410C' }}>
+                    <Clock3 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <span>{formatDeadline(item.sent_at)}</span>
+                  </p>
                 </div>
                 <button
                   type="button"

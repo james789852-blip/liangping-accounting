@@ -12,6 +12,7 @@ import {
   normalizeCKDeliveryPhotoUrls,
   normalizeCKTransferPhotoUrls,
 } from '@/lib/ck-delivery-photos'
+import { autoCompleteExpiredCKReimbursementHandoffs, isCKReimbursementAutoConfirmed } from '@/lib/ck-reimbursement-handoff'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,6 +65,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
   }
 
   const ckStoreIds = ckStores.map(s => s.id)
+  await autoCompleteExpiredCKReimbursementHandoffs()
   const reimbursementAdjustments = await getCKReimbursementAdjustments(ckStoreIds, date)
   const allAssignedIds = ckStores.flatMap(s => (s.assigned_store_ids as string[] | null) ?? [])
   const uniqueAssignedIds = [...new Set(allAssignedIds)]
@@ -74,7 +76,7 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
     { data: externalStores },
   ] = await Promise.all([
     admin.from('ck_daily_records')
-      .select('id, ck_store_id, status, payer_name, note, submitted_by, review_note, reviewed_at, hq_paid, hq_paid_at, receipt_photo_urls, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
+      .select('id, ck_store_id, status, payer_name, note, submitted_by, review_note, reviewed_at, hq_paid, hq_paid_at, receipt_photo_urls, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at, ck_reimbursement_confirmed_by')
       .in('ck_store_id', ckStoreIds)
       .eq('business_date', date),
     uniqueAssignedIds.length > 0
@@ -195,6 +197,11 @@ export default async function HQCKPage({ searchParams }: { searchParams: Promise
       hqReimbursementAdjustmentNote: reimbursementAdjustments[ckStore.id]?.note ?? '',
       ckReimbursementConfirmed: (record as any)?.ck_reimbursement_confirmed ?? false,
       ckReimbursementConfirmedAt: (record as any)?.ck_reimbursement_confirmed_at ?? null,
+      ckReimbursementAutoConfirmed: isCKReimbursementAutoConfirmed({
+        confirmed: (record as any)?.ck_reimbursement_confirmed,
+        confirmedAt: (record as any)?.ck_reimbursement_confirmed_at,
+        confirmedBy: (record as any)?.ck_reimbursement_confirmed_by,
+      }),
       revenueTotal,
       expenseTotal,
       balance: revenueTotal - expenseTotal,

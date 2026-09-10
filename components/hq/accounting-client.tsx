@@ -43,6 +43,7 @@ interface CKRow {
   status: string
   hq_paid: boolean
   ck_reimbursement_confirmed?: boolean
+  ck_reimbursement_auto_confirmed?: boolean
 }
 type StoreDetailState = {
   stats: DailyStats | null

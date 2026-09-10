@@ -11,6 +11,7 @@ import { confirmedMemberAmountMap } from '@/lib/ck-member-amounts'
 import { normalizeCKDeliveryPhotoUrls, normalizeCKTransferPhotoUrls } from '@/lib/ck-delivery-photos'
 import { getCachedStoreFull, getCachedUserProfile } from '@/lib/cached-queries'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
+import { autoCompleteExpiredCKReimbursementHandoffs, isCKReimbursementAutoConfirmed } from '@/lib/ck-reimbursement-handoff'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,6 +42,8 @@ export default async function CKPage({
     redirect('/manager/closing')
   }
 
+  await autoCompleteExpiredCKReimbursementHandoffs({ ckStoreId: storeId })
+
   const realToday = getBusinessDate()
   const params = await searchParams
   const requested = params.date
@@ -64,7 +67,7 @@ export default async function CKPage({
       : Promise.resolve({ data: [] }),
     admin.from('ck_external_stores').select('id, name, transfer_photo_required').eq('ck_store_id', storeId).order('created_at'),
     admin.from('ck_daily_records')
-      .select('id, payer_name, note, status, review_note, reviewed_at, updated_at, receipt_photo_urls, hq_paid, hq_paid_at, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
+      .select('id, payer_name, note, status, review_note, reviewed_at, updated_at, receipt_photo_urls, hq_paid, hq_paid_at, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at, ck_reimbursement_confirmed_by')
       .eq('ck_store_id', storeId)
       .eq('business_date', today)
       .maybeSingle(),
@@ -106,6 +109,7 @@ export default async function CKPage({
     hq_reimbursement_adjustment_note?: string
     ck_reimbursement_confirmed?: boolean
     ck_reimbursement_confirmed_at?: string | null
+    ck_reimbursement_auto_confirmed?: boolean
     externalOrders: {
       name: string
       amount: number
@@ -151,6 +155,11 @@ export default async function CKPage({
       hq_reimbursement_adjustment_note: reimbursementAdjustments[storeId]?.note ?? '',
       ck_reimbursement_confirmed: (ckRecord as any).ck_reimbursement_confirmed ?? false,
       ck_reimbursement_confirmed_at: (ckRecord as any).ck_reimbursement_confirmed_at ?? null,
+      ck_reimbursement_auto_confirmed: isCKReimbursementAutoConfirmed({
+        confirmed: (ckRecord as any).ck_reimbursement_confirmed,
+        confirmedAt: (ckRecord as any).ck_reimbursement_confirmed_at,
+        confirmedBy: (ckRecord as any).ck_reimbursement_confirmed_by,
+      }),
       externalOrders: (extOrders ?? []).map((o: any) => ({
         name: o.external_store_name as string,
         amount: o.amount as number,

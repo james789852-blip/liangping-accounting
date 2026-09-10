@@ -7,6 +7,7 @@ import {
   normalizeCKDeliveryPhotoUrls,
   normalizeCKTransferPhotoUrls,
 } from '@/lib/ck-delivery-photos'
+import { autoCompleteExpiredCKReimbursementHandoffs, isCKReimbursementAutoConfirmed } from '@/lib/ck-reimbursement-handoff'
 
 /**
  * 一次準備同一天所有指定央廚的完整審核資料。
@@ -16,13 +17,15 @@ export async function loadCKDailyDetails(ckStoreIds: string[], date: string) {
   const ids = [...new Set(ckStoreIds.filter(Boolean))]
   if (ids.length === 0) return {}
 
+  await autoCompleteExpiredCKReimbursementHandoffs()
+
   const admin = createAdminClient()
   const [{ data: ckStores }, { data: records }, reimbursementAdjustments] = await Promise.all([
     admin.from('stores')
       .select('id, name, assigned_store_ids')
       .in('id', ids),
     admin.from('ck_daily_records')
-      .select('id, ck_store_id, business_date, status, payer_name, note, submitted_by, review_note, reviewed_at, hq_paid, hq_paid_at, receipt_photo_urls, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at')
+      .select('id, ck_store_id, business_date, status, payer_name, note, submitted_by, review_note, reviewed_at, hq_paid, hq_paid_at, receipt_photo_urls, hq_reimbursement_photo_urls, hq_reimbursement_sent_at, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at, ck_reimbursement_confirmed_by')
       .in('ck_store_id', ids)
       .eq('business_date', date),
     getCKReimbursementAdjustments(ids, date),
@@ -138,6 +141,11 @@ export async function loadCKDailyDetails(ckStoreIds: string[], date: string) {
       hqReimbursementAdjustmentNote: reimbursementAdjustments[ckStore.id]?.note ?? '',
       ckReimbursementConfirmed: record.ck_reimbursement_confirmed ?? false,
       ckReimbursementConfirmedAt: record.ck_reimbursement_confirmed_at ?? null,
+      ckReimbursementAutoConfirmed: isCKReimbursementAutoConfirmed({
+        confirmed: record.ck_reimbursement_confirmed,
+        confirmedAt: record.ck_reimbursement_confirmed_at,
+        confirmedBy: record.ck_reimbursement_confirmed_by,
+      }),
       revenueTotal,
       expenseTotal,
       balance: revenueTotal - expenseTotal,

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ChevronRight, History, Search } from 'lucide-react'
 import { getEffectiveStoreId } from '@/lib/get-effective-store'
 import { getBusinessDate, getMonthLastDay } from '@/lib/business-date'
+import { autoCompleteExpiredCKReimbursementHandoffs, isCKReimbursementAutoConfirmed } from '@/lib/ck-reimbursement-handoff'
 
 export const dynamic = 'force-dynamic'
 
@@ -86,9 +87,10 @@ export default async function HistoryPage({
     .maybeSingle()
 
   if (currentStore?.type === '央廚') {
+    await autoCompleteExpiredCKReimbursementHandoffs({ ckStoreId: storeId })
     let ckQuery = admin
       .from('ck_daily_records')
-      .select('id, business_date, status, payer_name, hq_paid, ck_reimbursement_confirmed, review_note, reviewed_at')
+      .select('id, business_date, status, payer_name, hq_paid, ck_reimbursement_confirmed, ck_reimbursement_confirmed_at, ck_reimbursement_confirmed_by, review_note, reviewed_at')
       .eq('ck_store_id', storeId)
       .order('business_date', { ascending: false })
 
@@ -121,7 +123,17 @@ export default async function HistoryPage({
       const expense = (ckExpenses ?? [])
         .filter((e: any) => e.ck_daily_record_id === r.id)
         .reduce((s: number, e: any) => s + Number(e.amount ?? 0), 0)
-      return { ...r, revenue, expense, balance: revenue - expense }
+      return {
+        ...r,
+        revenue,
+        expense,
+        balance: revenue - expense,
+        ck_reimbursement_auto_confirmed: isCKReimbursementAutoConfirmed({
+          confirmed: r.ck_reimbursement_confirmed,
+          confirmedAt: r.ck_reimbursement_confirmed_at,
+          confirmedBy: r.ck_reimbursement_confirmed_by,
+        }),
+      }
     })
 
     const ckByMonth: Record<string, typeof ckRows> = {}
@@ -201,7 +213,7 @@ export default async function HistoryPage({
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold" style={{ color: '#18181b' }}>{c.business_date}</span>
                             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: st.ring, color: st.dot }}>{st.label}</span>
-                            {c.hq_paid && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: '#f0fdf4', color: '#15803d' }}>{c.ck_reimbursement_confirmed ? '補款已點交' : '待點交補款'}</span>}
+                            {c.hq_paid && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: '#f0fdf4', color: '#15803d' }}>{c.ck_reimbursement_confirmed ? (c.ck_reimbursement_auto_confirmed ? '系統自動點交' : '補款已點交') : '待點交補款'}</span>}
                           </div>
                           <div className="flex items-center gap-3 mt-0.5">
                             <span className="text-xs tabular-nums" style={{ color: '#10b981' }}>營業額 ${fmt(c.revenue)}</span>

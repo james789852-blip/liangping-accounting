@@ -138,6 +138,7 @@ interface CKStoreData {
   hqReimbursementAdjustmentNote?: string
   ckReimbursementConfirmed?: boolean
   ckReimbursementConfirmedAt?: string | null
+  ckReimbursementAutoConfirmed?: boolean
   revenueTotal: number
   expenseTotal: number
   balance: number
@@ -256,6 +257,7 @@ function PayButton({
   sentAt,
   confirmed,
   confirmedAt,
+  autoConfirmed,
   onPreview,
 }: {
   ckStoreId: string
@@ -270,6 +272,7 @@ function PayButton({
   sentAt?: string | null
   confirmed: boolean
   confirmedAt?: string | null
+  autoConfirmed?: boolean
   onPreview: (url: string) => void
 }) {
   const [isPending, startTransition] = useTransition()
@@ -378,7 +381,7 @@ function PayButton({
             <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: confirmed ? '#15803d' : '#d97706' }} />
             <div>
               <p className="text-sm font-semibold" style={{ color: confirmed ? '#15803d' : '#92400e' }}>
-                {confirmed ? '央廚已點交' : '待央廚點交'}
+                {confirmed ? (autoConfirmed ? '系統已自動完成點交' : '央廚已點交') : '待央廚點交'}
               </p>
               <p className="text-xs" style={{ color: '#16a34a' }}>
                 已包 ${fmt(finalAmount)} 給央廚{sentAt ? ` · ${new Date(sentAt).toLocaleString('zh-TW')}` : ''}
@@ -394,7 +397,12 @@ function PayButton({
                 </p>
               )}
               {confirmedAt && (
-                <p className="text-xs" style={{ color: '#15803d' }}>點交時間：{new Date(confirmedAt).toLocaleString('zh-TW')}</p>
+                <p className="text-xs" style={{ color: '#15803d' }}>{autoConfirmed ? '自動點交時間' : '點交時間'}：{new Date(confirmedAt).toLocaleString('zh-TW')}</p>
+              )}
+              {!confirmed && sentAt && (
+                <p className="text-xs font-semibold" style={{ color: '#C2410C' }}>
+                  逾 {new Date(new Date(sentAt).getTime() + 24 * 60 * 60 * 1000).toLocaleString('zh-TW')} 未點交，系統將自動完成
+                </p>
               )}
             </div>
           </div>
@@ -873,6 +881,7 @@ function CKCard({ d, date }: { d: CKStoreData; date: string }) {
                     sentAt={d.hqReimbursementSentAt}
                     confirmed={d.ckReimbursementConfirmed ?? false}
                     confirmedAt={d.ckReimbursementConfirmedAt}
+                    autoConfirmed={d.ckReimbursementAutoConfirmed ?? false}
                     onPreview={setLightboxUrl}
                   />
                 </div>

@@ -19,6 +19,7 @@ import {
 } from '@/lib/user-permissions'
 import { normalizeItemAmount } from '@/lib/negative-items'
 import { syncCKMonthToSheets as syncCKMonthToSheetsImpl } from '@/lib/google-sheets'
+import { autoCompleteExpiredCKReimbursementHandoffs } from '@/lib/ck-reimbursement-handoff'
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
 
@@ -639,9 +640,9 @@ export async function markCKHQPaid(
         hq_paid_at: now,
         hq_reimbursement_photo_urls: photoUrls,
         hq_reimbursement_sent_at: now,
-        ck_reimbursement_confirmed: false,
-        ck_reimbursement_confirmed_at: null,
-        ck_reimbursement_confirmed_by: null,
+      ck_reimbursement_confirmed: false,
+      ck_reimbursement_confirmed_at: null,
+      ck_reimbursement_confirmed_by: null,
         updated_at: now,
       }
     : {
@@ -768,15 +769,23 @@ export async function confirmCKReimbursementHandoff(ckStoreId: string, date: str
   if (!canAccessStore(ctx, ckStoreId)) return { error: '無權限存取此央廚' }
 
   const admin = createAdminClient()
+  // 若使用者正好在 24 小時到期後按下按鈕，先由伺服器完成逾時判定，
+  // 避免同一筆同時被標成「人工」與「自動」點交。
+  try {
+    await autoCompleteExpiredCKReimbursementHandoffs({ ckStoreId })
+  } catch (error) {
+    console.error('[confirmCKReimbursementHandoff] auto-complete check failed:', error)
+  }
   const { data: existing, error: findError } = await admin
     .from('ck_daily_records')
-    .select('id, hq_paid')
+    .select('id, hq_paid, ck_reimbursement_confirmed')
     .eq('ck_store_id', ckStoreId)
     .eq('business_date', date)
     .maybeSingle()
   if (findError) return { error: findError.message }
   if (!existing) return { error: '找不到央廚帳目' }
   if (!(existing as any).hq_paid) return { error: '總公司尚未送出補款' }
+  if ((existing as any).ck_reimbursement_confirmed) return { success: true, alreadyConfirmed: true }
 
   const now = new Date().toISOString()
   const { error } = await admin
