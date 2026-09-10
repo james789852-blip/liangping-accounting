@@ -310,6 +310,7 @@ export default function AuditClient({
                               .map(older => older.metadata)
                           : []}
                         eventId={log.id}
+                        eventType={log.eventType}
                         eventLabel={eventLabel}
                         severityLabel={SEVERITY_LABELS[log.severity]}
                       />
@@ -381,11 +382,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-function AuditMetadataDetails({ metadata, stores, olderComparableMetadata, eventId, eventLabel, severityLabel }: {
+function isAuditBlank(value: unknown) {
+  return value === null || value === undefined || value === ''
+}
+
+function isAuditDisplayEqual(before: unknown, after: unknown) {
+  if (isAuditBlank(before) && isAuditBlank(after)) return true
+  return JSON.stringify(before) === JSON.stringify(after)
+}
+
+function AuditMetadataDetails({ metadata, stores, olderComparableMetadata, eventId, eventType, eventLabel, severityLabel }: {
   metadata: Record<string, unknown>
   stores: Props['stores']
   olderComparableMetadata: Record<string, unknown>[]
   eventId: string
+  eventType: string
   eventLabel: string
   severityLabel: string
 }) {
@@ -394,15 +405,44 @@ function AuditMetadataDetails({ metadata, stores, olderComparableMetadata, event
   const derivedChanges = recordedChanges.length === 0
     ? deriveLegacyCKRecordChanges(metadata, olderComparableMetadata)
     : []
-  const changes = recordedChanges.length > 0 ? recordedChanges : derivedChanges
+  const changes = (recordedChanges.length > 0 ? recordedChanges : derivedChanges)
+    .filter(change => !isAuditDisplayEqual(change.before, change.after))
+  const isCreateOperation = eventType.endsWith('_create') || eventType.endsWith('_created')
+  const isDeleteOperation = eventType.endsWith('_delete') || eventType.endsWith('_deleted')
+  const snapshotSource = isCreateOperation ? metadata.after : isDeleteOperation ? metadata.before : null
+  const snapshot = isRecord(snapshotSource)
+    ? snapshotSource
+    : Object.fromEntries(changes.flatMap(change => typeof change.field === 'string'
+        ? [[change.field, isCreateOperation ? change.after : change.before] as const]
+        : []))
+  const snapshotDetails = Object.entries(snapshot).filter(([key, value]) =>
+    !isTechnicalAuditField(key) && !isAuditBlank(value),
+  )
   const changedFields = new Set(changes.map(change => typeof change.field === 'string' ? change.field : ''))
-  const remaining = Object.entries(metadata).filter(([key]) => key !== 'changes' && !changedFields.has(key))
+  const remaining = Object.entries(metadata).filter(([key]) =>
+    key !== 'changes' && key !== 'before' && key !== 'after' && !changedFields.has(key),
+  )
   const businessDetails = remaining.filter(([key]) => !isTechnicalAuditField(key))
   const technicalDetails = remaining.filter(([key]) => isTechnicalAuditField(key))
 
   return (
     <div className="mt-3 space-y-3">
-      {changes.length > 0 && (
+      {(isCreateOperation || isDeleteOperation) && snapshotDetails.length > 0 && (
+        <section>
+          <p className="text-xs font-bold mb-1.5" style={{ color: '#52525b' }}>
+            {isCreateOperation ? '新增資料摘要' : '刪除前資料摘要'}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 rounded-lg overflow-hidden" style={{ border: `1px solid ${isCreateOperation ? '#bae6fd' : '#fecaca'}` }}>
+            {snapshotDetails.map(([key, value]) => (
+              <div key={key} className={`grid grid-cols-[7rem_minmax(0,1fr)] gap-3 px-3 py-2 text-xs ${Array.isArray(value) || isRecord(value) ? 'sm:col-span-2' : ''}`} style={{ borderBottom: '1px solid #f4f4f5', background: isCreateOperation ? '#f0f9ff' : '#fef2f2' }}>
+                <span className="font-semibold" style={{ color: '#71717a' }}>{auditMetadataLabel(key)}</span>
+                <AuditValue value={value} field={key} storeNames={storeNames} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {!isCreateOperation && !isDeleteOperation && changes.length > 0 && (
         <section>
           <p className="text-xs font-bold mb-1.5" style={{ color: '#52525b' }}>變更欄位（{changes.length}）</p>
           {derivedChanges.length > 0 && (
@@ -416,16 +456,15 @@ function AuditMetadataDetails({ metadata, stores, olderComparableMetadata, event
                 ? suppliedLabel
                 : auditMetadataLabel(field)
               return (
-                <div key={`${field}-${index}`} className="rounded-lg px-3 py-2" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
-                  <p className="text-[11px] font-bold mb-1" style={{ color: '#92400e' }}>{label}</p>
-                  <div className="grid grid-cols-[1fr_auto_1fr] gap-2 text-[10px] font-bold mb-1">
-                    <span style={{ color: '#dc2626' }}>修改前</span>
-                    <span aria-hidden="true" />
-                    <span style={{ color: '#059669' }}>修改後</span>
-                  </div>
-                  <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2 text-xs">
+                <div key={`${field}-${index}`} className="grid grid-cols-1 sm:grid-cols-[9rem_minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-2 rounded-lg px-3 py-2" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
+                  <p className="text-[11px] font-bold sm:pt-1" style={{ color: '#92400e' }}>{label}</p>
+                  <div className="min-w-0 text-xs">
+                    <span className="block text-[10px] font-bold" style={{ color: '#dc2626' }}>修改前</span>
                     <AuditValue value={change.before} field={field} storeNames={storeNames} />
-                    <span style={{ color: '#a1a1aa' }}>→</span>
+                  </div>
+                  <span className="hidden sm:block pt-4" style={{ color: '#a1a1aa' }}>→</span>
+                  <div className="min-w-0 text-xs">
+                    <span className="block text-[10px] font-bold" style={{ color: '#059669' }}>修改後</span>
                     <AuditValue value={change.after} field={field} storeNames={storeNames} />
                   </div>
                 </div>
