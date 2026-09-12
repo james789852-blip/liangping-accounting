@@ -11,6 +11,7 @@ import { getCachedUserProfile, getCachedStoreFull, getCachedActiveCKPrices } fro
 import { getStoreItemsResolved, toMappingColumns } from '@/lib/store-items-resolver'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 import { buildReserveHistoryContext } from '@/lib/reserve-history'
+import { applyCKPriceOverrides } from '@/lib/ck-price-overrides'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,6 +54,7 @@ export default async function ClosingPage({
   const [
     store,
     ckPrices,
+    { data: ckPriceOverrides },
     { data: existingClosing },
     { data: todayReceipts },
     receiptCategories,
@@ -63,6 +65,10 @@ export default async function ClosingPage({
   ] = await Promise.all([
     getCachedStoreFull(storeId),
     getCachedActiveCKPrices(),
+    admin.from('central_kitchen_price_overrides')
+      .select('id, central_kitchen_price_id, store_id, business_date, unit_price, reason')
+      .eq('store_id', storeId)
+      .eq('business_date', today),
     supabase
       .from('daily_closings')
       .select('*, revenue_items(*), order_items(*), expense_items(*), handwrite_orders(*), cash_counts(*)')
@@ -108,6 +114,13 @@ export default async function ClosingPage({
       : Promise.resolve({ data: null }),
   ] as const)
 
+  const effectiveCKPrices = applyCKPriceOverrides(
+    (ckPrices ?? []) as CKPrice[],
+    ckPriceOverrides ?? [],
+    storeId,
+    today,
+  )
+
   let lastEditorName: string | null = null
   if (existingClosing?.manager_id) {
     if (existingClosing.manager_id === user.id) {
@@ -152,7 +165,7 @@ export default async function ClosingPage({
     <ClosingForm
       key={`${storeId}-${today}-${existingClosing?.id ?? 'new'}-${existingClosing?.status ?? 'draft'}-${existingClosing?.disputed_at ?? 'none'}`}
       store={store as Store}
-      ckPrices={(ckPrices ?? []) as CKPrice[]}
+      ckPrices={effectiveCKPrices}
       existingClosing={existingClosing}
       userId={user.id}
       userName={profile?.name ?? user.email ?? '登入使用者'}

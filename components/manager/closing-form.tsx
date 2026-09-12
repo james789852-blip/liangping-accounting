@@ -1261,9 +1261,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [ckPriceOverrides, setCkPriceOverrides] = useState<Record<string, number>>(() => {
     const result: Record<string, number> = {}
     const shouldKeepSavedPrice = isBackfill || existingClosing?.status === 'disputed'
+    ckPrices.forEach(p => {
+      // 店別單日特例只能由總公司設定，並優先於尚未完成帳目的草稿舊價。
+      if (p.daily_override) result[p.id] = p.daily_override.unit_price
+    })
     if (existingClosing && shouldKeepSavedPrice) {
       const items = existingClosing.order_items ?? []
       ckPrices.forEach(p => {
+        if (p.daily_override) return
         const found = items.find((i: any) => i.vendor === '央廚' && i.item_name === p.item_name)
         // 補做/退回時，以原帳目實際單價為準，避免退回後單價欄變空或被總公司新價覆蓋。
         if (found && typeof found.unit_price === 'number') {
@@ -1277,6 +1282,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   ckPriceOverridesRef.current = ckPriceOverrides
   // 取得每個品項的有效單價：先看覆寫、沒有就用 ckPrices 預設
   const effectiveCKPrice = useCallback((p: CKPrice) => ckPriceOverrides[p.id] ?? p.unit_price, [ckPriceOverrides])
+  const hasDailyCKPriceOverride = ckPrices.some(p => Boolean(p.daily_override))
   const [ckPhotoPreview, setCkPhotoPreview] = useState<string | undefined>(undefined)
   const [ckPhotoUploading, setCkPhotoUploading] = useState(false)
   const ckPhotoLsKey = `ck_photo_${store.id}_${today}`
@@ -5299,7 +5305,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 </div>
                 <p className="text-sm font-semibold" style={{ color: '#18181b' }}>配送品項</p>
                 <p className="text-xs ml-auto" style={{ color: '#a1a1aa' }}>
-                  {isBackfill ? '補做模式：雞肉單價可改' : '單價由總公司設定'}
+                  {hasDailyCKPriceOverride ? '已套用總公司單日特例' : isBackfill ? '補做模式：雞肉單價可改' : '單價由總公司設定'}
                 </p>
               </div>
 
@@ -5308,7 +5314,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 const effPrice = effectiveCKPrice(p)
                 const subtotal = qty * effPrice
                 // 只有雞肉品項在補做模式可以改單價（其他品項單價固定）
-                const isPriceEditable = isBackfill && !isLocked && p.item_name.includes('雞肉')
+                const isPriceEditable = isBackfill && !isLocked && !p.daily_override && p.item_name.includes('雞肉')
                 return (
                   <div key={p.id} className="flex items-center gap-3 px-4 py-3"
                     style={{ borderBottom: idx !== ckPrices.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
@@ -5351,7 +5357,13 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         />
                       </div>
                     ) : (
-                      <span className="text-xs tabular-nums shrink-0" style={{ color: '#71717a' }}>${effPrice}</span>
+                      <span
+                        className="text-xs tabular-nums shrink-0"
+                        style={{ color: p.daily_override ? '#ea580c' : '#71717a', fontWeight: p.daily_override ? 700 : 400 }}
+                        title={p.daily_override ? `總公司單日特例；標準單價 $${p.default_unit_price ?? p.unit_price}${p.daily_override.reason ? `；${p.daily_override.reason}` : ''}` : undefined}
+                      >
+                        ${effPrice}{p.daily_override ? '（當日特例）' : ''}
+                      </span>
                     )}
                     <span className="ml-auto text-sm font-semibold tabular-nums shrink-0"
                       style={{ color: qty > 0 ? '#f97316' : '#d4d4d8' }}>

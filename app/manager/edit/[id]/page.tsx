@@ -12,6 +12,7 @@ import { ArrowLeft } from 'lucide-react'
 import { getStoreItemsResolved, toMappingColumns } from '@/lib/store-items-resolver'
 import { getStoreItemsFromMappings } from '@/lib/mapping-based-items'
 import { buildReserveHistoryContext } from '@/lib/reserve-history'
+import { applyCKPriceOverrides } from '@/lib/ck-price-overrides'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,6 +63,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
   const [
     { data: store },
     { data: ckPrices },
+    { data: ckPriceOverrides },
     { data: todayReceipts },
     receiptCategories,
     { data: mappingRows },
@@ -76,6 +78,10 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .select('id, item_name, unit_price, unit, excel_column')
       .eq('active', true)
       .order('sort_order').order('item_name'),
+    admin2.from('central_kitchen_price_overrides')
+      .select('id, central_kitchen_price_id, store_id, business_date, unit_price, reason')
+      .eq('store_id', storeId)
+      .eq('business_date', closing.business_date),
     supabase
       .from('receipts')
       .select('id, vendor_name, actual_vendor_name, total_amount, tax_amount, receipt_type, photo_url, notes, updated_at, receipt_items(item_name, unit, quantity, unit_price, amount, item_mapping_id, vendor_group_snapshot)')
@@ -106,6 +112,13 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .order('business_date', { ascending: false })
       .limit(45),
   ])
+
+  const effectiveCKPrices = applyCKPriceOverrides(
+    (ckPrices ?? []) as CKPrice[],
+    ckPriceOverrides ?? [],
+    storeId,
+    closing.business_date,
+  )
 
   const { prevDayReserves, preReservedExpenseHints } = buildReserveHistoryContext(prevReserveClosings ?? [])
 
@@ -154,7 +167,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       <ClosingForm
         key={`${closing.id}-${closing.status}-${closing.disputed_at ?? 'none'}`}
         store={store as Store}
-        ckPrices={(ckPrices ?? []) as CKPrice[]}
+        ckPrices={effectiveCKPrices}
         existingClosing={closing}
         userId={user.id}
         userName={profile?.name ?? user.email ?? '登入使用者'}

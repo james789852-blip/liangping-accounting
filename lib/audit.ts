@@ -21,6 +21,8 @@ export type AuditEvent =
   | 'sheets_sync_failed'
   | 'variance_alert'
   | 'ck_price_update'
+  | 'ck_price_override_update'
+  | 'ck_price_override_delete'
   | 'store_update'
   | 'user_create'
   | 'user_update'

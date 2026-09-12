@@ -25,6 +25,13 @@ export interface CKPrice {
   unit_price: number
   unit?: string
   excel_column: string
+  default_unit_price?: number
+  daily_override?: {
+    id: string
+    business_date: string
+    unit_price: number
+    reason: string | null
+  }
 }
 
 export interface UserProfile {

@@ -5,6 +5,7 @@
     "audit_logs",
     "cash_counts",
     "central_kitchen_price_history",
+    "central_kitchen_price_overrides",
     "central_kitchen_prices",
     "ck_daily_records",
     "ck_expense_items",
@@ -58,4 +59,3 @@
     "ck_daily_records.id = ck_expense_items.ck_daily_record_id"
   ]
 }
-
