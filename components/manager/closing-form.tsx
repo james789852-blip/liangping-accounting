@@ -98,7 +98,7 @@ interface ReserveItem {
   id: string
   reason: string
   amount: number
-  total_bill?: number  // total bill amount (optional), for showing remaining across days
+  total_bill?: number  // 舊資料可能缺少；新建立預留時必填，後續日期自動沿用
   auto_reserved?: boolean
   source_start_date?: string
   accumulated_before?: number
@@ -6241,12 +6241,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         </div>
                         <div>
                           <label className="block text-[10px] font-semibold mb-1" style={{ color: '#52525b' }}>
-                            帳單總金額（選填）
-                            <span className="ml-1 font-normal" style={{ color: '#a1a1aa' }}>— 填寫後系統會提醒明日尚差金額</span>
+                            帳單總金額 <span style={{ color: '#dc2626' }}>*</span>
+                            <span className="ml-1 font-normal" style={{ color: '#a1a1aa' }}>— 第一天必填，後續預留會自動沿用</span>
                           </label>
                           <input type="number" inputMode="numeric"
                             value={reserveForm.total_bill || ''}
                             placeholder="如：39891"
+                            required
+                            min="1"
                             disabled={!!pendingForReason}
                             onChange={e => setReserveForm(prev => ({
                               ...prev,
@@ -6276,7 +6278,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               return
                             }
                             const totalBill = pendingForReason?.total_bill ?? reserveForm.total_bill ?? 0
-                            if (totalBill > 0 && !pendingForReason && reserveForm.amount > totalBill) {
+                            if (totalBill <= 0) {
+                              toast.error('請輸入帳單總金額')
+                              return
+                            }
+                            if (!pendingForReason && reserveForm.amount > totalBill) {
                               toast.error('預留金額不能超過帳單總額')
                               return
                             }
@@ -6291,7 +6297,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             const item: ReserveItem = {
                               ...reserveForm,
                               id: crypto.randomUUID(),
-                              total_bill: totalBill || undefined,
+                              total_bill: totalBill,
                               source_start_date: pendingForReason?.started_date,
                               accumulated_before: pendingForReason?.amount,
                             }

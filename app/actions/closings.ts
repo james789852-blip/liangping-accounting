@@ -12,6 +12,7 @@ import { getAuthContext, canAccessStore, getClosingMeta } from '@/lib/permission
 import { canReviewClosings } from '@/lib/user-permissions'
 import { requiredActualVendorError } from '@/lib/required-actual-vendor'
 import { notifyReviewersOfSubmission, notifyStoreUsersOfReview } from '@/lib/push-notifications'
+import { reserveSubmissionError } from '@/lib/reserve-validation'
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
 
@@ -642,6 +643,8 @@ export async function submitClosing(closingId: string) {
 
   const adjustments = objectRows(submission.remittance_adjustments)
   const reserves = objectRows(submission.reserve_items)
+  const reserveError = reserveSubmissionError(reserves)
+  if (reserveError) return { error: `${reserveError}，請回到確認結帳補填` }
   const cashRows = objectRows(submission.cash_counts)
   const largeExpenses = cashRows.flatMap(row => objectRows(row.large_expenses))
   const adjustmentTotal = adjustments.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
