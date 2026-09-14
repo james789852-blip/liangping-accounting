@@ -38,3 +38,13 @@ export function shouldTrackStoreAccountingDate(
 ) {
   return businessDate >= overdueTrackingStartForStore(createdAt, systemStart)
 }
+
+export type OverdueAccountingStatus = 'not_submitted' | 'review' | 'dispute'
+
+/** 將尚未完成的帳目狀態整理成總公司逾期提醒分類。 */
+export function overdueAccountingStatus(status?: string): OverdueAccountingStatus | null {
+  if (!status) return 'not_submitted'
+  if (status === 'submitted') return 'review'
+  if (status === 'disputed') return 'dispute'
+  return null
+}

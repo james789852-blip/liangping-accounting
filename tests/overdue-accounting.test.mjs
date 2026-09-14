@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import test from 'node:test'
 
 import {
+  overdueAccountingStatus,
   overdueTrackingStartForStore,
   shouldTrackStoreAccountingDate,
 } from '../lib/overdue-accounting.ts'
@@ -26,4 +27,11 @@ test('總公司逾期提醒查詢店家建立時間並套用個別日期下限',
   const source = fs.readFileSync(new URL('../app/actions/hq-alerts.ts', import.meta.url), 'utf8')
   assert.match(source, /select\('id, name, type, created_at'\)/)
   assert.match(source, /shouldTrackStoreAccountingDate\(date, s\.created_at, overdueStart\)/)
+})
+
+test('退回後尚未重新送出的帳目會持續列入總公司逾期提醒', () => {
+  assert.equal(overdueAccountingStatus(undefined), 'not_submitted')
+  assert.equal(overdueAccountingStatus('submitted'), 'review')
+  assert.equal(overdueAccountingStatus('disputed'), 'dispute')
+  assert.equal(overdueAccountingStatus('verified'), null)
 })

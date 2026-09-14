@@ -5,6 +5,7 @@ import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getBusinessDate } from '@/lib/business-date'
 import {
+  overdueAccountingStatus,
   shouldTrackStoreAccountingDate,
   SYSTEM_OVERDUE_TRACKING_START,
 } from '@/lib/overdue-accounting'
@@ -158,11 +159,6 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
   }
   const holidayKeys = new Set((recentHolidays ?? []).map(row => `${row.store_id}|${row.holiday_date}`))
   const overdue: OverdueAlert[] = []
-  const overdueStatus = (status: string | undefined): OverdueAlert['status'] | null => {
-    if (!status) return 'not_submitted'
-    if (status === 'submitted') return 'review'
-    return null
-  }
   const startTime = new Date(`${overdueStart}T12:00:00+08:00`).getTime()
   const todayTime = new Date(`${today}T12:00:00+08:00`).getTime()
   const daysToCheck = Math.max(0, Math.floor((todayTime - startTime) / 86400000))
@@ -173,7 +169,7 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
       if (!shouldTrackStoreAccountingDate(date, s.created_at, overdueStart)) continue
       const key = `${s.id}|${date}`
       if (holidayKeys.has(key)) continue
-      const status = overdueStatus(storeStatusByDate.get(key))
+      const status = overdueAccountingStatus(storeStatusByDate.get(key))
       if (status) overdue.push({ id: `store-${s.id}-${date}`, storeId: s.id, entity: 'store', name: s.name, date, ageDays, status })
     }
     for (const s of ckList) {
@@ -181,7 +177,7 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
       const key = `${s.id}|${date}`
       if (holidayKeys.has(key)) continue
       const record = ckRecordByDate.get(key)
-      let status: OverdueAlert['status'] | null = overdueStatus(record?.status)
+      let status: OverdueAlert['status'] | null = overdueAccountingStatus(record?.status)
       if (record?.status === 'verified' && record.hq_paid && !record.ck_reimbursement_confirmed) status = 'handoff'
       if (status) overdue.push({ id: `ck-${s.id}-${date}`, storeId: s.id, entity: 'ck', name: s.name, date, ageDays, status })
     }

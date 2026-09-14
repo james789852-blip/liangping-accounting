@@ -13,7 +13,7 @@ const overdueStatusStyle: Record<OverdueAlert['status'], { label: string; bg: st
   handoff: { label: '待點交', bg: '#fffbeb', color: '#92400e' },
 }
 
-const overdueStatusOrder: OverdueAlert['status'][] = ['not_submitted', 'review', 'handoff']
+const overdueStatusOrder: OverdueAlert['status'][] = ['not_submitted', 'dispute', 'review', 'handoff']
 
 const overdueStatusLabel: Record<OverdueAlert['status'], string> = {
   not_submitted: '未送出',
@@ -76,14 +76,14 @@ function OverdueSection({ items }: { items: OverdueAlert[] }) {
           </div>
           <div>
             <h2 className="text-sm font-bold" style={{ color: '#881337' }}>逾期帳目提醒</h2>
-            <p className="mt-0.5 text-[11px]" style={{ color: '#9f1239' }}>未送出、未審核、未點交</p>
+            <p className="mt-0.5 text-[11px]" style={{ color: '#9f1239' }}>未送出、退回待修改、未審核、未點交</p>
           </div>
         </div>
         <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-bold" style={{ background: '#ffe4e6', color: '#be123c' }}>
           {visibleItems.length} 件
         </span>
       </div>
-      <div className="mb-3 grid grid-cols-3 gap-2">
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {groups.map(group => {
           const meta = overdueStatusStyle[group.status]
           const oldestItem = group.items[0]
