@@ -23,6 +23,8 @@ const storeEditor = fs.readFileSync(new URL('../components/hq/store-editor.tsx',
 const userEditor = fs.readFileSync(new URL('../components/hq/user-edit-dialog.tsx', import.meta.url), 'utf8')
 const storesPage = fs.readFileSync(new URL('../app/hq/stores/page.tsx', import.meta.url), 'utf8')
 const usersPage = fs.readFileSync(new URL('../app/hq/users/page.tsx', import.meta.url), 'utf8')
+const userCreateDialog = fs.readFileSync(new URL('../components/hq/user-create-dialog.tsx', import.meta.url), 'utf8')
+const pushPreferences = fs.readFileSync(new URL('../lib/push-preferences.ts', import.meta.url), 'utf8')
 
 test('推播訂閱只能由登入者管理自己的裝置', () => {
   assert.match(pushAction, /const user = await getVerifiedUser\(\)/)
@@ -87,10 +89,20 @@ test('總公司可分別控制店家與帳號推播', () => {
   assert.match(pushModule, /store\?\.push_notifications_enabled !== false/)
   assert.match(centerMigration, /push_notification_preferences jsonb not null default/)
   assert.match(pushModule, /preferenceEnabled\(profile\.push_notification_preferences, options\.category\)/)
-  assert.match(userEditor, /PUSH_PREFERENCE_OPTIONS/)
+  assert.match(userEditor, /pushPreferenceOptionsForUnit/)
   assert.match(storeEditor, /push_notification_preferences: pushPreferences/)
   assert.match(storeEditor, /接收帳務提醒與審核結果通知/)
   assert.match(userEditor, /接收帳務推播/)
+})
+
+test('推播選項會依總公司、店面與央廚身分分流', () => {
+  assert.match(pushPreferences, /hq: \['review_submission', 'hq_escalation'\]/)
+  assert.match(pushPreferences, /store: \['review_result', 'accounting_reminder'\]/)
+  assert.match(pushPreferences, /ck: \['review_result', 'accounting_reminder', 'reimbursement_handoff'\]/)
+  assert.match(userEditor, /pushPreferenceOptionsForUnit\(unitType\)/)
+  assert.match(userEditor, /scopePushPreferencesForUnit\(form\.push_notification_preferences, unitType\)/)
+  assert.match(userCreateDialog, /defaultPushPreferencesForUnit\(unitType\)/)
+  assert.match(pushModule, /profile\.role !== '老闆' && profile\.is_hq !== true/)
 })
 
 test('管理頁顯示綁定裝置數並可發送測試通知', () => {

@@ -279,7 +279,7 @@ async function storeUserIds(
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('user_profiles')
-    .select('user_id, push_notifications_enabled, push_notification_preferences')
+    .select('user_id, role, is_hq, push_notifications_enabled, push_notification_preferences')
     .eq('active', true)
     .contains('store_ids', [storeId])
   if (error) {
@@ -287,6 +287,7 @@ async function storeUserIds(
     return []
   }
   return (data ?? [])
+    .filter(profile => profile.role !== '老闆' && profile.is_hq !== true)
     .map(profile => String(profile.user_id))
     .filter(userId => userId !== excludeUserId)
 }

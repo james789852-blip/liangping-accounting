@@ -8,6 +8,7 @@ export const PUSH_PREFERENCE_OPTIONS = [
 
 export type PushPreferenceKey = (typeof PUSH_PREFERENCE_OPTIONS)[number]['key']
 export type PushPreferences = Record<PushPreferenceKey, boolean>
+export type PushAudienceUnit = 'hq' | 'store' | 'ck'
 
 export const DEFAULT_PUSH_PREFERENCES: PushPreferences = {
   review_submission: true,
@@ -23,5 +24,31 @@ export function normalizePushPreferences(value: unknown): PushPreferences {
     : {}
   return Object.fromEntries(
     Object.entries(DEFAULT_PUSH_PREFERENCES).map(([key, fallback]) => [key, input[key] === undefined ? fallback : input[key] !== false]),
+  ) as PushPreferences
+}
+
+const PUSH_KEYS_BY_UNIT: Record<PushAudienceUnit, PushPreferenceKey[]> = {
+  hq: ['review_submission', 'hq_escalation'],
+  store: ['review_result', 'accounting_reminder'],
+  ck: ['review_result', 'accounting_reminder', 'reimbursement_handoff'],
+}
+
+export function pushPreferenceOptionsForUnit(unit: PushAudienceUnit) {
+  const allowed = new Set<PushPreferenceKey>(PUSH_KEYS_BY_UNIT[unit])
+  return PUSH_PREFERENCE_OPTIONS.filter(option => allowed.has(option.key))
+}
+
+export function defaultPushPreferencesForUnit(unit: PushAudienceUnit): PushPreferences {
+  const allowed = new Set<PushPreferenceKey>(PUSH_KEYS_BY_UNIT[unit])
+  return Object.fromEntries(
+    PUSH_PREFERENCE_OPTIONS.map(option => [option.key, allowed.has(option.key)]),
+  ) as PushPreferences
+}
+
+export function scopePushPreferencesForUnit(value: unknown, unit: PushAudienceUnit): PushPreferences {
+  const normalized = normalizePushPreferences(value)
+  const allowed = new Set<PushPreferenceKey>(PUSH_KEYS_BY_UNIT[unit])
+  return Object.fromEntries(
+    PUSH_PREFERENCE_OPTIONS.map(option => [option.key, allowed.has(option.key) && normalized[option.key]]),
   ) as PushPreferences
 }

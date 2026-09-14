@@ -8,7 +8,12 @@ import { sendUserPushTest } from '@/app/actions/push-management'
 import { getTitleOptions, inferSystemRole, type AccountUnitType } from '@/lib/account-access'
 import { resolvePrimaryStoreId } from '@/lib/user-primary-store'
 import { useRouter } from 'next/navigation'
-import { normalizePushPreferences, PUSH_PREFERENCE_OPTIONS, type PushPreferences } from '@/lib/push-preferences'
+import {
+  defaultPushPreferencesForUnit,
+  pushPreferenceOptionsForUnit,
+  scopePushPreferencesForUnit,
+  type PushPreferences,
+} from '@/lib/push-preferences'
 
 interface Store { id: string; name: string; type?: string }
 interface UserData {
@@ -98,7 +103,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
     can_review_closings: user.can_review_closings ?? false,
     can_export_reports: user.can_export_reports ?? false,
     push_notifications_enabled: user.push_notifications_enabled !== false,
-    push_notification_preferences: normalizePushPreferences(user.push_notification_preferences),
+    push_notification_preferences: scopePushPreferencesForUnit(user.push_notification_preferences, initialUnitType),
   })
   const [selectedStores, setSelectedStores] = useState<string[]>(
     [...new Set(user.store_ids ?? [])].filter(id => activeStoreIds.includes(id))
@@ -108,6 +113,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
   const titleOptions = getTitleOptions(unitType)
   const isHQ = unitType === 'hq'
   const isOwner = isHQ && inferSystemRole(form.title, titleOptions[0]) === '老闆'
+  const visiblePushOptions = pushPreferenceOptionsForUnit(unitType)
   const allSelected = stores.length > 0 && stores.every(s => selectedStores.includes(s.id))
 
   function toggleStore(id: string) {
@@ -160,7 +166,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
       can_review_closings: isOwner ? true : (isHQ && form.can_review_closings),
       can_export_reports: isOwner ? true : (isHQ && form.can_export_reports),
       push_notifications_enabled: form.push_notifications_enabled,
-      push_notification_preferences: form.push_notification_preferences,
+      push_notification_preferences: scopePushPreferencesForUnit(form.push_notification_preferences, unitType),
       active: form.active,
     })
     if (result.error) toast.error('更新失敗：' + result.error)
@@ -254,7 +260,11 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                     const nextType: AccountUnitType = nextId === 'hq' ? 'hq' : nextStore?.type === '央廚' ? 'ck' : 'store'
                     setUnitId(nextId)
                     setCustomTitle(false)
-                    setForm(prev => ({ ...prev, title: getTitleOptions(nextType)[0] ?? '' }))
+                    setForm(prev => ({
+                      ...prev,
+                      title: getTitleOptions(nextType)[0] ?? '',
+                      push_notification_preferences: defaultPushPreferencesForUnit(nextType),
+                    }))
                   }}>
                   {!unitId && <option value="">請選擇歸屬單位</option>}
                   <option value="hq">總公司</option>
@@ -316,7 +326,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                 </div>
                 {form.push_notifications_enabled && (
                   <div className="grid gap-1.5 border-t border-blue-100 pt-2 sm:grid-cols-2">
-                    {PUSH_PREFERENCE_OPTIONS.map(option => (
+                    {visiblePushOptions.map(option => (
                       <label key={option.key} className="flex items-center gap-2 rounded-lg bg-white px-2.5 py-2 text-xs text-zinc-700">
                         <input type="checkbox" checked={form.push_notification_preferences[option.key]}
                           onChange={event => setForm(previous => ({
@@ -331,7 +341,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                 )}
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[10px] flex-1" style={{ color: '#64748b' }}>
-                    關閉後不再接收待審或審核結果通知；手機通知權限仍須由本人允許。
+                    僅顯示此帳號身分適用的通知；手機通知權限仍須由本人允許。
                   </p>
                   <button type="button" onClick={handleTestPush}
                     disabled={pushTestLoading || !user.push_device_count}

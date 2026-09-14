@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Loader2, Plus, X } from 'lucide-react'
 import { createUser } from '@/app/actions/users'
 import { getTitleOptions, inferSystemRole, type AccountUnitType } from '@/lib/account-access'
+import { defaultPushPreferencesForUnit } from '@/lib/push-preferences'
 
 interface Store { id: string; name: string; type?: string }
 
@@ -118,6 +119,8 @@ export default function UserCreateDialog({
       ...(isHQ ? permissions : Object.fromEntries(Object.keys(permissions).map(key => [key, false]))),
       store_ids: isOwner ? [] : [...new Set([...(primaryStore ? [primaryStore.id] : []), ...selectedStores])],
       primary_store_id: primaryStore?.id ?? null,
+      push_notifications_enabled: true,
+      push_notification_preferences: defaultPushPreferencesForUnit(unitType),
     })
     if (result.error) { toast.error('建立失敗：' + result.error) }
     else { toast.success('帳號建立成功！'); handleClose() }
