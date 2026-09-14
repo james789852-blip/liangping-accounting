@@ -1,4 +1,5 @@
-export const SYSTEM_OVERDUE_TRACKING_START = '2026-07-12'
+/** 2026 年 9 月起才是管理人員正式使用期；更早資料僅供測試／歷史查閱。 */
+export const SYSTEM_OVERDUE_TRACKING_START = '2026-09-01'
 
 function taipeiCalendarDate(timestamp: string) {
   const date = new Date(timestamp)

@@ -3,6 +3,7 @@ import 'server-only'
 import webpush from 'web-push'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canReviewClosings, type PermissionProfile } from '@/lib/user-permissions'
+import { getBusinessDate } from '@/lib/business-date'
 
 type PushPayload = {
   title: string
@@ -304,8 +305,10 @@ export async function notifyReviewersOfSubmission(input: {
   const isCK = input.kind === 'ck'
   const admin = createAdminClient()
   const [storeResult, ckResult] = await Promise.all([
-    admin.from('daily_closings').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
-    admin.from('ck_daily_records').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
+    admin.from('daily_closings').select('id', { count: 'exact', head: true })
+      .eq('status', 'submitted').eq('business_date', input.businessDate),
+    admin.from('ck_daily_records').select('id', { count: 'exact', head: true })
+      .eq('status', 'submitted').eq('business_date', input.businessDate),
   ])
   const parts = [
     (storeResult.count ?? 0) > 0 ? `${storeResult.count} 筆店面帳目` : '',
@@ -313,7 +316,7 @@ export async function notifyReviewersOfSubmission(input: {
   ].filter(Boolean)
   await sendToUserIds(userIds, {
     title: '有帳目等待審核',
-    body: `${name} ${input.businessDate} ${isCK ? '央廚' : '店面'}帳目已送出。${parts.length ? `目前共有${parts.join('、')}等待審核。` : ''}`,
+    body: `${name} ${input.businessDate} ${isCK ? '央廚' : '店面'}帳目已送出，等待審核。${parts.length ? `該營業日目前共有${parts.join('、')}待審。` : ''}`,
     url: isCK
       ? `/hq/accounting?tab=ck&ckStoreId=${encodeURIComponent(input.storeId)}&date=${input.businessDate}`
       : `/hq/accounting?tab=store&storeId=${encodeURIComponent(input.storeId)}&date=${input.businessDate}`,
@@ -340,9 +343,12 @@ export async function notifyReviewerOfPendingWork(userId: string) {
     || !canReviewClosings(profile as PermissionProfile)
   ) return
 
+  const businessDate = getBusinessDate()
   const [storeResult, ckResult] = await Promise.all([
-    admin.from('daily_closings').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
-    admin.from('ck_daily_records').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
+    admin.from('daily_closings').select('id', { count: 'exact', head: true })
+      .eq('status', 'submitted').eq('business_date', businessDate),
+    admin.from('ck_daily_records').select('id', { count: 'exact', head: true })
+      .eq('status', 'submitted').eq('business_date', businessDate),
   ])
   if (storeResult.error || ckResult.error) {
     console.error('[push] failed to count pending reviews:', storeResult.error || ckResult.error)
@@ -358,8 +364,8 @@ export async function notifyReviewerOfPendingWork(userId: string) {
   ].filter(Boolean)
 
   await sendToUserIds([userId], {
-    title: '有帳目等待審核',
-    body: `${parts.join('、')}等待審核。`,
+    title: '今日有帳目等待審核',
+    body: `${businessDate} 目前共有${parts.join('、')}待審。`,
     url: '/hq/accounting',
     tag: 'pending-review-summary',
   }, {

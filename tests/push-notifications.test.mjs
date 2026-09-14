@@ -55,6 +55,8 @@ test('店面與央廚送審及審核結果都會在回應後發送推播', () =>
   assert.match(ckAction, /notifyReviewersOfSubmission\(\{\s*kind: 'ck'/)
   assert.match(ckAction, /notifyStoreUsersOfReview\(\{\s*kind: 'ck'/)
   assert.match(pushModule, /canReviewClosings\(profile as PermissionProfile\)/)
+  assert.match(pushModule, /\.eq\('status', 'submitted'\)\.eq\('business_date', input\.businessDate\)/)
+  assert.match(pushModule, /該營業日目前共有/)
   assert.doesNotMatch(pushModule, /review_note|dispute_note/)
 })
 
@@ -63,7 +65,8 @@ test('同一裝置切換到總公司帳號時會重新綁定並補發待審摘�
   assert.match(pushAction, /notifyReviewerOfPendingWork\(user\.id\)/)
   assert.match(pushModule, /export async function notifyReviewerOfPendingWork/)
   assert.match(pushModule, /有帳目等待審核/)
-  assert.match(pushModule, /\.eq\('status', 'submitted'\)/)
+  assert.match(pushModule, /const businessDate = getBusinessDate\(\)/)
+  assert.match(pushModule, /\.eq\('status', 'submitted'\)\.eq\('business_date', businessDate\)/)
   assert.match(managerNav, /await detachPushSubscriptionFromCurrentUser\(\)/)
   assert.match(hqNav, /await detachPushSubscriptionFromCurrentUser\(\)/)
   assert.match(loginPage, /await syncPushSubscriptionToCurrentUser\(/)

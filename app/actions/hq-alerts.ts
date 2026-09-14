@@ -128,7 +128,7 @@ export async function fetchHQAlerts(): Promise<{ error: string } | { success: tr
     if (record?.hq_paid && !record?.ck_reimbursement_confirmed) ckHandoffPending.push({ id: s.id, name: s.name })
   }
 
-  // 系統自 2026/07/12 起正式使用；只追蹤這天之後的歷史帳目，之前不提醒。
+  // 管理人員自 2026/09/01 起正式使用；更早的測試／歷史帳目不列入提醒。
   // 公休日不列入「未送出」，但已建立的草稿／待審核／待點交仍會保留提醒。
   const overdueStart = SYSTEM_OVERDUE_TRACKING_START
   const [{ data: recentClosings }, { data: recentCK }, { data: recentHolidays }] = await Promise.all([

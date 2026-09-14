@@ -8,6 +8,7 @@ import ReviewsList from '@/components/hq/reviews-list'
 import { canReviewClosings } from '@/lib/user-permissions'
 import { resolveReceiptDocumentTypeInfo } from '@/lib/receipt-document-type'
 import { fetchAllPaged } from '@/lib/supabase-paged'
+import { SYSTEM_OVERDUE_TRACKING_START } from '@/lib/overdue-accounting'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,6 +44,7 @@ export default async function ReviewsPage() {
       order_items(item_name, quantity, total_amount)
     `)
     .in('status', ['submitted', 'disputed'])
+    .gte('business_date', SYSTEM_OVERDUE_TRACKING_START)
     .order('submitted_at', { ascending: true })
 
   const submitterIds = [...new Set((pending ?? []).map((closing: any) => closing.submitted_by).filter(Boolean))]
