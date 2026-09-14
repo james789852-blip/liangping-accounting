@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { AppVersionGuard } from "@/components/app-version-guard";
+import { PWAShell } from "@/components/pwa-shell";
 import "./globals.css";
 
 const inter = Inter({
@@ -13,6 +14,15 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "結帳系統",
   description: "多店作帳管理系統",
+  applicationName: "結帳系統",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "結帳系統",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export const viewport: Viewport = {
@@ -20,6 +30,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,   // prevent accidental zoom on input focus (iOS)
   userScalable: false,
+  themeColor: '#f59e0b',
 };
 
 export default function RootLayout({
@@ -37,6 +48,7 @@ export default function RootLayout({
         {children}
         <Toaster richColors position="top-right" />
         <AppVersionGuard currentVersion={appVersion} />
+        <PWAShell />
       </body>
     </html>
   );

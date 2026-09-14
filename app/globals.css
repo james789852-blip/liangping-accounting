@@ -193,12 +193,18 @@
 .manager-sticky-action-bar {
   bottom: calc(64px + env(safe-area-inset-bottom));
 }
+.pwa-install-prompt {
+  bottom: calc(80px + env(safe-area-inset-bottom));
+}
 @media (min-width: 1024px) {
   .closing-form-bottom-bar {
     bottom: 0;
   }
   .manager-sticky-action-bar {
     bottom: 0;
+  }
+  .pwa-install-prompt {
+    bottom: 16px;
   }
 }
 
