@@ -1023,6 +1023,7 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
     setConfirmed(prev => new Set(prev).add(index))
     setIssues(prev => { const next = { ...prev }; delete next[index]; return next })
     setEditingIssue(false)
+    if (index < steps.length - 1) goToStep(index + 1)
   }
   function saveIssue() {
     setIssues(prev => ({ ...prev, [index]: draft.trim() || '此步驟內容有誤，請重新確認。' }))
@@ -1147,7 +1148,8 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
             </div> : <div className="p-3 rounded-xl space-y-2" style={{ background: '#fff1f2', border: '1px solid #fda4af' }}><p className="text-xs font-bold" style={{ color: '#be123c' }}>問題說明（選填）</p><p className="text-[11px]" style={{ color: '#9f1239' }}>不填寫時會自動提醒央廚「此步驟內容有誤，請重新確認」。</p><textarea autoFocus className="w-full min-h-24 p-3 rounded-lg" value={draft} onChange={e => setDraft(e.target.value)} placeholder="可輸入此步驟的詳細問題…" /><div className="flex justify-end gap-2"><button onClick={() => setEditingIssue(false)}>取消</button><button onClick={saveIssue} className="px-3 py-2 text-xs font-bold text-white rounded-lg" style={{ background: '#e11d48' }}>{draft.trim() ? '記錄問題' : '直接標記有誤'}</button></div></div>}
             {confirmed.has(index) && !editingIssue && (
               <div role="status" className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold" style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #86efac' }}>
-                <CheckCircle2 className="h-5 w-5 shrink-0" />本項已確認內容相符，可前往下一項。
+                <CheckCircle2 className="h-5 w-5 shrink-0" />
+                {index === steps.length - 1 && complete ? '全部項目已核對完成，可進行審核通過。' : '本項已確認內容相符。'}
               </div>
             )}
             <div className="grid grid-cols-2 gap-2"><button disabled={index === 0} onClick={() => goToStep(index - 1)} className="py-2 rounded-xl disabled:opacity-30" style={{ background: '#f4f4f5' }}><ChevronLeft className="inline h-4 w-4" />上一項</button><button disabled={index === steps.length - 1} onClick={() => goToStep(index + 1)} className="py-2 rounded-xl disabled:opacity-30" style={{ background: '#f4f4f5' }}>下一項<ChevronRight className="inline h-4 w-4" /></button></div>

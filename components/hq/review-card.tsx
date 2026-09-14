@@ -508,9 +508,13 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
 
               {currentPhoto && !issueEditorOpen && (
                 <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={confirmCurrentPhoto} className="py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
-                    style={{ background: confirmedPhotos.has(reviewIndex) ? '#d1fae5' : 'linear-gradient(135deg,#10b981,#059669)', color: confirmedPhotos.has(reviewIndex) ? '#047857' : 'white' }}>
-                    <CheckCircle2 className="h-4 w-4" />{confirmedPhotos.has(reviewIndex) ? '已確認相符' : '內容相符'}
+                  <button type="button" onClick={confirmCurrentPhoto} aria-pressed={confirmedPhotos.has(reviewIndex)}
+                    className="py-3 px-2 rounded-xl text-sm font-bold inline-flex items-center justify-center gap-1.5 transition-all"
+                    style={confirmedPhotos.has(reviewIndex)
+                      ? { background: '#dcfce7', color: '#166534', border: '2px solid #22c55e', boxShadow: '0 0 0 4px rgba(34,197,94,.12)' }
+                      : { background: 'linear-gradient(135deg,#10b981,#059669)', color: 'white', border: '2px solid transparent' }}>
+                    {confirmedPhotos.has(reviewIndex) && <CheckCircle2 className="h-5 w-5" />}
+                    {confirmedPhotos.has(reviewIndex) ? '已確認：內容相符' : '內容相符'}
                   </button>
                   <button type="button" onClick={openIssueEditor} className="py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
                     style={{ background: photoIssues[reviewIndex] ? '#ffe4e6' : '#fff7ed', color: '#be123c', border: '1px solid #fda4af' }}>

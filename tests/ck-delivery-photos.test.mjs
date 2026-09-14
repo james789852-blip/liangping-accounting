@@ -129,12 +129,22 @@ test('手機逐步核對會在照片上方提供不遮擋內容的切換與放�
   assert.doesNotMatch(overviewSource, /aria-label="查看下一張照片"/)
 })
 
-test('內容相符按下後停留並顯示明確確認狀態', () => {
+test('央廚內容相符會自動前往下一項，最後一項保留完成狀態', () => {
   const overviewSource = fs.readFileSync(new URL('../components/hq/ck-overview.tsx', import.meta.url), 'utf8')
   const markOkaySource = overviewSource.match(/function markOkay\(\) \{([\s\S]*?)\n  \}/)?.[1] ?? ''
 
-  assert.doesNotMatch(markOkaySource, /setIndex/)
+  assert.match(markOkaySource, /if \(index < steps\.length - 1\) goToStep\(index \+ 1\)/)
   assert.match(overviewSource, /已確認：內容相符/)
-  assert.match(overviewSource, /本項已確認內容相符，可前往下一項/)
+  assert.match(overviewSource, /全部項目已核對完成，可進行審核通過/)
   assert.match(overviewSource, /aria-pressed=\{confirmed\.has\(index\)\}/)
+})
+
+test('店面內容相符會自動前往下一張並使用一致的已確認樣式', () => {
+  const reviewSource = fs.readFileSync(new URL('../components/hq/review-card.tsx', import.meta.url), 'utf8')
+  const confirmSource = reviewSource.match(/function confirmCurrentPhoto\(\) \{([\s\S]*?)\n  \}/)?.[1] ?? ''
+
+  assert.match(confirmSource, /if \(reviewIndex < allPhotos\.length - 1\) setReviewIndex\(reviewIndex \+ 1\)/)
+  assert.match(reviewSource, /aria-pressed=\{confirmedPhotos\.has\(reviewIndex\)\}/)
+  assert.match(reviewSource, /已確認：內容相符/)
+  assert.match(reviewSource, /border: '2px solid #22c55e'/)
 })
