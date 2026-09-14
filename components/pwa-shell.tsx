@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { BellRing, Download, PlusSquare, Share, Wifi, WifiOff, X } from 'lucide-react'
-import { savePushSubscription } from '@/app/actions/push'
+import { syncPushSubscriptionToCurrentUser } from '@/lib/push-client'
 
 const INSTALL_DISMISS_KEY = 'lp-pwa-install-dismissed-at'
 const INSTALL_DISMISS_MS = 14 * 24 * 60 * 60 * 1000
@@ -124,36 +124,9 @@ function InstallPrompt() {
   )
 }
 
-function urlBase64ToUint8Array(value: string) {
-  const padding = '='.repeat((4 - (value.length % 4)) % 4)
-  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = window.atob(base64)
-  return Uint8Array.from([...raw].map(character => character.charCodeAt(0)))
-}
-
-async function ensurePushSubscription(publicKey: string) {
-  const registration = await navigator.serviceWorker.register('/sw.js')
-  let subscription = await registration.pushManager.getSubscription()
-  if (!subscription) {
-    subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
-    })
-  }
-  const serialized = subscription.toJSON()
-  if (!serialized.endpoint || !serialized.keys?.p256dh || !serialized.keys?.auth) {
-    throw new Error('瀏覽器沒有回傳完整的推播訂閱資料')
-  }
-  const result = await savePushSubscription({
-    endpoint: serialized.endpoint,
-    expirationTime: serialized.expirationTime ?? null,
-    keys: { p256dh: serialized.keys.p256dh, auth: serialized.keys.auth },
-  }, navigator.userAgent)
-  if ('error' in result) throw new Error(result.error)
-}
-
 function PushPrompt() {
   const pathname = usePathname()
+  const router = useRouter()
   const [visible, setVisible] = useState(false)
   const [enabling, setEnabling] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -166,17 +139,38 @@ function PushPrompt() {
     if (!isRunningStandalone()) return
 
     if (Notification.permission === 'granted') {
-      void ensurePushSubscription(publicKey).catch(error => {
-        console.error('[push] subscription sync failed:', error)
-      })
-      return
+      let cancelled = false
+      let syncing = false
+      const sync = async () => {
+        if (syncing) return
+        syncing = true
+        try {
+          const result = await syncPushSubscriptionToCurrentUser(publicKey)
+          if (!cancelled && result.reassigned) router.refresh()
+        } catch (error) {
+          console.error('[push] subscription sync failed:', error)
+        } finally {
+          syncing = false
+        }
+      }
+      void sync()
+      const onVisible = () => {
+        if (document.visibilityState === 'visible') void sync()
+      }
+      window.addEventListener('focus', sync)
+      document.addEventListener('visibilitychange', onVisible)
+      return () => {
+        cancelled = true
+        window.removeEventListener('focus', sync)
+        document.removeEventListener('visibilitychange', onVisible)
+      }
     }
     const safePromptPage = pathname.endsWith('/dashboard') || pathname === '/hq/accounting'
     if (safePromptPage && Notification.permission === 'default' && !isPushPromptDismissed()) {
       const timer = window.setTimeout(() => setVisible(true), 800)
       return () => window.clearTimeout(timer)
     }
-  }, [pathname, publicKey])
+  }, [pathname, publicKey, router])
 
   const dismiss = () => {
     try {
@@ -196,7 +190,7 @@ function PushPrompt() {
         setMessage(permission === 'denied' ? '推播已被瀏覽器封鎖，可在手機網站設定中重新允許。' : '尚未允許推播。')
         return
       }
-      await ensurePushSubscription(publicKey)
+      await syncPushSubscriptionToCurrentUser(publicKey)
       setMessage('推播已開啟，之後會收到帳目送出與審核結果通知。')
       window.setTimeout(() => setVisible(false), 2200)
     } catch (error) {

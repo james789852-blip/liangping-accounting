@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
 import { getDefaultHQHref, hasAnyHQPermission } from '@/lib/user-permissions'
 import { resetStoreSelectionForLogin } from '@/app/actions/store-select'
+import { syncPushSubscriptionToCurrentUser } from '@/lib/push-client'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -57,6 +58,15 @@ export default function LoginPage() {
     // Supabase RLS 中等同完整總公司人員的 is_hq 資料寫入權限。
     const hasHQAccess = hasAnyHQPermission(profile)
     const hasAssignedStore = Array.isArray(profile?.store_ids) && profile.store_ids.length > 0
+    // 同一支手機切換帳號時，在離開登入頁前就把既有 subscription
+    // 明確轉綁目前登入者，避免只依賴下一頁載入時的背景同步。
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        await syncPushSubscriptionToCurrentUser(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? '')
+      } catch (pushError) {
+        console.error('[push] login rebind failed:', pushError)
+      }
+    }
     // 清理店面角色的舊切店狀態不應阻塞登入導向；背景完成即可。
     void resetStoreSelectionForLogin().catch(() => {})
     toast.success('登入成功')

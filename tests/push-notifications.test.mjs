@@ -4,7 +4,9 @@ import test from 'node:test'
 
 const pushAction = fs.readFileSync(new URL('../app/actions/push.ts', import.meta.url), 'utf8')
 const pushModule = fs.readFileSync(new URL('../lib/push-notifications.ts', import.meta.url), 'utf8')
+const pushClient = fs.readFileSync(new URL('../lib/push-client.ts', import.meta.url), 'utf8')
 const pwaShell = fs.readFileSync(new URL('../components/pwa-shell.tsx', import.meta.url), 'utf8')
+const loginPage = fs.readFileSync(new URL('../app/login/page.tsx', import.meta.url), 'utf8')
 const serviceWorker = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8')
 const closingsAction = fs.readFileSync(new URL('../app/actions/closings.ts', import.meta.url), 'utf8')
 const ckAction = fs.readFileSync(new URL('../app/actions/ck.ts', import.meta.url), 'utf8')
@@ -29,7 +31,7 @@ test('推播訂閱只能由登入者管理自己的裝置', () => {
 test('手機須由使用者點擊後才要求推播權限並建立訂閱', () => {
   assert.match(pwaShell, /onClick=\{enable\}/)
   assert.match(pwaShell, /Notification\.requestPermission\(\)/)
-  assert.match(pwaShell, /pushManager\.subscribe\(/)
+  assert.match(pushClient, /pushManager\.subscribe\(/)
   assert.match(pwaShell, /if \(!isRunningStandalone\(\)\) return/)
   assert.match(pwaShell, /pathname\.startsWith\('\/manager\/'\) \|\| pathname\.startsWith\('\/hq\/'\)/)
 })
@@ -58,6 +60,10 @@ test('同一裝置切換到總公司帳號時會重新綁定並補發待審摘�
   assert.match(pushModule, /\.eq\('status', 'submitted'\)/)
   assert.match(managerNav, /await detachPushSubscriptionFromCurrentUser\(\)/)
   assert.match(hqNav, /await detachPushSubscriptionFromCurrentUser\(\)/)
+  assert.match(loginPage, /await syncPushSubscriptionToCurrentUser\(/)
+  assert.match(pwaShell, /window\.addEventListener\('focus', sync\)/)
+  assert.match(pwaShell, /document\.addEventListener\('visibilitychange', onVisible\)/)
+  assert.match(pwaShell, /result\.reassigned\) router\.refresh\(\)/)
 })
 
 test('失效的裝置訂閱會自動移除', () => {

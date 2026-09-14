@@ -59,12 +59,13 @@ export async function savePushSubscription(subscription: BrowserPushSubscription
   // 同一支手機切換店長／總公司帳號時，endpoint 會轉綁目前登入者。
   // 若這是新訂閱或切換帳號，總公司審核者登入後補發目前待審摘要，
   // 避免送審事件發生時裝置仍綁在店長帳號而漏掉通知。
-  if (!existing || existing.user_id !== user.id) {
+  const reassigned = !existing || existing.user_id !== user.id
+  if (reassigned) {
     after(async () => {
       await notifyReviewerOfPendingWork(user.id)
     })
   }
-  return { success: true as const }
+  return { success: true as const, reassigned }
 }
 
 export async function removePushSubscription(endpoint: string) {
