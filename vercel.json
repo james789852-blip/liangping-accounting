@@ -10,6 +10,18 @@
     {
       "path": "/api/cron/auto-complete-ck-handoffs",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/push-reminders/ck-handoff",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/push-reminders/accounting-first",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/push-reminders/accounting-final",
+      "schedule": "30 15 * * *"
     }
   ]
 }

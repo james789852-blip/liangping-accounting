@@ -29,6 +29,7 @@ export type AuditEvent =
   | 'user_password_reset'
   | 'user_status_update'
   | 'user_delete'
+  | 'push_reminder'
 
 interface LogAuditInput {
   eventType: AuditEvent

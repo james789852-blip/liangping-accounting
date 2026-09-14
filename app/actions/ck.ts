@@ -20,7 +20,11 @@ import {
 import { normalizeItemAmount } from '@/lib/negative-items'
 import { syncCKMonthToSheets as syncCKMonthToSheetsImpl } from '@/lib/google-sheets'
 import { autoCompleteExpiredCKReimbursementHandoffs } from '@/lib/ck-reimbursement-handoff'
-import { notifyReviewersOfSubmission, notifyStoreUsersOfReview } from '@/lib/push-notifications'
+import {
+  notifyCKUsersOfReimbursementHandoff,
+  notifyReviewersOfSubmission,
+  notifyStoreUsersOfReview,
+} from '@/lib/push-notifications'
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
 
@@ -694,7 +698,7 @@ export async function markCKHQPaid(
 
   const { data: existing } = await admin
     .from('ck_daily_records')
-    .select('id')
+    .select('id, hq_paid')
     .eq('ck_store_id', ckStoreId)
     .eq('business_date', date)
     .maybeSingle()
@@ -723,6 +727,17 @@ export async function markCKHQPaid(
     description: `${ctx.userName ?? ctx.userEmail ?? '未知'} ${paid ? '送出' : '取消'}央廚 ${date} 補款`,
     metadata: { paid, business_date: date, photo_count: paid ? photoUrls.length : 0 },
   })
+
+  if (paid && !(existing as { hq_paid?: boolean } | null)?.hq_paid) {
+    after(async () => {
+      await notifyCKUsersOfReimbursementHandoff({
+        storeId: ckStoreId,
+        businessDate: date,
+        recordId: String(existing?.id ?? `${ckStoreId}-${date}`),
+        stage: 'received',
+      })
+    })
+  }
 
   revalidatePath('/hq/ck')
   revalidatePath('/hq/accounting')

@@ -617,7 +617,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <Toggle label="接收審核結果通知" checked={pushEnabled} onChange={setPushEnabled} disabled={!canConfigure} />
+                  <Toggle label="接收帳務提醒與審核結果通知" checked={pushEnabled} onChange={setPushEnabled} disabled={!canConfigure} />
                   <p className="text-[10px] mt-1" style={{ color: '#71717a' }}>
                     {store.push_device_count
                       ? `目前共綁定 ${store.push_device_count} 台裝置`
@@ -636,7 +636,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                 </button>
               </div>
               <p className="text-[10px]" style={{ color: '#64748b' }}>
-                關閉後，此店人員不會收到審核通過或退回通知。手機的通知權限仍須由本人在該裝置允許。
+                關閉後，此店人員不會收到未送出提醒、補款點交提醒或審核結果通知。手機的通知權限仍須由本人在該裝置允許。
               </p>
             </div>
           )}

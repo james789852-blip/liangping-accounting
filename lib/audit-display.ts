@@ -99,6 +99,12 @@ export const AUDIT_METADATA_LABELS: Record<string, string> = {
   can_review_closings: '可審核帳目',
   can_export_reports: '可匯出報表',
   push_notifications_enabled: '帳務推播',
+  reminder_stage: '提醒時段',
+  accounting_kind: '帳目類型',
+  current_status: '當時帳目狀態',
+  target_devices: '目標裝置數',
+  delivered_devices: '成功送達裝置數',
+  reimbursement_sent_at: '補款送出時間',
   error: '錯誤內容',
   source: '操作裝置',
   device: '裝置',
@@ -197,6 +203,7 @@ const TECHNICAL_AUDIT_FIELDS = new Set([
   'action', 'entity', 'entity_type', 'entity_id', 'id', 'type',
   'user_id', 'manager_id', 'closing_id', 'receipt_id', 'original_closing_id',
   'category_id', 'item_mapping_id', 'external_store_id',
+  'reminder_key',
   'source', 'device', 'browser', 'os', 'audit_version',
 ])
 

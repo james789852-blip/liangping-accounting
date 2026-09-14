@@ -76,7 +76,7 @@ test('總公司可分別控制店家與帳號推播', () => {
   assert.match(controlsMigration, /alter table user_profiles[\s\S]*push_notifications_enabled boolean not null default true/)
   assert.match(pushModule, /profile\.push_notifications_enabled !== false/)
   assert.match(pushModule, /store\?\.push_notifications_enabled === false/)
-  assert.match(storeEditor, /接收審核結果通知/)
+  assert.match(storeEditor, /接收帳務提醒與審核結果通知/)
   assert.match(userEditor, /接收帳務推播/)
 })
 

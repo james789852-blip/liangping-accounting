@@ -73,6 +73,7 @@ const EVENT_LABELS: Record<string, string> = {
   user_password_reset: '重設管理人員密碼',
   user_status_update: '管理人員狀態變更',
   user_delete: '刪除管理人員',
+  push_reminder: '帳務推播提醒',
 }
 
 const EVENT_COLORS: Record<string, string> = {
@@ -107,6 +108,7 @@ const EVENT_COLORS: Record<string, string> = {
   user_password_reset: '#f59e0b',
   user_status_update: '#f59e0b',
   user_delete: '#ef4444',
+  push_reminder: '#0ea5e9',
 }
 
 const SEVERITY_LABELS: Record<AuditLog['severity'], string> = {

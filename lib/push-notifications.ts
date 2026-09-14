@@ -211,6 +211,58 @@ export async function notifyStoreUsersOfReview(input: {
   })
 }
 
+export async function notifyStoreUsersOfAccountingReminder(input: {
+  kind: 'store' | 'ck'
+  storeId: string
+  businessDate: string
+  stage: '23:00' | '23:30'
+  status?: string | null
+}) {
+  const admin = createAdminClient()
+  const [{ data: store }, userIds] = await Promise.all([
+    admin.from('stores').select('name, push_notifications_enabled').eq('id', input.storeId).maybeSingle(),
+    storeUserIds(input.storeId),
+  ])
+  if (store?.push_notifications_enabled === false) return { total: 0, delivered: 0 }
+
+  const name = String(store?.name || (input.kind === 'ck' ? '央廚' : '店家'))
+  const isFinal = input.stage === '23:30'
+  const wasReturned = input.status === 'disputed'
+  return sendToUserIds(userIds, {
+    title: isFinal ? '第二次提醒：帳目尚未送出' : '今晚帳目尚未送出',
+    body: `${name} ${input.businessDate} 帳目${wasReturned ? '退回後仍未重新送出' : '尚未送出'}，請${isFinal ? '立即' : '盡快'}完成並送出審核。`,
+    url: input.kind === 'ck'
+      ? `/manager/ck?date=${input.businessDate}`
+      : `/manager/closing?date=${input.businessDate}`,
+    tag: `${input.kind}-accounting-reminder-${input.stage}-${input.storeId}-${input.businessDate}`,
+  })
+}
+
+export async function notifyCKUsersOfReimbursementHandoff(input: {
+  storeId: string
+  businessDate: string
+  recordId: string
+  stage: 'received' | '17:00'
+}) {
+  const admin = createAdminClient()
+  const [{ data: store }, userIds] = await Promise.all([
+    admin.from('stores').select('name, push_notifications_enabled').eq('id', input.storeId).maybeSingle(),
+    storeUserIds(input.storeId),
+  ])
+  if (store?.push_notifications_enabled === false) return { total: 0, delivered: 0 }
+
+  const name = String(store?.name || '央廚')
+  const isReminder = input.stage === '17:00'
+  return sendToUserIds(userIds, {
+    title: isReminder ? '補款尚未點交' : '總公司補款等待點交',
+    body: isReminder
+      ? `${name} ${input.businessDate} 的補款尚未完成點交，請盡快確認。`
+      : `${name} ${input.businessDate} 的總公司補款信封照片已送達，請確認收到後完成點交。`,
+    url: `/manager/ck?date=${input.businessDate}`,
+    tag: `ck-reimbursement-${input.stage}-${input.recordId}`,
+  })
+}
+
 export async function sendTestPushToStore(storeId: string) {
   const admin = createAdminClient()
   const [{ data: store }, userIds] = await Promise.all([
