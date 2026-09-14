@@ -139,6 +139,40 @@ export async function notifyReviewersOfSubmission(input: {
   })
 }
 
+export async function notifyReviewerOfPendingWork(userId: string) {
+  const admin = createAdminClient()
+  const { data: profile, error: profileError } = await admin
+    .from('user_profiles')
+    .select('role, can_review_closings, active')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (profileError || !profile?.active || !canReviewClosings(profile as PermissionProfile)) return
+
+  const [storeResult, ckResult] = await Promise.all([
+    admin.from('daily_closings').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
+    admin.from('ck_daily_records').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
+  ])
+  if (storeResult.error || ckResult.error) {
+    console.error('[push] failed to count pending reviews:', storeResult.error || ckResult.error)
+    return
+  }
+
+  const storeCount = storeResult.count ?? 0
+  const ckCount = ckResult.count ?? 0
+  if (storeCount + ckCount === 0) return
+  const parts = [
+    storeCount > 0 ? `${storeCount} 筆店面帳目` : '',
+    ckCount > 0 ? `${ckCount} 筆央廚帳目` : '',
+  ].filter(Boolean)
+
+  await sendToUserIds([userId], {
+    title: '有帳目等待審核',
+    body: `${parts.join('、')}等待審核。`,
+    url: '/hq/accounting',
+    tag: 'pending-review-summary',
+  })
+}
+
 export async function notifyStoreUsersOfReview(input: {
   kind: 'store' | 'ck'
   storeId: string

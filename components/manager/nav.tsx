@@ -8,6 +8,7 @@ import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink,
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
 import { clearStoreSelectionOnLogout } from '@/app/actions/store-select'
+import { detachPushSubscriptionFromCurrentUser } from '@/lib/push-client'
 
 const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
 
@@ -91,6 +92,7 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
 
   async function handleLogout() {
     await clearStoreSelectionOnLogout()
+    await detachPushSubscriptionFromCurrentUser()
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')

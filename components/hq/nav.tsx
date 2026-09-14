@@ -17,6 +17,7 @@ import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
 import { getPendingReviewCount } from '@/app/actions/pending-review'
 import { clearStoreSelectionOnLogout } from '@/app/actions/store-select'
+import { detachPushSubscriptionFromCurrentUser } from '@/lib/push-client'
 
 /** 待審核數 — 每 30 秒 poll，切頁時也 refresh */
 function usePendingReviewCount() {
@@ -162,6 +163,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
 
   async function handleLogout() {
     await clearStoreSelectionOnLogout()
+    await detachPushSubscriptionFromCurrentUser()
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')

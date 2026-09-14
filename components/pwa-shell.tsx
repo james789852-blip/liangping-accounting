@@ -160,7 +160,8 @@ function PushPrompt() {
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ''
 
   useEffect(() => {
-    if (!publicKey || pathname === '/login' || !pathname.endsWith('/dashboard')) return
+    const isAuthenticatedPortal = pathname.startsWith('/manager/') || pathname.startsWith('/hq/')
+    if (!publicKey || !isAuthenticatedPortal) return
     if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return
     if (!isRunningStandalone()) return
 
@@ -170,7 +171,8 @@ function PushPrompt() {
       })
       return
     }
-    if (Notification.permission === 'default' && !isPushPromptDismissed()) {
+    const safePromptPage = pathname.endsWith('/dashboard') || pathname === '/hq/accounting'
+    if (safePromptPage && Notification.permission === 'default' && !isPushPromptDismissed()) {
       const timer = window.setTimeout(() => setVisible(true), 800)
       return () => window.clearTimeout(timer)
     }

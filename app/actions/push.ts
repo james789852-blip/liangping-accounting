@@ -2,6 +2,8 @@
 
 import { getVerifiedUser } from '@/lib/authed-user'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { notifyReviewerOfPendingWork } from '@/lib/push-notifications'
+import { after } from 'next/server'
 
 type BrowserPushSubscription = {
   endpoint: string
@@ -33,6 +35,11 @@ export async function savePushSubscription(subscription: BrowserPushSubscription
   if (!isValidSubscription(subscription)) return { error: '推播訂閱資料格式錯誤' }
 
   const admin = createAdminClient()
+  const { data: existing } = await admin
+    .from('push_subscriptions')
+    .select('user_id')
+    .eq('endpoint', subscription.endpoint)
+    .maybeSingle()
   const { error } = await admin.from('push_subscriptions').upsert({
     user_id: user.id,
     endpoint: subscription.endpoint,
@@ -47,6 +54,15 @@ export async function savePushSubscription(subscription: BrowserPushSubscription
   if (error) {
     console.error('[savePushSubscription] failed:', error)
     return { error: '推播設定儲存失敗，請稍後再試' }
+  }
+
+  // 同一支手機切換店長／總公司帳號時，endpoint 會轉綁目前登入者。
+  // 若這是新訂閱或切換帳號，總公司審核者登入後補發目前待審摘要，
+  // 避免送審事件發生時裝置仍綁在店長帳號而漏掉通知。
+  if (!existing || existing.user_id !== user.id) {
+    after(async () => {
+      await notifyReviewerOfPendingWork(user.id)
+    })
   }
   return { success: true as const }
 }
