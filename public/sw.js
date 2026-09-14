@@ -1,4 +1,4 @@
-const CACHE = 'lp-v4'
+const CACHE = 'lp-v5'
 const OFFLINE_URL = '/offline.html'
 const PRECACHE_URLS = [OFFLINE_URL, '/icon-192.png', '/icon-512.png']
 
@@ -62,4 +62,43 @@ self.addEventListener('fetch', e => {
       })
     )
   }
+})
+
+self.addEventListener('push', event => {
+  let data = {}
+  try {
+    data = event.data ? event.data.json() : {}
+  } catch {
+    data = { body: event.data?.text() }
+  }
+
+  const title = typeof data.title === 'string' ? data.title : '結帳系統通知'
+  const body = typeof data.body === 'string' ? data.body : '有新的帳務進度，請開啟系統查看。'
+  const url = typeof data.url === 'string' && data.url.startsWith('/') ? data.url : '/'
+  const tag = typeof data.tag === 'string' ? data.tag : 'liangping-accounting'
+
+  event.waitUntil(self.registration.showNotification(title, {
+    body,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    tag,
+    renotify: true,
+    data: { url },
+  }))
+})
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close()
+  const relativeUrl = event.notification.data?.url || '/'
+  const destination = new URL(relativeUrl, self.location.origin).href
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+      const existingClient = windowClients.find(client => client.url.startsWith(self.location.origin))
+      if (existingClient) {
+        return existingClient.focus().then(client => client.navigate(destination))
+      }
+      return self.clients.openWindow(destination)
+    })
+  )
 })

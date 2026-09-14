@@ -196,6 +196,9 @@
 .pwa-install-prompt {
   bottom: calc(80px + env(safe-area-inset-bottom));
 }
+.pwa-push-prompt {
+  bottom: calc(80px + env(safe-area-inset-bottom));
+}
 @media (min-width: 1024px) {
   .closing-form-bottom-bar {
     bottom: 0;
@@ -204,6 +207,9 @@
     bottom: 0;
   }
   .pwa-install-prompt {
+    bottom: 16px;
+  }
+  .pwa-push-prompt {
     bottom: 16px;
   }
 }

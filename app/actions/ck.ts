@@ -20,6 +20,7 @@ import {
 import { normalizeItemAmount } from '@/lib/negative-items'
 import { syncCKMonthToSheets as syncCKMonthToSheetsImpl } from '@/lib/google-sheets'
 import { autoCompleteExpiredCKReimbursementHandoffs } from '@/lib/ck-reimbursement-handoff'
+import { notifyReviewersOfSubmission, notifyStoreUsersOfReview } from '@/lib/push-notifications'
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
 
@@ -197,6 +198,18 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
     }
   }
 
+  let previousStatus: string | null = null
+  if (data.status === 'submitted') {
+    const { data: previousRecord, error: previousRecordError } = await admin
+      .from('ck_daily_records')
+      .select('status')
+      .eq('ck_store_id', ckStoreId)
+      .eq('business_date', date)
+      .maybeSingle()
+    if (previousRecordError) return { error: previousRecordError.message }
+    previousStatus = previousRecord?.status ?? null
+  }
+
   const { data: record, error } = await admin
     .from('ck_daily_records')
     .upsert(
@@ -337,6 +350,18 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
     },
   })
 
+  if (data.status === 'submitted' && previousStatus !== 'submitted') {
+    after(async () => {
+      await notifyReviewersOfSubmission({
+        kind: 'ck',
+        storeId: ckStoreId,
+        businessDate: date,
+        recordId,
+        senderId: ctx.userId,
+      })
+    })
+  }
+
   revalidatePath('/manager/ck')
   revalidatePath('/manager/dashboard')
   revalidatePath('/manager/history')
@@ -425,6 +450,17 @@ export async function reviewCKDailyRecord(
       }
     })
   }
+
+  after(async () => {
+    await notifyStoreUsersOfReview({
+      kind: 'ck',
+      storeId: ckStoreId,
+      businessDate: date,
+      recordId: existing.id,
+      decision,
+      reviewerId: ctx.userId,
+    })
+  })
 
   revalidatePath('/hq/ck')
   revalidatePath('/hq/accounting')

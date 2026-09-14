@@ -11,6 +11,7 @@ import { buildAuditChanges, logAudit } from '@/lib/audit'
 import { getAuthContext, canAccessStore, getClosingMeta } from '@/lib/permissions'
 import { canReviewClosings } from '@/lib/user-permissions'
 import { requiredActualVendorError } from '@/lib/required-actual-vendor'
+import { notifyReviewersOfSubmission, notifyStoreUsersOfReview } from '@/lib/push-notifications'
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
 
@@ -293,6 +294,16 @@ export async function verifyClosing(closingId: string) {
       userId: user.id,
     })
   })
+  after(async () => {
+    await notifyStoreUsersOfReview({
+      kind: 'store',
+      storeId: closing.store_id,
+      businessDate: closing.business_date,
+      recordId: closingId,
+      decision: 'verified',
+      reviewerId: user.id,
+    })
+  })
 
   revalidatePath('/hq/reviews')
   revalidatePath('/hq/closings')
@@ -370,6 +381,20 @@ export async function verifyClosingsBatch(closingIds: string[]) {
         userId: user.id,
       }),
     ))
+  })
+  after(async () => {
+    const updatedRows = updatedIds.flatMap(id => {
+      const closing = closings.find(item => item.id === id)
+      return closing ? [closing] : []
+    })
+    await Promise.all(updatedRows.map(closing => notifyStoreUsersOfReview({
+        kind: 'store' as const,
+        storeId: closing.store_id,
+        businessDate: closing.business_date,
+        recordId: closing.id,
+        decision: 'verified' as const,
+        reviewerId: user.id,
+      })))
   })
 
   revalidatePath('/hq/reviews')
@@ -542,6 +567,17 @@ export async function disputeClosing(closingId: string, note: string) {
     })
   }
 
+  after(async () => {
+    await notifyStoreUsersOfReview({
+      kind: 'store',
+      storeId: closing.store_id,
+      businessDate: closing.business_date,
+      recordId: closingId,
+      decision: 'disputed',
+      reviewerId: user.id,
+    })
+  })
+
   revalidatePath('/hq/reviews')
   revalidatePath('/hq/closings')
   revalidatePath('/hq/audit')
@@ -674,6 +710,16 @@ export async function submitClosing(closingId: string) {
       after: { status: 'submitted' },
       changes: buildAuditChanges({ status: meta.status }, { status: 'submitted' }, CLOSING_STATUS_LABELS),
     },
+  })
+
+  after(async () => {
+    await notifyReviewersOfSubmission({
+      kind: 'store',
+      storeId: c.store_id as string,
+      businessDate: c.business_date as string,
+      recordId: closingId,
+      senderId: ctx.userId,
+    })
   })
 
   revalidatePath('/manager/dashboard')
