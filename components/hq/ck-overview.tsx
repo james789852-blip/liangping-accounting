@@ -1059,50 +1059,41 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
           <button onClick={onClose} className="p-2 rounded-full" style={{ background: '#f4f4f5' }}><X className="h-4 w-4" /></button>
         </div>
         <div className="overflow-y-auto p-4 grid sm:grid-cols-2 gap-4">
-          <div className="min-h-64 rounded-2xl flex flex-col overflow-hidden" style={{ background: currentPhoto ? '#18181b' : '#f8fafc', border: '1px solid #e4e4e7' }}>
+          <div className="min-h-64 rounded-2xl flex flex-col overflow-hidden" style={{ background: 'white', border: '1px solid #d4d4d8' }}>
             {currentPhoto && (
-              <div className="flex items-center justify-between gap-3 px-3 py-2 text-white" style={{ borderBottom: '1px solid rgba(255,255,255,.15)' }}>
+              <div className="flex items-center justify-between gap-3 px-3 py-2" style={{ background: 'white', borderBottom: '1px solid #e4e4e7' }}>
                 <span className="text-sm font-bold truncate">{currentPhoto.label}</span>
-                <span className="text-xs font-semibold shrink-0" style={{ color: '#d4d4d8' }}>第 {photoIndex + 1} 張／共 {currentPhotos.length} 張</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs font-semibold" style={{ color: '#71717a' }}>第 {photoIndex + 1} 張／共 {currentPhotos.length} 張</span>
+                  <button type="button" onClick={() => setZoomPhotoUrl(currentPhoto.url)}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold"
+                    style={{ background: '#f4f4f5', color: '#3f3f46', border: '1px solid #d4d4d8' }}>
+                    <Maximize2 className="h-3.5 w-3.5" />放大
+                  </button>
+                </div>
               </div>
             )}
             {currentPhotos.length > 1 && (
-              <div className="grid grid-cols-2 gap-2 p-2" data-testid="ck-review-photo-tabs" style={{ background: '#27272a', borderBottom: '1px solid rgba(255,255,255,.15)' }}>
+              <div className="grid grid-cols-2 gap-2 p-2" data-testid="ck-review-photo-tabs" style={{ background: '#f8fafc', borderBottom: '1px solid #e4e4e7' }}>
                 {currentPhotos.map((photo, photoNumber) => (
                   <button key={`${photo.url}-${photoNumber}`} type="button" onClick={() => setPhotoIndex(photoNumber)}
                     className="min-h-11 px-2 py-2 rounded-lg text-xs sm:text-sm font-bold transition-colors"
                     aria-pressed={photoNumber === photoIndex}
                     style={photoNumber === photoIndex
-                      ? { background: '#f59e0b', color: '#18181b', border: '2px solid #fbbf24' }
-                      : { background: '#3f3f46', color: 'white', border: '2px solid #71717a' }}>
+                      ? { background: '#fff7ed', color: '#9a3412', border: '2px solid #f59e0b' }
+                      : { background: 'white', color: '#3f3f46', border: '2px solid #d4d4d8' }}>
                     {photo.label}
                   </button>
                 ))}
               </div>
             )}
-            <div className="relative flex-1 flex items-center justify-center min-h-64">
+            <div className="flex-1 flex items-center justify-center min-h-64" style={{ background: 'white' }}>
               {currentPhoto ? (
                 <button type="button" onClick={() => setZoomPhotoUrl(currentPhoto.url)}
-                  className="group relative w-full h-full flex items-center justify-center" aria-label={`放大查看${currentPhoto.label}`}>
+                  className="w-full h-full flex items-center justify-center" aria-label={`放大查看${currentPhoto.label}`}>
                   <SafePhotoImage src={currentPhoto.url} alt={currentPhoto.label} className="w-full h-full max-h-[48dvh] object-contain" />
-                  <span className="absolute right-3 bottom-3 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-bold text-white"
-                    style={{ background: 'rgba(0,0,0,.7)' }}><Maximize2 className="h-3.5 w-3.5" />點一下放大</span>
                 </button>
               ) : <div className="text-center" style={{ color: '#a1a1aa' }}><FileTextFallback /><p className="text-sm mt-2">此步驟沒有照片，請核對輸入內容與金額</p></div>}
-              {photoIndex > 0 && (
-                <button type="button" onClick={() => setPhotoIndex(value => Math.max(0, value - 1))} aria-label="查看上一張照片"
-                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 h-11 w-11 rounded-full flex items-center justify-center text-white"
-                  style={{ background: 'rgba(0,0,0,.78)', border: '2px solid rgba(255,255,255,.8)' }}>
-                  <ChevronLeft className="h-6 w-6" />
-                </button>
-              )}
-              {photoIndex < currentPhotos.length - 1 && (
-                <button type="button" onClick={() => setPhotoIndex(value => Math.min(currentPhotos.length - 1, value + 1))} aria-label="查看下一張照片"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 h-11 w-11 rounded-full flex items-center justify-center text-white"
-                  style={{ background: '#d97706', border: '2px solid white', boxShadow: '0 2px 10px rgba(0,0,0,.45)' }}>
-                  <ChevronRight className="h-6 w-6" />
-                </button>
-              )}
             </div>
           </div>
           <div className="space-y-3">

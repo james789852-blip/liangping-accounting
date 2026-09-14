@@ -117,16 +117,16 @@ test('總公司可同時查看體系外配送單與轉帳成功紀錄', () => {
   assert.match(documentsSource, /轉帳成功紀錄/)
 })
 
-test('手機逐步核對會標示兩種照片並提供切換與放大', () => {
+test('手機逐步核對會在照片上方提供不遮擋內容的切換與放大', () => {
   const overviewSource = fs.readFileSync(new URL('../components/hq/ck-overview.tsx', import.meta.url), 'utf8')
 
   assert.match(overviewSource, /label: `配送單 \$\{photoNumber \+ 1\}`/)
   assert.match(overviewSource, /label: `轉帳成功紀錄 \$\{photoNumber \+ 1\}`/)
   assert.match(overviewSource, /第 \{photoIndex \+ 1\} 張／共 \{currentPhotos\.length\} 張/)
-  assert.match(overviewSource, /點一下放大/)
   assert.match(overviewSource, /data-testid="ck-review-photo-tabs"/)
-  assert.match(overviewSource, /aria-label="查看上一張照片"/)
-  assert.match(overviewSource, /aria-label="查看下一張照片"/)
+  assert.match(overviewSource, /<Maximize2 className="h-3\.5 w-3\.5" \/>放大/)
+  assert.doesNotMatch(overviewSource, /aria-label="查看上一張照片"/)
+  assert.doesNotMatch(overviewSource, /aria-label="查看下一張照片"/)
 })
 
 test('內容相符按下後停留並顯示明確確認狀態', () => {
