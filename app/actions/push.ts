@@ -29,6 +29,16 @@ function isValidSubscription(subscription: BrowserPushSubscription) {
   )
 }
 
+function deviceName(userAgent?: string) {
+  const ua = userAgent ?? ''
+  if (/iPhone/i.test(ua)) return 'iPhone'
+  if (/iPad/i.test(ua)) return 'iPad'
+  if (/Android/i.test(ua)) return 'Android 手機／平板'
+  if (/Macintosh|Mac OS X/i.test(ua)) return 'Mac'
+  if (/Windows/i.test(ua)) return 'Windows 電腦'
+  return '瀏覽器裝置'
+}
+
 export async function savePushSubscription(subscription: BrowserPushSubscription, userAgent?: string) {
   const user = await getVerifiedUser()
   if (!user) return { error: '請先登入後再開啟推播' }
@@ -37,7 +47,7 @@ export async function savePushSubscription(subscription: BrowserPushSubscription
   const admin = createAdminClient()
   const { data: existing } = await admin
     .from('push_subscriptions')
-    .select('user_id')
+    .select('id, user_id')
     .eq('endpoint', subscription.endpoint)
     .maybeSingle()
   const { error } = await admin.from('push_subscriptions').upsert({
@@ -47,6 +57,8 @@ export async function savePushSubscription(subscription: BrowserPushSubscription
     auth: subscription.keys.auth,
     expiration_time: subscription.expirationTime,
     user_agent: userAgent?.slice(0, 500) || null,
+    device_name: deviceName(userAgent),
+    last_seen_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     failure_count: 0,
   }, { onConflict: 'endpoint' })
@@ -60,6 +72,13 @@ export async function savePushSubscription(subscription: BrowserPushSubscription
   // 若這是新訂閱或切換帳號，總公司審核者登入後補發目前待審摘要，
   // 避免送審事件發生時裝置仍綁在店長帳號而漏掉通知。
   const reassigned = !existing || existing.user_id !== user.id
+  if (existing && existing.user_id !== user.id) {
+    await admin.from('push_delivery_jobs').update({
+      status: 'failed',
+      last_error: '裝置已切換至其他帳號',
+      updated_at: new Date().toISOString(),
+    }).eq('subscription_id', existing.id).eq('status', 'pending')
+  }
   if (reassigned) {
     after(async () => {
       await notifyReviewerOfPendingWork(user.id)

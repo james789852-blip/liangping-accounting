@@ -8,6 +8,7 @@ import { sendUserPushTest } from '@/app/actions/push-management'
 import { getTitleOptions, inferSystemRole, type AccountUnitType } from '@/lib/account-access'
 import { resolvePrimaryStoreId } from '@/lib/user-primary-store'
 import { useRouter } from 'next/navigation'
+import { normalizePushPreferences, PUSH_PREFERENCE_OPTIONS, type PushPreferences } from '@/lib/push-preferences'
 
 interface Store { id: string; name: string; type?: string }
 interface UserData {
@@ -34,6 +35,7 @@ interface UserData {
   can_review_closings?: boolean
   can_export_reports?: boolean
   push_notifications_enabled?: boolean | null
+  push_notification_preferences?: Partial<PushPreferences> | null
   push_device_count?: number
 }
 
@@ -96,6 +98,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
     can_review_closings: user.can_review_closings ?? false,
     can_export_reports: user.can_export_reports ?? false,
     push_notifications_enabled: user.push_notifications_enabled !== false,
+    push_notification_preferences: normalizePushPreferences(user.push_notification_preferences),
   })
   const [selectedStores, setSelectedStores] = useState<string[]>(
     [...new Set(user.store_ids ?? [])].filter(id => activeStoreIds.includes(id))
@@ -157,6 +160,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
       can_review_closings: isOwner ? true : (isHQ && form.can_review_closings),
       can_export_reports: isOwner ? true : (isHQ && form.can_export_reports),
       push_notifications_enabled: form.push_notifications_enabled,
+      push_notification_preferences: form.push_notification_preferences,
       active: form.active,
     })
     if (result.error) toast.error('更新失敗：' + result.error)
@@ -310,6 +314,21 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                       style={{ transform: form.push_notifications_enabled ? 'translateX(16px)' : 'translateX(0)' }} />
                   </button>
                 </div>
+                {form.push_notifications_enabled && (
+                  <div className="grid gap-1.5 border-t border-blue-100 pt-2 sm:grid-cols-2">
+                    {PUSH_PREFERENCE_OPTIONS.map(option => (
+                      <label key={option.key} className="flex items-center gap-2 rounded-lg bg-white px-2.5 py-2 text-xs text-zinc-700">
+                        <input type="checkbox" checked={form.push_notification_preferences[option.key]}
+                          onChange={event => setForm(previous => ({
+                            ...previous,
+                            push_notification_preferences: { ...previous.push_notification_preferences, [option.key]: event.target.checked },
+                          }))}
+                          className="h-4 w-4 accent-blue-600" />
+                        <span><b>{option.label}</b><span className="block text-[10px] text-zinc-400">{option.audience}</span></span>
+                      </label>
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[10px] flex-1" style={{ color: '#64748b' }}>
                     關閉後不再接收待審或審核結果通知；手機通知權限仍須由本人允許。

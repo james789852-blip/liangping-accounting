@@ -31,7 +31,22 @@ test('總公司送出補款後立即通知央廚，17:00 尚未點交再提醒�
 
 test('推播提醒排程有密鑰保護，並受店家與個人推播開關控制', () => {
   assert.match(cronRoute, /process\.env\.CRON_SECRET/)
-  assert.match(notifications, /store\?\.push_notifications_enabled === false/)
-  assert.match(notifications, /storeUserIds\(input\.storeId\)/)
+  assert.match(notifications, /store\?\.push_notifications_enabled !== false/)
+  assert.match(notifications, /profile\.push_notifications_enabled !== false/)
+  assert.match(notifications, /storeUserIds\(input\.storeId/)
   assert.match(storeEditor, /接收帳務提醒與審核結果通知/)
+})
+
+test('23:30、17:00 與退回逾時會升級通知總公司', () => {
+  assert.match(reminders, /stage === '23:30'[\s\S]*notifyReviewersOfEscalation/)
+  assert.match(reminders, /央廚補款仍未點交/)
+  assert.match(reminders, /export async function sendReturnedAccountingReminders/)
+  assert.match(reminders, /Date\.now\(\) - 60 \* 60000/)
+  assert.match(reminders, /退回超過 60 分鐘/)
+  assert.ok(vercelConfig.crons.some(cron => cron.path.endsWith('/returned') && cron.schedule === '*/15 * * * *'))
+})
+
+test('推播重試排程每五分鐘處理一次', () => {
+  assert.match(cronRoute, /processPendingPushJobs\(200\)/)
+  assert.ok(vercelConfig.crons.some(cron => cron.path.endsWith('/delivery-retry') && cron.schedule === '*/5 * * * *'))
 })

@@ -32,7 +32,7 @@ export default async function StoresPage() {
   // 老闆 / is_hq 看全部店家，其他只看自己負責的
   let query = admin
     .from('stores')
-    .select('id, name, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled, petty_cash, type, active, assigned_store_ids, google_sheets_id, push_notifications_enabled')
+    .select('id, name, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled, petty_cash, type, active, assigned_store_ids, google_sheets_id, push_notifications_enabled, push_notification_preferences')
 
   if (canEditStoreSettings && !canEditCKSettings) {
     query = query.neq('type', '央廚') as typeof query
@@ -114,6 +114,7 @@ export default async function StoresPage() {
                       assigned_store_ids: (store as any).assigned_store_ids ?? [],
                       google_sheets_id: (store as any).google_sheets_id ?? '',
                       push_notifications_enabled: (store as any).push_notifications_enabled !== false,
+                      push_notification_preferences: (store as any).push_notification_preferences,
                       push_device_count: pushDeviceCountByStore[store.id] ?? 0,
                     }}
                     canEdit={(store as any).type === '央廚' ? canEditCKSettings : canEditStoreSettings}

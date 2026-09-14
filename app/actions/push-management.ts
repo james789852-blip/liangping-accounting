@@ -39,3 +39,17 @@ export async function sendUserPushTest(userId: string) {
   if (result.delivered === 0) return { error: '測試通知發送失敗，請重新綁定裝置' }
   return { success: true as const, delivered: result.delivered }
 }
+
+export async function removeUserPushDevice(subscriptionId: string) {
+  const profile = await callerProfile()
+  if (!canManageUsers(profile)) return { error: '權限不足' }
+  const admin = createAdminClient()
+  const { data: device, error: loadError } = await admin.from('push_subscriptions')
+    .select('id, user_id, device_name')
+    .eq('id', subscriptionId)
+    .maybeSingle()
+  if (loadError || !device) return { error: '找不到這台推播裝置' }
+  const { error } = await admin.from('push_subscriptions').delete().eq('id', subscriptionId)
+  if (error) return { error: '解除裝置失敗，請稍後再試' }
+  return { success: true as const, deviceName: device.device_name || '裝置' }
+}

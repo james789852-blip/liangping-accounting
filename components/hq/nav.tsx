@@ -9,7 +9,7 @@ import {
   Store, Users, LogOut,
   ClipboardList, History,
   ArrowRightLeft, Package, BookOpen, Settings, FileBarChart2, ChefHat, ExternalLink,
-  Menu, X, FileText, Images,
+  Menu, X, FileText, Images, BellRing,
 } from 'lucide-react'
 
 const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
@@ -74,6 +74,7 @@ const hqSections = [
       { href: '/hq/ck-prices',             label: '央廚單價',    icon: Package },
       { href: '/hq/stores',                label: '店家管理',    icon: Store },
       { href: '/hq/users',                 label: '帳號管理',    icon: Users },
+      { href: '/hq/notifications',         label: '推播管理',    icon: BellRing },
       { href: '/hq/audit',                 label: '操作軌跡',    icon: History },
     ],
   },
@@ -209,6 +210,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           if (it.href === '/hq/ck-prices') return canSeeCKPrices
           if (it.href === '/hq/stores') return canSeeStores
           if (it.href === '/hq/users') return canSeeUsers
+          if (it.href === '/hq/notifications') return canSeeUsers
           if (it.href === '/hq/audit') return canSeeUsers || canSeeStores || canSeeItems || canSeeReceipts || canSeeCKPrices || canSeeReviews
           return true
         }),

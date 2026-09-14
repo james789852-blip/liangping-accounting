@@ -1,7 +1,9 @@
 import {
   sendAccountingSubmissionReminders,
   sendCKReimbursementHandoffReminders,
+  sendReturnedAccountingReminders,
 } from '@/lib/scheduled-push-reminders'
+import { processPendingPushJobs } from '@/lib/push-notifications'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -23,6 +25,10 @@ export async function GET(
         ? await sendAccountingSubmissionReminders('23:30')
         : kind === 'ck-handoff'
           ? await sendCKReimbursementHandoffReminders()
+          : kind === 'returned'
+            ? await sendReturnedAccountingReminders()
+            : kind === 'delivery-retry'
+              ? await processPendingPushJobs(200)
           : null
     if (!result) return Response.json({ error: 'Unknown reminder kind' }, { status: 404 })
     return Response.json({ success: true, kind, ...result, checkedAt: new Date().toISOString() })

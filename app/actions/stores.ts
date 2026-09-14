@@ -21,6 +21,7 @@ interface StoreSettings {
   type?: string
   google_sheets_id?: string | null
   push_notifications_enabled?: boolean
+  push_notification_preferences?: Record<string, boolean>
 }
 
 async function requireManager() {
@@ -46,7 +47,7 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
   const admin = createAdminClient()
   const { data: currentStore } = await admin
     .from('stores')
-    .select('id, name, type, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled, petty_cash, google_sheets_id, push_notifications_enabled, active')
+    .select('id, name, type, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled, petty_cash, google_sheets_id, push_notifications_enabled, push_notification_preferences, active')
     .eq('id', storeId)
     .single()
   if (!currentStore) return { error: '找不到店家' }
@@ -71,6 +72,7 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
       petty_cash: settings.petty_cash,
       ...('google_sheets_id' in settings ? { google_sheets_id: settings.google_sheets_id ?? null } : {}),
       ...('push_notifications_enabled' in settings ? { push_notifications_enabled: settings.push_notifications_enabled !== false } : {}),
+      ...('push_notification_preferences' in settings ? { push_notification_preferences: settings.push_notification_preferences } : {}),
     })
     .eq('id', storeId)
 
@@ -91,6 +93,7 @@ export async function updateStoreSettings(storeId: string, settings: StoreSettin
     petty_cash: settings.petty_cash,
     ...('google_sheets_id' in settings ? { google_sheets_id: settings.google_sheets_id ?? null } : {}),
     ...('push_notifications_enabled' in settings ? { push_notifications_enabled: settings.push_notifications_enabled !== false } : {}),
+    ...('push_notification_preferences' in settings ? { push_notification_preferences: settings.push_notification_preferences } : {}),
   }
   await logAudit({
     eventType: 'store_update',

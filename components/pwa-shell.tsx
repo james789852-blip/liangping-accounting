@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { BellRing, Download, PlusSquare, Share, Wifi, WifiOff, X } from 'lucide-react'
 import { syncPushSubscriptionToCurrentUser } from '@/lib/push-client'
+import NotificationCenter from '@/components/notification-center'
 
 const INSTALL_DISMISS_KEY = 'lp-pwa-install-dismissed-at'
 const INSTALL_DISMISS_MS = 14 * 24 * 60 * 60 * 1000
@@ -191,7 +192,7 @@ function PushPrompt() {
         return
       }
       await syncPushSubscriptionToCurrentUser(publicKey)
-      setMessage('推播已開啟，之後會收到帳目送出與審核結果通知。')
+      setMessage('推播已開啟，之後會收到帳目送出、審核結果、逾期與點交通知。')
       window.setTimeout(() => setVisible(false), 2200)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '推播開啟失敗，請稍後再試。')
@@ -213,7 +214,7 @@ function PushPrompt() {
         </span>
         <div className="min-w-0">
           <p className="font-bold text-zinc-900">開啟帳務推播</p>
-          <p className="mt-1 text-sm leading-6 text-zinc-600">帳目送出、審核通過或退回時，直接在手機收到通知。</p>
+          <p className="mt-1 text-sm leading-6 text-zinc-600">帳目送出、審核結果、逾期提醒或補款點交時，直接在手機收到通知。</p>
         </div>
       </div>
       {message && <p role="status" className="mt-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm text-zinc-700">{message}</p>}
@@ -268,6 +269,7 @@ export function PWAShell() {
       <NetworkStatus />
       <InstallPrompt />
       <PushPrompt />
+      <NotificationCenter />
     </>
   )
 }

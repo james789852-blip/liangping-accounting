@@ -1,4 +1,4 @@
-const CACHE = 'lp-v5'
+const CACHE = 'lp-v6'
 const OFFLINE_URL = '/offline.html'
 const PRECACHE_URLS = [OFFLINE_URL, '/icon-192.png', '/icon-512.png']
 
@@ -83,7 +83,7 @@ self.addEventListener('push', event => {
     badge: '/icon-192.png',
     tag,
     renotify: true,
-    data: { url },
+    data: { url, notificationId: typeof data.notificationId === 'string' ? data.notificationId : null },
   }))
 })
 
@@ -91,14 +91,25 @@ self.addEventListener('notificationclick', event => {
   event.notification.close()
   const relativeUrl = event.notification.data?.url || '/'
   const destination = new URL(relativeUrl, self.location.origin).href
+  const notificationId = event.notification.data?.notificationId
 
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+    Promise.all([
+      notificationId
+        ? fetch('/api/notifications/click', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notificationId }),
+          }).catch(() => null)
+        : Promise.resolve(null),
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
       const existingClient = windowClients.find(client => client.url.startsWith(self.location.origin))
       if (existingClient) {
         return existingClient.focus().then(client => client.navigate(destination))
       }
       return self.clients.openWindow(destination)
-    })
+      }),
+    ])
   )
 })

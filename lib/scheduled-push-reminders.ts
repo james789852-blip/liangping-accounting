@@ -6,6 +6,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { shouldTrackStoreAccountingDate } from '@/lib/overdue-accounting'
 import {
   notifyCKUsersOfReimbursementHandoff,
+  notifyReviewersOfEscalation,
+  notifyStoreUsersOfReturnedReminder,
   notifyStoreUsersOfAccountingReminder,
 } from '@/lib/push-notifications'
 
@@ -30,7 +32,6 @@ async function sentReminderKeys(stage: string, businessDate?: string) {
     .eq('event_type', 'push_reminder')
     .contains('metadata', { reminder_stage: stage })
   if (businessDate) query = query.contains('metadata', { business_date: businessDate })
-  else query = query.gte('created_at', new Date(Date.now() - 2 * 86400000).toISOString())
   const { data, error } = await query
   if (error) throw new Error(`讀取推播提醒紀錄失敗：${error.message}`)
   return new Set((data ?? []).map(row => String((row.metadata as Record<string, unknown> | null)?.reminder_key ?? '')).filter(Boolean))
@@ -99,6 +100,20 @@ export async function sendAccountingSubmissionReminders(
     })
   }
 
+  if (stage === '23:30' && pending.length > 0) {
+    const storeNames = pending.slice(0, 5).map(store => store.name).join('、')
+    const more = pending.length > 5 ? `等 ${pending.length} 間` : ''
+    const escalation = await notifyReviewersOfEscalation({
+      title: '23:30 仍有帳目未送出',
+      body: `${storeNames}${more}尚未送出帳目，請追蹤處理。`,
+      url: '/hq/accounting',
+      sourceKey: `hq-accounting-final-${businessDate}`,
+      storeId: pending.length === 1 ? pending[0].id : undefined,
+    })
+    targetDevices += escalation.total
+    delivered += escalation.delivered
+  }
+
   return { eligible: pending.length, skippedAsAlreadySent, targetDevices, delivered }
 }
 
@@ -155,6 +170,98 @@ export async function sendCKReimbursementHandoffReminders(): Promise<ReminderRes
         delivered_devices: result.delivered,
       },
     })
+  }
+
+  if (pending.length > 0) {
+    const escalation = await notifyReviewersOfEscalation({
+      title: '央廚補款仍未點交',
+      body: `目前有 ${pending.length} 筆央廚補款在 17:00 後仍未點交，請追蹤處理。`,
+      url: '/hq/accounting?tab=ck',
+      sourceKey: `hq-ck-handoff-${pending.map(record => `${record.id}:${record.hq_reimbursement_sent_at}`).sort().join(',')}`,
+      storeId: pending.length === 1 ? String(pending[0].ck_store_id) : undefined,
+    })
+    targetDevices += escalation.total
+    delivered += escalation.delivered
+  }
+
+  return { eligible: pending.length, skippedAsAlreadySent, targetDevices, delivered }
+}
+
+/** Remind store users and HQ when a returned record remains unresolved for 60 minutes. */
+export async function sendReturnedAccountingReminders(): Promise<ReminderResult> {
+  const admin = createAdminClient()
+  const cutoff = new Date(Date.now() - 60 * 60000).toISOString()
+  const [{ data: stores, error: storeError }, { data: closings, error: closingError }, { data: ckRecords, error: ckError }] = await Promise.all([
+    admin.from('stores').select('id, name, type').eq('active', true),
+    admin.from('daily_closings').select('id, store_id, business_date, updated_at').eq('status', 'disputed').lte('updated_at', cutoff),
+    admin.from('ck_daily_records').select('id, ck_store_id, business_date, updated_at').eq('status', 'disputed').lte('updated_at', cutoff),
+  ])
+  const loadError = storeError || closingError || ckError
+  if (loadError) throw new Error(`讀取退回待修改帳目失敗：${loadError.message}`)
+  const activeStores = new Map((stores ?? []).map(store => [String(store.id), String(store.name)]))
+  const pending = [
+    ...(closings ?? []).map(record => ({
+      id: String(record.id), storeId: String(record.store_id), businessDate: String(record.business_date),
+      disputedAt: String(record.updated_at), kind: 'store' as const,
+    })),
+    ...(ckRecords ?? []).map(record => ({
+      id: String(record.id), storeId: String(record.ck_store_id), businessDate: String(record.business_date),
+      disputedAt: String(record.updated_at), kind: 'ck' as const,
+    })),
+  ].filter(record => activeStores.has(record.storeId))
+  const stage = 'returned-60m'
+  const alreadySent = await sentReminderKeys(stage)
+  let skippedAsAlreadySent = 0
+  let targetDevices = 0
+  let delivered = 0
+  const escalated: typeof pending = []
+
+  for (const record of pending) {
+    const key = reminderKey(['returned', record.kind, record.id, record.disputedAt])
+    if (alreadySent.has(key)) {
+      skippedAsAlreadySent += 1
+      continue
+    }
+    const result = await notifyStoreUsersOfReturnedReminder({
+      kind: record.kind,
+      storeId: record.storeId,
+      businessDate: record.businessDate,
+      recordId: record.id,
+      disputedAt: record.disputedAt,
+    })
+    targetDevices += result.total
+    delivered += result.delivered
+    escalated.push(record)
+    await logAudit({
+      eventType: 'push_reminder',
+      severity: 'warn',
+      storeId: record.storeId,
+      description: `系統提醒「${activeStores.get(record.storeId)}」修改退回超過 60 分鐘的 ${record.businessDate} 帳目`,
+      metadata: {
+        reminder_key: key,
+        reminder_stage: stage,
+        business_date: record.businessDate,
+        accounting_kind: record.kind,
+        record_id: record.id,
+        disputed_at: record.disputedAt,
+        target_devices: result.total,
+        delivered_devices: result.delivered,
+      },
+    })
+  }
+
+  if (escalated.length > 0) {
+    const identity = escalated.map(record => `${record.kind}:${record.id}:${record.disputedAt}`).sort().join(',')
+    const names = [...new Set(escalated.map(record => activeStores.get(record.storeId)))].slice(0, 5).join('、')
+    const escalation = await notifyReviewersOfEscalation({
+      title: '退回帳目仍待修改',
+      body: `${names}共有 ${escalated.length} 筆帳目退回超過 60 分鐘，請追蹤處理。`,
+      url: '/hq/accounting',
+      sourceKey: `hq-returned-${identity}`,
+      storeId: escalated.length === 1 ? escalated[0].storeId : undefined,
+    })
+    targetDevices += escalation.total
+    delivered += escalation.delivered
   }
 
   return { eligible: pending.length, skippedAsAlreadySent, targetDevices, delivered }

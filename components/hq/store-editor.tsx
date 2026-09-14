@@ -7,6 +7,7 @@ import { updateCKAssignedStores, addCKExternalStore, deleteCKExternalStore, upda
 import { toast } from 'sonner'
 import { BellRing, ChevronDown, ChevronUp, Plus, X, Loader2, Check, Pencil, RotateCcw, Send, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { normalizePushPreferences, type PushPreferences } from '@/lib/push-preferences'
 
 interface Store {
   id: string; name: string; mode: string; ichef_uber_linked: boolean
@@ -15,6 +16,7 @@ interface Store {
   petty_cash: number
   type?: string; active?: boolean; assigned_store_ids?: string[]; google_sheets_id?: string
   push_notifications_enabled?: boolean; push_device_count?: number
+  push_notification_preferences?: Partial<PushPreferences> | null
 }
 
 interface Props {
@@ -75,6 +77,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
   const [assignedStoreIds, setAssignedStoreIds] = useState<string[]>(store.assigned_store_ids ?? [])
   const [googleSheetsId, setGoogleSheetsId] = useState(store.google_sheets_id ?? '')
   const [pushEnabled, setPushEnabled] = useState(store.push_notifications_enabled !== false)
+  const [pushPreferences, setPushPreferences] = useState(() => normalizePushPreferences(store.push_notification_preferences))
   const [testingPush, setTestingPush] = useState(false)
   const [extStores, setExtStores] = useState<{ id: string; name: string; deductFromReimbursement: boolean; transferPhotoRequired: boolean }[]>(
     initExternal.map(s => ({
@@ -182,6 +185,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
             petty_cash: pettyCash,
             google_sheets_id: googleSheetsId.trim() || null,
             push_notifications_enabled: pushEnabled,
+            push_notification_preferences: pushPreferences,
           })
         : Promise.resolve({ success: true }),
       storeType === '央廚' && canConfigureCKRelations
@@ -635,6 +639,19 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                   發送測試通知
                 </button>
               </div>
+              {pushEnabled && (
+                <div className="grid gap-2 border-t border-blue-100 pt-3 sm:grid-cols-2">
+                  {([
+                    ['review_result', '審核通過或退回'],
+                    ['accounting_reminder', '未送出與退回逾期'],
+                    ['reimbursement_handoff', '央廚補款點交'],
+                  ] as const).filter(([key]) => storeType === '央廚' || key !== 'reimbursement_handoff').map(([key, label]) => (
+                    <Toggle key={key} label={label} checked={pushPreferences[key]}
+                      onChange={checked => setPushPreferences(previous => ({ ...previous, [key]: checked }))}
+                      disabled={!canConfigure} />
+                  ))}
+                </div>
+              )}
               <p className="text-[10px]" style={{ color: '#64748b' }}>
                 關閉後，此店人員不會收到未送出提醒、補款點交提醒或審核結果通知。手機的通知權限仍須由本人在該裝置允許。
               </p>
