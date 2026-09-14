@@ -124,8 +124,9 @@ test('手機逐步核對會標示兩種照片並提供切換與放大', () => {
   assert.match(overviewSource, /label: `轉帳成功紀錄 \$\{photoNumber \+ 1\}`/)
   assert.match(overviewSource, /第 \{photoIndex \+ 1\} 張／共 \{currentPhotos\.length\} 張/)
   assert.match(overviewSource, /點一下放大/)
-  assert.match(overviewSource, />上一張/)
-  assert.match(overviewSource, /下一張<ChevronRight/)
+  assert.match(overviewSource, /data-testid="ck-review-photo-tabs"/)
+  assert.match(overviewSource, /aria-label="查看上一張照片"/)
+  assert.match(overviewSource, /aria-label="查看下一張照片"/)
 })
 
 test('內容相符按下後停留並顯示明確確認狀態', () => {
