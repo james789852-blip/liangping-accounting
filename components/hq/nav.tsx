@@ -413,7 +413,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
       </header>
 
       {/* ── 手機底部 Tab */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md"
+      <nav className="mobile-bottom-nav lg:hidden"
         style={{ borderTop: '1px solid #f4f4f5', paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="flex px-1 pt-2 pb-2">
           {mobileTabs.map(({ href, label, icon: Icon }) => {
