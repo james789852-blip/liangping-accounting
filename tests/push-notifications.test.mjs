@@ -11,6 +11,12 @@ const ckAction = fs.readFileSync(new URL('../app/actions/ck.ts', import.meta.url
 const managerNav = fs.readFileSync(new URL('../components/manager/nav.tsx', import.meta.url), 'utf8')
 const hqNav = fs.readFileSync(new URL('../components/hq/nav.tsx', import.meta.url), 'utf8')
 const migration = fs.readFileSync(new URL('../supabase/migrations/069_push_subscriptions.sql', import.meta.url), 'utf8')
+const controlsMigration = fs.readFileSync(new URL('../supabase/migrations/070_push_notification_controls.sql', import.meta.url), 'utf8')
+const pushManagementAction = fs.readFileSync(new URL('../app/actions/push-management.ts', import.meta.url), 'utf8')
+const storeEditor = fs.readFileSync(new URL('../components/hq/store-editor.tsx', import.meta.url), 'utf8')
+const userEditor = fs.readFileSync(new URL('../components/hq/user-edit-dialog.tsx', import.meta.url), 'utf8')
+const storesPage = fs.readFileSync(new URL('../app/hq/stores/page.tsx', import.meta.url), 'utf8')
+const usersPage = fs.readFileSync(new URL('../app/hq/users/page.tsx', import.meta.url), 'utf8')
 
 test('推播訂閱只能由登入者管理自己的裝置', () => {
   assert.match(pushAction, /const user = await getVerifiedUser\(\)/)
@@ -57,4 +63,23 @@ test('同一裝置切換到總公司帳號時會重新綁定並補發待審摘�
 test('失效的裝置訂閱會自動移除', () => {
   assert.match(pushModule, /statusCode === 404 \|\| statusCode === 410/)
   assert.match(pushModule, /from\('push_subscriptions'\)\.delete\(\)\.eq\('id', subscription\.id\)/)
+})
+
+test('總公司可分別控制店家與帳號推播', () => {
+  assert.match(controlsMigration, /alter table stores[\s\S]*push_notifications_enabled boolean not null default true/)
+  assert.match(controlsMigration, /alter table user_profiles[\s\S]*push_notifications_enabled boolean not null default true/)
+  assert.match(pushModule, /profile\.push_notifications_enabled !== false/)
+  assert.match(pushModule, /store\?\.push_notifications_enabled === false/)
+  assert.match(storeEditor, /接收審核結果通知/)
+  assert.match(userEditor, /接收帳務推播/)
+})
+
+test('管理頁顯示綁定裝置數並可發送測試通知', () => {
+  assert.match(storesPage, /pushDeviceCountByStore/)
+  assert.match(usersPage, /pushDeviceCountByUser/)
+  assert.match(storeEditor, /sendStorePushTest/)
+  assert.match(userEditor, /sendUserPushTest/)
+  assert.match(pushManagementAction, /canManageUsers\(profile\)/)
+  assert.match(pushManagementAction, /canManageCKSettings\(profile\)/)
+  assert.match(pushManagementAction, /canManageStoreSettings\(profile\)/)
 })

@@ -4,7 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import UserCreateDialog from '@/components/hq/user-create-dialog'
 import UserEditDialog from '@/components/hq/user-edit-dialog'
-import { Users, Building2, ChefHat, Store as StoreIcon } from 'lucide-react'
+import { BellRing, Users, Building2, ChefHat, Store as StoreIcon } from 'lucide-react'
 import { sortStores } from '@/lib/store-order'
 import { canManageUsers } from '@/lib/user-permissions'
 import { sortUsersByTitle } from '@/lib/user-title-order'
@@ -31,6 +31,8 @@ type UserProfile = Record<string, any> & {
   primary_store_id?: string | null
   is_hq?: boolean | null
   active?: boolean | null
+  push_notifications_enabled?: boolean | null
+  push_device_count?: number
 }
 
 function UserRow({ user, stores, storeMap, account }: {
@@ -74,6 +76,18 @@ function UserRow({ user, stores, storeMap, account }: {
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
               style={{ background: '#ffe4e6', color: '#be123c' }}>已停用</span>
           )}
+          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+            style={{
+              background: user.push_notifications_enabled === false ? '#f4f4f5' : user.push_device_count ? '#ecfdf5' : '#fff7ed',
+              color: user.push_notifications_enabled === false ? '#71717a' : user.push_device_count ? '#047857' : '#c2410c',
+            }}>
+            <BellRing className="h-3 w-3" />
+            {user.push_notifications_enabled === false
+              ? '推播已關閉'
+              : user.push_device_count
+                ? `推播 ${user.push_device_count} 台`
+                : '推播未綁定'}
+          </span>
         </div>
         <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>
           {account && <span className="font-mono mr-2">{account}</span>}
@@ -166,6 +180,7 @@ export default async function UsersPage() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
   const { data: authList } = await admin.auth.admin.listUsers({ perPage: 1000 })
+  const { data: pushSubscriptions } = await admin.from('push_subscriptions').select('user_id')
   const accountMap: Record<string, string> = Object.fromEntries(
     (authList?.users ?? []).map(u => [
       u.id,
@@ -173,7 +188,16 @@ export default async function UsersPage() {
     ])
   )
 
-  const allUsers = (users ?? []) as UserProfile[]
+  const pushDeviceCountByUser = (pushSubscriptions ?? []).reduce<Record<string, number>>((counts, subscription) => {
+    counts[subscription.user_id] = (counts[subscription.user_id] ?? 0) + 1
+    return counts
+  }, {})
+
+  const allUsers = (users ?? []).map(account => ({
+    ...account,
+    push_notifications_enabled: account.push_notifications_enabled !== false,
+    push_device_count: pushDeviceCountByUser[account.user_id] ?? 0,
+  })) as UserProfile[]
   const activeStoreIds = stores.map(store => store.id)
   const storeUsers = new Map<string, UserProfile[]>()
   const hqUsers: UserProfile[] = []

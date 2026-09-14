@@ -98,6 +98,7 @@ export const AUDIT_METADATA_LABELS: Record<string, string> = {
   can_manage_ck_prices: '可管理央廚單價',
   can_review_closings: '可審核帳目',
   can_export_reports: '可匯出報表',
+  push_notifications_enabled: '帳務推播',
   error: '錯誤內容',
   source: '操作裝置',
   device: '裝置',

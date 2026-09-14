@@ -53,7 +53,7 @@ function safeUserSnapshot(profile: Record<string, unknown> | null | undefined) {
     'is_hq', 'active', 'can_manage_users', 'can_manage_stores', 'can_manage_store_settings',
     'can_manage_ck_settings', 'can_manage_items', 'can_manage_store_items', 'can_manage_ck_items',
     'can_manage_store_receipts', 'can_manage_ck_receipts', 'can_manage_ck_prices',
-    'can_review_closings', 'can_export_reports',
+    'can_review_closings', 'can_export_reports', 'push_notifications_enabled',
   ]
   return Object.fromEntries(allowed.filter(key => key in profile).map(key => [key, profile[key]]))
 }
@@ -80,6 +80,7 @@ export async function createUser(formData: {
   can_manage_ck_prices?: boolean
   can_review_closings?: boolean
   can_export_reports?: boolean
+  push_notifications_enabled?: boolean
 }) {
   const caller = await getCallerProfile()
   if (!canManageUsers(caller)) return { error: '權限不足' }
@@ -129,6 +130,7 @@ export async function createUser(formData: {
     can_manage_ck_prices: isOwner ? true : (formData.can_manage_ck_prices ?? false),
     can_review_closings: isOwner ? true : (formData.can_review_closings ?? false),
     can_export_reports: isOwner ? true : (formData.can_export_reports ?? false),
+    push_notifications_enabled: formData.push_notifications_enabled !== false,
     active: true,
   })
   if (profileError) {
@@ -184,6 +186,7 @@ export async function updateUser(userId: string, formData: {
   can_manage_ck_prices?: boolean
   can_review_closings?: boolean
   can_export_reports?: boolean
+  push_notifications_enabled?: boolean
 }) {
   const caller = await getCallerProfile()
   if (!canManageUsers(caller)) return { error: '權限不足' }
@@ -249,6 +252,7 @@ export async function updateUser(userId: string, formData: {
   if (formData.can_manage_ck_prices !== undefined) patch.can_manage_ck_prices = formData.can_manage_ck_prices
   if (formData.can_review_closings !== undefined) patch.can_review_closings = formData.can_review_closings
   if (formData.can_export_reports !== undefined) patch.can_export_reports = formData.can_export_reports
+  if (formData.push_notifications_enabled !== undefined) patch.push_notifications_enabled = formData.push_notifications_enabled
   if (formData.active !== undefined) patch.active = formData.active
 
   const { error } = await admin

@@ -2,9 +2,10 @@
 
 import { useState, useRef } from 'react'
 import { activateStore, deactivateStore, deleteStorePermanently, updateStoreSettings } from '@/app/actions/stores'
+import { sendStorePushTest } from '@/app/actions/push-management'
 import { updateCKAssignedStores, addCKExternalStore, deleteCKExternalStore, updateCKExternalStore, updateCKExternalStoreDeduction, updateCKExternalStoreTransferPhotoRequirement } from '@/app/actions/ck'
 import { toast } from 'sonner'
-import { ChevronDown, ChevronUp, Plus, X, Loader2, Check, Pencil, RotateCcw, Trash2 } from 'lucide-react'
+import { BellRing, ChevronDown, ChevronUp, Plus, X, Loader2, Check, Pencil, RotateCcw, Send, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface Store {
@@ -13,6 +14,7 @@ interface Store {
   twpay_enabled: boolean; online_enabled: boolean; online_cash_enabled?: boolean
   petty_cash: number
   type?: string; active?: boolean; assigned_store_ids?: string[]; google_sheets_id?: string
+  push_notifications_enabled?: boolean; push_device_count?: number
 }
 
 interface Props {
@@ -72,6 +74,8 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
   const [storeType, setStoreType] = useState(store.type ?? '店面')
   const [assignedStoreIds, setAssignedStoreIds] = useState<string[]>(store.assigned_store_ids ?? [])
   const [googleSheetsId, setGoogleSheetsId] = useState(store.google_sheets_id ?? '')
+  const [pushEnabled, setPushEnabled] = useState(store.push_notifications_enabled !== false)
+  const [testingPush, setTestingPush] = useState(false)
   const [extStores, setExtStores] = useState<{ id: string; name: string; deductFromReimbursement: boolean; transferPhotoRequired: boolean }[]>(
     initExternal.map(s => ({
       ...s,
@@ -177,6 +181,7 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
             online_enabled: onlineEnabled, online_cash_enabled: onlineCashEnabled,
             petty_cash: pettyCash,
             google_sheets_id: googleSheetsId.trim() || null,
+            push_notifications_enabled: pushEnabled,
           })
         : Promise.resolve({ success: true }),
       storeType === '央廚' && canConfigureCKRelations
@@ -188,6 +193,14 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
     if (baseErr || ckErr) { toast.error(baseErr ?? ckErr) }
     else { toast.success(`${storeName} 設定已儲存`); setEditingName(false); setOpen(false) }
     setSaving(false)
+  }
+
+  async function handleTestPush() {
+    setTestingPush(true)
+    const result = await sendStorePushTest(store.id)
+    if ('error' in result) toast.error(result.error)
+    else toast.success(`測試通知已送達 ${result.delivered} 台裝置`)
+    setTestingPush(false)
   }
 
   async function handleDeactivate() {
@@ -594,6 +607,38 @@ export default function StoreEditor({ store, canEdit, canEditCKRelations = canEd
                 </div>
               </div>
             </>
+          )}
+
+          {canEdit && (
+            <div className="rounded-xl p-3 space-y-3" style={{ border: '1px solid #dbeafe', background: '#f8fbff' }}>
+              <div className="flex items-center gap-2">
+                <BellRing className="h-4 w-4" style={{ color: '#2563eb' }} />
+                <p className="text-xs font-bold" style={{ color: '#1e3a8a' }}>帳務推播</p>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <Toggle label="接收審核結果通知" checked={pushEnabled} onChange={setPushEnabled} disabled={!canConfigure} />
+                  <p className="text-[10px] mt-1" style={{ color: '#71717a' }}>
+                    {store.push_device_count
+                      ? `目前共綁定 ${store.push_device_count} 台裝置`
+                      : '目前尚無店家人員綁定推播裝置'}
+                  </p>
+                </div>
+                <button type="button" onClick={handleTestPush}
+                  disabled={testingPush || !store.push_device_count || !isActive}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
+                  style={{
+                    color: '#1d4ed8', background: 'white', border: '1px solid #bfdbfe',
+                    opacity: testingPush || !store.push_device_count || !isActive ? 0.5 : 1,
+                  }}>
+                  {testingPush ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  發送測試通知
+                </button>
+              </div>
+              <p className="text-[10px]" style={{ color: '#64748b' }}>
+                關閉後，此店人員不會收到審核通過或退回通知。手機的通知權限仍須由本人在該裝置允許。
+              </p>
+            </div>
           )}
 
           {/* Google Sheets 試算表 ID */}

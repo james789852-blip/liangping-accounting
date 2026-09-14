@@ -2,10 +2,12 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, X, Pencil, Trash2, Eye, EyeOff } from 'lucide-react'
+import { BellRing, Loader2, X, Pencil, Trash2, Eye, EyeOff, Send } from 'lucide-react'
 import { updateUser, updateUserPassword, deleteUser } from '@/app/actions/users'
+import { sendUserPushTest } from '@/app/actions/push-management'
 import { getTitleOptions, inferSystemRole, type AccountUnitType } from '@/lib/account-access'
 import { resolvePrimaryStoreId } from '@/lib/user-primary-store'
+import { useRouter } from 'next/navigation'
 
 interface Store { id: string; name: string; type?: string }
 interface UserData {
@@ -31,6 +33,8 @@ interface UserData {
   can_manage_ck_prices?: boolean
   can_review_closings?: boolean
   can_export_reports?: boolean
+  push_notifications_enabled?: boolean | null
+  push_device_count?: number
 }
 
 const PERMISSION_TOGGLES = [
@@ -58,10 +62,12 @@ const INPUT_STYLE: React.CSSProperties = {
 }
 
 export default function UserEditDialog({ user, stores }: { user: UserData; stores: Store[] }) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [pwLoading, setPwLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [pushTestLoading, setPushTestLoading] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showPw, setShowPw] = useState(false)
   const [newPassword, setNewPassword] = useState('')
@@ -89,6 +95,7 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
     can_manage_ck_prices: user.can_manage_ck_prices ?? false,
     can_review_closings: user.can_review_closings ?? false,
     can_export_reports: user.can_export_reports ?? false,
+    push_notifications_enabled: user.push_notifications_enabled !== false,
   })
   const [selectedStores, setSelectedStores] = useState<string[]>(
     [...new Set(user.store_ids ?? [])].filter(id => activeStoreIds.includes(id))
@@ -149,11 +156,20 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
       can_manage_ck_prices: isOwner ? true : (isHQ && form.can_manage_ck_prices),
       can_review_closings: isOwner ? true : (isHQ && form.can_review_closings),
       can_export_reports: isOwner ? true : (isHQ && form.can_export_reports),
+      push_notifications_enabled: form.push_notifications_enabled,
       active: form.active,
     })
     if (result.error) toast.error('更新失敗：' + result.error)
-    else { toast.success('帳號資料已更新'); handleClose() }
+    else { toast.success('帳號資料已更新'); handleClose(); router.refresh() }
     setLoading(false)
+  }
+
+  async function handleTestPush() {
+    setPushTestLoading(true)
+    const result = await sendUserPushTest(user.user_id)
+    if ('error' in result) toast.error(result.error)
+    else toast.success(`測試通知已送達 ${result.delivered} 台裝置`)
+    setPushTestLoading(false)
   }
 
   async function handleResetPassword(e: React.FormEvent) {
@@ -274,6 +290,41 @@ export default function UserEditDialog({ user, stores }: { user: UserData; store
                   className="h-5 w-9 rounded-full p-0.5" style={{ background: form.active ? '#22c55e' : '#d4d4d8' }}>
                   <span className="block h-4 w-4 rounded-full bg-white transition-transform" style={{ transform: form.active ? 'translateX(16px)' : 'translateX(0)' }} />
                 </button>
+              </div>
+
+              <div className="rounded-xl p-3 space-y-2.5" style={{ border: '1px solid #dbeafe', background: '#f8fbff' }}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <BellRing className="h-4 w-4" style={{ color: '#2563eb' }} />
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: '#18181b' }}>接收帳務推播</p>
+                      <p className="text-[10px]" style={{ color: '#71717a' }}>
+                        {user.push_device_count ? `已綁定 ${user.push_device_count} 台裝置` : '尚未綁定推播裝置'}
+                      </p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setForm(p => ({ ...p, push_notifications_enabled: !p.push_notifications_enabled }))}
+                    className="h-5 w-9 rounded-full p-0.5 shrink-0"
+                    style={{ background: form.push_notifications_enabled ? '#22c55e' : '#d4d4d8' }}>
+                    <span className="block h-4 w-4 rounded-full bg-white transition-transform"
+                      style={{ transform: form.push_notifications_enabled ? 'translateX(16px)' : 'translateX(0)' }} />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] flex-1" style={{ color: '#64748b' }}>
+                    關閉後不再接收待審或審核結果通知；手機通知權限仍須由本人允許。
+                  </p>
+                  <button type="button" onClick={handleTestPush}
+                    disabled={pushTestLoading || !user.push_device_count}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold shrink-0"
+                    style={{
+                      color: '#1d4ed8', background: 'white', border: '1px solid #bfdbfe',
+                      opacity: pushTestLoading || !user.push_device_count ? 0.5 : 1,
+                    }}>
+                    {pushTestLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    測試通知
+                  </button>
+                </div>
               </div>
 
               {/* 功能權限 */}

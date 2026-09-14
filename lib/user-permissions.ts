@@ -13,6 +13,7 @@ export type PermissionProfile = {
   can_manage_ck_prices?: boolean | null
   can_review_closings?: boolean | null
   can_export_reports?: boolean | null
+  push_notifications_enabled?: boolean | null
 }
 
 const MANAGEMENT_ROLES = ['經理', '總監', '老闆']

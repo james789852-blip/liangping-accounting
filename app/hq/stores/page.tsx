@@ -32,7 +32,7 @@ export default async function StoresPage() {
   // 老闆 / is_hq 看全部店家，其他只看自己負責的
   let query = admin
     .from('stores')
-    .select('id, name, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled, petty_cash, type, active, assigned_store_ids, google_sheets_id')
+    .select('id, name, mode, ichef_uber_linked, uber_enabled, uber_accounts, panda_enabled, twpay_enabled, online_enabled, online_cash_enabled, petty_cash, type, active, assigned_store_ids, google_sheets_id, push_notifications_enabled')
 
   if (canEditStoreSettings && !canEditCKSettings) {
     query = query.neq('type', '央廚') as typeof query
@@ -56,6 +56,21 @@ export default async function StoresPage() {
   const { data: allExternalStores } = ckStoreIds.length > 0
     ? await admin.from('ck_external_stores').select('*').in('ck_store_id', ckStoreIds).order('created_at')
     : { data: [] }
+
+  const [{ data: pushProfiles }, { data: pushSubscriptions }] = await Promise.all([
+    admin.from('user_profiles').select('user_id, store_ids').eq('active', true),
+    admin.from('push_subscriptions').select('user_id'),
+  ])
+  const deviceCountByUser = (pushSubscriptions ?? []).reduce<Record<string, number>>((counts, subscription) => {
+    counts[subscription.user_id] = (counts[subscription.user_id] ?? 0) + 1
+    return counts
+  }, {})
+  const pushDeviceCountByStore = (pushProfiles ?? []).reduce<Record<string, number>>((counts, account) => {
+    for (const storeId of (account.store_ids ?? []) as string[]) {
+      counts[storeId] = (counts[storeId] ?? 0) + (deviceCountByUser[account.user_id] ?? 0)
+    }
+    return counts
+  }, {})
 
   return (
     <div className="min-h-full" style={{ background: '#fafafa' }}>
@@ -91,7 +106,16 @@ export default async function StoresPage() {
                 {group.map(store => (
                   <StoreEditor
                     key={store.id}
-                    store={{ ...store, uber_accounts: store.uber_accounts ?? [], type: (store as any).type ?? '店面', active: (store as any).active !== false, assigned_store_ids: (store as any).assigned_store_ids ?? [], google_sheets_id: (store as any).google_sheets_id ?? '' }}
+                    store={{
+                      ...store,
+                      uber_accounts: store.uber_accounts ?? [],
+                      type: (store as any).type ?? '店面',
+                      active: (store as any).active !== false,
+                      assigned_store_ids: (store as any).assigned_store_ids ?? [],
+                      google_sheets_id: (store as any).google_sheets_id ?? '',
+                      push_notifications_enabled: (store as any).push_notifications_enabled !== false,
+                      push_device_count: pushDeviceCountByStore[store.id] ?? 0,
+                    }}
                     canEdit={(store as any).type === '央廚' ? canEditCKSettings : canEditStoreSettings}
                     canEditCKRelations={canEditCKSettings}
                     memberStoreOptions={type === '央廚' ? memberStoreOptions : []}

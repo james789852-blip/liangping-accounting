@@ -38,7 +38,7 @@ function configureVapid() {
 
 async function sendToUserIds(userIds: string[], payload: PushPayload) {
   const uniqueUserIds = [...new Set(userIds.filter(Boolean))]
-  if (uniqueUserIds.length === 0 || !configureVapid()) return
+  if (uniqueUserIds.length === 0 || !configureVapid()) return { total: 0, delivered: 0 }
 
   const admin = createAdminClient()
   const { data, error } = await admin
@@ -48,11 +48,11 @@ async function sendToUserIds(userIds: string[], payload: PushPayload) {
 
   if (error) {
     console.error('[push] failed to load subscriptions:', error)
-    return
+    return { total: 0, delivered: 0 }
   }
 
   const subscriptions = (data ?? []) as PushSubscriptionRow[]
-  await Promise.all(subscriptions.map(async subscription => {
+  const results = await Promise.all(subscriptions.map(async subscription => {
     try {
       await webpush.sendNotification({
         endpoint: subscription.endpoint,
@@ -64,21 +64,24 @@ async function sendToUserIds(userIds: string[], payload: PushPayload) {
         failure_count: 0,
         updated_at: new Date().toISOString(),
       }).eq('id', subscription.id)
+      return true
     } catch (error) {
       const statusCode = typeof error === 'object' && error && 'statusCode' in error
         ? Number(error.statusCode)
         : 0
       if (statusCode === 404 || statusCode === 410) {
         await admin.from('push_subscriptions').delete().eq('id', subscription.id)
-        return
+        return false
       }
       console.error('[push] delivery failed:', statusCode || error)
       await admin.from('push_subscriptions').update({
         failure_count: subscription.failure_count + 1,
         updated_at: new Date().toISOString(),
       }).eq('id', subscription.id)
+      return false
     }
   }))
+  return { total: subscriptions.length, delivered: results.filter(Boolean).length }
 }
 
 async function storeName(storeId: string) {
@@ -91,30 +94,33 @@ async function reviewerUserIds(excludeUserId?: string) {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('user_profiles')
-    .select('user_id, role, can_review_closings')
+    .select('user_id, role, can_review_closings, push_notifications_enabled')
     .eq('active', true)
   if (error) {
     console.error('[push] failed to load reviewers:', error)
     return []
   }
   return (data ?? [])
-    .filter(profile => canReviewClosings(profile as PermissionProfile))
+    .filter(profile => profile.push_notifications_enabled !== false && canReviewClosings(profile as PermissionProfile))
     .map(profile => String(profile.user_id))
     .filter(userId => userId !== excludeUserId)
 }
 
-async function storeUserIds(storeId: string, excludeUserId?: string) {
+async function storeUserIds(storeId: string, excludeUserId?: string, includeDisabled = false) {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('user_profiles')
-    .select('user_id')
+    .select('user_id, push_notifications_enabled')
     .eq('active', true)
     .contains('store_ids', [storeId])
   if (error) {
     console.error('[push] failed to load store users:', error)
     return []
   }
-  return (data ?? []).map(profile => String(profile.user_id)).filter(userId => userId !== excludeUserId)
+  return (data ?? [])
+    .filter(profile => includeDisabled || profile.push_notifications_enabled !== false)
+    .map(profile => String(profile.user_id))
+    .filter(userId => userId !== excludeUserId)
 }
 
 export async function notifyReviewersOfSubmission(input: {
@@ -143,10 +149,15 @@ export async function notifyReviewerOfPendingWork(userId: string) {
   const admin = createAdminClient()
   const { data: profile, error: profileError } = await admin
     .from('user_profiles')
-    .select('role, can_review_closings, active')
+    .select('role, can_review_closings, active, push_notifications_enabled')
     .eq('user_id', userId)
     .maybeSingle()
-  if (profileError || !profile?.active || !canReviewClosings(profile as PermissionProfile)) return
+  if (
+    profileError
+    || !profile?.active
+    || profile.push_notifications_enabled === false
+    || !canReviewClosings(profile as PermissionProfile)
+  ) return
 
   const [storeResult, ckResult] = await Promise.all([
     admin.from('daily_closings').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
@@ -181,10 +192,13 @@ export async function notifyStoreUsersOfReview(input: {
   decision: 'verified' | 'disputed'
   reviewerId: string
 }) {
-  const [name, userIds] = await Promise.all([
-    storeName(input.storeId),
+  const admin = createAdminClient()
+  const [{ data: store }, userIds] = await Promise.all([
+    admin.from('stores').select('name, push_notifications_enabled').eq('id', input.storeId).maybeSingle(),
     storeUserIds(input.storeId, input.reviewerId),
   ])
+  if (store?.push_notifications_enabled === false) return
+  const name = String(store?.name || '店家')
   const verified = input.decision === 'verified'
   const isCK = input.kind === 'ck'
   await sendToUserIds(userIds, {
@@ -194,5 +208,36 @@ export async function notifyStoreUsersOfReview(input: {
       ? `/manager/ck?date=${input.businessDate}`
       : `/manager/history/${encodeURIComponent(input.recordId)}`,
     tag: `${input.kind}-review-${input.recordId}`,
+  })
+}
+
+export async function sendTestPushToStore(storeId: string) {
+  const admin = createAdminClient()
+  const [{ data: store }, userIds] = await Promise.all([
+    admin.from('stores').select('name').eq('id', storeId).maybeSingle(),
+    storeUserIds(storeId, undefined, true),
+  ])
+  if (!store) return { error: '找不到店家' as const }
+  return sendToUserIds(userIds, {
+    title: '結帳系統測試通知',
+    body: `${String(store.name)} 推播設定正常。`,
+    url: '/manager/dashboard',
+    tag: `store-push-test-${storeId}`,
+  })
+}
+
+export async function sendTestPushToUser(userId: string) {
+  const admin = createAdminClient()
+  const { data: profile } = await admin
+    .from('user_profiles')
+    .select('name')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (!profile) return { error: '找不到帳號' as const }
+  return sendToUserIds([userId], {
+    title: '結帳系統測試通知',
+    body: `${String(profile.name)}，你的推播設定正常。`,
+    url: '/',
+    tag: `user-push-test-${userId}`,
   })
 }
