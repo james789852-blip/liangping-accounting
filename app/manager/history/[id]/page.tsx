@@ -21,6 +21,8 @@ interface LargeCashExpense {
   description: string
   amount: number
   preReserved?: boolean
+  preReservedAmount?: number
+  reserveReason?: string
 }
 
 interface PettyCountsPayload {
@@ -49,6 +51,8 @@ function parseLargeCashExpenses(value: unknown): LargeCashExpense[] {
         description: typeof row.description === 'string' && row.description.trim() ? row.description.trim() : '大額支出',
         amount: Math.abs(Number(row.amount) || 0),
         preReserved: row.preReserved === true,
+        preReservedAmount: Math.abs(Number(row.preReservedAmount) || 0) || undefined,
+        reserveReason: typeof row.reserveReason === 'string' ? row.reserveReason : undefined,
       }
     })
     .filter(item => item.amount > 0)

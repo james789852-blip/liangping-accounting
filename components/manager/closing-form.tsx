@@ -15,6 +15,7 @@ import { uploadClientPhoto } from '@/lib/client-photo-upload'
 import { isNegativeItem, normalizeItemAmount } from '@/lib/negative-items'
 import {
   applyPreReservedExpenseHints,
+  getPreReservedHintReferenceId,
   type PreReservedExpenseHint,
 } from '@/lib/pre-reserved-expenses'
 import { calculateClosingSummary } from '@/lib/closing-summary'
@@ -97,11 +98,13 @@ function parseRemittanceAdjustmentDraft(raw: string | null): RemittanceAdjustmen
 interface ReserveItem {
   id: string
   reason: string
+  description?: string
   amount: number
   total_bill?: number  // 舊資料可能缺少；新建立預留時必填，後續日期自動沿用
   auto_reserved?: boolean
   source_start_date?: string
   accumulated_before?: number
+  reserve_reference_id?: string
 }
 
 interface LargeCashExpense {
@@ -110,6 +113,11 @@ interface LargeCashExpense {
   amount: number
   /** 已由前幾日預留款支付，今天不應再從現金扣除。 */
   preReserved?: boolean
+  /** 實際由歷史預留款支付的金額；支出高於預留款時只加回此金額。 */
+  preReservedAmount?: number
+  reserveReferenceId?: string
+  reserveReason?: string
+  reserveLinkSkipped?: boolean
 }
 
 interface TodayReceipt {
@@ -247,10 +255,12 @@ interface PrevDayReserve {
   business_date: string
   items: {
     reason: string
+    description?: string
     amount: number
     total_bill?: number
     started_date?: string
     remaining_amount?: number
+    reserve_reference_id?: string
   }[]
 }
 
@@ -437,6 +447,10 @@ function initLargeCashExpenses(existing: any): LargeCashExpense[] {
         amount: Math.abs(Number(row.amount) || 0),
         // 舊資料的 false 可能只是尚未套用自動判定，不能當成使用者明確取消。
         preReserved: row.preReserved === true ? true : undefined,
+        preReservedAmount: Math.abs(Number(row.preReservedAmount) || 0) || undefined,
+        reserveReferenceId: typeof row.reserveReferenceId === 'string' ? row.reserveReferenceId : undefined,
+        reserveReason: typeof row.reserveReason === 'string' ? row.reserveReason : undefined,
+        reserveLinkSkipped: row.reserveLinkSkipped === true ? true : undefined,
       }
     })
     .filter(item => item.amount > 0 || item.description.trim())
@@ -2171,6 +2185,69 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }, [])
   const removeLargeCashExpense = useCallback((id: string) => {
     setLargeCashExpenses(prev => prev.filter(item => item.id !== id))
+  }, [])
+  const linkLargeCashExpenseToReserve = useCallback((id: string, referenceId: string) => {
+    setLargeCashExpenses(prev => prev.map(item => {
+      if (item.id !== id) return item
+      if (!referenceId) {
+        return {
+          ...item,
+          preReserved: undefined,
+          preReservedAmount: undefined,
+          reserveReferenceId: undefined,
+          reserveReason: undefined,
+          reserveLinkSkipped: true,
+        }
+      }
+      const hint = preReservedExpenseHints.find(candidate =>
+        getPreReservedHintReferenceId(candidate) === referenceId,
+      )
+      if (!hint) return item
+      const expenseAmount = Math.abs(Number(item.amount) || 0)
+      const suggestedExpenseAmount = Math.abs(Number(hint.total_bill ?? hint.amount) || 0)
+      const amount = expenseAmount > 0 ? expenseAmount : suggestedExpenseAmount
+      return {
+        ...item,
+        description: item.description.trim() || hint.description || hint.reason,
+        amount,
+        preReserved: true,
+        preReservedAmount: Math.min(amount, Math.abs(Number(hint.amount) || 0)),
+        reserveReferenceId: referenceId,
+        reserveReason: hint.reason,
+        reserveLinkSkipped: undefined,
+      }
+    }))
+  }, [preReservedExpenseHints])
+  const addPreReservedExpense = useCallback((hint: PreReservedExpenseHint) => {
+    const referenceId = getPreReservedHintReferenceId(hint)
+    setLargeCashExpenses(prev => {
+      if (prev.some(item => item.reserveReferenceId === referenceId)) {
+        toast.info('這筆預留款已經套用')
+        return prev
+      }
+      const suggestedExpenseAmount = Math.abs(Number(hint.total_bill ?? hint.amount) || 0)
+      const matchingIndex = prev.findIndex(item =>
+        !item.reserveReferenceId
+        && Math.abs(Math.abs(Number(item.amount) || 0) - suggestedExpenseAmount) <= 1,
+      )
+      const linked = (item: LargeCashExpense): LargeCashExpense => ({
+        ...item,
+        description: item.description.trim() || hint.description || hint.reason,
+        amount: Math.abs(Number(item.amount) || 0) || suggestedExpenseAmount,
+        preReserved: true,
+        preReservedAmount: Math.min(
+          Math.abs(Number(item.amount) || 0) || suggestedExpenseAmount,
+          Math.abs(Number(hint.amount) || 0),
+        ),
+        reserveReferenceId: referenceId,
+        reserveReason: hint.reason,
+        reserveLinkSkipped: undefined,
+      })
+      if (matchingIndex >= 0) {
+        return prev.map((item, index) => index === matchingIndex ? linked(item) : item)
+      }
+      return [...prev, linked({ id: crypto.randomUUID(), description: '', amount: suggestedExpenseAmount })]
+    })
   }, [])
   useEffect(() => {
     if (isLocked || submitDone) return
@@ -4048,6 +4125,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   <div key={i} className="flex items-center justify-between text-sm">
                     <span className="font-medium" style={{ color: '#c2410c' }}>
                       {r.reason}
+                      {r.description && <span className="ml-1 text-xs font-normal" style={{ color: '#9a3412' }}>・{r.description}</span>}
                       {r.started_date && <span className="ml-1 text-xs font-normal" style={{ color: '#ea580c' }}>自 {r.started_date}</span>}
                     </span>
                     <div className="text-right">
@@ -5748,6 +5826,35 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     </button>
                   )}
                 </div>
+                {!isLocked && preReservedExpenseHints.some(hint =>
+                  !largeCashExpenses.some(item => item.reserveReferenceId === getPreReservedHintReferenceId(hint)),
+                ) && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-semibold" style={{ color: '#047857' }}>可使用的前期預留款</p>
+                    {preReservedExpenseHints.map(hint => {
+                      const referenceId = getPreReservedHintReferenceId(hint)
+                      if (largeCashExpenses.some(item => item.reserveReferenceId === referenceId)) return null
+                      return (
+                        <div key={referenceId} className="flex items-center justify-between gap-3 rounded-xl px-3 py-2"
+                          style={{ background: '#ecfdf5', border: '1px solid #86efac' }}>
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold truncate" style={{ color: '#047857' }}>
+                              {hint.reason}{hint.description ? `・${hint.description}` : ''}
+                            </p>
+                            <p className="text-[10px] tabular-nums" style={{ color: '#059669' }}>
+                              已預留 ${fmt(hint.amount)}{hint.total_bill ? `／帳單 $${fmt(hint.total_bill)}` : ''}
+                            </p>
+                          </div>
+                          <button type="button" onClick={() => addPreReservedExpense(hint)}
+                            className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                            style={{ background: '#059669', border: 'none', color: 'white', cursor: 'pointer', fontFamily: 'inherit' }}>
+                            使用預留款
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
                 {largeCashExpenses.length === 0 ? (
                   <p className="text-xs" style={{ color: '#a1a1aa' }}>沒有大額支出</p>
                 ) : (
@@ -5779,6 +5886,36 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             </button>
                           )}
                         </div>
+                        {(preReservedExpenseHints.length > 0 || item.preReserved) && (
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={item.reserveReferenceId ?? ''}
+                              disabled={isLocked}
+                              onChange={e => linkLargeCashExpenseToReserve(item.id, e.target.value)}
+                              aria-label="選擇此支出使用的預留款"
+                              className="min-w-0 flex-1 rounded-lg px-2.5 py-2 text-xs"
+                              style={{
+                                border: item.preReserved ? '1px solid #86efac' : '1px solid #e4e4e7',
+                                background: isLocked ? '#fafafa' : 'white', color: item.preReserved ? '#047857' : '#71717a',
+                                outline: 'none', fontFamily: 'inherit',
+                              }}>
+                              <option value="">未使用前期預留款</option>
+                              {preReservedExpenseHints.map(hint => {
+                                const referenceId = getPreReservedHintReferenceId(hint)
+                                return (
+                                  <option key={referenceId} value={referenceId}>
+                                    {hint.reason}{hint.description ? `・${hint.description}` : ''}（已預留 ${fmt(hint.amount)}）
+                                  </option>
+                                )
+                              })}
+                            </select>
+                            {item.preReserved && (
+                              <span className="shrink-0 text-[10px] font-semibold tabular-nums" style={{ color: '#047857' }}>
+                                加回 ${fmt(item.preReservedAmount ?? item.amount)}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -6048,8 +6185,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             {(() => {
               const RESERVE_REASONS = ['電費', '房租', '營業稅', '其他']
               const pendingForReason = (prevDayReserves?.items ?? []).find(item =>
-                item.reason === reserveForm.reason
-                && (!reserveForm.source_start_date || item.started_date === reserveForm.source_start_date)
+                (reserveForm.reserve_reference_id
+                  ? item.reserve_reference_id === reserveForm.reserve_reference_id
+                  : item.reason === reserveForm.reason
+                    && (!reserveForm.source_start_date || item.started_date === reserveForm.source_start_date))
                 && (item.remaining_amount ?? ((item.total_bill ?? 0) - item.amount)) > 0,
               )
               const pendingRemaining = pendingForReason
@@ -6061,12 +6200,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               const pendingSuggestions = (prevDayReserves?.items ?? [])
                 .filter(pending => {
                   const totalBill = Number(pending.total_bill ?? 0)
-                  const suggestionKey = `${pending.started_date ?? prevDayReserves?.business_date}-${pending.reason}-${totalBill}`
+                  const suggestionKey = pending.reserve_reference_id
+                    ?? `${pending.started_date ?? prevDayReserves?.business_date}-${pending.reason}-${totalBill}`
                   return (pending.remaining_amount ?? (totalBill - pending.amount)) > 0
                     && !dismissedReserveSuggestions.includes(suggestionKey)
                     && !reserves.some(item =>
-                      item.reason === pending.reason
-                      && Number(item.total_bill ?? 0) === totalBill,
+                      pending.reserve_reference_id
+                        ? item.reserve_reference_id === pending.reserve_reference_id
+                        : item.reason === pending.reason && Number(item.total_bill ?? 0) === totalBill,
                     )
                 })
                 .map(pending => {
@@ -6099,10 +6240,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           setShowReserveForm(v => !v)
                           setReserveForm({
                             reason: pending?.reason ?? '電費',
+                            description: pending?.description ?? '',
                             amount: pending ? Math.min(availableToReserve, remaining) : 0,
                             total_bill: pending?.total_bill ?? 0,
                             source_start_date: pending?.started_date,
                             accumulated_before: pending?.amount,
+                            reserve_reference_id: pending?.reserve_reference_id,
                           })
                         }}
                           className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg"
@@ -6114,7 +6257,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   </div>
                   <div className="px-4 py-3 space-y-2">
                     {!isLocked && pendingSuggestions.map(({ pending, remaining, suggestedAmount }) => {
-                      const suggestionKey = `${pending.started_date ?? prevDayReserves?.business_date}-${pending.reason}-${pending.total_bill ?? 0}`
+                      const suggestionKey = pending.reserve_reference_id
+                        ?? `${pending.started_date ?? prevDayReserves?.business_date}-${pending.reason}-${pending.total_bill ?? 0}`
                       return (
                       <div key={suggestionKey}
                         className="py-2.5 px-3 rounded-xl"
@@ -6123,6 +6267,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-semibold px-2 py-0.5 rounded-md" style={{ background: '#fef3c7', color: '#92400e' }}>{pending.reason}</span>
+                              {pending.description && <span className="text-xs" style={{ color: '#92400e' }}>{pending.description}</span>}
                               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: '#dbeafe', color: '#1d4ed8' }}>前期自動帶入・待確認</span>
                             </div>
                             <p className="text-xs mt-1.5 tabular-nums" style={{ color: '#92400e' }}>
@@ -6136,10 +6281,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             <button type="button" onClick={() => {
                               setReserveForm({
                                 reason: pending.reason,
+                                description: pending.description ?? '',
                                 amount: suggestedAmount,
                                 total_bill: pending.total_bill ?? 0,
                                 source_start_date: pending.started_date,
                                 accumulated_before: pending.amount,
+                                reserve_reference_id: pending.reserve_reference_id,
                               })
                               setShowReserveForm(true)
                             }}
@@ -6170,6 +6317,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="text-xs font-semibold px-2 py-0.5 rounded-md shrink-0" style={{ background: '#fff7ed', color: '#ea580c' }}>{r.reason}</span>
+                              {r.description && (
+                                <span className="text-xs truncate" style={{ color: '#71717a' }}>{r.description}</span>
+                              )}
                               {r.auto_reserved && (
                                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0" style={{ background: '#d1fae5', color: '#047857' }}>自動帶入</span>
                               )}
@@ -6207,7 +6357,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                       <div className="rounded-xl p-3 space-y-3" style={{ background: '#fff7ed', border: '1.5px solid #fed7aa' }}>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="block text-[10px] font-semibold mb-1" style={{ color: '#52525b' }}>原因</label>
+                            <label className="block text-[10px] font-semibold mb-1" style={{ color: '#52525b' }}>大額支出類別 *</label>
                             <select value={reserveForm.reason} onChange={e => {
                               const reason = e.target.value
                               const pending = prevDayReserves?.items.find(item =>
@@ -6224,6 +6374,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                                 total_bill: pending?.total_bill ?? 0,
                                 source_start_date: pending?.started_date,
                                 accumulated_before: pending?.amount,
+                                description: pending?.description ?? '',
+                                reserve_reference_id: pending?.reserve_reference_id,
                               }))
                             }}
                               style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b' }}>
@@ -6238,6 +6390,21 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               onChange={e => setReserveForm(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
                               style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: 'white', outline: 'none', fontFamily: 'inherit', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#18181b' }} />
                           </div>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold mb-1" style={{ color: '#52525b' }}>
+                            帳單說明
+                            {reserveForm.reason === '其他'
+                              ? <span style={{ color: '#dc2626' }}> *</span>
+                              : <span className="ml-1 font-normal" style={{ color: '#a1a1aa' }}>— 選填</span>}
+                          </label>
+                          <input type="text"
+                            value={reserveForm.description ?? ''}
+                            placeholder={reserveForm.reason === '其他' ? '請填寫支出內容' : '例如：7–8 月營業稅'}
+                            required={reserveForm.reason === '其他'}
+                            disabled={!!pendingForReason}
+                            onChange={e => setReserveForm(prev => ({ ...prev, description: e.target.value }))}
+                            style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', background: pendingForReason ? '#fafafa' : 'white', outline: 'none', fontFamily: 'inherit', color: '#18181b' }} />
                         </div>
                         <div>
                           <label className="block text-[10px] font-semibold mb-1" style={{ color: '#52525b' }}>
@@ -6269,6 +6436,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                         <div className="flex gap-2">
                           <button type="button" onClick={() => {
                             if (reserveForm.amount <= 0) { toast.error('請輸入預留金額'); return }
+                            if (reserveForm.reason === '其他' && !reserveForm.description?.trim()) {
+                              toast.error('選擇「其他」時，請填寫帳單說明')
+                              return
+                            }
                             if (reserveForm.amount > availableToReserve) {
                               toast.error(`今日最多只能預留 $${fmt(availableToReserve)}`)
                               return
@@ -6287,8 +6458,11 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                               return
                             }
                             const duplicate = reserves.some(item =>
-                              item.reason === reserveForm.reason
-                              && Number(item.total_bill ?? 0) === Number(totalBill),
+                              (reserveForm.reserve_reference_id && item.reserve_reference_id === reserveForm.reserve_reference_id)
+                              || (!reserveForm.reserve_reference_id
+                                && item.reason === reserveForm.reason
+                                && (item.description ?? '').trim() === (reserveForm.description ?? '').trim()
+                                && Number(item.total_bill ?? 0) === Number(totalBill)),
                             )
                             if (duplicate) {
                               toast.error('今天已有相同帳單的預留款，請先刪除原項目再修改')
@@ -6297,18 +6471,22 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             const item: ReserveItem = {
                               ...reserveForm,
                               id: crypto.randomUUID(),
+                              description: reserveForm.description?.trim() || undefined,
                               total_bill: totalBill,
-                              source_start_date: pendingForReason?.started_date,
+                              source_start_date: pendingForReason?.started_date ?? reserveForm.source_start_date ?? today,
                               accumulated_before: pendingForReason?.amount,
+                              reserve_reference_id: pendingForReason?.reserve_reference_id
+                                ?? reserveForm.reserve_reference_id
+                                ?? crypto.randomUUID(),
                             }
                             setReserves(prev => [...prev, item])
                             setShowReserveForm(false)
-                            setReserveForm({ reason: '電費', amount: 0, total_bill: 0 })
+                            setReserveForm({ reason: '電費', description: '', amount: 0, total_bill: 0 })
                           }}
                             className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ background: '#ea580c', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
                             確認預留
                           </button>
-                          <button type="button" onClick={() => { setShowReserveForm(false); setReserveForm({ reason: '電費', amount: 0, total_bill: 0 }) }}
+                          <button type="button" onClick={() => { setShowReserveForm(false); setReserveForm({ reason: '電費', description: '', amount: 0, total_bill: 0 }) }}
                             className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: '#f4f4f5', color: '#71717a', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
                             取消
                           </button>

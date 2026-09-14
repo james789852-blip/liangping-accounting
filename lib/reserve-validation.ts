@@ -1,5 +1,6 @@
 type ReserveRow = {
   reason?: unknown
+  description?: unknown
   amount?: unknown
   total_bill?: unknown
 }
@@ -14,6 +15,8 @@ export function reserveSubmissionError(value: unknown): string | null {
     const amount = Number(row.amount) || 0
     if (amount <= 0) continue
     const reason = typeof row.reason === 'string' && row.reason.trim() ? row.reason.trim() : '預留款'
+    const description = typeof row.description === 'string' ? row.description.trim() : ''
+    if (reason === '其他' && !description) return '預留款選擇「其他」時，必須填寫帳單說明'
     const totalBill = Number(row.total_bill) || 0
     if (totalBill <= 0) return `預留款「${reason}」尚未填寫帳單總金額`
     if (amount > totalBill) return `預留款「${reason}」的今日金額不能超過帳單總金額`

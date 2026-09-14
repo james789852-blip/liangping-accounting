@@ -6,16 +6,41 @@ export interface PreReservedExpenseHint {
   reason: string
   amount: number
   total_bill?: number
+  description?: string
+  reference_id?: string
+  started_date?: string
 }
 
 interface PreReservedExpenseRow {
   description: string
   amount: number
   preReserved?: boolean
+  preReservedAmount?: number
+  reserveReferenceId?: string
+  reserveReason?: string
+  reserveLinkSkipped?: boolean
 }
 
 function normalizeReserveReason(value: string): string {
-  return value.replace(/[\s　]+/g, '').trim()
+  return value.replace(/[\s　]+/g, '').trim().toLowerCase()
+}
+
+export function getPreReservedHintReferenceId(hint: PreReservedExpenseHint): string {
+  return hint.reference_id
+    ?? `legacy:${hint.started_date ?? 'unknown'}:${normalizeReserveReason(hint.reason)}:${Number(hint.total_bill ?? 0)}`
+}
+
+function hintMatchesExpense(item: PreReservedExpenseRow, hint: PreReservedExpenseHint): boolean {
+  const amount = Math.abs(Number(item.amount) || 0)
+  const expectedAmount = Math.abs(Number(hint.total_bill ?? hint.amount) || 0)
+  if (amount <= 0 || expectedAmount <= 0 || Math.abs(amount - expectedAmount) > 1) return false
+
+  const description = normalizeReserveReason(item.description)
+  const reason = normalizeReserveReason(hint.reason)
+  const billDescription = normalizeReserveReason(hint.description ?? '')
+  if (!description) return false
+  if (billDescription && (description.includes(billDescription) || billDescription.includes(description))) return true
+  return reason !== '其他' && (description.includes(reason) || reason.includes(description))
 }
 
 /**
@@ -31,14 +56,50 @@ export function applyPreReservedExpenseHints<T extends PreReservedExpenseRow>(
   if (items.length === 0 || hints.length === 0) return [...items]
 
   return items.map(item => {
-    if (item.preReserved === true || item.amount <= 0 || !item.description.trim()) return item
-    const reason = normalizeReserveReason(item.description)
-    const hint = hints.find(candidate => normalizeReserveReason(candidate.reason) === reason)
-    if (!hint) return item
-    // 有帳單總額時只套用到同額支出；沒有總額的舊預留資料則以同名為準。
-    if (hint.total_bill && Math.abs(Math.abs(item.amount) - hint.total_bill) > 1) return item
-    return { ...item, preReserved: true }
+    if (item.reserveLinkSkipped || item.amount <= 0) return item
+
+    const explicitHint = item.reserveReferenceId
+      ? hints.find(candidate => getPreReservedHintReferenceId(candidate) === item.reserveReferenceId)
+      : undefined
+    const matchingHints = explicitHint ? [explicitHint] : hints.filter(hint => hintMatchesExpense(item, hint))
+    // 名稱／金額只能作為舊資料的保守 fallback；有多個候選時必須由店長明確選擇。
+    if (matchingHints.length !== 1) return item
+
+    const hint = matchingHints[0]
+    const preReservedAmount = Math.min(
+      Math.abs(Number(item.amount) || 0),
+      Math.abs(Number(hint.amount) || 0),
+    )
+    const reserveReferenceId = getPreReservedHintReferenceId(hint)
+    if (
+      item.preReserved === true
+      && item.preReservedAmount === preReservedAmount
+      && item.reserveReferenceId === reserveReferenceId
+      && item.reserveReason === hint.reason
+    ) return item
+    return {
+      ...item,
+      preReserved: true,
+      preReservedAmount,
+      reserveReferenceId,
+      reserveReason: hint.reason,
+    }
   })
+}
+
+export function getPreReservedExpenseRowAmount(value: unknown): number {
+  if (!value || typeof value !== 'object') return 0
+  const row = value as {
+    amount?: unknown
+    preReserved?: unknown
+    pre_reserved?: unknown
+    preReservedAmount?: unknown
+    pre_reserved_amount?: unknown
+  }
+  if (row.preReserved !== true && row.pre_reserved !== true) return 0
+  const amount = Math.abs(Number(row.amount) || 0)
+  const linkedAmount = Math.abs(Number(row.preReservedAmount ?? row.pre_reserved_amount) || 0)
+  return Math.min(amount, linkedAmount > 0 ? linkedAmount : amount)
 }
 
 export function getPreReservedExpenseTotal(value: unknown): number {
@@ -51,10 +112,10 @@ export function getPreReservedExpenseTotal(value: unknown): number {
   let marked = 0
   for (const item of value) {
     if (!item || typeof item !== 'object') continue
-    const row = item as { amount?: unknown; preReserved?: unknown; pre_reserved?: unknown }
+    const row = item as { amount?: unknown }
     const amount = Math.abs(Number(row.amount) || 0)
     total += amount
-    if (row.preReserved === true || row.pre_reserved === true) marked += amount
+    marked += getPreReservedExpenseRowAmount(item)
   }
   return Math.min(total, marked)
 }

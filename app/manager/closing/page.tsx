@@ -84,7 +84,7 @@ export default async function ClosingPage({
     getReceiptSettings(storeId),
     admin
       .from('daily_closings')
-      .select('reserve_items, business_date, expense_items(description, amount)')
+      .select('reserve_items, business_date, expense_items(description, amount), cash_counts(large_expenses)')
       .eq('store_id', storeId)
       .gte('business_date', reserveLookbackDate)
       .lt('business_date', today)

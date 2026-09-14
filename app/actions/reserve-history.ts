@@ -26,7 +26,7 @@ export async function refreshReserveHistoryContext(storeId: string, businessDate
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('daily_closings')
-    .select('reserve_items, business_date, expense_items(description, amount)')
+    .select('reserve_items, business_date, expense_items(description, amount), cash_counts(large_expenses)')
     .eq('store_id', storeId)
     .gte('business_date', lookbackDate)
     .lt('business_date', businessDate)

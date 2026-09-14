@@ -95,3 +95,19 @@ test('正式店面結帳：前日預留的大額支出只在最後包回時加�
   assert.equal(result.preReservedExpenseTotal, 20_000)
   assert.equal(result.remitToHQ, 70_000)
 })
+
+test('實際支出高於預留款時只加回已預留金額', () => {
+  const result = calculateClosingSummary({
+    revenue: blankRevenue({ bills_1000: 120 }),
+    store: { ichef_uber_linked: true, petty_cash: 50_000 },
+    totalExpenses: 0,
+    handwriteTotal: 0,
+    deliveryFee: 0,
+    adjustments: [],
+    reserves: [],
+    largeCashExpenses: [{ amount: 30_000, preReserved: true, preReservedAmount: 20_000 }],
+  })
+
+  assert.equal(result.preReservedExpenseTotal, 20_000)
+  assert.equal(result.remitToHQ, 60_000)
+})

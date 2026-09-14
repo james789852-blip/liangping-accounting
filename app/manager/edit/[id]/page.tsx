@@ -104,7 +104,7 @@ export default async function EditClosingPage({ params }: { params: Promise<{ id
       .order('name'),
     admin2
       .from('daily_closings')
-      .select('reserve_items, business_date, expense_items(description, amount)')
+      .select('reserve_items, business_date, expense_items(description, amount), cash_counts(large_expenses)')
       .eq('store_id', storeId)
       .gte('business_date', reserveLookbackDate)
       .lt('business_date', closing.business_date)

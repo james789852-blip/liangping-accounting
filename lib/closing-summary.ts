@@ -38,6 +38,7 @@ export interface ClosingReserveInput {
 export interface ClosingLargeExpenseInput {
   amount: number
   preReserved?: boolean
+  preReservedAmount?: number
 }
 
 export interface ClosingSummaryInput {
@@ -83,7 +84,12 @@ export function calculateClosingSummary(input: ClosingSummaryInput) {
     0,
   )
   const preReservedExpenseTotal = input.largeCashExpenses.reduce(
-    (sum, item) => sum + (item.preReserved === true ? Math.abs(item.amount || 0) : 0),
+    (sum, item) => {
+      if (item.preReserved !== true) return sum
+      const amount = Math.abs(item.amount || 0)
+      const linkedAmount = Math.abs(item.preReservedAmount || 0)
+      return sum + Math.min(amount, linkedAmount > 0 ? linkedAmount : amount)
+    },
     0,
   )
   const customerTransferTotal = input.adjustments

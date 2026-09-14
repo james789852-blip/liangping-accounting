@@ -1,21 +1,25 @@
 export interface ReserveDraftItem {
   id: string
   reason: string
+  description?: string
   amount: number
   total_bill?: number
   auto_reserved?: boolean
   source_start_date?: string
   accumulated_before?: number
+  reserve_reference_id?: string
 }
 
 export interface ReserveDraftContext {
   business_date: string
   items: Array<{
     reason: string
+    description?: string
     amount: number
     total_bill?: number
     started_date?: string
     remaining_amount?: number
+    reserve_reference_id?: string
   }>
 }
 
@@ -38,8 +42,11 @@ export function prepareReserveDraftItems(
     const remaining = pending.remaining_amount ?? (totalBill - pending.amount)
     if (totalBill <= 0 || remaining <= 0) continue
 
-    const exactMatchingIndex = next.findIndex(item =>
-      item.reason === pending.reason && Number(item.total_bill ?? 0) === totalBill,
+    const exactMatchingIndex = next.findIndex(item => pending.reserve_reference_id
+      ? item.reserve_reference_id === pending.reserve_reference_id
+      : item.reason === pending.reason
+        && Number(item.total_bill ?? 0) === totalBill
+        && (!pending.description || item.description === pending.description),
     )
     // 舊版手動草稿可能只存「原因＋今日金額」，沒有 total_bill。
     const legacyMatchingIndex = exactMatchingIndex < 0
@@ -51,10 +58,14 @@ export function prepareReserveDraftItems(
     const current = next[matchingIndex]
     const sourceStartDate = current.source_start_date ?? pending.started_date
     const accumulatedBefore = current.accumulated_before ?? pending.amount
+    const description = current.description ?? pending.description
+    const reserveReferenceId = current.reserve_reference_id ?? pending.reserve_reference_id
     if (
       Number(current.total_bill ?? 0) !== totalBill
       || current.source_start_date !== sourceStartDate
       || current.accumulated_before !== accumulatedBefore
+      || current.description !== description
+      || current.reserve_reference_id !== reserveReferenceId
     ) {
       next = next.map((item, index) => index === matchingIndex
         ? {
@@ -62,6 +73,8 @@ export function prepareReserveDraftItems(
             total_bill: totalBill,
             source_start_date: sourceStartDate,
             accumulated_before: accumulatedBefore,
+            description,
+            reserve_reference_id: reserveReferenceId,
           }
         : item)
     }

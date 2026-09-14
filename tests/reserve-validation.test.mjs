@@ -25,8 +25,24 @@ test('預留金額不可超過帳單總金額', () => {
   )
 })
 
+test('帳單說明只有選擇其他時必填', () => {
+  assert.equal(
+    reserveSubmissionError([{ reason: '營業稅', description: '', amount: 10_000, total_bill: 20_000 }]),
+    null,
+  )
+  assert.equal(
+    reserveSubmissionError([{ reason: '其他', description: '', amount: 10_000, total_bill: 20_000 }]),
+    '預留款選擇「其他」時，必須填寫帳單說明',
+  )
+  assert.equal(
+    reserveSubmissionError([{ reason: '其他', description: '消防設備費', amount: 10_000, total_bill: 20_000 }]),
+    null,
+  )
+})
+
 test('前端確認與伺服器送出都會攔截缺少帳單總金額', () => {
   assert.match(closingForm, /帳單總金額 <span[\s\S]*第一天必填，後續預留會自動沿用/)
   assert.match(closingForm, /if \(totalBill <= 0\)[\s\S]*請輸入帳單總金額/)
+  assert.match(closingForm, /reserveForm\.reason === '其他'[\s\S]*請填寫帳單說明/)
   assert.match(closingsAction, /reserveSubmissionError\(reserves\)/)
 })

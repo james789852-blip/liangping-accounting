@@ -13,6 +13,7 @@ import { canReviewClosings } from '@/lib/user-permissions'
 import { requiredActualVendorError } from '@/lib/required-actual-vendor'
 import { notifyReviewersOfSubmission, notifyStoreUsersOfReview } from '@/lib/push-notifications'
 import { reserveSubmissionError } from '@/lib/reserve-validation'
+import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
 
@@ -53,7 +54,15 @@ interface CashCountsPayload {
   coins_50: number; coins_10: number; coins_5: number; coins_1: number
   lump_1000: number; lump_500: number; lump_100: number
   lump_50: number; lump_10: number; lump_5: number; lump_1: number
-  large_expenses?: { id: string; description: string; amount: number; preReserved?: boolean }[]
+  large_expenses?: {
+    id: string
+    description: string
+    amount: number
+    preReserved?: boolean
+    preReservedAmount?: number
+    reserveReferenceId?: string
+    reserveReason?: string
+  }[]
 }
 
 type ClosingForDelete = {
@@ -649,8 +658,7 @@ export async function submitClosing(closingId: string) {
   const largeExpenses = cashRows.flatMap(row => objectRows(row.large_expenses))
   const adjustmentTotal = adjustments.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
   const reserveTotal = reserves.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
-  const preReservedTotal = largeExpenses.reduce((sum, row) =>
-    sum + (row.preReserved === true || row.pre_reserved === true ? Math.abs(Number(row.amount) || 0) : 0), 0)
+  const preReservedTotal = getPreReservedExpenseTotal(largeExpenses)
   const remitToHQ = (Number(submission.actual_remit) || 0) + adjustmentTotal - reserveTotal + preReservedTotal
 
   if (remitToHQ > 0 && !submission.envelope_photo_url) {
