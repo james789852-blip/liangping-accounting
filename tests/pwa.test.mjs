@@ -36,7 +36,7 @@ test('Service Worker 不快取帳目頁面，斷線導覽改顯示安全備援�
   assert.match(offlineSource, /重新連線/)
 })
 
-test('手機版使用獨立捲動容器，底部選單不會隨 iOS 頁面捲動漂移', () => {
+test('手機底部選單使用純色固定圖層且不鎖住整頁操作', () => {
   const globalSource = fs.readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8')
   const hqLayoutSource = fs.readFileSync(new URL('../app/hq/layout.tsx', import.meta.url), 'utf8')
   const managerLayoutSource = fs.readFileSync(new URL('../app/manager/layout.tsx', import.meta.url), 'utf8')
@@ -44,18 +44,27 @@ test('手機版使用獨立捲動容器，底部選單不會隨 iOS 頁面捲動
   const managerNavSource = fs.readFileSync(new URL('../components/manager/nav.tsx', import.meta.url), 'utf8')
   const rootLayoutSource = fs.readFileSync(new URL('../app/layout.tsx', import.meta.url), 'utf8')
 
-  assert.match(hqLayoutSource, /mobile-app-shell/)
-  assert.match(hqLayoutSource, /mobile-app-content/)
-  assert.match(managerLayoutSource, /mobile-app-shell/)
-  assert.match(managerLayoutSource, /mobile-app-content/)
+  assert.match(hqLayoutSource, /min-h-screen/)
+  assert.match(managerLayoutSource, /min-h-screen/)
+  assert.doesNotMatch(hqLayoutSource, /mobile-app-shell/)
+  assert.doesNotMatch(managerLayoutSource, /mobile-app-shell/)
   assert.match(hqNavSource, /mobile-bottom-nav/)
   assert.match(managerNavSource, /mobile-bottom-nav/)
   assert.doesNotMatch(hqNavSource, /mobile-bottom-nav[^\n]*backdrop-blur/)
   assert.doesNotMatch(managerNavSource, /mobile-bottom-nav[^\n]*backdrop-blur/)
-  assert.match(globalSource, /\.mobile-app-shell[\s\S]*height: 100dvh/)
-  assert.match(globalSource, /\.mobile-app-content[\s\S]*overflow-y: auto/)
   assert.match(globalSource, /\.mobile-bottom-nav[\s\S]*position: fixed/)
-  assert.match(globalSource, /\.mobile-bottom-nav[\s\S]*translate3d\(0, 0, 0\)/)
+  assert.match(globalSource, /\.mobile-bottom-nav[\s\S]*background: #fff/)
+  assert.doesNotMatch(globalSource, /\.mobile-bottom-nav[\s\S]*translate3d\(0, 0, 0\)/)
   assert.match(rootLayoutSource, /viewportFit: 'cover'/)
-  assert.match(rootLayoutSource, /interactiveWidget: 'resizes-content'/)
+})
+
+test('手機版浮動操作元件會避開底部選單與 iPhone 安全區', () => {
+  const mappingSource = fs.readFileSync(new URL('../components/hq/item-mappings-client.tsx', import.meta.url), 'utf8')
+  const notificationSource = fs.readFileSync(new URL('../components/notification-center.tsx', import.meta.url), 'utf8')
+  const globalSource = fs.readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8')
+
+  assert.match(mappingSource, /bottom-\[calc\(5\.25rem\+env\(safe-area-inset-bottom\)\)\]/)
+  assert.match(notificationSource, /bottom-\[calc\(5\.25rem\+env\(safe-area-inset-bottom\)\)\]/)
+  assert.match(globalSource, /\.closing-form-bottom-bar[\s\S]*calc\(64px \+ env\(safe-area-inset-bottom\)\)/)
+  assert.match(globalSource, /\.manager-sticky-action-bar[\s\S]*calc\(64px \+ env\(safe-area-inset-bottom\)\)/)
 })

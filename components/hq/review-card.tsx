@@ -382,7 +382,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
     )}
     {reviewOpen && (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: 'rgba(9,9,11,0.72)' }}>
-        <div className="bg-white w-full sm:max-w-3xl sm:rounded-3xl overflow-hidden flex flex-col" style={{ maxHeight: '94dvh' }}>
+        <div className="bg-white w-full min-h-0 sm:max-w-3xl sm:rounded-3xl overflow-hidden flex flex-col" style={{ maxHeight: '94dvh' }}>
           <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #e4e4e7' }}>
             <div>
               <p className="text-sm font-bold" style={{ color: '#18181b' }}>逐張核對 · {closing.stores?.name}</p>
@@ -394,7 +394,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
             </button>
           </div>
 
-          <div className="overflow-y-auto p-4 grid sm:grid-cols-2 gap-4">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] grid sm:grid-cols-2 gap-4">
             <div
               className="group relative min-h-64 rounded-2xl overflow-hidden flex items-center justify-center"
               style={{ background: '#18181b', cursor: currentPhoto ? 'zoom-in' : 'default' }}

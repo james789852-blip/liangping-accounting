@@ -31,7 +31,6 @@ export const viewport: Viewport = {
   maximumScale: 1,   // prevent accidental zoom on input focus (iOS)
   userScalable: false,
   viewportFit: 'cover',
-  interactiveWidget: 'resizes-content',
   themeColor: '#f59e0b',
 };
 

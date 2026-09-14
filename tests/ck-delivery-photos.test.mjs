@@ -119,12 +119,19 @@ test('總公司可同時查看體系外配送單與轉帳成功紀錄', () => {
 
 test('手機逐步核對會在照片上方提供不遮擋內容的切換與放大', () => {
   const overviewSource = fs.readFileSync(new URL('../components/hq/ck-overview.tsx', import.meta.url), 'utf8')
+  const reviewSource = fs.readFileSync(new URL('../components/hq/review-card.tsx', import.meta.url), 'utf8')
 
   assert.match(overviewSource, /label: `配送單 \$\{photoNumber \+ 1\}`/)
   assert.match(overviewSource, /label: `轉帳成功紀錄 \$\{photoNumber \+ 1\}`/)
   assert.match(overviewSource, /第 \{photoIndex \+ 1\} 張／共 \{currentPhotos\.length\} 張/)
   assert.match(overviewSource, /data-testid="ck-review-photo-tabs"/)
   assert.match(overviewSource, /<Maximize2 className="h-3\.5 w-3\.5" \/>放大/)
+  assert.match(overviewSource, /min-h-0 flex-1 overflow-y-auto overscroll-contain/)
+  assert.match(reviewSource, /min-h-0 flex-1 overflow-y-auto overscroll-contain/)
+  assert.match(overviewSource, /pb-\[calc\(1rem\+env\(safe-area-inset-bottom\)\)\]/)
+  assert.match(reviewSource, /pb-\[calc\(1rem\+env\(safe-area-inset-bottom\)\)\]/)
+  assert.match(overviewSource, /grid-cols-\[minmax\(64px,1fr\)_68px_68px_50px\]/)
+  assert.match(overviewSource, /sm:grid-cols-\[minmax\(80px,1fr\)_100px_100px_70px\]/)
   assert.doesNotMatch(overviewSource, /aria-label="查看上一張照片"/)
   assert.doesNotMatch(overviewSource, /aria-label="查看下一張照片"/)
 })

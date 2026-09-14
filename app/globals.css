@@ -214,27 +214,7 @@
   }
 }
 
-/*
- * 手機 App 外框只佔一個可視視窗，頁面內容在 main 內捲動。
- * 這可避免 iOS/PWA 在慣性捲動或鍵盤收合時，把 fixed 底部導覽列
- * 依舊的 visual viewport 高度繪製到頁面中間。
- */
-.mobile-app-shell {
-  height: 100vh;
-  min-height: 0;
-  overflow: hidden;
-}
-@supports (height: 100dvh) {
-  .mobile-app-shell {
-    height: 100dvh;
-  }
-}
-.mobile-app-content {
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  -webkit-overflow-scrolling: touch;
-}
+/* 純色固定圖層避免 iOS/PWA 捲動時重新合成 backdrop-filter 而漂移。 */
 .mobile-bottom-nav {
   position: fixed;
   inset-inline: 0;
@@ -243,17 +223,7 @@
   width: 100%;
   max-width: 100vw;
   background: #fff;
-  isolation: isolate;
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
   box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.04);
-}
-@media (max-width: 1023px) {
-  .mobile-app-content {
-    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
-  }
 }
 
 /* 隱藏所有 <input type="number"> 的上下調整箭頭（spinner） */

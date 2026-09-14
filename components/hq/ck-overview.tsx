@@ -1054,12 +1054,12 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: 'rgba(9,9,11,.75)' }}>
-      <div className="bg-white w-full sm:max-w-4xl sm:rounded-3xl overflow-hidden flex flex-col" style={{ maxHeight: '94dvh' }}>
+      <div className="bg-white w-full min-h-0 sm:max-w-4xl sm:rounded-3xl overflow-hidden flex flex-col" style={{ maxHeight: '94dvh' }}>
         <div className="p-4 flex justify-between items-center" style={{ borderBottom: '1px solid #e4e4e7' }}>
           <div><p className="font-bold">逐步核對 · {d.ckStore.name}</p><p className="text-xs" style={{ color: '#71717a' }}>{index + 1} / {steps.length}　{step.title}</p></div>
           <button onClick={onClose} className="p-2 rounded-full" style={{ background: '#f4f4f5' }}><X className="h-4 w-4" /></button>
         </div>
-        <div className="overflow-y-auto p-4 grid sm:grid-cols-2 gap-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] grid sm:grid-cols-2 gap-4">
           <div className="min-h-64 rounded-2xl flex flex-col overflow-hidden" style={{ background: 'white', border: '1px solid #d4d4d8' }}>
             {currentPhoto && (
               <div className="flex items-center justify-between gap-3 px-3 py-2" style={{ background: 'white', borderBottom: '1px solid #e4e4e7' }}>
@@ -1101,12 +1101,12 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
             <div className="rounded-2xl p-3 space-y-2" style={{ background: '#fafafa', border: '1px solid #e4e4e7' }}>
               <p className="text-xs font-bold" style={{ color: '#52525b' }}>央廚輸入內容</p>
               {step.kind === 'member' && (
-                <div className="grid grid-cols-[minmax(80px,1fr)_100px_100px_70px] items-center gap-1 px-3 text-[10px] font-bold" style={{ color: '#71717a' }}>
+                <div className="grid grid-cols-[minmax(64px,1fr)_68px_68px_50px] sm:grid-cols-[minmax(80px,1fr)_100px_100px_70px] items-center gap-0.5 sm:gap-1 px-2 sm:px-3 text-[10px] font-bold" style={{ color: '#71717a' }}>
                   <span>店家</span><span className="text-right" style={{ color: '#1d4ed8' }}>店面輸入</span><span className="text-right" style={{ color: '#c2410c' }}>央廚輸入</span><span className="text-right">差額</span>
                 </div>
               )}
               {step.rows.map((row, i) => step.kind === 'member' ? (
-                <div key={i} className="grid grid-cols-[minmax(80px,1fr)_100px_100px_70px] items-center gap-1 py-2.5 px-3"
+                <div key={i} className="grid grid-cols-[minmax(64px,1fr)_68px_68px_50px] sm:grid-cols-[minmax(80px,1fr)_100px_100px_70px] items-center gap-0.5 sm:gap-1 py-2.5 px-2 sm:px-3"
                   style={{ background: row.storeAmount != null && row.amount != null && row.storeAmount !== row.amount ? '#fef2f2' : undefined, borderBottom: '1px solid #f4f4f5' }}>
                   <span className="text-sm font-medium">{row.label}</span>
                   <span className="text-sm font-bold tabular-nums text-right" style={{ color: row.storeAmount == null ? '#a1a1aa' : '#1d4ed8' }}>
@@ -1125,7 +1125,7 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
                 </div>
               ) : <Row key={i} left={row.label} right={row.amount !== undefined ? `$${fmt(row.amount)}` : row.value || '—'} />)}
               {step.total !== undefined && (step.kind === 'member' ? (
-                <div className="grid grid-cols-[minmax(80px,1fr)_100px_100px_70px] items-center gap-1 py-2.5 px-3" style={{ background: '#fff7ed', borderTop: '1px solid #fed7aa' }}>
+                <div className="grid grid-cols-[minmax(64px,1fr)_68px_68px_50px] sm:grid-cols-[minmax(80px,1fr)_100px_100px_70px] items-center gap-0.5 sm:gap-1 py-2.5 px-2 sm:px-3" style={{ background: '#fff7ed', borderTop: '1px solid #fed7aa' }}>
                   <span className="text-xs font-bold" style={{ color: '#9a3412' }}>步驟合計</span>
                   <span className="text-sm font-bold tabular-nums text-right" style={{ color: '#1d4ed8' }}>${fmt(step.managerTotal ?? 0)}</span>
                   <span className="text-sm font-bold tabular-nums text-right" style={{ color: '#c2410c' }}>${fmt(step.total)}</span>

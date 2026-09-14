@@ -23,11 +23,11 @@ import {
 
 export default function HQLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mobile-app-shell flex bg-slate-50">
+    <div className="flex min-h-screen bg-slate-50">
       <Suspense fallback={<NavigationSkeleton variant="hq" />}>
         <HQNavigation />
       </Suspense>
-      <main className="mobile-app-content min-w-0 min-h-0 flex-1 pt-14 lg:pt-0 lg:pb-0">
+      <main className="min-w-0 flex-1 overflow-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
         {children}
       </main>
     </div>
