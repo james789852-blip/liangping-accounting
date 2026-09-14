@@ -116,3 +116,24 @@ test('總公司可同時查看體系外配送單與轉帳成功紀錄', () => {
   assert.match(documentsSource, /category: 'remittance'/)
   assert.match(documentsSource, /轉帳成功紀錄/)
 })
+
+test('手機逐步核對會標示兩種照片並提供切換與放大', () => {
+  const overviewSource = fs.readFileSync(new URL('../components/hq/ck-overview.tsx', import.meta.url), 'utf8')
+
+  assert.match(overviewSource, /label: `配送單 \$\{photoNumber \+ 1\}`/)
+  assert.match(overviewSource, /label: `轉帳成功紀錄 \$\{photoNumber \+ 1\}`/)
+  assert.match(overviewSource, /第 \{photoIndex \+ 1\} 張／共 \{currentPhotos\.length\} 張/)
+  assert.match(overviewSource, /點一下放大/)
+  assert.match(overviewSource, />上一張/)
+  assert.match(overviewSource, /下一張<ChevronRight/)
+})
+
+test('內容相符按下後停留並顯示明確確認狀態', () => {
+  const overviewSource = fs.readFileSync(new URL('../components/hq/ck-overview.tsx', import.meta.url), 'utf8')
+  const markOkaySource = overviewSource.match(/function markOkay\(\) \{([\s\S]*?)\n  \}/)?.[1] ?? ''
+
+  assert.doesNotMatch(markOkaySource, /setIndex/)
+  assert.match(overviewSource, /已確認：內容相符/)
+  assert.match(overviewSource, /本項已確認內容相符，可前往下一項/)
+  assert.match(overviewSource, /aria-pressed=\{confirmed\.has\(index\)\}/)
+})

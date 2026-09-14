@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Loader2, Banknote, Camera, X, Upload, RotateCcw, Trash2, FileSpreadsheet } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Loader2, Banknote, Camera, X, Upload, RotateCcw, Trash2, FileSpreadsheet, Maximize2 } from 'lucide-react'
 import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord, saveCKHQReimbursementAdjustment, saveCKHQReimbursementPhotoDraft, syncCKMonthToSheets } from '@/app/actions/ck'
 import { toast } from 'sonner'
 import { centralKitchenPhotoPath } from '@/lib/storage-paths'
@@ -309,8 +309,8 @@ function PayButton({
       if ('error' in saved) throw new Error(saved.error)
       setPhotoUrls(nextPhotoUrls)
       toast.success(`已上傳 ${uploaded.length} 張補款照片`)
-    } catch (err: any) {
-      toast.error('上傳失敗：' + (err?.message ?? '未知錯誤'))
+    } catch (err: unknown) {
+      toast.error('上傳失敗：' + (err instanceof Error ? err.message : '未知錯誤'))
     } finally {
       setUploading(false)
       if (inputRef.current) inputRef.current.value = ''
@@ -932,7 +932,7 @@ type CKReviewStep = {
   key: string
   kind?: 'member' | 'external' | 'expense' | 'summary'
   title: string
-  photoUrls?: string[]
+  photos?: Array<{ url: string; label: string }>
   rows: Array<{ label: string; amount?: number; value?: string; storeAmount?: number | null }>
   total?: number
   managerTotal?: number
@@ -946,6 +946,7 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
   const [editingIssue, setEditingIssue] = useState(false)
   const [draft, setDraft] = useState('')
   const [photoIndex, setPhotoIndex] = useState(0)
+  const [zoomPhotoUrl, setZoomPhotoUrl] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const expensePhotoSet = new Set(d.expenses.map(e => e.receipt_photo_url).filter(Boolean))
@@ -956,7 +957,10 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
       key: `member-${item.store_id}`,
       kind: 'member' as const,
       title: `體系內叫貨：${item.store_name}`,
-      photoUrls: item.deliveryPhotoUrls,
+      photos: item.deliveryPhotoUrls.map((url, photoNumber) => ({
+        url,
+        label: `配送單 ${photoNumber + 1}`,
+      })),
       rows: [{ label: item.store_name, amount: item.ck_amount ?? undefined, storeAmount: item.store_amount }],
       total: item.ck_amount ?? 0,
       managerTotal: item.store_amount ?? 0,
@@ -965,7 +969,16 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
       key: `external-${item.name}`,
       kind: 'external' as const,
       title: `體系外叫貨：${item.name}`,
-      photoUrls: [...item.deliveryPhotoUrls, ...item.transferPhotoUrls],
+      photos: [
+        ...item.deliveryPhotoUrls.map((url, photoNumber) => ({
+          url,
+          label: `配送單 ${photoNumber + 1}`,
+        })),
+        ...item.transferPhotoUrls.map((url, photoNumber) => ({
+          url,
+          label: `轉帳成功紀錄 ${photoNumber + 1}`,
+        })),
+      ],
       rows: [
         { label: item.name, amount: item.amount },
         { label: '配送單', value: `${item.deliveryPhotoUrls.length} 張` },
@@ -977,7 +990,10 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
       key: `expense-${group.key}`,
       kind: 'expense' as const,
       title: `支出：${group.name}`,
-      photoUrls: group.photoUrls,
+      photos: group.photoUrls.map((url, photoNumber) => ({
+        url,
+        label: `收據照片 ${photoNumber + 1}`,
+      })),
       rows: [
         { label: '類別', value: group.categories.join('／') || '未分類' },
         ...(group.payerNames.length ? [{ label: '代墊人', value: group.payerNames.join('、') }] : []),
@@ -986,7 +1002,7 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
       ],
       total: group.total,
     })),
-    ...unassignedPhotos.map((url, i) => ({ key: `photo-${i}`, title: `其他收據照片 ${i + 1}`, photoUrls: [url], rows: [{ label: '照片用途', value: '央廚收據／單據' }] })),
+    ...unassignedPhotos.map((url, i) => ({ key: `photo-${i}`, title: `其他收據照片 ${i + 1}`, photos: [{ url, label: `其他收據照片 ${i + 1}` }], rows: [{ label: '照片用途', value: '央廚收據／單據' }] })),
     { key: 'summary', kind: 'summary' as const, title: '央廚結算結果', rows: [
       { label: '營業額', amount: d.revenueTotal },
       { label: '當日支出', amount: d.expenseTotal },
@@ -997,25 +1013,27 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
     ] },
   ]
   const step = steps[index]
-  const currentPhotoUrls = step.photoUrls ?? []
-  const currentPhotoUrl = currentPhotoUrls[photoIndex] ?? currentPhotoUrls[0]
+  const currentPhotos = step.photos ?? []
+  const currentPhoto = currentPhotos[photoIndex] ?? currentPhotos[0]
   const reviewedCount = new Set([...confirmed, ...Object.keys(issues).map(Number)]).size
   const complete = reviewedCount === steps.length
   const issueEntries = Object.entries(issues).filter(([, note]) => note.trim())
-
-  useEffect(() => setPhotoIndex(0), [index])
 
   function markOkay() {
     setConfirmed(prev => new Set(prev).add(index))
     setIssues(prev => { const next = { ...prev }; delete next[index]; return next })
     setEditingIssue(false)
-    if (index < steps.length - 1) setIndex(index + 1)
   }
   function saveIssue() {
     setIssues(prev => ({ ...prev, [index]: draft.trim() || '此步驟內容有誤，請重新確認。' }))
     setConfirmed(prev => { const next = new Set(prev); next.delete(index); return next })
     setEditingIssue(false)
-    if (index < steps.length - 1) setIndex(index + 1)
+    if (index < steps.length - 1) goToStep(index + 1)
+  }
+  function goToStep(nextIndex: number) {
+    setIndex(nextIndex)
+    setPhotoIndex(0)
+    setZoomPhotoUrl(null)
   }
   function finish(decision: 'verified' | 'disputed') {
     const note = decision === 'disputed'
@@ -1041,19 +1059,46 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
           <button onClick={onClose} className="p-2 rounded-full" style={{ background: '#f4f4f5' }}><X className="h-4 w-4" /></button>
         </div>
         <div className="overflow-y-auto p-4 grid sm:grid-cols-2 gap-4">
-          <div className="min-h-64 rounded-2xl flex flex-col overflow-hidden" style={{ background: currentPhotoUrl ? '#18181b' : '#f8fafc', border: '1px solid #e4e4e7' }}>
+          <div className="min-h-64 rounded-2xl flex flex-col overflow-hidden" style={{ background: currentPhoto ? '#18181b' : '#f8fafc', border: '1px solid #e4e4e7' }}>
+            {currentPhoto && (
+              <div className="flex items-center justify-between gap-3 px-3 py-2 text-white" style={{ borderBottom: '1px solid rgba(255,255,255,.15)' }}>
+                <span className="text-sm font-bold truncate">{currentPhoto.label}</span>
+                <span className="text-xs font-semibold shrink-0" style={{ color: '#d4d4d8' }}>第 {photoIndex + 1} 張／共 {currentPhotos.length} 張</span>
+              </div>
+            )}
             <div className="flex-1 flex items-center justify-center min-h-64">
-              {currentPhotoUrl ? <SafePhotoImage src={currentPhotoUrl} alt={step.title} className="w-full h-full max-h-[48dvh] object-contain" /> : <div className="text-center" style={{ color: '#a1a1aa' }}><FileTextFallback /><p className="text-sm mt-2">此步驟沒有照片，請核對輸入內容與金額</p></div>}
+              {currentPhoto ? (
+                <button type="button" onClick={() => setZoomPhotoUrl(currentPhoto.url)}
+                  className="group relative w-full h-full flex items-center justify-center" aria-label={`放大查看${currentPhoto.label}`}>
+                  <SafePhotoImage src={currentPhoto.url} alt={currentPhoto.label} className="w-full h-full max-h-[48dvh] object-contain" />
+                  <span className="absolute right-3 bottom-3 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-bold text-white"
+                    style={{ background: 'rgba(0,0,0,.7)' }}><Maximize2 className="h-3.5 w-3.5" />點一下放大</span>
+                </button>
+              ) : <div className="text-center" style={{ color: '#a1a1aa' }}><FileTextFallback /><p className="text-sm mt-2">此步驟沒有照片，請核對輸入內容與金額</p></div>}
             </div>
-            {currentPhotoUrls.length > 1 && (
-              <div className="grid grid-cols-4 gap-2 p-2" style={{ background: '#18181b', borderTop: '1px solid rgba(255,255,255,.15)' }}>
-                {currentPhotoUrls.map((url, photoNumber) => (
-                  <button key={url} type="button" onClick={() => setPhotoIndex(photoNumber)}
-                    className="overflow-hidden rounded-lg"
-                    style={{ aspectRatio: '1', border: `2px solid ${photoNumber === photoIndex ? '#f59e0b' : 'transparent'}` }}>
-                    <SafePhotoImage src={url} alt={`${step.title} 照片 ${photoNumber + 1}`} thumb width={180} height={180} className="h-full w-full object-cover" />
+            {currentPhotos.length > 1 && (
+              <div className="p-2 space-y-2" style={{ background: '#18181b', borderTop: '1px solid rgba(255,255,255,.15)' }}>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {currentPhotos.map((photo, photoNumber) => (
+                    <button key={`${photo.url}-${photoNumber}`} type="button" onClick={() => setPhotoIndex(photoNumber)}
+                      className="relative h-20 overflow-hidden rounded-lg text-left"
+                      aria-pressed={photoNumber === photoIndex}
+                      style={{ border: `2px solid ${photoNumber === photoIndex ? '#f59e0b' : 'rgba(255,255,255,.25)'}` }}>
+                      <SafePhotoImage src={photo.url} alt={photo.label} thumb width={240} height={160} className="h-full w-full object-cover" />
+                      <span className="absolute inset-x-0 bottom-0 px-2 py-1 text-[11px] font-bold text-white truncate" style={{ background: 'rgba(0,0,0,.72)' }}>{photo.label}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" disabled={photoIndex === 0} onClick={() => setPhotoIndex(value => Math.max(0, value - 1))}
+                    className="py-2 rounded-lg text-xs font-bold text-white disabled:opacity-30" style={{ background: 'rgba(255,255,255,.14)' }}>
+                    <ChevronLeft className="inline h-4 w-4" />上一張
                   </button>
-                ))}
+                  <button type="button" disabled={photoIndex === currentPhotos.length - 1} onClick={() => setPhotoIndex(value => Math.min(currentPhotos.length - 1, value + 1))}
+                    className="py-2 rounded-lg text-xs font-bold text-white disabled:opacity-30" style={{ background: 'rgba(255,255,255,.14)' }}>
+                    下一張<ChevronRight className="inline h-4 w-4" />
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1096,14 +1141,36 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
               ) : <TotalRow label="步驟合計" value={step.total} color="#92400e" />)}
             </div>
             {!editingIssue ? <div className="grid grid-cols-2 gap-2">
-              <button onClick={markOkay} className="py-3 rounded-xl text-sm font-bold text-white" style={{ background: confirmed.has(index) ? '#10b981' : 'linear-gradient(135deg,#10b981,#059669)' }}>內容相符</button>
+              <button onClick={markOkay} aria-pressed={confirmed.has(index)}
+                className="py-3 px-2 rounded-xl text-sm font-bold inline-flex items-center justify-center gap-1.5 transition-all"
+                style={confirmed.has(index)
+                  ? { background: '#dcfce7', color: '#166534', border: '2px solid #22c55e', boxShadow: '0 0 0 4px rgba(34,197,94,.12)' }
+                  : { background: 'linear-gradient(135deg,#10b981,#059669)', color: 'white', border: '2px solid transparent' }}>
+                {confirmed.has(index) && <CheckCircle2 className="h-5 w-5" />}
+                {confirmed.has(index) ? '已確認：內容相符' : '內容相符'}
+              </button>
               <button onClick={() => { setDraft(issues[index] || ''); setEditingIssue(true) }} className="py-3 rounded-xl text-sm font-bold" style={{ background: '#fff1f2', color: '#be123c', border: '1px solid #fda4af' }}>{issues[index] ? '已記錄問題' : '內容有誤'}</button>
             </div> : <div className="p-3 rounded-xl space-y-2" style={{ background: '#fff1f2', border: '1px solid #fda4af' }}><p className="text-xs font-bold" style={{ color: '#be123c' }}>問題說明（選填）</p><p className="text-[11px]" style={{ color: '#9f1239' }}>不填寫時會自動提醒央廚「此步驟內容有誤，請重新確認」。</p><textarea autoFocus className="w-full min-h-24 p-3 rounded-lg" value={draft} onChange={e => setDraft(e.target.value)} placeholder="可輸入此步驟的詳細問題…" /><div className="flex justify-end gap-2"><button onClick={() => setEditingIssue(false)}>取消</button><button onClick={saveIssue} className="px-3 py-2 text-xs font-bold text-white rounded-lg" style={{ background: '#e11d48' }}>{draft.trim() ? '記錄問題' : '直接標記有誤'}</button></div></div>}
-            <div className="grid grid-cols-2 gap-2"><button disabled={index === 0} onClick={() => setIndex(i => i - 1)} className="py-2 rounded-xl disabled:opacity-30" style={{ background: '#f4f4f5' }}><ChevronLeft className="inline h-4 w-4" />上一項</button><button disabled={index === steps.length - 1} onClick={() => setIndex(i => i + 1)} className="py-2 rounded-xl disabled:opacity-30" style={{ background: '#f4f4f5' }}>下一項<ChevronRight className="inline h-4 w-4" /></button></div>
+            {confirmed.has(index) && !editingIssue && (
+              <div role="status" className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold" style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #86efac' }}>
+                <CheckCircle2 className="h-5 w-5 shrink-0" />本項已確認內容相符，可前往下一項。
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2"><button disabled={index === 0} onClick={() => goToStep(index - 1)} className="py-2 rounded-xl disabled:opacity-30" style={{ background: '#f4f4f5' }}><ChevronLeft className="inline h-4 w-4" />上一項</button><button disabled={index === steps.length - 1} onClick={() => goToStep(index + 1)} className="py-2 rounded-xl disabled:opacity-30" style={{ background: '#f4f4f5' }}>下一項<ChevronRight className="inline h-4 w-4" /></button></div>
             {complete && <button disabled={pending} onClick={() => finish(issueEntries.length ? 'disputed' : 'verified')} className="w-full py-3 rounded-xl font-bold text-white disabled:opacity-50" style={{ background: issueEntries.length ? '#e11d48' : '#059669' }}>{pending ? '處理中…' : issueEntries.length ? `彙整 ${issueEntries.length} 個問題並退回央廚` : '全部核對完成，審核通過'}</button>}
           </div>
         </div>
       </div>
+      {zoomPhotoUrl && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3" style={{ background: 'rgba(0,0,0,.92)' }} onClick={() => setZoomPhotoUrl(null)}>
+          <button type="button" onClick={() => setZoomPhotoUrl(null)} aria-label="關閉放大照片"
+            className="absolute top-4 right-4 p-3 rounded-full text-white" style={{ background: 'rgba(255,255,255,.16)' }}>
+            <X className="h-6 w-6" />
+          </button>
+          <SafePhotoImage src={zoomPhotoUrl} alt="放大查看單據" loading="eager" className="max-w-full max-h-[90dvh] object-contain rounded-xl"
+            onClick={event => event.stopPropagation()} />
+        </div>
+      )}
     </div>
   )
 }
