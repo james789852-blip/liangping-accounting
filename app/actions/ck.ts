@@ -213,6 +213,9 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
     if (previousRecordError) return { error: previousRecordError.message }
     previousStatus = previousRecord?.status ?? null
   }
+  const submissionEventId = data.status === 'submitted' && previousStatus !== 'submitted'
+    ? crypto.randomUUID()
+    : null
 
   const { data: record, error } = await admin
     .from('ck_daily_records')
@@ -354,7 +357,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
     },
   })
 
-  if (data.status === 'submitted' && previousStatus !== 'submitted') {
+  if (data.status === 'submitted' && previousStatus !== 'submitted' && submissionEventId) {
     after(async () => {
       await notifyReviewersOfSubmission({
         kind: 'ck',
@@ -362,6 +365,8 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
         businessDate: date,
         recordId,
         senderId: ctx.userId,
+        submissionEventId,
+        wasReturned: previousStatus === 'disputed',
       })
     })
   }

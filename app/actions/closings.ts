@@ -687,13 +687,14 @@ export async function submitClosing(closingId: string) {
     return { error: '仍有營收通路照片尚未完成上傳，請回到營業額步驟確認' }
   }
 
+  const submittedAt = new Date().toISOString()
   const { data: updated, error } = await admin
     .from('daily_closings')
     .update({
       status: 'submitted',
-      submitted_at: new Date().toISOString(),
+      submitted_at: submittedAt,
       submitted_by: ctx.userId,
-      updated_at: new Date().toISOString(),
+      updated_at: submittedAt,
     })
     .eq('id', closingId)
     .in('status', ['draft', 'disputed'])
@@ -730,6 +731,8 @@ export async function submitClosing(closingId: string) {
       businessDate: c.business_date as string,
       recordId: closingId,
       senderId: ctx.userId,
+      submissionEventId: submittedAt,
+      wasReturned: meta.status === 'disputed',
     })
   })
 

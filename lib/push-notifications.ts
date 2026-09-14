@@ -298,6 +298,8 @@ export async function notifyReviewersOfSubmission(input: {
   businessDate: string
   recordId: string
   senderId: string
+  submissionEventId: string
+  wasReturned?: boolean
 }) {
   const [name, userIds] = await Promise.all([
     storeName(input.storeId),
@@ -316,8 +318,8 @@ export async function notifyReviewersOfSubmission(input: {
     (ckResult.count ?? 0) > 0 ? `${ckResult.count} 筆央廚帳目` : '',
   ].filter(Boolean)
   await sendToUserIds(userIds, {
-    title: '有帳目等待審核',
-    body: `${name} ${input.businessDate} ${isCK ? '央廚' : '店面'}帳目已送出，等待審核。${parts.length ? `該營業日目前共有${parts.join('、')}待審。` : ''}`,
+    title: input.wasReturned ? '退回帳目已重新送出' : '有帳目等待審核',
+    body: `${name} ${input.businessDate} ${isCK ? '央廚' : '店面'}帳目${input.wasReturned ? '已修正並重新送出' : '已送出'}，等待審核。${parts.length ? `該營業日目前共有${parts.join('、')}待審。` : ''}`,
     url: isCK
       ? `/hq/accounting?tab=ck&ckStoreId=${encodeURIComponent(input.storeId)}&date=${input.businessDate}`
       : `/hq/accounting?tab=store&storeId=${encodeURIComponent(input.storeId)}&date=${input.businessDate}`,
@@ -325,7 +327,9 @@ export async function notifyReviewersOfSubmission(input: {
   }, {
     category: 'review_submission',
     storeId: input.storeId,
-    sourceKey: `${input.kind}-submission-${input.recordId}`,
+    // 同一筆帳目退回後會再次送出；每一次狀態轉入 submitted 都是獨立事件。
+    // submissionEventId 讓重送產生新的通知與投遞工作，同一次操作仍由資料庫唯一鍵防重。
+    sourceKey: `${input.kind}-submission-${input.recordId}-${input.submissionEventId}`,
   })
 }
 

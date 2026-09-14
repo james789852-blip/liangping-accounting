@@ -62,6 +62,18 @@ test('店面與央廚送審及審核結果都會在回應後發送推播', () =>
   assert.doesNotMatch(pushModule, /review_note|dispute_note/)
 })
 
+test('帳目退回後重新送出會建立新的待審推播事件', () => {
+  assert.match(pushModule, /submissionEventId: string/)
+  assert.match(pushModule, /sourceKey: `\$\{input\.kind\}-submission-\$\{input\.recordId\}-\$\{input\.submissionEventId\}`/)
+  assert.match(pushModule, /退回帳目已重新送出/)
+  assert.match(pushModule, /已修正並重新送出/)
+  assert.match(closingsAction, /submissionEventId: submittedAt/)
+  assert.match(closingsAction, /wasReturned: meta\.status === 'disputed'/)
+  assert.match(ckAction, /submissionEventId,\s*wasReturned/)
+  assert.match(ckAction, /wasReturned: previousStatus === 'disputed'/)
+  assert.match(serviceWorker, /renotify: true/)
+})
+
 test('同一裝置切換到總公司帳號時會重新綁定並補發待審摘要', () => {
   assert.match(pushAction, /existing\.user_id !== user\.id/)
   assert.match(pushAction, /notifyReviewerOfPendingWork\(user\.id\)/)
