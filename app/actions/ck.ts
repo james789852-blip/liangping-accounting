@@ -470,6 +470,7 @@ export async function reviewCKDailyRecord(
       recordId: existing.id,
       decision,
       reviewerId: ctx.userId,
+      reviewEventId: now,
     })
   })
 

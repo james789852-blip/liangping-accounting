@@ -269,9 +269,10 @@ export async function verifyClosing(closingId: string) {
   }
 
   const admin = createAdminClient()
+  const reviewEventId = new Date().toISOString()
   const { data: updated, error } = await admin
     .from('daily_closings')
-    .update({ status: 'verified', updated_at: new Date().toISOString() })
+    .update({ status: 'verified', updated_at: reviewEventId })
     .eq('id', closingId)
     .eq('status', 'submitted')
     .select('id')
@@ -313,6 +314,7 @@ export async function verifyClosing(closingId: string) {
       recordId: closingId,
       decision: 'verified',
       reviewerId: user.id,
+      reviewEventId,
     })
   })
 
@@ -348,9 +350,10 @@ export async function verifyClosingsBatch(closingIds: string[]) {
   const skipped = closings.length - okIds.length
   if (okIds.length === 0) return { error: '無可核准帳目（皆非待審狀態）' }
 
+  const reviewEventId = new Date().toISOString()
   const { data: updatedClosings, error: updateErr } = await admin
     .from('daily_closings')
-    .update({ status: 'verified', updated_at: new Date().toISOString() })
+    .update({ status: 'verified', updated_at: reviewEventId })
     .in('id', okIds)
     .eq('status', 'submitted')
     .select('id')
@@ -405,6 +408,7 @@ export async function verifyClosingsBatch(closingIds: string[]) {
         recordId: closing.id,
         decision: 'verified' as const,
         reviewerId: user.id,
+        reviewEventId,
       })))
   })
 
@@ -525,14 +529,15 @@ export async function disputeClosing(closingId: string, note: string) {
   const preDisputeSnapshot = await loadClosingAuditSnapshot(admin, closingId, closing.store_id, closing.business_date)
 
   const cleanNote = note.trim()
+  const reviewEventId = new Date().toISOString()
   const { data: updated, error } = await admin
     .from('daily_closings')
     .update({
       status: 'disputed',
       dispute_note: cleanNote || null,
-      disputed_at: new Date().toISOString(),
+      disputed_at: reviewEventId,
       disputed_by: user.id,
-      updated_at: new Date().toISOString(),
+      updated_at: reviewEventId,
     })
     .eq('id', closingId)
     .eq('status', closing.status)
@@ -586,6 +591,7 @@ export async function disputeClosing(closingId: string, note: string) {
       recordId: closingId,
       decision: 'disputed',
       reviewerId: user.id,
+      reviewEventId,
     })
   })
 

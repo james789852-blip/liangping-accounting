@@ -74,6 +74,13 @@ test('帳目退回後重新送出會建立新的待審推播事件', () => {
   assert.match(serviceWorker, /renotify: true/)
 })
 
+test('每一次核准或退回都以獨立審核事件通知', () => {
+  assert.match(pushModule, /reviewEventId: string/)
+  assert.match(pushModule, /sourceKey: `\$\{input\.kind\}-review-\$\{input\.decision\}-\$\{input\.recordId\}-\$\{input\.reviewEventId\}`/)
+  assert.match(closingsAction, /reviewEventId,/)
+  assert.match(ckAction, /reviewEventId: now/)
+})
+
 test('同一裝置切換到總公司帳號時會重新綁定並補發待審摘要', () => {
   assert.match(pushAction, /existing\.user_id !== user\.id/)
   assert.match(pushAction, /notifyReviewerOfPendingWork\(user\.id\)/)

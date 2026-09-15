@@ -10,6 +10,9 @@ const storeEditor = fs.readFileSync(new URL('../components/hq/store-editor.tsx',
 const scheduleForm = fs.readFileSync(new URL('../components/hq/push-schedule-settings-form.tsx', import.meta.url), 'utf8')
 const scheduleAction = fs.readFileSync(new URL('../app/actions/push-management.ts', import.meta.url), 'utf8')
 const scheduleMigration = fs.readFileSync(new URL('../supabase/migrations/072_push_schedule_settings.sql', import.meta.url), 'utf8')
+const reliabilityMigration = fs.readFileSync(new URL('../supabase/migrations/074_push_reliability.sql', import.meta.url), 'utf8')
+const scheduleRuns = fs.readFileSync(new URL('../lib/push-schedule-runs.ts', import.meta.url), 'utf8')
+const pushAdminPage = fs.readFileSync(new URL('../app/hq/notifications/page.tsx', import.meta.url), 'utf8')
 const vercelConfig = JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
 
 test('店面與央廚未送出帳目會依總公司設定時間各提醒一次', () => {
@@ -62,7 +65,33 @@ test('推播管理頁可由總公司設定所有業務提醒時間', () => {
   assert.match(scheduleAction, /validatePushScheduleSettings\(input\)/)
   assert.match(scheduleMigration, /create table if not exists push_schedule_settings/)
   assert.match(scheduleMigration, /revoke all on table push_schedule_settings from anon, authenticated/)
-  assert.match(cronRoute, /checks\.filter\(check => isPushScheduleDue\(check\.time\)\)/)
+  assert.match(cronRoute, /runScheduledPush\(\{/)
+})
+
+test('排程錯過五分鐘時段會補跑並記錄上次、下次與投遞成果', () => {
+  assert.match(reliabilityMigration, /create table if not exists push_schedule_runs/)
+  assert.match(scheduleRuns, /status === 'succeeded'/)
+  assert.match(scheduleRuns, /status: 'failed'/)
+  assert.match(scheduleRuns, /notifyPushSystemAdministrators/)
+  assert.match(pushAdminPage, /排程執行健檢/)
+  assert.match(pushAdminPage, /上次執行/)
+  assert.match(pushAdminPage, /下次執行／上次成果/)
+})
+
+test('一般送審三分鐘內合併，退回重送仍立即通知', () => {
+  assert.match(reliabilityMigration, /create table if not exists push_submission_digest_items/)
+  assert.match(notifications, /if \(!input\.wasReturned\)/)
+  assert.match(notifications, /Date\.now\(\) - 3 \* 60000/)
+  assert.match(notifications, /間單位、共 \$\{active\.length\} 筆帳目待審/)
+  assert.ok(vercelConfig.crons.some(cron => cron.path.endsWith('/submission-digest') && cron.schedule === '* * * * *'))
+})
+
+test('推播管理頁顯示裝置未綁定、久未連線、失敗與各單位完成率', () => {
+  assert.match(pushAdminPage, /裝置綁定健檢/)
+  assert.match(pushAdminPage, /尚未綁定裝置/)
+  assert.match(pushAdminPage, /超過 7 天未連線/)
+  assert.match(pushAdminPage, /連續推播失敗/)
+  assert.match(pushAdminPage, /綁定完成率/)
 })
 
 test('推播重試排程每五分鐘處理一次', () => {

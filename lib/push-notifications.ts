@@ -2,7 +2,7 @@ import 'server-only'
 
 import webpush from 'web-push'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { canReviewClosings, type PermissionProfile } from '@/lib/user-permissions'
+import { canManageUsers, canReviewClosings, type PermissionProfile } from '@/lib/user-permissions'
 import { getBusinessDate } from '@/lib/business-date'
 import { formatReminderDelay } from '@/lib/push-schedule'
 import { createHQNotificationFollowUp, type HQFollowUpKind, type HQFollowUpPayload } from '@/lib/hq-notification-followups'
@@ -303,6 +303,20 @@ export async function notifyReviewersOfSubmission(input: {
   submissionEventId: string
   wasReturned?: boolean
 }) {
+  if (!input.wasReturned) {
+    const admin = createAdminClient()
+    const { error } = await admin.from('push_submission_digest_items').upsert({
+      submission_event_id: input.submissionEventId,
+      accounting_kind: input.kind,
+      store_id: input.storeId,
+      record_id: input.recordId,
+      business_date: input.businessDate,
+      sender_id: input.senderId,
+    }, { onConflict: 'submission_event_id', ignoreDuplicates: true })
+    if (error) console.error('[push] failed to queue submission digest:', error)
+    return { total: 0, delivered: 0, queued: !error }
+  }
+
   const [name, userIds] = await Promise.all([
     storeName(input.storeId),
     reviewerUserIds(input.senderId, 'review_submission'),
@@ -388,6 +402,7 @@ export async function notifyStoreUsersOfReview(input: {
   recordId: string
   decision: 'verified' | 'disputed'
   reviewerId: string
+  reviewEventId: string
 }) {
   const admin = createAdminClient()
   const [{ data: store }, userIds] = await Promise.all([
@@ -408,9 +423,106 @@ export async function notifyStoreUsersOfReview(input: {
   }, {
     category: 'review_result',
     storeId: input.storeId,
-    sourceKey: `${input.kind}-review-${input.decision}-${input.recordId}`,
+    sourceKey: `${input.kind}-review-${input.decision}-${input.recordId}-${input.reviewEventId}`,
     pushEnabled,
   })
+}
+
+type DigestItem = {
+  id: string
+  submission_event_id: string
+  accounting_kind: 'store' | 'ck'
+  store_id: string
+  record_id: string
+  business_date: string
+  sender_id: string | null
+}
+
+/** Groups ordinary submissions for three minutes; returned-and-resubmitted records bypass this queue. */
+export async function sendPendingSubmissionDigest() {
+  const admin = createAdminClient()
+  const cutoff = new Date(Date.now() - 3 * 60000).toISOString()
+  const staleClaim = new Date(Date.now() - 10 * 60000).toISOString()
+  await admin.from('push_submission_digest_items').update({ status: 'pending', processing_at: null })
+    .eq('status', 'processing').lt('processing_at', staleClaim)
+
+  const { data: candidates, error } = await admin.from('push_submission_digest_items')
+    .select('id').eq('status', 'pending').lte('created_at', cutoff).order('created_at').limit(200)
+  if (error) throw new Error(`讀取送審合併佇列失敗：${error.message}`)
+  const ids = (candidates ?? []).map(item => String(item.id))
+  if (ids.length === 0) return { eligible: 0, targetDevices: 0, delivered: 0 }
+
+  const claimedAt = new Date().toISOString()
+  const { data: claimed, error: claimError } = await admin.from('push_submission_digest_items')
+    .update({ status: 'processing', processing_at: claimedAt })
+    .in('id', ids).eq('status', 'pending')
+    .select('id, submission_event_id, accounting_kind, store_id, record_id, business_date, sender_id')
+  if (claimError) throw new Error(`鎖定送審合併佇列失敗：${claimError.message}`)
+  const items = (claimed ?? []) as DigestItem[]
+  if (items.length === 0) return { eligible: 0, targetDevices: 0, delivered: 0 }
+
+  const storeIds = items.filter(item => item.accounting_kind === 'store').map(item => item.record_id)
+  const ckIds = items.filter(item => item.accounting_kind === 'ck').map(item => item.record_id)
+  const [storeRows, ckRows] = await Promise.all([
+    storeIds.length
+      ? admin.from('daily_closings').select('id, status, updated_at').in('id', storeIds)
+      : Promise.resolve({ data: [], error: null }),
+    ckIds.length
+      ? admin.from('ck_daily_records').select('id, status, updated_at').in('id', ckIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (storeRows.error || ckRows.error) throw new Error(`確認待審狀態失敗：${(storeRows.error || ckRows.error)!.message}`)
+  const activeEvents = new Map<string, { status: string }>()
+  for (const row of storeRows.data ?? []) activeEvents.set(String(row.id), { status: String(row.status) })
+  for (const row of ckRows.data ?? []) activeEvents.set(String(row.id), { status: String(row.status) })
+  const active = items.filter(item => {
+    const row = activeEvents.get(item.record_id)
+    return row?.status === 'submitted'
+  })
+  const inactiveIds = items.filter(item => !active.includes(item)).map(item => item.id)
+  if (inactiveIds.length) await admin.from('push_submission_digest_items').update({ status: 'skipped', processed_at: new Date().toISOString() }).in('id', inactiveIds)
+  if (active.length === 0) return { eligible: 0, targetDevices: 0, delivered: 0 }
+
+  const userIds = await reviewerUserIds(undefined, 'review_submission')
+  const uniqueStores = new Set(active.map(item => item.store_id)).size
+  const storeCount = active.filter(item => item.accounting_kind === 'store').length
+  const ckCount = active.length - storeCount
+  const parts = [storeCount ? `店面 ${storeCount} 筆` : '', ckCount ? `央廚 ${ckCount} 筆` : ''].filter(Boolean)
+  const identity = active.map(item => item.id).sort()
+  const result = await sendToUserIds(userIds, {
+    title: '有帳目等待審核',
+    body: `${uniqueStores} 間單位、共 ${active.length} 筆帳目待審（${parts.join('、')}）。`,
+    url: '/hq/accounting',
+    tag: 'pending-review-summary',
+  }, {
+    category: 'review_submission',
+    sourceKey: `submission-digest-${identity[0]}-${identity.at(-1)}`,
+  })
+  await admin.from('push_submission_digest_items').update({ status: 'sent', processed_at: new Date().toISOString() })
+    .in('id', active.map(item => item.id))
+  return { eligible: active.length, targetDevices: result.total, delivered: result.delivered }
+}
+
+export async function notifyPushSystemAdministrators(input: {
+  title: string
+  body: string
+  sourceKey: string
+}) {
+  const admin = createAdminClient()
+  const { data, error } = await admin.from('user_profiles').select('*').eq('active', true)
+  if (error) {
+    console.error('[push] failed to load system administrators:', error)
+    return { total: 0, delivered: 0 }
+  }
+  const userIds = (data ?? [])
+    .filter(profile => canManageUsers(profile as PermissionProfile))
+    .map(profile => String(profile.user_id))
+  return sendToUserIds(userIds, {
+    title: input.title,
+    body: input.body,
+    url: '/hq/notifications',
+    tag: 'push-schedule-system-alert',
+  }, { category: 'system', sourceKey: input.sourceKey })
 }
 
 export async function notifyStoreUsersOfAccountingReminder(input: {

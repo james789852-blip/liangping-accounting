@@ -3,9 +3,9 @@ import {
   sendCKReimbursementHandoffReminders,
   sendReturnedAccountingReminders,
 } from '@/lib/scheduled-push-reminders'
-import { processPendingPushJobs } from '@/lib/push-notifications'
+import { processPendingPushJobs, sendPendingSubmissionDigest } from '@/lib/push-notifications'
 import { getPushScheduleSettings } from '@/lib/push-schedule-settings'
-import { isPushScheduleDue } from '@/lib/push-schedule'
+import { runScheduledPush } from '@/lib/push-schedule-runs'
 import { resolveCompletedHQNotificationFollowUps } from '@/lib/hq-notification-followups'
 
 export const runtime = 'nodejs'
@@ -24,6 +24,10 @@ export async function GET(
     const { kind } = await context.params
     if (kind === 'delivery-retry') {
       const result = await processPendingPushJobs(200)
+      return Response.json({ success: true, kind, ...result, checkedAt: new Date().toISOString() })
+    }
+    if (kind === 'submission-digest') {
+      const result = await sendPendingSubmissionDigest()
       return Response.json({ success: true, kind, ...result, checkedAt: new Date().toISOString() })
     }
 
@@ -51,10 +55,24 @@ export async function GET(
           run: () => sendCKReimbursementHandoffReminders(schedule.ckHandoffTime),
         },
       ]
-      const due = checks.filter(check => isPushScheduleDue(check.time))
-      const results = Object.fromEntries(await Promise.all(
-        due.map(async check => [check.name, await check.run()] as const),
-      ))
+      const settled = await Promise.all(checks.map(async check => {
+        try {
+          const result = await runScheduledPush({
+            key: check.name as 'accounting-first' | 'accounting-final' | 'ck-handoff',
+            scheduledTime: check.time,
+            run: check.run,
+          })
+          return [check.name, result] as const
+        } catch (error) {
+          return [check.name, {
+            due: true,
+            failed: true,
+            error: error instanceof Error ? error.message : String(error),
+          }] as const
+        }
+      }))
+      const results = Object.fromEntries(settled)
+      const due = checks.filter(check => results[check.name]?.due)
       return Response.json({
         success: true,
         kind,

@@ -1,12 +1,15 @@
 import { redirect } from 'next/navigation'
+import type { ReactNode } from 'react'
 import { BellRing, CheckCircle2, Clock3, Smartphone, TriangleAlert, XCircle } from 'lucide-react'
 import { getAuthedUser } from '@/lib/authed-user'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { canManageUsers } from '@/lib/user-permissions'
+import { canManageUsers, hasAnyHQPermission } from '@/lib/user-permissions'
 import PushDeviceRemoveButton from '@/components/hq/push-device-remove-button'
 import PushScheduleSettingsForm from '@/components/hq/push-schedule-settings-form'
 import { getPushScheduleSettings } from '@/lib/push-schedule-settings'
+import { nextScheduledPushInstant } from '@/lib/push-schedule-runs'
+import { isPushDeviceStale } from '@/lib/push-device-health'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +25,21 @@ const CATEGORY_LABEL: Record<string, string> = {
   reimbursement_handoff: '補款點交', hq_escalation: '總公司追蹤', system: '系統測試',
 }
 
+function HealthIssue({ title, count, tone, children }: {
+  title: string
+  count: number
+  tone: 'rose' | 'amber'
+  children: ReactNode
+}) {
+  const color = tone === 'rose' ? 'text-rose-700 bg-rose-50' : 'text-amber-700 bg-amber-50'
+  return <div className={`rounded-xl p-3 ${color}`}>
+    <p className="text-sm font-bold">{title} · {count}</p>
+    <div className="mt-2 max-h-32 space-y-1 overflow-auto text-xs leading-5">
+      {count ? children : <p>目前正常</p>}
+    </div>
+  </div>
+}
+
 export default async function PushNotificationsPage() {
   const user = await getAuthedUser()
   if (!user) redirect('/login')
@@ -30,10 +48,12 @@ export default async function PushNotificationsPage() {
   if (!canManageUsers(profile)) return <div className="p-6 text-rose-700">權限不足，需要帳號管理權限</div>
 
   const admin = createAdminClient()
-  const [{ data: notifications }, { data: profiles }, { data: devices }, scheduleSettings] = await Promise.all([
+  const [{ data: notifications }, { data: profiles }, { data: devices }, { data: stores }, { data: scheduleRuns }, scheduleSettings] = await Promise.all([
     admin.from('app_notifications').select('id, user_id, category, title, body, source_key, created_at, read_at, clicked_at').order('created_at', { ascending: false }).limit(100),
-    admin.from('user_profiles').select('user_id, name, active'),
+    admin.from('user_profiles').select('*'),
     admin.from('push_subscriptions').select('id, user_id, device_name, user_agent, last_seen_at, last_success_at, failure_count, created_at').order('last_seen_at', { ascending: false }),
+    admin.from('stores').select('id, name, type').eq('active', true),
+    admin.from('push_schedule_runs').select('*').order('started_at', { ascending: false }).limit(30),
     getPushScheduleSettings(),
   ])
   const notificationIds = (notifications ?? []).map(item => item.id)
@@ -49,6 +69,40 @@ export default async function PushNotificationsPage() {
       .in('source_key', followUpSourceKeys)
     : { data: [] }
   const nameByUser = new Map((profiles ?? []).map(item => [String(item.user_id), String(item.name)]))
+  const storeById = new Map((stores ?? []).map(item => [String(item.id), item]))
+  const devicesByUser = new Map<string, typeof devices>()
+  for (const device of devices ?? []) {
+    const list = devicesByUser.get(String(device.user_id)) ?? []
+    list.push(device)
+    devicesByUser.set(String(device.user_id), list)
+  }
+  const healthGroups = [
+    { key: 'store', label: '店面', profiles: [] as NonNullable<typeof profiles> },
+    { key: 'ck', label: '央廚', profiles: [] as NonNullable<typeof profiles> },
+    { key: 'hq', label: '總公司', profiles: [] as NonNullable<typeof profiles> },
+  ]
+  for (const account of profiles ?? []) {
+    if (!account.active || account.push_notifications_enabled === false) continue
+    if (hasAnyHQPermission(account)) {
+      healthGroups[2].profiles.push(account)
+      continue
+    }
+    const assigned = ((account.store_ids ?? []) as string[]).map(id => storeById.get(String(id))).filter(Boolean)
+    if (assigned.some(unit => unit?.type === '央廚')) healthGroups[1].profiles.push(account)
+    if (assigned.some(unit => unit?.type !== '央廚')) healthGroups[0].profiles.push(account)
+  }
+  const unboundProfiles = healthGroups.flatMap(group => group.profiles
+    .filter(account => !(devicesByUser.get(String(account.user_id))?.length))
+    .map(account => ({ ...account, healthGroup: group.label })))
+  const staleDevices = (devices ?? []).filter(device => isPushDeviceStale(device.last_seen_at))
+  const failingDevices = (devices ?? []).filter(device => Number(device.failure_count) > 0)
+  const latestRunByKey = new Map<string, NonNullable<typeof scheduleRuns>[number]>()
+  for (const run of scheduleRuns ?? []) if (!latestRunByKey.has(String(run.schedule_key))) latestRunByKey.set(String(run.schedule_key), run)
+  const scheduleRows = [
+    { key: 'accounting-first', label: '帳目未送出・第一次', time: scheduleSettings.accountingFirstTime },
+    { key: 'accounting-final', label: '帳目未送出・第二次', time: scheduleSettings.accountingFinalTime },
+    { key: 'ck-handoff', label: '央廚補款未點交', time: scheduleSettings.ckHandoffTime },
+  ]
   const followUpBySource = new Map((followUps ?? []).map(item => [String(item.source_key), item]))
   const jobsByNotification = new Map<string, typeof jobs>()
   for (const job of jobs ?? []) {
@@ -69,6 +123,53 @@ export default async function PushNotificationsPage() {
 
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-5">
         <PushScheduleSettingsForm initialSettings={scheduleSettings} />
+
+        <section className="rounded-2xl border border-blue-200 bg-white p-4">
+          <div className="mb-4">
+            <h2 className="font-bold text-zinc-900">裝置綁定健檢</h2>
+            <p className="text-xs text-zinc-500">綁定完成率以「推播已開啟的在職管理人員」計算；7 天未連線列為需確認。</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {healthGroups.map(group => {
+              const bound = group.profiles.filter(account => (devicesByUser.get(String(account.user_id))?.length ?? 0) > 0).length
+              const rate = group.profiles.length ? Math.round(bound / group.profiles.length * 100) : 100
+              return <div key={group.key} className="rounded-xl bg-blue-50 p-3">
+                <p className="text-xs font-bold text-blue-700">{group.label}綁定完成率</p>
+                <p className="mt-1 text-2xl font-black text-zinc-900">{rate}%</p>
+                <p className="text-xs text-zinc-500">{bound} / {group.profiles.length} 人已綁定</p>
+              </div>
+            })}
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            <HealthIssue title="尚未綁定裝置" count={unboundProfiles.length} tone="rose">
+              {unboundProfiles.map(account => <p key={`${account.healthGroup}-${account.user_id}`}>{account.name} · {account.healthGroup}</p>)}
+            </HealthIssue>
+            <HealthIssue title="超過 7 天未連線" count={staleDevices.length} tone="amber">
+              {staleDevices.map(device => <p key={device.id}>{nameByUser.get(String(device.user_id)) || '未知帳號'} · {device.device_name || '瀏覽器裝置'}（{fmtDate(device.last_seen_at)}）</p>)}
+            </HealthIssue>
+            <HealthIssue title="連續推播失敗" count={failingDevices.length} tone="rose">
+              {failingDevices.map(device => <p key={device.id}>{nameByUser.get(String(device.user_id)) || '未知帳號'} · {device.device_name || '瀏覽器裝置'}（{device.failure_count} 次）</p>)}
+            </HealthIssue>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+          <div className="border-b border-zinc-100 px-4 py-3">
+            <h2 className="font-bold text-zinc-900">排程執行健檢</h2>
+            <p className="text-xs text-zinc-500">排程延遲時會自動補送；失敗會通知總公司系統管理員。</p>
+          </div>
+          <div className="divide-y divide-zinc-100">
+            {scheduleRows.map(row => {
+              const run = latestRunByKey.get(row.key)
+              return <div key={row.key} className="grid gap-2 px-4 py-3 sm:grid-cols-[1.3fr_1fr_1fr] sm:items-center">
+                <div><p className="text-sm font-bold text-zinc-900">{row.label}</p><p className="text-xs text-zinc-500">設定時間 {row.time}</p></div>
+                <div><p className="text-[10px] font-bold text-zinc-400">上次執行</p><p className="text-xs text-zinc-700">{run ? `${fmtDate(run.started_at)} · ${run.status === 'succeeded' ? '成功' : run.status === 'failed' ? '失敗' : '執行中'}` : '尚無紀錄'}</p></div>
+                <div><p className="text-[10px] font-bold text-zinc-400">下次執行／上次成果</p><p className="text-xs text-zinc-700">{fmtDate(nextScheduledPushInstant(row.time).toISOString())} · 成功 {run?.delivered_count ?? 0}/{run?.target_device_count ?? 0} 台</p></div>
+                {run?.error_message && <p className="text-xs text-rose-700 sm:col-span-3">失敗原因：{run.error_message}</p>}
+              </div>
+            })}
+          </div>
+        </section>
 
         <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
           <div className="border-b border-zinc-100 px-4 py-3">
