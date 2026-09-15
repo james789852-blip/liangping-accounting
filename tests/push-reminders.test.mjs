@@ -101,6 +101,17 @@ test('推播管理頁顯示裝置未綁定、久未連線、失敗與各單位�
   assert.doesNotMatch(pushAdminPage, /hasAnyHQPermission\(account\)/)
 })
 
+test('已綁定裝置依總公司、各店面與各央廚分組並可展開', () => {
+  assert.match(pushAdminPage, /const deviceGroups = \[/)
+  assert.match(pushAdminPage, /resolvePrimaryStoreId\(account, activeStoreIds\)/)
+  assert.match(pushAdminPage, /label: '總公司', Icon: Building2/)
+  assert.match(pushAdminPage, /label: '店面', Icon: StoreIcon/)
+  assert.match(pushAdminPage, /label: '央廚', Icon: ChefHat/)
+  assert.match(pushAdminPage, /<details key=\{group\.key\}/)
+  assert.match(pushAdminPage, /\{group\.label\}/)
+  assert.match(pushAdminPage, /\{group\.devices\.length\} 台・點選展開/)
+})
+
 test('非總公司帳號不保留隱藏的總公司管理權限', () => {
   assert.match(userActions, /if \(!nextIsHQ\) clearHQPermissions\(patch\)/)
   assert.match(permissionCleanupMigration, /where coalesce\(is_hq, false\) = false/)

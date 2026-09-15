@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import type { ReactNode } from 'react'
-import { BellRing, CheckCircle2, Clock3, Smartphone, TriangleAlert, XCircle } from 'lucide-react'
+import { BellRing, Building2, CheckCircle2, ChefHat, Clock3, Smartphone, Store as StoreIcon, TriangleAlert, XCircle } from 'lucide-react'
 import { getAuthedUser } from '@/lib/authed-user'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -11,6 +11,7 @@ import { getPushScheduleSettings } from '@/lib/push-schedule-settings'
 import { nextScheduledPushInstant } from '@/lib/push-schedule-runs'
 import { isPushDeviceStale } from '@/lib/push-device-health'
 import { resolvePrimaryStoreId } from '@/lib/user-primary-store'
+import { sortStores } from '@/lib/store-order'
 
 export const dynamic = 'force-dynamic'
 
@@ -100,6 +101,35 @@ export default async function PushNotificationsPage() {
     if (assigned.some(unit => unit?.type === '央廚')) healthGroups[1].profiles.push(account)
     else if (assigned.some(unit => unit?.type !== '央廚')) healthGroups[0].profiles.push(account)
   }
+  const profileByUser = new Map((profiles ?? []).map(item => [String(item.user_id), item]))
+  const orderedStores = sortStores(stores ?? [])
+  const deviceGroups = [
+    { key: 'hq', label: '總公司', section: 'hq' as const, devices: [] as NonNullable<typeof devices> },
+    ...orderedStores.map(store => ({
+      key: String(store.id),
+      label: String(store.name),
+      section: store.type === '央廚' ? 'ck' as const : 'store' as const,
+      devices: [] as NonNullable<typeof devices>,
+    })),
+    { key: 'unassigned', label: '未確認歸屬', section: 'unassigned' as const, devices: [] as NonNullable<typeof devices> },
+  ]
+  const deviceGroupByKey = new Map(deviceGroups.map(group => [group.key, group]))
+  for (const device of devices ?? []) {
+    const account = profileByUser.get(String(device.user_id))
+    let groupKey = 'unassigned'
+    if (account?.is_hq === true || isBoss(account)) {
+      groupKey = 'hq'
+    } else if (account) {
+      groupKey = resolvePrimaryStoreId(account, activeStoreIds) ?? 'unassigned'
+    }
+    deviceGroupByKey.get(groupKey)?.devices.push(device)
+  }
+  const deviceSections = [
+    { key: 'hq', label: '總公司', Icon: Building2, groups: deviceGroups.filter(group => group.section === 'hq' && group.devices.length > 0) },
+    { key: 'store', label: '店面', Icon: StoreIcon, groups: deviceGroups.filter(group => group.section === 'store' && group.devices.length > 0) },
+    { key: 'ck', label: '央廚', Icon: ChefHat, groups: deviceGroups.filter(group => group.section === 'ck' && group.devices.length > 0) },
+    { key: 'unassigned', label: '未確認歸屬', Icon: TriangleAlert, groups: deviceGroups.filter(group => group.section === 'unassigned' && group.devices.length > 0) },
+  ].filter(section => section.groups.length > 0)
   const staleDevices = (devices ?? []).filter(device => isPushDeviceStale(device.last_seen_at))
   const failingDevices = (devices ?? []).filter(device => Number(device.failure_count) > 0)
   const latestRunByKey = new Map<string, NonNullable<typeof scheduleRuns>[number]>()
@@ -188,20 +218,45 @@ export default async function PushNotificationsPage() {
         <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
           <div className="border-b border-zinc-100 px-4 py-3">
             <h2 className="font-bold text-zinc-900">已綁定裝置</h2>
-            <p className="text-xs text-zinc-500">共 {devices?.length ?? 0} 台；可個別解除錯誤或已換人的裝置</p>
+            <p className="text-xs text-zinc-500">共 {devices?.length ?? 0} 台；依總公司、各店面與各央廚分類，點選單位可展開裝置</p>
           </div>
           <div className="divide-y divide-zinc-100">
-            {(devices ?? []).map(device => (
-              <div key={device.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><Smartphone className="h-4 w-4" /></span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-zinc-900">{device.device_name || '瀏覽器裝置'} · {nameByUser.get(String(device.user_id)) || '未知帳號'}</p>
-                  <p className="text-xs text-zinc-500">最近連線 {fmtDate(device.last_seen_at)} · 最近成功 {fmtDate(device.last_success_at)}</p>
-                  {device.failure_count > 0 && <p className="text-xs font-semibold text-rose-700">連續失敗 {device.failure_count} 次</p>}
+            {deviceSections.map(section => {
+              const sectionDeviceCount = section.groups.reduce((sum, group) => sum + group.devices.length, 0)
+              return (
+                <div key={section.key} className="px-4 py-4">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h3 className="flex items-center gap-2 text-sm font-bold text-zinc-900">
+                      <section.Icon className="h-4 w-4 text-blue-700" />{section.label}
+                    </h3>
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">{sectionDeviceCount} 台</span>
+                  </div>
+                  <div className="space-y-2">
+                    {section.groups.map(group => (
+                      <details key={group.key} className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-bold text-zinc-800">
+                          <span>{group.label}</span>
+                          <span className="text-xs font-semibold text-zinc-500">{group.devices.length} 台・點選展開</span>
+                        </summary>
+                        <div className="divide-y divide-zinc-100 border-t border-zinc-200 bg-white">
+                          {group.devices.map(device => (
+                            <div key={device.id} className="flex flex-wrap items-center gap-3 px-3 py-3">
+                              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><Smartphone className="h-4 w-4" /></span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-bold text-zinc-900">{device.device_name || '瀏覽器裝置'} · {nameByUser.get(String(device.user_id)) || '未知帳號'}</p>
+                                <p className="text-xs text-zinc-500">最近連線 {fmtDate(device.last_seen_at)} · 最近成功 {fmtDate(device.last_success_at)}</p>
+                                {device.failure_count > 0 && <p className="text-xs font-semibold text-rose-700">連續失敗 {device.failure_count} 次</p>}
+                              </div>
+                              <PushDeviceRemoveButton subscriptionId={device.id} />
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
                 </div>
-                <PushDeviceRemoveButton subscriptionId={device.id} />
-              </div>
-            ))}
+              )
+            })}
             {(devices ?? []).length === 0 && <p className="px-4 py-8 text-center text-sm text-zinc-400">目前沒有已綁定裝置</p>}
           </div>
         </section>
