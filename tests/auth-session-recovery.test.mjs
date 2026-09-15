@@ -46,7 +46,7 @@ test('導覽列不再一次預載所有受保護頁面', async () => {
   assert.match(reliableLink, /prefetch=\{false\}/)
 })
 
-test('今日結帳一律以完整頁面載入，避免行動裝置沿用失效的路由狀態', async () => {
+test('今日結帳使用站內切換但不做背景預載，避免 PWA 顯示完整頁面載入錯誤', async () => {
   const [managerNav, hqNav, dashboard, closingForm, reliableLink] = await Promise.all([
     read('components/manager/nav.tsx'),
     read('components/hq/nav.tsx'),
@@ -55,11 +55,12 @@ test('今日結帳一律以完整頁面載入，避免行動裝置沿用失效�
     read('components/reliable-navigation-link.tsx'),
   ])
 
-  assert.match(managerNav, /forceDocument=\{href === '\/manager\/closing'\}/)
-  assert.match(hqNav, /forceDocument=\{href === '\/manager\/closing'\}/)
-  assert.match(dashboard, /forceDocument=\{actionHref\.startsWith\('\/manager\/closing'\)\}/)
-  assert.match(closingForm, /window\.location\.assign\(`\/manager\/closing\?date=/)
-  assert.match(reliableLink, /data-full-page-navigation="true"/)
+  assert.doesNotMatch(managerNav, /forceDocument/)
+  assert.doesNotMatch(hqNav, /forceDocument/)
+  assert.doesNotMatch(dashboard, /forceDocument/)
+  assert.match(closingForm, /router\.push\(`\/manager\/closing\?date=/)
+  assert.doesNotMatch(reliableLink, /<a href=/)
+  assert.match(reliableLink, /prefetch=\{false\}/)
 })
 
 test('版面導覽不會與實際頁面同時發出登入跳轉', async () => {

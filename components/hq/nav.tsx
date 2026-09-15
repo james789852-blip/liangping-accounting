@@ -323,7 +323,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                 const resolvedHref = resolveHref(href)
                 const showBadge = showPendingBadge && href === '/hq/accounting' && pendingCount > 0
                 return (
-                  <ReliableNavigationLink key={href} href={resolvedHref} forceDocument={href === '/manager/closing'}
+                  <ReliableNavigationLink key={href} href={resolvedHref}
                     className={cn('flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-all duration-150 mb-0.5', !active && 'hover:bg-slate-50')}
                     style={active ? { backgroundColor: activeBg, color: activeColor, fontWeight: 600 } : { color: '#52525b' }}>
                     <Icon className="h-[18px] w-[18px] shrink-0" />
@@ -413,7 +413,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
             const active = pathname.startsWith(href)
             const resolvedHref = resolveHref(href)
             return (
-              <ReliableNavigationLink key={href} href={resolvedHref} forceDocument={href === '/manager/closing'}
+              <ReliableNavigationLink key={href} href={resolvedHref}
                 className="mobile-bottom-nav-item flex flex-col items-center gap-1 flex-1 py-1">
                 <Icon className="h-[22px] w-[22px]" style={{ color: active ? mobileActiveColor : '#a1a1aa' }} />
                 <span className="text-[11px] font-medium" style={{ color: active ? mobileActiveColor : '#a1a1aa' }}>
@@ -457,7 +457,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                     const active = isActive(href)
                     const resolvedHref = resolveHref(href)
                     return (
-                      <ReliableNavigationLink key={href} href={resolvedHref} forceDocument={href === '/manager/closing'}
+                      <ReliableNavigationLink key={href} href={resolvedHref}
                         className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium"
                         style={active ? { backgroundColor: activeBg, color: activeColor, fontWeight: 600 } : { color: '#52525b' }}>
                         <Icon className="h-5 w-5 shrink-0" />

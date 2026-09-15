@@ -153,7 +153,7 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
             const active = pathname.startsWith(href)
             const resolvedHref = resolveHref(href)
             return (
-              <ReliableNavigationLink key={href} href={resolvedHref} forceDocument={href === '/manager/closing'}
+              <ReliableNavigationLink key={href} href={resolvedHref}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-all duration-150',
                   active ? 'font-semibold' : 'hover:bg-slate-50'
@@ -236,7 +236,7 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
             const active = pathname.startsWith(href)
             const resolvedHref = resolveHref(href)
             return (
-              <ReliableNavigationLink key={href} href={resolvedHref} forceDocument={href === '/manager/closing'} className="mobile-bottom-nav-item flex flex-col items-center gap-1 flex-1 py-1">
+              <ReliableNavigationLink key={href} href={resolvedHref} className="mobile-bottom-nav-item flex flex-col items-center gap-1 flex-1 py-1">
                 <Icon className="h-[22px] w-[22px]" style={{ color: active ? '#D97706' : '#a1a1aa' }} />
                 <span className="text-[11px] font-medium" style={{ color: active ? '#D97706' : '#a1a1aa' }}>
                   {label}

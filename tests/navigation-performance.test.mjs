@@ -62,7 +62,7 @@ test('央廚帳目中心批次預載當日完整明細，切換央廚不再等�
   assert.doesNotMatch(action, /createClient\(\)/)
 })
 
-test('一般常用日期與清除操作維持站內切換，結帳日期則使用可靠的完整載入', async () => {
+test('常用日期與清除操作皆使用站內切換，不觸發 PWA 完整重載畫面', async () => {
   const [ckPage, historyPage, ckForm, closingForm] = await Promise.all([
     read('app/hq/ck/page.tsx'),
     read('app/manager/history/page.tsx'),
@@ -70,13 +70,11 @@ test('一般常用日期與清除操作維持站內切換，結帳日期則使�
     read('components/manager/closing-form.tsx'),
   ])
 
-  for (const source of [ckPage, historyPage, ckForm]) {
+  for (const source of [ckPage, historyPage, ckForm, closingForm]) {
     assert.doesNotMatch(source, /<a href="\/(?:hq|manager)\//)
     assert.doesNotMatch(source, /<a href={`\/(?:hq|manager)\//)
   }
-
-  assert.match(closingForm, /data-full-page-navigation="true"/)
-  assert.match(closingForm, /window\.location\.assign\(`\/manager\/closing\?date=/)
+  assert.match(closingForm, /router\.push\(`\/manager\/closing\?date=/)
 })
 
 test('唯讀報表帳號依細分權限進入總公司，不需要取得 is_hq 寫入範圍', async () => {

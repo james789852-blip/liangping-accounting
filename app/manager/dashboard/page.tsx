@@ -362,7 +362,7 @@ export default async function ManagerDashboard() {
         <ReturnedAccountingAlert items={returnedClosings} entityLabel="店面帳目" />
 
         {/* ── 大 CTA 卡片 ── */}
-        <ReliableNavigationLink href={actionHref} forceDocument={actionHref.startsWith('/manager/closing')}>
+        <ReliableNavigationLink href={actionHref}>
           <div className="rounded-3xl p-5 sm:p-8 text-white mb-5 relative overflow-hidden cursor-pointer transition-all hover:-translate-y-0.5"
             style={{
               background: ctaGradient,
