@@ -43,7 +43,10 @@ export async function uploadToStorage(
   }
 
   const supabase = createAdminClient()
-  const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true })
+  const { error } = await supabase.storage.from(bucket).upload(path, file, {
+    upsert: true,
+    ...(bucket === 'excel-templates' ? {} : { cacheControl: '31536000' }),
+  })
   if (error) return { error: error.message }
 
   const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(path)

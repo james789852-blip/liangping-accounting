@@ -38,7 +38,11 @@ export default function SectionPhotoGrid({ storeId, photos, onChange, maxPhotos 
         const file = await compressImage(rawFile)
         const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
         const path = `${storeId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
-        const { error } = await supabase.storage.from('meeting-reports').upload(path, file, { upsert: false })
+        const { error } = await supabase.storage.from('meeting-reports').upload(path, file, {
+          upsert: false,
+          // 路徑包含時間戳與隨機碼，不會覆寫，可安全長期快取。
+          cacheControl: '31536000',
+        })
         if (error) {
           toast.error(`上傳失敗：${error.message}`)
           continue

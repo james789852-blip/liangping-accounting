@@ -78,7 +78,11 @@ export async function uploadClientPhoto({
   const supabase = createClient()
   const { error } = await supabase.storage
     .from(bucket)
-    .uploadToSignedUrl(uploadPath, signed.token, file, { contentType })
+    .uploadToSignedUrl(uploadPath, signed.token, file, {
+      contentType,
+      // 照片路徑包含 UUID／時間戳且不覆寫，可安全讓瀏覽器與 CDN 長期快取。
+      cacheControl: '31536000',
+    })
   if (error) throw new Error(error.message || '照片傳送失敗，請檢查網路後再試')
 
   const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(uploadPath)

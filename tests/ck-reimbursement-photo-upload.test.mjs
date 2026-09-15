@@ -11,7 +11,7 @@ test('補款照片會先壓縮並以簽名網址直接上傳，不再把原圖�
   assert.match(source, /await uploadClientPhoto\(\{/)
   assert.match(uploader, /await compressImage\(rawFile\)/)
   assert.match(uploader, /await createSignedUploadUrl\(bucket, uploadPath\)/)
-  assert.match(uploader, /\.uploadToSignedUrl\(uploadPath, signed\.token, file, \{ contentType \}\)/)
+  assert.match(uploader, /\.uploadToSignedUrl\(uploadPath, signed\.token, file, \{[\s\S]*contentType,[\s\S]*cacheControl: '31536000'/)
   assert.doesNotMatch(source, /uploadToStorage\(formData, 'receipts', path\)/)
 })
 

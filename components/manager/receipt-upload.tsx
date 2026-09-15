@@ -165,7 +165,10 @@ export default function ReceiptUpload({ storeId, today, mappings, onSaved, onCan
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`
       const path = storePhotoPath(storeId, today, 'receipts', `receipt-${uniqueId}.${ext}`)
-      const { error: upErr } = await supabase.storage.from('receipts').upload(path, file)
+      const { error: upErr } = await supabase.storage.from('receipts').upload(path, file, {
+        // 收據檔名使用 UUID，不會覆寫；重看照片時直接使用瀏覽器／CDN 快取。
+        cacheControl: '31536000',
+      })
       if (upErr) throw new Error(upErr.message)
 
       const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(path)

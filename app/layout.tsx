@@ -1,15 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { AppVersionGuard } from "@/components/app-version-guard";
 import { PWAShell } from "@/components/pwa-shell";
+import { SpeedInsights } from "@vercel/speed-insights/next";
+import "@fontsource-variable/noto-sans-tc";
 import "./globals.css";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "結帳系統",
@@ -44,12 +39,13 @@ export default function RootLayout({
     ?? "development";
 
   return (
-    <html lang="zh-Hant" className={`${inter.variable} h-full antialiased`}>
+    <html lang="zh-Hant" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         {children}
         <Toaster richColors position="top-right" />
         <AppVersionGuard currentVersion={appVersion} />
         <PWAShell />
+        <SpeedInsights />
       </body>
     </html>
   );
