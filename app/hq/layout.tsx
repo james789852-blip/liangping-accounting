@@ -36,7 +36,9 @@ export default function HQLayout({ children }: { children: React.ReactNode }) {
 
 async function HQNavigation() {
   const user = await getAuthedUser()
-  if (!user) redirect('/login')
+  // 登入失效時由實際頁面統一 redirect，避免 layout 與 page 同時
+  // 導向造成 App Router hydration / hooks 錯誤。
+  if (!user) return null
 
   const profile = await getCachedUserProfile(user.id)
 

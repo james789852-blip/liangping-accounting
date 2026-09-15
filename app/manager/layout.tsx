@@ -1,6 +1,5 @@
 import { getAuthedUser } from '@/lib/authed-user'
 import { Suspense } from 'react'
-import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import ManagerNav from '@/components/manager/nav'
 import HQNav from '@/components/hq/nav'
@@ -39,7 +38,9 @@ export default function ManagerLayout({ children }: { children: React.ReactNode 
 
 async function ManagerNavigation() {
   const user = await getAuthedUser()
-  if (!user) redirect('/login')
+  // 每個實際頁面負責唯一一次登入導向。若 layout 與 page 在平行
+  // Suspense 邊界同時 redirect，失效 session 會造成 React hooks 錯序。
+  if (!user) return null
 
   const profile = await getCachedUserProfile(user.id)
   // 只要帳號具有店家權限，就優先使用店長端；具總公司權限者仍可從導覽列返回後台。

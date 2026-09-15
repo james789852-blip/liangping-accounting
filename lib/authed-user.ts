@@ -12,7 +12,16 @@ import { getCachedUserProfile } from '@/lib/cached-queries'
 // 以 User 型別回傳，呼叫端無需更動。
 async function resolveAuthedUser(): Promise<User | null> {
   const supabase = await createClient()
-  const { data, error } = await supabase.auth.getClaims()
+  let claimsResult: Awaited<ReturnType<typeof supabase.auth.getClaims>>
+  try {
+    claimsResult = await supabase.auth.getClaims()
+  } catch {
+    // 過期、已使用或已撤銷的 refresh token 是可恢復的登入狀態，
+    // 不應往上拋出並觸發 Next.js 的整頁錯誤畫面。
+    return null
+  }
+
+  const { data, error } = claimsResult
   const claims = data?.claims
   if (error || !claims?.sub) return null
 

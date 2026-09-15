@@ -241,12 +241,6 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
     setTodayParam(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' }))
   }, [])
 
-  useEffect(() => {
-    for (const href of ['/hq/accounting', '/hq/accounting/documents', '/hq/dashboard', '/hq/item-mappings', '/manager/dashboard', '/manager/closing', '/manager/analytics', '/manager/meeting-report', '/manager/settings']) {
-      router.prefetch(href)
-    }
-  }, [router])
-
   return (
     <>
       {/* ── 桌機側欄 */}

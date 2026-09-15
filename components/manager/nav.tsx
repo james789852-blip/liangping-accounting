@@ -84,12 +84,6 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
     return href
   }
 
-  useEffect(() => {
-    for (const href of ['/manager/dashboard', '/manager/closing', '/manager/ck', '/manager/analytics', '/manager/meeting-report', '/manager/settings', '/manager/history']) {
-      router.prefetch(href)
-    }
-  }, [router])
-
   async function handleLogout() {
     await clearStoreSelectionOnLogout()
     await detachPushSubscriptionFromCurrentUser()
