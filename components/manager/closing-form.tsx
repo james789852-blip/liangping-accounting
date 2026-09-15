@@ -3916,8 +3916,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           setEditPhotoPreview(URL.createObjectURL(f))
         }} />
 
-      {/* Sticky header + stepper */}
-      <div className="bg-white sticky top-0 z-50" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+      {/* 手機隨內容捲動；桌面才固定標頭與步驟列。 */}
+      <div className="closing-form-header bg-white z-50 lg:sticky lg:top-0" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         {editConflict && (
           <div role="alert" className="px-4 py-3 flex items-center justify-between gap-3"
             style={{ background: '#FEF2F2', color: '#991B1B', borderBottom: '2px solid #FCA5A5' }}>
@@ -3971,33 +3971,35 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             </Link>
           </div>
         )}
-        <div className="px-5 py-2.5 flex items-center justify-between gap-3"
-          style={{
-            background: isEarlyMorningBusinessDate ? '#FFFBEB' : '#F8FAFC',
-            color: isEarlyMorningBusinessDate ? '#92400E' : '#334155',
-            borderBottom: '1px solid #f4f4f5',
-          }}>
-          <div className="flex items-start gap-2 min-w-0">
-            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: isEarlyMorningBusinessDate ? '#F59E0B' : '#64748B' }} />
-            <div className="min-w-0">
-              <p className="text-sm font-black leading-snug">
-                目前正在做：<span className="tabular-nums">{today}</span> 帳目
-              </p>
-              {isEarlyMorningBusinessDate && (
-                <p className="text-xs mt-0.5 leading-snug" style={{ color: '#b45309' }}>
-                  現在已是 {calendarToday ?? '隔日'} 凌晨，05:00 前系統仍視為前一日帳目。
-                </p>
-              )}
-            </div>
-          </div>
-          <span className="text-[11px] font-bold px-2 py-1 rounded-full shrink-0"
+        {!isBackfill && (
+          <div className="px-5 py-2.5 flex items-center justify-between gap-3"
             style={{
-              background: isEarlyMorningBusinessDate ? '#FED7AA' : '#E2E8F0',
-              color: isEarlyMorningBusinessDate ? '#9A3412' : '#475569',
+              background: isEarlyMorningBusinessDate ? '#FFFBEB' : '#F8FAFC',
+              color: isEarlyMorningBusinessDate ? '#92400E' : '#334155',
+              borderBottom: '1px solid #f4f4f5',
             }}>
-            {isEarlyMorningBusinessDate ? '凌晨跨日' : '日期確認'}
-          </span>
-        </div>
+            <div className="flex items-start gap-2 min-w-0">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: isEarlyMorningBusinessDate ? '#F59E0B' : '#64748B' }} />
+              <div className="min-w-0">
+                <p className="text-sm font-black leading-snug">
+                  目前正在做：<span className="tabular-nums">{today}</span> 帳目
+                </p>
+                {isEarlyMorningBusinessDate && (
+                  <p className="text-xs mt-0.5 leading-snug" style={{ color: '#b45309' }}>
+                    現在已是 {calendarToday ?? '隔日'} 凌晨，05:00 前系統仍視為前一日帳目。
+                  </p>
+                )}
+              </div>
+            </div>
+            <span className="text-[11px] font-bold px-2 py-1 rounded-full shrink-0"
+              style={{
+                background: isEarlyMorningBusinessDate ? '#FED7AA' : '#E2E8F0',
+                color: isEarlyMorningBusinessDate ? '#9A3412' : '#475569',
+              }}>
+              {isEarlyMorningBusinessDate ? '凌晨跨日' : '日期確認'}
+            </span>
+          </div>
+        )}
         <div className="px-5 py-3 flex items-center justify-between gap-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
           <div className="min-w-0">
             <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>每日結帳</p>

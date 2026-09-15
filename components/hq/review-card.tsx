@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useTransition } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image, FileText, AlertTriangle, Check, CheckCircle2, X, Camera, Loader2, ZoomIn } from 'lucide-react'
 import ReviewActions from './review-actions'
 import PhotoLightbox from './photo-lightbox'
@@ -372,19 +373,20 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
 
   return (
     <>
-    {lightboxIdx !== null && allPhotos.length > 0 && (
+    {lightboxIdx !== null && allPhotos.length > 0 && typeof document !== 'undefined' && createPortal(
       <PhotoLightbox
         photos={allPhotos}
         index={lightboxIdx}
         onClose={() => setLightboxIdx(null)}
         onPrev={() => setLightboxIdx(i => (i !== null && i > 0 ? i - 1 : i))}
         onNext={() => setLightboxIdx(i => (i !== null && i < allPhotos.length - 1 ? i + 1 : i))}
-      />
+      />,
+      document.body,
     )}
-    {reviewOpen && (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: 'rgba(9,9,11,0.72)' }}>
-        <div className="bg-white w-full min-h-0 sm:max-w-3xl sm:rounded-3xl overflow-hidden flex flex-col" style={{ maxHeight: '94dvh' }}>
-          <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #e4e4e7' }}>
+    {reviewOpen && typeof document !== 'undefined' && createPortal(
+      <div className="fixed inset-0 z-[90] flex items-stretch sm:items-center justify-center" style={{ background: 'rgba(9,9,11,0.72)' }}>
+        <div className="hq-review-dialog-panel bg-white w-full min-h-0 sm:max-w-3xl sm:rounded-3xl overflow-hidden flex flex-col">
+          <div className="hq-review-dialog-header px-4 py-3 flex shrink-0 items-center justify-between" style={{ borderBottom: '1px solid #e4e4e7' }}>
             <div>
               <p className="text-sm font-bold" style={{ color: '#18181b' }}>逐張核對 · {closing.stores?.name}</p>
               <p className="text-xs" style={{ color: '#71717a' }}>{allPhotos.length === 0 ? '本日沒有照片' : `${reviewIndex + 1} / ${allPhotos.length}　${currentPhoto?.label ?? ''}`}</p>
@@ -395,7 +397,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
             </button>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] grid sm:grid-cols-2 gap-4">
+          <div className="hq-review-dialog-scroll min-h-0 flex-1 overflow-y-auto p-4 grid sm:grid-cols-2 gap-4">
             <div
               className="group relative min-h-64 rounded-2xl overflow-hidden flex items-center justify-center"
               style={{ background: '#18181b', cursor: currentPhoto ? 'zoom-in' : 'default' }}
@@ -541,11 +543,6 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" disabled={reviewIndex === 0} onClick={() => setReviewIndex(i => Math.max(0, i - 1))} className="py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1" style={{ background: '#f4f4f5', color: reviewIndex === 0 ? '#d4d4d8' : '#52525b' }}><ChevronLeft className="h-4 w-4" />上一張</button>
-                <button type="button" disabled={reviewIndex >= allPhotos.length - 1} onClick={() => setReviewIndex(i => Math.min(allPhotos.length - 1, i + 1))} className="py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1" style={{ background: '#f4f4f5', color: reviewIndex >= allPhotos.length - 1 ? '#d4d4d8' : '#52525b' }}>下一張<ChevronRight className="h-4 w-4" /></button>
-              </div>
-
               {reviewComplete && issueEntries.length === 0 && (
                 <div className="rounded-2xl p-4 space-y-2" style={{ background: '#ecfdf5', border: '1px solid #6ee7b7' }}>
                   <p className="text-sm font-bold" style={{ color: '#065f46' }}>照片核對完成，最後確認結算</p>
@@ -574,8 +571,13 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
               )}
             </div>
           </div>
+          <div className="hq-review-dialog-footer shrink-0 grid grid-cols-2 gap-2 px-4 pt-2" style={{ borderTop: '1px solid #e4e4e7' }}>
+            <button type="button" disabled={reviewIndex === 0} onClick={() => setReviewIndex(i => Math.max(0, i - 1))} className="py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1" style={{ background: '#f4f4f5', color: reviewIndex === 0 ? '#d4d4d8' : '#52525b' }}><ChevronLeft className="h-4 w-4" />上一張</button>
+            <button type="button" disabled={reviewIndex >= allPhotos.length - 1} onClick={() => setReviewIndex(i => Math.min(allPhotos.length - 1, i + 1))} className="py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1" style={{ background: '#f4f4f5', color: reviewIndex >= allPhotos.length - 1 ? '#d4d4d8' : '#52525b' }}>下一張<ChevronRight className="h-4 w-4" /></button>
+          </div>
         </div>
-      </div>
+      </div>,
+      document.body,
     )}
     <div className="bg-white rounded-2xl overflow-hidden transition-colors"
       style={{

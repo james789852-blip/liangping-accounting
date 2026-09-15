@@ -14,6 +14,8 @@ const receiptsClient = fs.readFileSync(new URL('../components/manager/receipts-c
 const analyticsClient = fs.readFileSync(new URL('../app/manager/analytics/client.tsx', import.meta.url), 'utf8')
 const foodCostPreview = fs.readFileSync(new URL('../components/hq/food-cost-preview-client.tsx', import.meta.url), 'utf8')
 const nativeExport = fs.readFileSync(new URL('../components/hq/native-export-client.tsx', import.meta.url), 'utf8')
+const reviewCard = fs.readFileSync(new URL('../components/hq/review-card.tsx', import.meta.url), 'utf8')
+const notificationCenter = fs.readFileSync(new URL('../components/notification-center.tsx', import.meta.url), 'utf8')
 
 test('closing form constrains its page and content to the mobile viewport', () => {
   assert.match(closingForm, /closing-form-page min-h-full/)
@@ -43,6 +45,23 @@ test('manager and HQ shells share a mobile overflow safety boundary', () => {
   assert.match(hqLayout, /app-layout-root/)
   assert.match(hqLayout, /app-content-shell/)
   assert.match(globalCss, /\.app-content-shell :where\(\.grid\) > \* \{[\s\S]*min-width: 0/)
+})
+
+test('HQ mobile photo review escapes the page scroller and keeps pagination reachable', () => {
+  assert.match(reviewCard, /createPortal\(/)
+  assert.match(reviewCard, /document\.body/)
+  assert.match(reviewCard, /hq-review-dialog-panel/)
+  assert.match(reviewCard, /hq-review-dialog-footer shrink-0 grid grid-cols-2/)
+  assert.match(globalCss, /\.hq-review-dialog-panel \{[\s\S]*height: 100dvh[\s\S]*max-height: 100dvh/)
+  assert.match(globalCss, /\.hq-review-dialog-scroll \{[\s\S]*touch-action: pan-y/)
+  assert.match(globalCss, /\.hq-review-dialog-footer \{[\s\S]*safe-area-inset-bottom/)
+})
+
+test('manager closing keeps more mobile space for the active step', () => {
+  assert.match(closingForm, /closing-form-header bg-white z-50 lg:sticky lg:top-0/)
+  assert.doesNotMatch(closingForm, /bg-white sticky top-0 z-50/)
+  assert.match(closingForm, /\{!isBackfill && \(/)
+  assert.match(notificationCenter, /bottom-\[calc\(9\.75rem\+env\(safe-area-inset-bottom\)\)\]/)
 })
 
 test('high-density forms use shrinkable grid tracks and wide reports provide local scrolling', () => {
