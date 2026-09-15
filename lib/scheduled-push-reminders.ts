@@ -10,8 +10,9 @@ import {
   notifyStoreUsersOfReturnedReminder,
   notifyStoreUsersOfAccountingReminder,
 } from '@/lib/push-notifications'
+import { formatReminderDelay } from '@/lib/push-schedule'
 
-type AccountingReminderStage = '23:00' | '23:30'
+type AccountingReminderStage = 'first' | 'final'
 
 type ReminderResult = {
   eligible: number
@@ -40,6 +41,7 @@ async function sentReminderKeys(stage: string, businessDate?: string) {
 /** Remind active stores/central kitchens whose current business-day record is not submitted. */
 export async function sendAccountingSubmissionReminders(
   stage: AccountingReminderStage,
+  scheduledTime: string,
   businessDate = getBusinessDate(),
 ): Promise<ReminderResult> {
   const admin = createAdminClient()
@@ -87,7 +89,7 @@ export async function sendAccountingSubmissionReminders(
       eventType: 'push_reminder',
       severity: 'warn',
       storeId: store.id,
-      description: `系統於 ${stage} 提醒${store.kind === 'ck' ? '央廚' : '店面'}「${store.name}」送出 ${businessDate} 帳目`,
+      description: `系統於 ${scheduledTime} 提醒${store.kind === 'ck' ? '央廚' : '店面'}「${store.name}」送出 ${businessDate} 帳目`,
       metadata: {
         reminder_key: key,
         reminder_stage: `accounting-${stage}`,
@@ -100,11 +102,11 @@ export async function sendAccountingSubmissionReminders(
     })
   }
 
-  if (stage === '23:30' && pending.length > 0) {
+  if (stage === 'final' && pending.length > 0) {
     const storeNames = pending.slice(0, 5).map(store => store.name).join('、')
     const more = pending.length > 5 ? `等 ${pending.length} 間` : ''
     const escalation = await notifyReviewersOfEscalation({
-      title: '23:30 仍有帳目未送出',
+      title: `${scheduledTime} 仍有帳目未送出`,
       body: `${storeNames}${more}尚未送出帳目，請追蹤處理。`,
       url: '/hq/accounting',
       sourceKey: `hq-accounting-final-${businessDate}`,
@@ -117,8 +119,8 @@ export async function sendAccountingSubmissionReminders(
   return { eligible: pending.length, skippedAsAlreadySent, targetDevices, delivered }
 }
 
-/** Remind each still-pending reimbursement once at the next 17:00 run. */
-export async function sendCKReimbursementHandoffReminders(): Promise<ReminderResult> {
+/** Remind each still-pending reimbursement once at the configured Taiwan-time run. */
+export async function sendCKReimbursementHandoffReminders(scheduledTime: string): Promise<ReminderResult> {
   const admin = createAdminClient()
   const [{ data: records, error }, { data: activeCKStores, error: storeError }] = await Promise.all([
     admin
@@ -131,7 +133,7 @@ export async function sendCKReimbursementHandoffReminders(): Promise<ReminderRes
   ])
   if (error || storeError) throw new Error(`讀取待點交補款失敗：${(error || storeError)!.message}`)
 
-  const stage = 'ck-handoff-17:00'
+  const stage = 'ck-handoff-reminder'
   const alreadySent = await sentReminderKeys(stage)
   const activeCKStoreIds = new Set((activeCKStores ?? []).map(store => String(store.id)))
   const pending = (records ?? []).filter(record => activeCKStoreIds.has(String(record.ck_store_id)))
@@ -140,7 +142,7 @@ export async function sendCKReimbursementHandoffReminders(): Promise<ReminderRes
   let delivered = 0
   for (const record of pending) {
     const key = reminderKey([
-      'ck-handoff', '17:00', String(record.id),
+      'ck-handoff', 'reminder', String(record.id),
       String(record.hq_reimbursement_sent_at),
     ])
     if (alreadySent.has(key)) {
@@ -151,7 +153,7 @@ export async function sendCKReimbursementHandoffReminders(): Promise<ReminderRes
       storeId: String(record.ck_store_id),
       businessDate: String(record.business_date),
       recordId: String(record.id),
-      stage: '17:00',
+      stage: 'reminder',
     })
     targetDevices += result.total
     delivered += result.delivered
@@ -159,7 +161,7 @@ export async function sendCKReimbursementHandoffReminders(): Promise<ReminderRes
       eventType: 'push_reminder',
       severity: 'warn',
       storeId: String(record.ck_store_id),
-      description: `系統於 17:00 提醒央廚完成 ${record.business_date} 補款點交`,
+      description: `系統於 ${scheduledTime} 提醒央廚完成 ${record.business_date} 補款點交`,
       metadata: {
         reminder_key: key,
         reminder_stage: stage,
@@ -175,7 +177,7 @@ export async function sendCKReimbursementHandoffReminders(): Promise<ReminderRes
   if (pending.length > 0) {
     const escalation = await notifyReviewersOfEscalation({
       title: '央廚補款仍未點交',
-      body: `目前有 ${pending.length} 筆央廚補款在 17:00 後仍未點交，請追蹤處理。`,
+      body: `目前有 ${pending.length} 筆央廚補款在 ${scheduledTime} 後仍未點交，請追蹤處理。`,
       url: '/hq/accounting?tab=ck',
       sourceKey: `hq-ck-handoff-${pending.map(record => `${record.id}:${record.hq_reimbursement_sent_at}`).sort().join(',')}`,
       storeId: pending.length === 1 ? String(pending[0].ck_store_id) : undefined,
@@ -187,10 +189,11 @@ export async function sendCKReimbursementHandoffReminders(): Promise<ReminderRes
   return { eligible: pending.length, skippedAsAlreadySent, targetDevices, delivered }
 }
 
-/** Remind store users and HQ when a returned record remains unresolved for 60 minutes. */
-export async function sendReturnedAccountingReminders(): Promise<ReminderResult> {
+/** Remind store users and HQ when a returned record remains unresolved past the configured delay. */
+export async function sendReturnedAccountingReminders(delayMinutes: number): Promise<ReminderResult> {
   const admin = createAdminClient()
-  const cutoff = new Date(Date.now() - 60 * 60000).toISOString()
+  const cutoff = new Date(Date.now() - delayMinutes * 60000).toISOString()
+  const delayLabel = formatReminderDelay(delayMinutes)
   const [{ data: stores, error: storeError }, { data: closings, error: closingError }, { data: ckRecords, error: ckError }] = await Promise.all([
     admin.from('stores').select('id, name, type').eq('active', true),
     admin.from('daily_closings').select('id, store_id, business_date, updated_at').eq('status', 'disputed').lte('updated_at', cutoff),
@@ -209,8 +212,12 @@ export async function sendReturnedAccountingReminders(): Promise<ReminderResult>
       disputedAt: String(record.updated_at), kind: 'ck' as const,
     })),
   ].filter(record => activeStores.has(record.storeId))
-  const stage = 'returned-60m'
-  const alreadySent = await sentReminderKeys(stage)
+  const stage = 'returned-reminder'
+  const [currentReminderKeys, legacyReminderKeys] = await Promise.all([
+    sentReminderKeys(stage),
+    sentReminderKeys('returned-60m'),
+  ])
+  const alreadySent = new Set([...currentReminderKeys, ...legacyReminderKeys])
   let skippedAsAlreadySent = 0
   let targetDevices = 0
   let delivered = 0
@@ -228,6 +235,7 @@ export async function sendReturnedAccountingReminders(): Promise<ReminderResult>
       businessDate: record.businessDate,
       recordId: record.id,
       disputedAt: record.disputedAt,
+      delayMinutes,
     })
     targetDevices += result.total
     delivered += result.delivered
@@ -236,7 +244,7 @@ export async function sendReturnedAccountingReminders(): Promise<ReminderResult>
       eventType: 'push_reminder',
       severity: 'warn',
       storeId: record.storeId,
-      description: `系統提醒「${activeStores.get(record.storeId)}」修改退回超過 60 分鐘的 ${record.businessDate} 帳目`,
+      description: `系統提醒「${activeStores.get(record.storeId)}」修改退回超過 ${delayLabel} 的 ${record.businessDate} 帳目`,
       metadata: {
         reminder_key: key,
         reminder_stage: stage,
@@ -255,7 +263,7 @@ export async function sendReturnedAccountingReminders(): Promise<ReminderResult>
     const names = [...new Set(escalated.map(record => activeStores.get(record.storeId)))].slice(0, 5).join('、')
     const escalation = await notifyReviewersOfEscalation({
       title: '退回帳目仍待修改',
-      body: `${names}共有 ${escalated.length} 筆帳目退回超過 60 分鐘，請追蹤處理。`,
+      body: `${names}共有 ${escalated.length} 筆帳目退回超過 ${delayLabel}，請追蹤處理。`,
       url: '/hq/accounting',
       sourceKey: `hq-returned-${identity}`,
       storeId: escalated.length === 1 ? escalated[0].storeId : undefined,

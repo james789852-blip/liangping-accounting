@@ -4,6 +4,8 @@ import {
   sendReturnedAccountingReminders,
 } from '@/lib/scheduled-push-reminders'
 import { processPendingPushJobs } from '@/lib/push-notifications'
+import { getPushScheduleSettings } from '@/lib/push-schedule-settings'
+import { isPushScheduleDue } from '@/lib/push-schedule'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -19,19 +21,48 @@ export async function GET(
 
   try {
     const { kind } = await context.params
-    const result = kind === 'accounting-first'
-      ? await sendAccountingSubmissionReminders('23:00')
-      : kind === 'accounting-final'
-        ? await sendAccountingSubmissionReminders('23:30')
-        : kind === 'ck-handoff'
-          ? await sendCKReimbursementHandoffReminders()
-          : kind === 'returned'
-            ? await sendReturnedAccountingReminders()
-            : kind === 'delivery-retry'
-              ? await processPendingPushJobs(200)
-          : null
-    if (!result) return Response.json({ error: 'Unknown reminder kind' }, { status: 404 })
-    return Response.json({ success: true, kind, ...result, checkedAt: new Date().toISOString() })
+    if (kind === 'delivery-retry') {
+      const result = await processPendingPushJobs(200)
+      return Response.json({ success: true, kind, ...result, checkedAt: new Date().toISOString() })
+    }
+
+    const schedule = await getPushScheduleSettings()
+    if (kind === 'returned') {
+      const result = await sendReturnedAccountingReminders(schedule.returnedReminderMinutes)
+      return Response.json({ success: true, kind, ...result, checkedAt: new Date().toISOString() })
+    }
+    if (kind === 'scheduled') {
+      const checks = [
+        {
+          name: 'accounting-first',
+          time: schedule.accountingFirstTime,
+          run: () => sendAccountingSubmissionReminders('first', schedule.accountingFirstTime),
+        },
+        {
+          name: 'accounting-final',
+          time: schedule.accountingFinalTime,
+          run: () => sendAccountingSubmissionReminders('final', schedule.accountingFinalTime),
+        },
+        {
+          name: 'ck-handoff',
+          time: schedule.ckHandoffTime,
+          run: () => sendCKReimbursementHandoffReminders(schedule.ckHandoffTime),
+        },
+      ]
+      const due = checks.filter(check => isPushScheduleDue(check.time))
+      const results = Object.fromEntries(await Promise.all(
+        due.map(async check => [check.name, await check.run()] as const),
+      ))
+      return Response.json({
+        success: true,
+        kind,
+        due: due.map(check => ({ name: check.name, time: check.time })),
+        results,
+        checkedAt: new Date().toISOString(),
+      })
+    }
+
+    return Response.json({ error: 'Unknown reminder kind' }, { status: 404 })
   } catch (error) {
     console.error('[push-reminders] failed:', error)
     return Response.json({

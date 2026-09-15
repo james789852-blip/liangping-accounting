@@ -74,6 +74,7 @@ const EVENT_LABELS: Record<string, string> = {
   user_status_update: '管理人員狀態變更',
   user_delete: '刪除管理人員',
   push_reminder: '帳務推播提醒',
+  push_schedule_update: '推播時間設定',
 }
 
 const EVENT_COLORS: Record<string, string> = {
@@ -109,6 +110,7 @@ const EVENT_COLORS: Record<string, string> = {
   user_status_update: '#f59e0b',
   user_delete: '#ef4444',
   push_reminder: '#0ea5e9',
+  push_schedule_update: '#f59e0b',
 }
 
 const SEVERITY_LABELS: Record<AuditLog['severity'], string> = {

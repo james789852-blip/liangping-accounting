@@ -30,6 +30,7 @@ export type AuditEvent =
   | 'user_status_update'
   | 'user_delete'
   | 'push_reminder'
+  | 'push_schedule_update'
 
 interface LogAuditInput {
   eventType: AuditEvent

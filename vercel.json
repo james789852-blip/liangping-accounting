@@ -12,16 +12,8 @@
       "schedule": "*/5 * * * *"
     },
     {
-      "path": "/api/cron/push-reminders/ck-handoff",
-      "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/cron/push-reminders/accounting-first",
-      "schedule": "0 15 * * *"
-    },
-    {
-      "path": "/api/cron/push-reminders/accounting-final",
-      "schedule": "30 15 * * *"
+      "path": "/api/cron/push-reminders/scheduled",
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/push-reminders/returned",

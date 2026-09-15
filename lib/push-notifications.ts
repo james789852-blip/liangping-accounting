@@ -4,6 +4,7 @@ import webpush from 'web-push'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canReviewClosings, type PermissionProfile } from '@/lib/user-permissions'
 import { getBusinessDate } from '@/lib/business-date'
+import { formatReminderDelay } from '@/lib/push-schedule'
 
 type PushPayload = {
   title: string
@@ -415,7 +416,7 @@ export async function notifyStoreUsersOfAccountingReminder(input: {
   kind: 'store' | 'ck'
   storeId: string
   businessDate: string
-  stage: '23:00' | '23:30'
+  stage: 'first' | 'final'
   status?: string | null
 }) {
   const admin = createAdminClient()
@@ -426,7 +427,7 @@ export async function notifyStoreUsersOfAccountingReminder(input: {
   const pushEnabled = store?.push_notifications_enabled !== false && preferenceEnabled(store?.push_notification_preferences, 'accounting_reminder')
 
   const name = String(store?.name || (input.kind === 'ck' ? '央廚' : '店家'))
-  const isFinal = input.stage === '23:30'
+  const isFinal = input.stage === 'final'
   const wasReturned = input.status === 'disputed'
   return sendToUserIds(userIds, {
     title: isFinal ? '第二次提醒：帳目尚未送出' : '今晚帳目尚未送出',
@@ -446,7 +447,7 @@ export async function notifyCKUsersOfReimbursementHandoff(input: {
   storeId: string
   businessDate: string
   recordId: string
-  stage: 'received' | '17:00'
+  stage: 'received' | 'reminder'
 }) {
   const admin = createAdminClient()
   const [{ data: store }, userIds] = await Promise.all([
@@ -456,7 +457,7 @@ export async function notifyCKUsersOfReimbursementHandoff(input: {
   const pushEnabled = store?.push_notifications_enabled !== false && preferenceEnabled(store?.push_notification_preferences, 'reimbursement_handoff')
 
   const name = String(store?.name || '央廚')
-  const isReminder = input.stage === '17:00'
+  const isReminder = input.stage === 'reminder'
   return sendToUserIds(userIds, {
     title: isReminder ? '補款尚未點交' : '總公司補款等待點交',
     body: isReminder
@@ -477,6 +478,7 @@ export async function notifyStoreUsersOfReturnedReminder(input: {
   businessDate: string
   recordId: string
   disputedAt: string
+  delayMinutes: number
 }) {
   const admin = createAdminClient()
   const [{ data: store }, userIds] = await Promise.all([
@@ -487,7 +489,7 @@ export async function notifyStoreUsersOfReturnedReminder(input: {
   const name = String(store?.name || (input.kind === 'ck' ? '央廚' : '店家'))
   return sendToUserIds(userIds, {
     title: '退回帳目仍待修改',
-    body: `${name} ${input.businessDate} 帳目退回已超過 60 分鐘，請修改後重新送出。`,
+    body: `${name} ${input.businessDate} 帳目退回已超過 ${formatReminderDelay(input.delayMinutes)}，請修改後重新送出。`,
     url: input.kind === 'ck'
       ? `/manager/ck?date=${input.businessDate}`
       : `/manager/history/${encodeURIComponent(input.recordId)}`,

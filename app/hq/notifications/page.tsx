@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canManageUsers } from '@/lib/user-permissions'
 import PushDeviceRemoveButton from '@/components/hq/push-device-remove-button'
+import PushScheduleSettingsForm from '@/components/hq/push-schedule-settings-form'
+import { getPushScheduleSettings } from '@/lib/push-schedule-settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,10 +30,11 @@ export default async function PushNotificationsPage() {
   if (!canManageUsers(profile)) return <div className="p-6 text-rose-700">權限不足，需要帳號管理權限</div>
 
   const admin = createAdminClient()
-  const [{ data: notifications }, { data: profiles }, { data: devices }] = await Promise.all([
+  const [{ data: notifications }, { data: profiles }, { data: devices }, scheduleSettings] = await Promise.all([
     admin.from('app_notifications').select('id, user_id, category, title, body, created_at, read_at, clicked_at').order('created_at', { ascending: false }).limit(100),
     admin.from('user_profiles').select('user_id, name, active'),
     admin.from('push_subscriptions').select('id, user_id, device_name, user_agent, last_seen_at, last_success_at, failure_count, created_at').order('last_seen_at', { ascending: false }),
+    getPushScheduleSettings(),
   ])
   const notificationIds = (notifications ?? []).map(item => item.id)
   const { data: jobs } = notificationIds.length
@@ -56,6 +59,8 @@ export default async function PushNotificationsPage() {
       </div>
 
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-5">
+        <PushScheduleSettingsForm initialSettings={scheduleSettings} />
+
         <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
           <div className="border-b border-zinc-100 px-4 py-3">
             <h2 className="font-bold text-zinc-900">已綁定裝置</h2>
