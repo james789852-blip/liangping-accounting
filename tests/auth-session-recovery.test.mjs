@@ -64,11 +64,13 @@ test('今日結帳使用站內切換但不做背景預載，避免 PWA 顯示完
 })
 
 test('進入今日結帳前會確認最新版，舊版直接切到最新部署', async () => {
-  const [layout, reliableLink, versionGuard, serviceWorker] = await Promise.all([
+  const [layout, reliableLink, versionGuard, serviceWorker, nextConfig, globalError] = await Promise.all([
     read('app/layout.tsx'),
     read('components/reliable-navigation-link.tsx'),
     read('components/app-version-guard.tsx'),
     read('public/sw.js'),
+    read('next.config.ts'),
+    read('app/global-error.tsx'),
   ])
 
   assert.match(layout, /data-app-version=\{appVersion\}/)
@@ -78,7 +80,15 @@ test('進入今日結帳前會確認最新版，舊版直接切到最新部署',
   assert.match(reliableLink, /router\.push\(hrefString\)/)
   assert.match(versionGuard, /SAFE_AUTO_REFRESH_PATHS/)
   assert.match(versionGuard, /VERSION_CHECK_INTERVAL_MS = 30 \* 1000/)
-  assert.match(serviceWorker, /client\.navigate\(url\.href\)/)
+  assert.match(nextConfig, /appNavFailHandling: true/)
+  assert.match(globalError, /unstable_retry/)
+  assert.match(globalError, /正在載入結帳資料/)
+  assert.doesNotMatch(globalError, /This page couldn.t load/)
+  const activateHandler = serviceWorker.slice(
+    serviceWorker.indexOf("addEventListener('activate'"),
+    serviceWorker.indexOf("addEventListener('push'"),
+  )
+  assert.doesNotMatch(activateHandler, /client\.navigate/)
   assert.doesNotMatch(serviceWorker, /addEventListener\(['"]fetch['"]/)
 })
 

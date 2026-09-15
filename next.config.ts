@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
   // 針對 barrel 套件做按需引用，縮小 client bundle 並加快 dev 編譯。
   // lucide-react 被 80+ 檔案引用，最有感。
   experimental: {
+    // 導覽期間若遇到暫時性的 Client Component / RSC 錯誤，直接改用
+    // 完整頁面導航，不先顯示 Next.js 的全域英文錯誤畫面。
+    appNavFailHandling: true,
     // 使用者短時間返回剛看過的動態頁面時沿用 Router Cache；
     // 儲存／送出後既有的 router.refresh 與 revalidatePath 仍會取得最新資料。
     staleTimes: {

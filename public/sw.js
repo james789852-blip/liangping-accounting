@@ -11,19 +11,7 @@ self.addEventListener('activate', event => {
         keys.filter(key => key.startsWith('lp-')).map(key => caches.delete(key))
       )),
       self.clients.claim(),
-    ]).then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
-      .then(windowClients => Promise.all(windowClients.map(client => {
-        const url = new URL(client.url)
-        const safeToRefresh = url.pathname === '/'
-          || url.pathname === '/login'
-          || url.pathname === '/manager/dashboard'
-          || url.pathname === '/manager/summary'
-          || url.pathname === '/manager/receipts'
-
-        if (!safeToRefresh) return null
-        url.searchParams.set('__app_update', Date.now().toString())
-        return client.navigate(url.href).catch(() => null)
-      })))
+    ])
   )
 })
 
