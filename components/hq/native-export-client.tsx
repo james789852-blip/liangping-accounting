@@ -143,8 +143,8 @@ export default function NativeExportClient({ stores }: { stores: Store[] }) {
             {stats.vendorBreakdown.length > 0 && (
               <div>
                 <p className="text-xs font-semibold mb-1.5" style={{ color: '#a1a1aa' }}>廠商分類明細</p>
-                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
-                  <table className="w-full text-xs">
+                <div className="rounded-xl overflow-x-auto" style={{ border: '1px solid #f4f4f5' }}>
+                  <table className="w-full min-w-[560px] text-xs">
                     <thead style={{ background: '#fafafa' }}>
                       <tr>
                         <th className="px-3 py-2 text-left" style={{ color: '#71717a', fontWeight: 600 }}>廠商</th>

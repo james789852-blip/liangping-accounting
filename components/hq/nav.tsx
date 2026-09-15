@@ -359,11 +359,11 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
       </aside>
 
       {/* ── 手機頂部 */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white flex items-center px-4 gap-2"
+      <header className="hq-mobile-header lg:hidden fixed top-0 left-0 right-0 z-40 bg-white flex items-center px-4 gap-2"
         style={{ height: '56px', borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
         <img src="/icon-192.png" alt="logo" className="h-8 w-8 rounded-[8px] object-cover shrink-0" />
         {/* 中間標題區，flex-1 + min-w-0 確保可截斷 */}
-        <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
+        <div className="hq-mobile-header-title flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
           {isManagerPath && canAccessHQ ? (
             <>
               <Link href={hqHomeHref} className="text-xs font-medium shrink-0 transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>總公司</Link>
@@ -383,7 +383,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           )}
         </div>
         {/* 右側操作區，shrink-0 不壓縮 */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="hq-mobile-actions flex items-center gap-2 shrink-0">
           <a
             href={HR_SYSTEM_URL}
             target="_blank"
@@ -406,7 +406,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               總公司
             </Link>
           )}
-          <button onClick={handleLogout} className="h-8 w-8 flex items-center justify-center rounded-lg transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>
+          <button onClick={handleLogout} className="hq-mobile-logout h-8 w-8 flex items-center justify-center rounded-lg transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>
             <LogOut className="h-4 w-4" />
           </button>
         </div>

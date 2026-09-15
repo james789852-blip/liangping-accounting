@@ -227,7 +227,7 @@ export default function CashCountForm({
           <div className="px-4 pt-4 pb-2">
             <p className="text-sm font-semibold" style={{ color: '#18181b' }}>逐項清點</p>
             <div className="grid mt-2 text-[10px] font-semibold uppercase tracking-wide"
-              style={{ gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px', color: '#a1a1aa' }}>
+              style={{ gridTemplateColumns: '3.5rem minmax(0, 1fr) minmax(0, 1fr) 3.5rem', gap: '0 8px', color: '#a1a1aa' }}>
               <span />
               <span className="text-center">張 / 枚</span>
               <span className="text-center">整筆金額</span>
@@ -241,7 +241,7 @@ export default function CashCountForm({
               const lumpVal  = values[lumpKey]  || 0
               const subtotal = countVal * unit + lumpVal
               return (
-                <div key={countKey} style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px', alignItems: 'center' }}>
+                <div key={countKey} style={{ display: 'grid', gridTemplateColumns: '3.5rem minmax(0, 1fr) minmax(0, 1fr) 3.5rem', gap: '0 8px', alignItems: 'center' }}>
                   <span className="text-xs shrink-0" style={{ color: '#52525b' }}>{label}</span>
                   <div className="flex items-center gap-1">
                     <NumInput value={countVal} onChange={v => set(countKey, v)}

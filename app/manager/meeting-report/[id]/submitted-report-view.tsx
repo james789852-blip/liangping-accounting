@@ -148,7 +148,7 @@ export default function SubmittedReportView({
           </div>
           <div className="mt-5">
             <Subheading title="廠商供貨品質及問題" count={report.vendor_issues.length} />
-            {report.vendor_issues.length ? <div className="mt-3 overflow-hidden rounded-2xl border border-zinc-200"><table className="w-full text-sm"><thead className="bg-zinc-50 text-zinc-500"><tr><th className="p-3 text-left">廠商</th><th className="p-3 text-left">品項</th><th className="p-3 text-left">問題</th><th className="p-3 text-left">狀態</th></tr></thead><tbody>{report.vendor_issues.map(issue => <tr key={issue.id} className="border-t border-zinc-100"><td className="p-3 font-bold">{issue.vendor || '—'}</td><td className="p-3">{issue.item || '—'}</td><td className="p-3">{issue.issue || '—'}</td><td className="p-3"><StatusPill text={issue.status} /></td></tr>)}</tbody></table></div> : <Empty text="本期無供貨問題" />}
+            {report.vendor_issues.length ? <div className="mt-3 overflow-x-auto rounded-2xl border border-zinc-200"><table className="w-full min-w-[520px] text-sm"><thead className="bg-zinc-50 text-zinc-500"><tr><th className="p-3 text-left">廠商</th><th className="p-3 text-left">品項</th><th className="p-3 text-left">問題</th><th className="p-3 text-left">狀態</th></tr></thead><tbody>{report.vendor_issues.map(issue => <tr key={issue.id} className="border-t border-zinc-100"><td className="p-3 font-bold">{issue.vendor || '—'}</td><td className="p-3">{issue.item || '—'}</td><td className="p-3">{issue.issue || '—'}</td><td className="p-3"><StatusPill text={issue.status} /></td></tr>)}</tbody></table></div> : <Empty text="本期無供貨問題" />}
             <PhotoStrip photos={report.product_quality_photos} />
           </div>
         </ReportSection>

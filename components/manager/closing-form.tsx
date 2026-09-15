@@ -944,7 +944,7 @@ function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo,
         <span style={{ fontWeight: 600, fontSize: '14px', color: '#18181b' }}>{name}</span>
         {hint && <span style={{ fontSize: '11px', color: '#a1a1aa' }}>{hint}</span>}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: hidePhoto ? '1fr' : '1fr 80px', gap: '10px', alignItems: 'center' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: hidePhoto ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 80px', gap: '10px', alignItems: 'center', minWidth: 0, maxWidth: '100%' }}>
         <input type="number" {...(allowNegative ? {} : { min: 0 })} inputMode="numeric" disabled={disabled}
           style={{ padding: '12px 14px', border: '1.5px solid #e4e4e7', borderRadius: '12px', fontSize: '20px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', background: disabled ? '#fafafa' : '#f8fafc', outline: 'none', color: value < 0 ? '#dc2626' : '#18181b', opacity: disabled ? 0.7 : 1, width: '100%', boxSizing: 'border-box' }}
           value={value || ''} placeholder="0"
@@ -4770,7 +4770,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     if (isEditing) {
                       return (
                         <div key={r.id} style={{
-                          display: 'grid', gridTemplateColumns: '80px 1fr', gap: '14px',
+                          display: 'grid', gridTemplateColumns: '80px minmax(0, 1fr)', gap: '14px', minWidth: 0, maxWidth: '100%',
                           background: '#f8f9ff', border: '1.5px solid #FDE68A',
                           borderRadius: '14px', padding: '14px',
                         }}>
@@ -5782,7 +5782,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
             <SectionCard icon={<Calculator className="h-4 w-4" />} title="現金清點" iconColor="#10b981">
               <div className="space-y-2.5">
-                <div style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '3.5rem minmax(0, 1fr) minmax(0, 1fr) 3.5rem', gap: '0 8px' }}>
                   <span />
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-center" style={{ color: '#a1a1aa' }}>張 / 枚</span>
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-center" style={{ color: '#a1a1aa' }}>整筆金額</span>
@@ -5793,7 +5793,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   const lumpVal = data[lumpKey] as number
                   const subtotal = countVal * unit + lumpVal
                   return (
-                    <div key={countKey} style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px', alignItems: 'center' }}>
+                    <div key={countKey} style={{ display: 'grid', gridTemplateColumns: '3.5rem minmax(0, 1fr) minmax(0, 1fr) 3.5rem', gap: '0 8px', alignItems: 'center' }}>
                       <span className="text-xs shrink-0" style={{ color: '#52525b' }}>{label}</span>
                       <div className="flex items-center gap-1">
                         <SInput value={countVal} onChange={v => set(countKey, parseInt(String(v)) || 0)} disabled={isLocked}
@@ -5861,7 +5861,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   <div className="space-y-2">
                     {largeCashExpenses.map(item => (
                       <div key={item.id} className="space-y-1.5">
-                        <div className="grid items-center gap-2" style={{ gridTemplateColumns: isLocked ? '1fr 7rem' : '1fr 7rem 2rem' }}>
+                        <div className="grid items-center gap-2" style={{ gridTemplateColumns: isLocked ? 'minmax(0, 1fr) 7rem' : 'minmax(0, 1fr) 7rem 2rem' }}>
                           <input
                             type="text"
                             value={item.description}
@@ -7157,7 +7157,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   <p className="text-3xl font-extrabold tabular-nums" style={{ color: '#92400E' }}>${fmt(store.petty_cash)}</p>
                 </div>
                 <div className="space-y-2.5 mb-4">
-                  <div style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '3.5rem minmax(0, 1fr) minmax(0, 1fr) 3.5rem', gap: '0 8px' }}>
                     <span />
                     <span className="text-[10px] font-semibold uppercase tracking-wide text-center" style={{ color: '#a1a1aa' }}>張 / 枚</span>
                     <span className="text-[10px] font-semibold uppercase tracking-wide text-center" style={{ color: '#a1a1aa' }}>整筆金額</span>
@@ -7168,7 +7168,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     const lumpVal = pettyLumps[lumpKey] || 0
                     const subtotal = countVal * unit + lumpVal
                     return (
-                      <div key={countKey} style={{ display: 'grid', gridTemplateColumns: '3.5rem 1fr 1fr 3.5rem', gap: '0 8px', alignItems: 'center' }}>
+                      <div key={countKey} style={{ display: 'grid', gridTemplateColumns: '3.5rem minmax(0, 1fr) minmax(0, 1fr) 3.5rem', gap: '0 8px', alignItems: 'center' }}>
                         <span className="text-xs shrink-0" style={{ color: '#52525b' }}>{label}</span>
                         <div className="flex items-center gap-1">
                           <SInput value={countVal} onChange={v => setPettyCounts(prev => ({ ...prev, [countKey]: parseInt(String(v)) || 0 }))}

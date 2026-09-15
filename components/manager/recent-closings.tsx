@@ -94,7 +94,7 @@ export default function RecentClosingsList({ closings: initial }: { closings: Cl
           <Link key={c.id} href={`/manager/history/${c.id}`}
             className="grid items-center rounded-xl px-4 py-3.5 transition-colors hover:bg-slate-50"
             style={{
-              gridTemplateColumns: '80px 1fr auto 110px 28px', gap: '14px', fontSize: '13px',
+              gridTemplateColumns: '80px minmax(0, 1fr) auto 110px 28px', gap: '14px', fontSize: '13px',
               background: isDisputed ? '#FEF2F2' : 'transparent',
               border: isDisputed ? '1.5px solid #FCA5A5' : '1px solid #f4f4f5',
               boxShadow: isDisputed ? '0 1px 6px rgba(244,63,94,0.18)' : 'none',

@@ -282,14 +282,14 @@ export default function FoodCostPreviewClient({
       </div>
 
       {/* 每日明細 */}
-      <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
+      <div className="bg-white rounded-2xl overflow-x-auto" style={{ border: '1px solid #f4f4f5' }}>
         <div className="px-4 py-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
           <p className="text-sm font-semibold" style={{ color: '#18181b' }}>每日明細</p>
           <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>點開任一天查看細項來源</p>
         </div>
 
         {/* 表頭 */}
-        <div className="grid px-4 py-2" style={{ gridTemplateColumns: '90px 60px 1fr 80px 80px 80px 90px', gap: '8px', borderBottom: '1px solid #f4f4f5', background: '#fafafa' }}>
+        <div className="grid min-w-[608px] px-4 py-2" style={{ gridTemplateColumns: '90px 60px minmax(0, 1fr) 80px 80px 80px 90px', gap: '8px', borderBottom: '1px solid #f4f4f5', background: '#fafafa' }}>
           {['日期', '星期', '營業額', '食材', '耗材', '雜項', '成本合計'].map(h => (
             <span key={h} style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600, textAlign: h === '日期' || h === '星期' ? 'left' : 'right' }}>{h}</span>
           ))}
@@ -304,8 +304,8 @@ export default function FoodCostPreviewClient({
             <div key={row.date} style={{ borderBottom: '1px solid #f4f4f5' }}>
               <button className="w-full text-left" onClick={() => setExpandedDate(isExpanded ? null : row.date)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                <div className="grid px-4 py-2.5 hover:bg-slate-50 transition-colors"
-                  style={{ gridTemplateColumns: '90px 60px 1fr 80px 80px 80px 90px', gap: '8px', alignItems: 'center' }}>
+                <div className="grid min-w-[608px] px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                  style={{ gridTemplateColumns: '90px 60px minmax(0, 1fr) 80px 80px 80px 90px', gap: '8px', alignItems: 'center' }}>
                   <div className="flex items-center gap-1.5">
                     {isExpanded
                       ? <ChevronDown className="h-3.5 w-3.5 shrink-0" style={{ color: '#F59E0B' }} />
@@ -430,7 +430,7 @@ export default function FoodCostPreviewClient({
         })}
 
         {/* 月合計列 */}
-        <div className="grid px-4 py-3" style={{ gridTemplateColumns: '90px 60px 1fr 80px 80px 80px 90px', gap: '8px', background: '#f0f4ff' }}>
+        <div className="grid min-w-[608px] px-4 py-3" style={{ gridTemplateColumns: '90px 60px minmax(0, 1fr) 80px 80px 80px 90px', gap: '8px', background: '#f0f4ff' }}>
           <span style={{ fontSize: '12px', fontWeight: 700, color: '#92400E', gridColumn: '1/3' }}>月合計</span>
           <span style={{ fontSize: '13px', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#92400E' }}>
             {monthlyRevenue > 0 ? `$${fmt(monthlyRevenue)}` : '—'}

@@ -798,7 +798,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
                 </div>
                 <div className="max-h-[280px] overflow-auto rounded-xl" style={{ border: '1px solid #f4f4f5' }}>
                   <div className="sticky top-0 z-10 grid items-center gap-2 px-3 py-2 text-[11px] font-bold"
-                    style={{ gridTemplateColumns: '78px 74px 1fr 80px', background: '#fafafa', color: '#71717a', borderBottom: '1px solid #e4e4e7' }}>
+                    style={{ gridTemplateColumns: '78px 74px minmax(0, 1fr) 80px', background: '#fafafa', color: '#71717a', borderBottom: '1px solid #e4e4e7' }}>
                     <span>日期</span>
                     <span className="text-center">狀態</span>
                     <span className="text-right">總營業額</span>
@@ -808,7 +808,7 @@ export default function AnalyticsClient({ storeId, storeName, storeType, ichefUb
                     const s = statusStyle(day.status)
                     return (
                       <div key={day.date} className="grid items-center gap-2 px-3 py-2.5 text-sm"
-                        style={{ gridTemplateColumns: '78px 74px 1fr 80px', borderBottom: '1px solid #f4f4f5' }}>
+                        style={{ gridTemplateColumns: '78px 74px minmax(0, 1fr) 80px', borderBottom: '1px solid #f4f4f5' }}>
                         <span className="font-semibold">{day.date.slice(5).replace('-', '/')}</span>
                         <span className="text-[11px] font-bold text-center rounded-full px-2 py-1"
                           style={{ background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>

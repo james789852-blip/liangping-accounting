@@ -120,6 +120,7 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
   }
   body {
@@ -130,6 +131,8 @@
   }
   html {
     @apply font-sans;
+    width: 100%;
+    max-width: 100%;
     touch-action: manipulation;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
@@ -170,6 +173,7 @@
   /* 原生日期、月份與下拉欄位在手機上有額外內距；避免欄位寬度超出卡片。 */
   input, select, textarea {
     box-sizing: border-box;
+    min-width: 0;
     max-width: 100%;
   }
   /* iOS 的 date input 會套用內建最小寬度；歷史搜尋欄位必須服從外層卡片。 */
@@ -182,6 +186,31 @@
     -webkit-appearance: none;
     appearance: none;
   }
+}
+
+/*
+ * 應用程式共用手機寬度護欄。
+ * flex/grid 子項的預設 min-width:auto 會被長文字或原生 select 撐出畫面；
+ * 讓主要內容與一般版面子項可縮小，真正需要橫向瀏覽的表格仍由自己的
+ * overflow-x-auto 容器負責捲動。
+ */
+.app-layout-root,
+.app-content-shell {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.app-content-shell {
+  overflow-x: hidden;
+}
+.app-content-shell > *,
+.app-content-shell :where(form, section, article, fieldset, .grid) {
+  min-width: 0;
+  max-width: 100%;
+}
+.app-content-shell :where(.grid) > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* 店長結帳表單的固定底部動作列：手機要避開底部 tab + 安全區，桌機固定底部 */
@@ -243,10 +272,18 @@ input[type="number"] {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
   overflow: visible;
 }
+.receipt-form-fields > * {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
 .receipt-field {
+  display: block;
   width: 100%;
   min-width: 0;
   max-width: 100%;
@@ -323,7 +360,7 @@ input[type="number"] {
     height: 160px !important;
   }
   .receipt-form-fields {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .receipt-item-toolbar {
     align-items: flex-start;
@@ -372,6 +409,22 @@ input[type="number"] {
 @media (max-width: 420px) {
   .manager-mobile-clock {
     display: none;
+  }
+  .hq-mobile-header {
+    gap: 6px !important;
+    padding-inline: 10px !important;
+  }
+  .hq-mobile-header-title {
+    gap: 4px !important;
+  }
+  .hq-mobile-actions {
+    gap: 4px !important;
+  }
+  .hq-mobile-actions > a {
+    padding-inline: 6px !important;
+  }
+  .hq-mobile-logout {
+    width: 30px !important;
   }
 }
 @media (max-width: 1023px) {

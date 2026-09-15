@@ -285,14 +285,14 @@ function ReceiptCard({ receipt, onDelete, onUpdated, mappings, closingStatus }: 
             <>
               <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>品項明細</p>
               <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #f4f4f5' }}>
-                <div className="grid px-3 py-1.5" style={{ gridTemplateColumns: '1fr 3rem 2.5rem 4rem 4rem', gap: '8px', background: '#fafafa', borderBottom: '1px solid #f4f4f5' }}>
+                <div className="grid px-3 py-1.5" style={{ gridTemplateColumns: 'minmax(0, 1fr) 3rem 2.5rem 4rem 4rem', gap: '8px', background: '#fafafa', borderBottom: '1px solid #f4f4f5' }}>
                   {['品項', '數量', '單位', '單價', '小計'].map(h => (
                     <span key={h} className="text-[10px] font-semibold" style={{ color: '#a1a1aa', textAlign: h === '品項' ? 'left' : 'right' }}>{h}</span>
                   ))}
                 </div>
                 {receipt.receipt_items.map((item, idx) => (
                   <div key={item.id} className="grid px-3 py-2" style={{
-                    gridTemplateColumns: '1fr 3rem 2.5rem 4rem 4rem', gap: '8px',
+                    gridTemplateColumns: 'minmax(0, 1fr) 3rem 2.5rem 4rem 4rem', gap: '8px',
                     borderBottom: idx !== receipt.receipt_items.length - 1 ? '1px solid #f4f4f5' : 'none'
                   }}>
                     <span className="text-xs font-medium" style={{ color: '#18181b' }}>
