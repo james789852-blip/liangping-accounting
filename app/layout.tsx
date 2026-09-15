@@ -39,7 +39,11 @@ export default function RootLayout({
     ?? "development";
 
   return (
-    <html lang="zh-Hant" className="h-full antialiased">
+    <html
+      lang="zh-Hant"
+      className="h-full antialiased"
+      data-app-version={appVersion}
+    >
       <body className="min-h-full flex flex-col">
         {children}
         <Toaster richColors position="top-right" />

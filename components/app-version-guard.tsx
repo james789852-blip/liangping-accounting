@@ -3,7 +3,20 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 
-const VERSION_CHECK_INTERVAL_MS = 2 * 60 * 1000
+const VERSION_CHECK_INTERVAL_MS = 30 * 1000
+const SAFE_AUTO_REFRESH_PATHS = new Set([
+  '/',
+  '/login',
+  '/manager/dashboard',
+  '/manager/summary',
+  '/manager/receipts',
+])
+
+function refreshToLatestVersion() {
+  const destination = new URL(window.location.href)
+  destination.searchParams.set('__app_update', Date.now().toString())
+  window.location.replace(destination.href)
+}
 
 export function AppVersionGuard({ currentVersion }: { currentVersion: string }) {
   const [updateAvailable, setUpdateAvailable] = useState(false)
@@ -14,7 +27,7 @@ export function AppVersionGuard({ currentVersion }: { currentVersion: string }) 
 
     const checkAppVersion = async () => {
       try {
-        const response = await fetch('/api/version', {
+        const response = await fetch(`/api/version?guard=${Date.now()}`, {
           cache: 'no-store',
           headers: { 'x-app-version-check': '1' },
         })
@@ -26,6 +39,15 @@ export function AppVersionGuard({ currentVersion }: { currentVersion: string }) 
           && data.version
           && data.version !== currentVersion
         ) {
+          const alreadyAttemptedUpdate = new URL(window.location.href)
+            .searchParams.has('__app_update')
+          if (
+            SAFE_AUTO_REFRESH_PATHS.has(window.location.pathname)
+            && !alreadyAttemptedUpdate
+          ) {
+            refreshToLatestVersion()
+            return
+          }
           setUpdateAvailable(true)
         }
       } catch {
@@ -96,7 +118,7 @@ export function AppVersionGuard({ currentVersion }: { currentVersion: string }) 
       </div>
       <button
         type="button"
-        onClick={() => window.location.reload()}
+        onClick={refreshToLatestVersion}
         className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-white active:bg-amber-600"
       >
         <RefreshCw className="h-4 w-4" />

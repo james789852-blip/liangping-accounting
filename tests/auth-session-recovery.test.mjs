@@ -63,6 +63,25 @@ test('今日結帳使用站內切換但不做背景預載，避免 PWA 顯示完
   assert.match(reliableLink, /prefetch=\{false\}/)
 })
 
+test('進入今日結帳前會確認最新版，舊版直接切到最新部署', async () => {
+  const [layout, reliableLink, versionGuard, serviceWorker] = await Promise.all([
+    read('app/layout.tsx'),
+    read('components/reliable-navigation-link.tsx'),
+    read('components/app-version-guard.tsx'),
+    read('public/sw.js'),
+  ])
+
+  assert.match(layout, /data-app-version=\{appVersion\}/)
+  assert.match(reliableLink, /mustUseLatestVersion/)
+  assert.match(reliableLink, /fetch\(`\/api\/version\?navigation=/)
+  assert.match(reliableLink, /window\.location\.replace\(destination\.href\)/)
+  assert.match(reliableLink, /router\.push\(hrefString\)/)
+  assert.match(versionGuard, /SAFE_AUTO_REFRESH_PATHS/)
+  assert.match(versionGuard, /VERSION_CHECK_INTERVAL_MS = 30 \* 1000/)
+  assert.match(serviceWorker, /client\.navigate\(url\.href\)/)
+  assert.doesNotMatch(serviceWorker, /addEventListener\(['"]fetch['"]/)
+})
+
 test('版面導覽不會與實際頁面同時發出登入跳轉', async () => {
   const [managerLayout, hqLayout] = await Promise.all([
     read('app/manager/layout.tsx'),
