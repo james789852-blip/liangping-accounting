@@ -25,18 +25,18 @@ test('全站提供 Android 安裝按鈕、iPhone 加入主畫面教學與斷線�
   assert.match(shellSource, /網路已恢復，可以繼續操作/)
 })
 
-test('Service Worker 不快取帳目頁面，斷線導覽改顯示安全備援頁', () => {
+test('Service Worker 僅保留推播，不攔截頁面與靜態資源載入', () => {
   const workerSource = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8')
-  const offlineSource = fs.readFileSync(new URL('../public/offline.html', import.meta.url), 'utf8')
 
-  assert.match(workerSource, /e\.request\.mode === 'navigate'/)
-  assert.match(workerSource, /getNavigationResponse\(e\.request\)/)
-  assert.match(workerSource, /attempt < 2/)
-  assert.match(workerSource, /cache: 'no-store'/)
-  assert.match(workerSource, /new Response\(/)
-  assert.match(workerSource, /PRECACHE_URLS/)
-  assert.match(offlineSource, /離線時無法送出帳目或照片/)
-  assert.match(offlineSource, /重新連線/)
+  assert.doesNotMatch(workerSource, /addEventListener\('fetch'/)
+  assert.doesNotMatch(workerSource, /respondWith\(/)
+  assert.doesNotMatch(workerSource, /caches\.match\(/)
+  assert.doesNotMatch(workerSource, /caches\.open\(/)
+  assert.match(workerSource, /addEventListener\('push'/)
+  assert.match(workerSource, /addEventListener\('notificationclick'/)
+  assert.match(workerSource, /showNotification\(title/)
+  assert.match(workerSource, /client\.navigate\(destination\)/)
+  assert.match(workerSource, /key\.startsWith\('lp-'\)/)
 })
 
 test('手機底部選單固定於 visual viewport 並由單一內容容器捲動', () => {
