@@ -4,12 +4,13 @@ import { BellRing, CheckCircle2, Clock3, Smartphone, TriangleAlert, XCircle } fr
 import { getAuthedUser } from '@/lib/authed-user'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { canManageUsers, hasAnyHQPermission } from '@/lib/user-permissions'
+import { canManageUsers, isBoss } from '@/lib/user-permissions'
 import PushDeviceRemoveButton from '@/components/hq/push-device-remove-button'
 import PushScheduleSettingsForm from '@/components/hq/push-schedule-settings-form'
 import { getPushScheduleSettings } from '@/lib/push-schedule-settings'
 import { nextScheduledPushInstant } from '@/lib/push-schedule-runs'
 import { isPushDeviceStale } from '@/lib/push-device-health'
+import { resolvePrimaryStoreId } from '@/lib/user-primary-store'
 
 export const dynamic = 'force-dynamic'
 
@@ -81,15 +82,23 @@ export default async function PushNotificationsPage() {
     { key: 'ck', label: '央廚', profiles: [] as NonNullable<typeof profiles> },
     { key: 'hq', label: '總公司', profiles: [] as NonNullable<typeof profiles> },
   ]
+  const activeStoreIds = [...storeById.keys()]
   for (const account of profiles ?? []) {
     if (!account.active || account.push_notifications_enabled === false) continue
-    if (hasAnyHQPermission(account)) {
+    // 健檢依帳號的明確歸屬單位分類；殘留的隱藏權限不能改變人員身分。
+    if (account.is_hq === true || isBoss(account)) {
       healthGroups[2].profiles.push(account)
+      continue
+    }
+    const primaryStoreId = resolvePrimaryStoreId(account, activeStoreIds)
+    const primaryStore = primaryStoreId ? storeById.get(primaryStoreId) : null
+    if (primaryStore) {
+      healthGroups[primaryStore.type === '央廚' ? 1 : 0].profiles.push(account)
       continue
     }
     const assigned = ((account.store_ids ?? []) as string[]).map(id => storeById.get(String(id))).filter(Boolean)
     if (assigned.some(unit => unit?.type === '央廚')) healthGroups[1].profiles.push(account)
-    if (assigned.some(unit => unit?.type !== '央廚')) healthGroups[0].profiles.push(account)
+    else if (assigned.some(unit => unit?.type !== '央廚')) healthGroups[0].profiles.push(account)
   }
   const unboundProfiles = healthGroups.flatMap(group => group.profiles
     .filter(account => !(devicesByUser.get(String(account.user_id))?.length))

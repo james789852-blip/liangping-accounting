@@ -46,6 +46,25 @@ function readableUserCreateError(message: string) {
   return message
 }
 
+const HQ_PERMISSION_KEYS = [
+  'can_manage_users',
+  'can_manage_stores',
+  'can_manage_store_settings',
+  'can_manage_ck_settings',
+  'can_manage_items',
+  'can_manage_store_items',
+  'can_manage_ck_items',
+  'can_manage_store_receipts',
+  'can_manage_ck_receipts',
+  'can_manage_ck_prices',
+  'can_review_closings',
+  'can_export_reports',
+] as const
+
+function clearHQPermissions(patch: Record<string, unknown>) {
+  for (const key of HQ_PERMISSION_KEYS) patch[key] = false
+}
+
 function safeUserSnapshot(profile: Record<string, unknown> | null | undefined) {
   if (!profile) return null
   const allowed = [
@@ -99,6 +118,7 @@ export async function createUser(formData: {
 
   const systemRole = inferSystemRole(formData.title, formData.role)
   const isOwner = systemRole === '老闆'
+  const isHQAccount = isOwner || formData.is_hq === true
   const requestedPrimary = formData.is_hq ? null : (formData.primary_store_id ?? null)
   const storeIds = isOwner
     ? []
@@ -113,25 +133,25 @@ export async function createUser(formData: {
     employee_id: formData.employee_id ?? null,
     store_ids: storeIds,
     primary_store_id: primary,
-    is_hq: isOwner || formData.is_hq === true,
-    can_manage_users: isOwner ? true : (formData.can_manage_users ?? false),
-    can_manage_stores: isOwner ? true : ((formData.can_manage_store_settings ?? false) || (formData.can_manage_ck_settings ?? false) || (formData.can_manage_stores ?? false)),
-    can_manage_store_settings: isOwner ? true : (formData.can_manage_store_settings ?? formData.can_manage_stores ?? false),
-    can_manage_ck_settings: isOwner ? true : (formData.can_manage_ck_settings ?? formData.can_manage_stores ?? false),
-    can_manage_items: isOwner ? true : (
+    is_hq: isHQAccount,
+    can_manage_users: isHQAccount ? (isOwner || (formData.can_manage_users ?? false)) : false,
+    can_manage_stores: isHQAccount ? (isOwner || (formData.can_manage_store_settings ?? false) || (formData.can_manage_ck_settings ?? false) || (formData.can_manage_stores ?? false)) : false,
+    can_manage_store_settings: isHQAccount ? (isOwner || (formData.can_manage_store_settings ?? formData.can_manage_stores ?? false)) : false,
+    can_manage_ck_settings: isHQAccount ? (isOwner || (formData.can_manage_ck_settings ?? formData.can_manage_stores ?? false)) : false,
+    can_manage_items: isHQAccount ? (isOwner || (
       (formData.can_manage_store_items ?? false) ||
       (formData.can_manage_ck_items ?? false) ||
       (formData.can_manage_store_receipts ?? false) ||
       (formData.can_manage_ck_receipts ?? false) ||
       (formData.can_manage_items ?? false)
-    ),
-    can_manage_store_items: isOwner ? true : (formData.can_manage_store_items ?? formData.can_manage_items ?? false),
-    can_manage_ck_items: isOwner ? true : (formData.can_manage_ck_items ?? formData.can_manage_items ?? false),
-    can_manage_store_receipts: isOwner ? true : (formData.can_manage_store_receipts ?? formData.can_manage_items ?? false),
-    can_manage_ck_receipts: isOwner ? true : (formData.can_manage_ck_receipts ?? formData.can_manage_items ?? false),
-    can_manage_ck_prices: isOwner ? true : (formData.can_manage_ck_prices ?? false),
-    can_review_closings: isOwner ? true : (formData.can_review_closings ?? false),
-    can_export_reports: isOwner ? true : (formData.can_export_reports ?? false),
+    )) : false,
+    can_manage_store_items: isHQAccount ? (isOwner || (formData.can_manage_store_items ?? formData.can_manage_items ?? false)) : false,
+    can_manage_ck_items: isHQAccount ? (isOwner || (formData.can_manage_ck_items ?? formData.can_manage_items ?? false)) : false,
+    can_manage_store_receipts: isHQAccount ? (isOwner || (formData.can_manage_store_receipts ?? formData.can_manage_items ?? false)) : false,
+    can_manage_ck_receipts: isHQAccount ? (isOwner || (formData.can_manage_ck_receipts ?? formData.can_manage_items ?? false)) : false,
+    can_manage_ck_prices: isHQAccount ? (isOwner || (formData.can_manage_ck_prices ?? false)) : false,
+    can_review_closings: isHQAccount ? (isOwner || (formData.can_review_closings ?? false)) : false,
+    can_export_reports: isHQAccount ? (isOwner || (formData.can_export_reports ?? false)) : false,
     push_notifications_enabled: formData.push_notifications_enabled !== false,
     ...('push_notification_preferences' in formData ? { push_notification_preferences: formData.push_notification_preferences } : {}),
     active: true,
@@ -259,6 +279,15 @@ export async function updateUser(userId: string, formData: {
   if (formData.push_notifications_enabled !== undefined) patch.push_notifications_enabled = formData.push_notifications_enabled
   if (formData.push_notification_preferences !== undefined) patch.push_notification_preferences = formData.push_notification_preferences
   if (formData.active !== undefined) patch.active = formData.active
+
+  // 總公司權限只能附加在明確歸屬總公司的帳號上。舊資料可能殘留隱藏權限，
+  // 所以任何一次編輯都會同步正規化，避免店面／央廚帳號被誤判為總公司人員。
+  const nextRole = inferSystemRole(
+    formData.title ?? currentProfile.title,
+    formData.role ?? currentProfile.role,
+  )
+  const nextIsHQ = nextRole === '老闆' || (formData.is_hq ?? currentProfile.is_hq) === true
+  if (!nextIsHQ) clearHQPermissions(patch)
 
   const { error } = await admin
     .from('user_profiles')

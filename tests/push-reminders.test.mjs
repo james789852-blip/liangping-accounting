@@ -13,6 +13,8 @@ const scheduleMigration = fs.readFileSync(new URL('../supabase/migrations/072_pu
 const reliabilityMigration = fs.readFileSync(new URL('../supabase/migrations/074_push_reliability.sql', import.meta.url), 'utf8')
 const scheduleRuns = fs.readFileSync(new URL('../lib/push-schedule-runs.ts', import.meta.url), 'utf8')
 const pushAdminPage = fs.readFileSync(new URL('../app/hq/notifications/page.tsx', import.meta.url), 'utf8')
+const userActions = fs.readFileSync(new URL('../app/actions/users.ts', import.meta.url), 'utf8')
+const permissionCleanupMigration = fs.readFileSync(new URL('../supabase/migrations/076_normalize_non_hq_permissions.sql', import.meta.url), 'utf8')
 const vercelConfig = JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
 
 test('店面與央廚未送出帳目會依總公司設定時間各提醒一次', () => {
@@ -92,6 +94,15 @@ test('推播管理頁顯示裝置未綁定、久未連線、失敗與各單位�
   assert.match(pushAdminPage, /超過 7 天未連線/)
   assert.match(pushAdminPage, /連續推播失敗/)
   assert.match(pushAdminPage, /綁定完成率/)
+  assert.match(pushAdminPage, /account\.is_hq === true \|\| isBoss\(account\)/)
+  assert.match(pushAdminPage, /resolvePrimaryStoreId\(account, activeStoreIds\)/)
+  assert.doesNotMatch(pushAdminPage, /hasAnyHQPermission\(account\)/)
+})
+
+test('非總公司帳號不保留隱藏的總公司管理權限', () => {
+  assert.match(userActions, /if \(!nextIsHQ\) clearHQPermissions\(patch\)/)
+  assert.match(permissionCleanupMigration, /where coalesce\(is_hq, false\) = false/)
+  assert.match(permissionCleanupMigration, /can_manage_ck_settings = false/)
 })
 
 test('推播重試排程每五分鐘處理一次', () => {
