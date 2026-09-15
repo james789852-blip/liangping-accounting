@@ -3864,7 +3864,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   }
 
   return (
-    <div className="min-h-full" style={{ background: '#fafafa' }}>
+    <div className="closing-form-page min-h-full" style={{ background: '#fafafa' }}>
 
       {/* 照片 Lightbox */}
       {photoLightbox && (
@@ -4079,7 +4079,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
         )}
       </div>
 
-      <div className="max-w-xl mx-auto px-4 py-5 space-y-4 pb-32" style={{
+      <div className="closing-form-content max-w-xl mx-auto px-4 py-5 space-y-4 pb-32" style={{
         visibility: stepMounted ? 'visible' : 'hidden',
         pointerEvents: editConflict ? 'none' : 'auto',
         opacity: editConflict ? 0.65 : 1,
@@ -4466,12 +4466,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                           return (
                             <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', gap: '8px' }}>
+                              <div className="receipt-item-toolbar" style={{ marginBottom: '8px' }}>
                                 <div>
                                   <label style={{ fontSize: '14px', color: '#1e3a8a', fontWeight: 800 }}>品項下拉選擇 *</label>
                                   <p style={{ fontSize: '11px', color: '#2563eb', fontWeight: 600, marginTop: '2px' }}>請選擇對應品項。</p>
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div className="receipt-item-actions">
                                   {vendorGroups.length > 0 && (
                                     <select
                                       aria-label="指定廠商品項"
@@ -4957,9 +4957,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
                               return (
                                 <div style={{ gridColumn: '1/-1', borderTop: '1px solid #f4f4f5', paddingTop: '10px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                  <div className="receipt-item-toolbar" style={{ marginBottom: '8px' }}>
                                     <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 600 }}>品項 *</label>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div className="receipt-item-actions">
                                       {vendorGroups.length > 0 && (
                                         <select
                                           aria-label="指定廠商品項"

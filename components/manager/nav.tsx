@@ -208,7 +208,7 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
           </div>
         </div>
         {time && (
-          <div className="mx-2 text-right shrink-0">
+          <div className="manager-mobile-clock mx-2 text-right shrink-0">
             <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{date}</p>
             <p className="text-sm font-bold tabular-nums leading-tight" style={{ color: '#18181b' }}>{time}</p>
           </div>

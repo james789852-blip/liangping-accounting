@@ -265,6 +265,33 @@ input[type="number"] {
 .receipt-card-layout > * {
   min-width: 0;
 }
+.closing-form-page,
+.closing-form-content {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.closing-form-page {
+  overflow-x: clip;
+}
+.receipt-item-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.receipt-item-toolbar > * {
+  min-width: 0;
+}
+.receipt-item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
 .receipt-item-row {
   display: flex;
   gap: 6px;
@@ -298,12 +325,53 @@ input[type="number"] {
   .receipt-form-fields {
     grid-template-columns: 1fr;
   }
-  .receipt-item-row {
+  .receipt-item-toolbar {
+    align-items: flex-start;
     flex-wrap: wrap;
   }
-  .receipt-item-row > select,
-  .receipt-item-row > input {
-    flex: 1 1 100% !important;
+  .receipt-item-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .receipt-item-actions select {
+    width: min(100%, 180px);
+    max-width: 100% !important;
+  }
+  .receipt-item-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    align-items: start;
+  }
+  .receipt-item-row > .receipt-field {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    flex: none !important;
+  }
+  .receipt-item-row > div {
+    grid-column: 1;
+    width: 100%;
+    min-width: 0;
+  }
+  .receipt-item-row > div > input {
+    width: 100% !important;
+    min-height: 42px;
+  }
+  .receipt-item-row > button:last-child {
+    grid-column: 2;
+    grid-row: 2;
+    width: 44px;
+    min-width: 44px;
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+@media (max-width: 420px) {
+  .manager-mobile-clock {
+    display: none;
   }
 }
 @media (max-width: 1023px) {
