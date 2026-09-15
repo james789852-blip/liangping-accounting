@@ -6,7 +6,7 @@ import { X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Camera, Package, 
 import { toast } from 'sonner'
 import { verifyClosing, disputeClosing, deleteClosing } from '@/app/actions/closings'
 import SafePhotoImage from './safe-photo-image'
-import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
+import { getPreReservedExpenseDetails, getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 import { syncSingleReceiptItemAmount } from '@/lib/receipt-amount-consistency'
 
 interface Store { id: string; name: string; type?: string }
@@ -350,6 +350,7 @@ function ClosingCard({
   const adjustmentTotal = (closing.remittance_adjustments ?? []).reduce((s, item) => s + (Number(item.amount) || 0), 0)
   const totalReserved = (closing.reserve_items ?? []).reduce((s, item) => s + Math.max(0, Number(item.amount) || 0), 0)
   const preReservedExpenseTotal = getPreReservedExpenseTotal(closing.cash_counts)
+  const preReservedExpenseDetails = getPreReservedExpenseDetails(closing.cash_counts)
   const hasRemittanceChange = adjustmentTotal !== 0 || totalReserved > 0 || preReservedExpenseTotal > 0
   const remitToHQ = Number(closing.actual_remit ?? 0) + adjustmentTotal - totalReserved + preReservedExpenseTotal
 
@@ -434,7 +435,7 @@ function ClosingCard({
                 { label: '實際包進信封（現金清點）', val: closing.actual_remit ?? closing.expected_remit, color: '#18181b', bold: true },
                 ...(closing.remittance_adjustments ?? []).filter(adj => Number(adj.amount) !== 0).map(adj => ({ label: `　${adj.label || '匯款調整'}`, val: Number(adj.amount), color: Number(adj.amount) >= 0 ? '#047857' : '#2563eb' })),
                 ...(closing.reserve_items ?? []).map(item => ({ label: `　預留${item.reason || '款項'}`, val: -(Number(item.amount) || 0), color: '#c2410c' })),
-                ...(preReservedExpenseTotal > 0 ? [{ label: '　前幾日已預留支出加回', val: preReservedExpenseTotal, color: '#15803d' }] : []),
+                ...preReservedExpenseDetails.map(item => ({ label: `　${item.description}（前幾日預留款加回）`, val: item.amount, color: '#15803d' })),
                 ...(hasRemittanceChange ? [{ label: '實際應包回公司（調整／預留後）', val: remitToHQ, color: '#047857', bold: true }] : []),
               ].map(({ label, val, color, bold }, idx, arr) => (
                 <div key={idx} className="flex items-center justify-between px-3 py-2 text-xs"

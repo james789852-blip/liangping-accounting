@@ -11,6 +11,11 @@ export interface PreReservedExpenseHint {
   started_date?: string
 }
 
+export interface PreReservedExpenseDetail {
+  description: string
+  amount: number
+}
+
 interface PreReservedExpenseRow {
   description: string
   amount: number
@@ -102,20 +107,39 @@ export function getPreReservedExpenseRowAmount(value: unknown): number {
   return Math.min(amount, linkedAmount > 0 ? linkedAmount : amount)
 }
 
-export function getPreReservedExpenseTotal(value: unknown): number {
+export function getPreReservedExpenseDetails(value: unknown): PreReservedExpenseDetail[] {
   // Supabase 對一對一關聯可能回傳物件，手動查詢則可能是陣列；兩種格式都支援。
   if (value && typeof value === 'object' && !Array.isArray(value) && 'large_expenses' in value) {
-    return getPreReservedExpenseTotal((value as { large_expenses?: unknown }).large_expenses)
+    return getPreReservedExpenseDetails((value as { large_expenses?: unknown }).large_expenses)
   }
-  if (!Array.isArray(value)) return 0
-  let total = 0
-  let marked = 0
+  if (!Array.isArray(value)) return []
+
+  const totals = new Map<string, number>()
   for (const item of value) {
     if (!item || typeof item !== 'object') continue
-    const row = item as { amount?: unknown }
-    const amount = Math.abs(Number(row.amount) || 0)
-    total += amount
-    marked += getPreReservedExpenseRowAmount(item)
+    if ('large_expenses' in item) {
+      for (const detail of getPreReservedExpenseDetails((item as { large_expenses?: unknown }).large_expenses)) {
+        totals.set(detail.description, (totals.get(detail.description) ?? 0) + detail.amount)
+      }
+      continue
+    }
+
+    const amount = getPreReservedExpenseRowAmount(item)
+    if (amount <= 0) continue
+    const row = item as {
+      description?: unknown
+      reserveReason?: unknown
+      reserve_reason?: unknown
+    }
+    const description = [row.description, row.reserveReason, row.reserve_reason]
+      .find(candidate => typeof candidate === 'string' && candidate.trim())
+    const label = typeof description === 'string' ? description.trim() : '大額支出'
+    totals.set(label, (totals.get(label) ?? 0) + amount)
   }
-  return Math.min(total, marked)
+
+  return [...totals].map(([description, amount]) => ({ description, amount }))
+}
+
+export function getPreReservedExpenseTotal(value: unknown): number {
+  return getPreReservedExpenseDetails(value).reduce((total, item) => total + item.amount, 0)
 }

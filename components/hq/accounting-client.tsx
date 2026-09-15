@@ -17,7 +17,7 @@ import CKOverview from './ck-overview'
 import HolidaysEditor from './holidays-editor'
 import BatchHolidaysDialog from './batch-holidays-dialog'
 import HQAlertsCard from './hq-alerts-card'
-import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
+import { getPreReservedExpenseDetails, getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 
 interface Store { id: string; name: string }
 interface ClosingRow {
@@ -958,6 +958,7 @@ function QuickClosingSummary({ closing }: { closing: ClosingRow }) {
   const reserves = Array.isArray(closing.reserve_items) ? closing.reserve_items : []
   const totalReserved = reserves.reduce((sum, item) => sum + (Number(item?.amount) || 0), 0)
   const preReservedExpenseTotal = getPreReservedExpenseTotal(closing.cash_counts)
+  const preReservedExpenseDetails = getPreReservedExpenseDetails(closing.cash_counts)
   const adjustmentTotal = Array.isArray(closing.remittance_adjustments)
     ? closing.remittance_adjustments.reduce((sum, item) => sum + (Number(item?.amount) || 0), 0)
     : 0
@@ -992,12 +993,12 @@ function QuickClosingSummary({ closing }: { closing: ClosingRow }) {
               <span className="tabular-nums font-semibold">−${fmt(Number(item.amount) || 0)}</span>
             </div>
           ))}
-          {preReservedExpenseTotal > 0 && (
-            <div className="flex items-center justify-between text-xs" style={{ color: '#15803d' }}>
-              <span>前幾日已預留支出加回</span>
-              <span className="tabular-nums font-semibold">＋${fmt(preReservedExpenseTotal)}</span>
+          {preReservedExpenseDetails.map((item, index) => (
+            <div key={`pre-reserved-${index}`} className="flex items-center justify-between gap-3 text-xs" style={{ color: '#15803d' }}>
+              <span>{item.description}（前幾日預留款加回）</span>
+              <span className="shrink-0 tabular-nums font-semibold">＋${fmt(item.amount)}</span>
             </div>
-          )}
+          ))}
           <div className="flex items-center justify-between text-xs font-bold pt-1 mt-1" style={{ borderTop: '1px solid #fed7aa', color: '#9a3412' }}>
             <span>實際應包回公司（調整／預留後）</span>
             <span className="tabular-nums">${fmt(remitToHQ)}</span>

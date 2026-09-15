@@ -5,7 +5,7 @@ import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Image, FileText, Ale
 import ReviewActions from './review-actions'
 import PhotoLightbox from './photo-lightbox'
 import SafePhotoImage from './safe-photo-image'
-import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
+import { getPreReservedExpenseDetails, getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 import { disputeClosing } from '@/app/actions/closings'
 import { toast } from 'sonner'
 import { supabasePreviewUrl } from '@/lib/photo-image-url'
@@ -360,6 +360,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
   const adjustmentTotal = remittanceAdjustments.reduce((s: number, a: any) => s + (Number(a?.amount) || 0), 0)
   const totalReserved = reserves.reduce((s, r) => s + Math.max(0, Number(r?.amount) || 0), 0)
   const preReservedExpenseTotal = getPreReservedExpenseTotal(closing.cash_counts)
+  const preReservedExpenseDetails = getPreReservedExpenseDetails(closing.cash_counts)
   const hasRemittanceChange = adjustmentTotal !== 0 || totalReserved > 0 || preReservedExpenseTotal > 0
   const remitToHQ = closing.actual_remit + adjustmentTotal - totalReserved + preReservedExpenseTotal
 
@@ -478,12 +479,15 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                     <InfoRow label="步驟" value="信封袋／匯款結算" />
                     <InfoRow label="應匯入" value={`$${fmt(closing.should_include_delivery)}`} />
                     <InfoRow label="實匯入" value={`$${fmt(closing.actual_remit)}`} accent="#92400e" />
-                    {hasRemittanceChange && <InfoRow label="調整後應包回公司" value={`$${fmt(remitToHQ)}`} accent="#047857" />}
-                    <InfoRow label="結算誤差" value={`${closing.variance >= 0 ? '+' : ''}$${fmt(closing.variance)}`} accent={varColor} />
                     {remittanceAdjustments.filter((a: any) => Number(a?.amount) !== 0).map((a: any, i: number) => (
                       <InfoRow key={i} label={a.label || '匯款調整'} value={`${a.amount >= 0 ? '+' : '−'}$${fmt(Math.abs(Number(a.amount) || 0))}`} />
                     ))}
                     {reserves.map((item, i) => <InfoRow key={i} label={`預留：${item.reason}`} value={`−$${fmt(item.amount)}`} />)}
+                    {preReservedExpenseDetails.map((item, i) => (
+                      <InfoRow key={`pre-reserved-${i}`} label={`${item.description}（前幾日預留款加回）`} value={`＋$${fmt(item.amount)}`} accent="#047857" />
+                    ))}
+                    {hasRemittanceChange && <InfoRow label="調整後應包回公司" value={`$${fmt(remitToHQ)}`} accent="#047857" />}
+                    <InfoRow label="結算誤差" value={`${closing.variance >= 0 ? '+' : ''}$${fmt(closing.variance)}`} accent={varColor} />
                   </>
                 ) : currentPhoto?.kind === 'void' ? (
                   <>
@@ -547,6 +551,9 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                   <p className="text-sm font-bold" style={{ color: '#065f46' }}>照片核對完成，最後確認結算</p>
                   <InfoRow label="應匯入" value={`$${fmt(closing.should_include_delivery)}`} />
                   <InfoRow label="實匯入" value={`$${fmt(closing.actual_remit)}`} />
+                  {preReservedExpenseDetails.map((item, i) => (
+                    <InfoRow key={`final-pre-reserved-${i}`} label={`${item.description}（前幾日預留款加回）`} value={`＋$${fmt(item.amount)}`} accent="#047857" />
+                  ))}
                   {hasRemittanceChange && <InfoRow label="調整後應包回公司" value={`$${fmt(remitToHQ)}`} accent="#047857" />}
                   <InfoRow label="結算誤差" value={`${closing.variance >= 0 ? '+' : ''}$${fmt(closing.variance)}`} accent={varColor} />
                   <div className="pt-2" style={{ borderTop: '1px solid #a7f3d0' }}>
@@ -695,12 +702,12 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                         <span className="tabular-nums">−{fmt(Number(r.amount) || 0)}</span>
                       </div>
                     ))}
-                    {preReservedExpenseTotal > 0 && (
-                      <div className="flex justify-between text-xs pt-1" style={{ color: '#15803d' }}>
-                        <span>前幾日已預留支出加回</span>
-                        <span className="tabular-nums">＋{fmt(preReservedExpenseTotal)}</span>
+                    {preReservedExpenseDetails.map((item, i) => (
+                      <div key={`pre-reserved-${i}`} className="flex justify-between gap-3 text-xs pt-1" style={{ color: '#15803d' }}>
+                        <span>{item.description}（前幾日預留款加回）</span>
+                        <span className="shrink-0 tabular-nums">＋${fmt(item.amount)}</span>
                       </div>
-                    )}
+                    ))}
                     <div className="flex justify-between text-xs font-bold pt-1" style={{ borderTop: '1px solid #fed7aa', color: remitToHQ < 0 ? '#dc2626' : '#18181b' }}>
                       <span>今日實際應包回公司</span>
                       <span className="tabular-nums">${fmt(remitToHQ)}</span>

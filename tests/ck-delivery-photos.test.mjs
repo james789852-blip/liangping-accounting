@@ -155,3 +155,14 @@ test('店面內容相符會自動前往下一張並使用一致的已確認樣�
   assert.match(reviewSource, /已確認：內容相符/)
   assert.match(reviewSource, /border: '2px solid #22c55e'/)
 })
+
+test('總公司核對信封袋時會先顯示逐筆大額支出加回，再顯示最終應包回金額', () => {
+  const reviewSource = fs.readFileSync(new URL('../components/hq/review-card.tsx', import.meta.url), 'utf8')
+
+  assert.match(reviewSource, /preReservedExpenseDetails\.map/)
+  assert.match(reviewSource, /\$\{item\.description\}（前幾日預留款加回）/)
+  assert.ok(
+    reviewSource.indexOf('preReservedExpenseDetails.map') < reviewSource.indexOf('label="調整後應包回公司"'),
+    '逐筆加回明細應顯示在最終應包回金額之前',
+  )
+})
