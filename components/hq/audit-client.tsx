@@ -75,6 +75,9 @@ const EVENT_LABELS: Record<string, string> = {
   user_delete: '刪除管理人員',
   push_reminder: '帳務推播提醒',
   push_schedule_update: '推播時間設定',
+  hq_follow_up_claimed: '異常追蹤接手',
+  hq_follow_up_released: '異常追蹤取消接手',
+  hq_follow_up_resolved: '異常追蹤完成',
 }
 
 const EVENT_COLORS: Record<string, string> = {
@@ -111,6 +114,9 @@ const EVENT_COLORS: Record<string, string> = {
   user_delete: '#ef4444',
   push_reminder: '#0ea5e9',
   push_schedule_update: '#f59e0b',
+  hq_follow_up_claimed: '#0ea5e9',
+  hq_follow_up_released: '#71717a',
+  hq_follow_up_resolved: '#10b981',
 }
 
 const SEVERITY_LABELS: Record<AuditLog['severity'], string> = {

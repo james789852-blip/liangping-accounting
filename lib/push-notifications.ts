@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { canReviewClosings, type PermissionProfile } from '@/lib/user-permissions'
 import { getBusinessDate } from '@/lib/business-date'
 import { formatReminderDelay } from '@/lib/push-schedule'
+import { createHQNotificationFollowUp, type HQFollowUpKind, type HQFollowUpPayload } from '@/lib/hq-notification-followups'
 
 type PushPayload = {
   title: string
@@ -508,7 +509,20 @@ export async function notifyReviewersOfEscalation(input: {
   url: string
   sourceKey: string
   storeId?: string
+  followUp: {
+    kind: HQFollowUpKind
+    payload: HQFollowUpPayload
+  }
 }) {
+  await createHQNotificationFollowUp({
+    sourceKey: input.sourceKey,
+    kind: input.followUp.kind,
+    title: input.title,
+    body: input.body,
+    url: input.url,
+    storeId: input.storeId,
+    payload: input.followUp.payload,
+  })
   const userIds = await reviewerUserIds(undefined, 'hq_escalation')
   return sendToUserIds(userIds, {
     title: input.title,

@@ -31,6 +31,9 @@ export type AuditEvent =
   | 'user_delete'
   | 'push_reminder'
   | 'push_schedule_update'
+  | 'hq_follow_up_claimed'
+  | 'hq_follow_up_released'
+  | 'hq_follow_up_resolved'
 
 interface LogAuditInput {
   eventType: AuditEvent

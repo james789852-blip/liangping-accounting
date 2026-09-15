@@ -6,6 +6,7 @@ import {
 import { processPendingPushJobs } from '@/lib/push-notifications'
 import { getPushScheduleSettings } from '@/lib/push-schedule-settings'
 import { isPushScheduleDue } from '@/lib/push-schedule'
+import { resolveCompletedHQNotificationFollowUps } from '@/lib/hq-notification-followups'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -32,6 +33,7 @@ export async function GET(
       return Response.json({ success: true, kind, ...result, checkedAt: new Date().toISOString() })
     }
     if (kind === 'scheduled') {
+      const followUps = await resolveCompletedHQNotificationFollowUps()
       const checks = [
         {
           name: 'accounting-first',
@@ -58,6 +60,7 @@ export async function GET(
         kind,
         due: due.map(check => ({ name: check.name, time: check.time })),
         results,
+        followUps,
         checkedAt: new Date().toISOString(),
       })
     }

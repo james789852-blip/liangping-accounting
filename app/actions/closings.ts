@@ -14,6 +14,7 @@ import { requiredActualVendorError } from '@/lib/required-actual-vendor'
 import { notifyReviewersOfSubmission, notifyStoreUsersOfReview } from '@/lib/push-notifications'
 import { reserveSubmissionError } from '@/lib/reserve-validation'
 import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
+import { resolveCompletedHQNotificationFollowUps } from '@/lib/hq-notification-followups'
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
 
@@ -734,6 +735,7 @@ export async function submitClosing(closingId: string) {
       submissionEventId: submittedAt,
       wasReturned: meta.status === 'disputed',
     })
+    await resolveCompletedHQNotificationFollowUps()
   })
 
   revalidatePath('/manager/dashboard')

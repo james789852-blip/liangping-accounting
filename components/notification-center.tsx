@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { Bell, BellRing, CheckCheck, ChevronRight, X } from 'lucide-react'
+import { Bell, BellRing, CheckCheck, ChevronRight, CircleCheck, Loader2, Undo2, UserRoundCheck, X } from 'lucide-react'
+import { toast } from 'sonner'
 import {
+  claimHQNotificationFollowUp,
   getMyNotifications,
   markAllNotificationsRead,
   markNotificationOpened,
+  releaseHQNotificationFollowUp,
   type AppNotification,
 } from '@/app/actions/notifications'
 
@@ -34,7 +37,10 @@ export default function NotificationCenter() {
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [unread, setUnread] = useState(0)
   const [loaded, setLoaded] = useState(false)
+  const [followUpPendingId, setFollowUpPendingId] = useState<string | null>(null)
   const isPortal = pathname.startsWith('/manager/') || pathname.startsWith('/hq/')
+  const activeFollowUps = notifications.filter(notification => notification.follow_up && notification.follow_up.status !== 'resolved').length
+  const badgeCount = activeFollowUps || unread
 
   const refresh = useCallback(async () => {
     if (!isPortal) return
@@ -73,15 +79,31 @@ export default function NotificationCenter() {
     await markAllNotificationsRead()
   }
 
+  const updateFollowUp = async (notificationId: string, action: 'claim' | 'release') => {
+    setFollowUpPendingId(notificationId)
+    try {
+      const result = action === 'claim'
+        ? await claimHQNotificationFollowUp(notificationId)
+        : await releaseHQNotificationFollowUp(notificationId)
+      if ('error' in result) toast.error(result.error)
+      else toast.success(action === 'claim' ? '已由你接手處理' : '已取消接手')
+      await refresh()
+    } catch {
+      toast.error('更新追蹤狀態失敗，請稍後再試')
+    } finally {
+      setFollowUpPendingId(null)
+    }
+  }
+
   return (
     <>
-      <button type="button" onClick={() => setOpen(value => !value)} aria-label={`通知中心${unread ? `，${unread} 則未讀` : ''}`}
+      <button type="button" onClick={() => setOpen(value => !value)} aria-label={`通知中心${unread ? `，${unread} 則未讀` : ''}${activeFollowUps ? `，${activeFollowUps} 項待處理` : ''}`}
         className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] right-4 z-[65] flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-xl lg:bottom-6 lg:right-6"
-        style={{ border: unread ? '2px solid #f59e0b' : '1px solid #d4d4d8', color: unread ? '#b45309' : '#52525b' }}>
-        {unread ? <BellRing className="h-5 w-5" /> : <Bell className="h-5 w-5" />}
-        {unread > 0 && (
+        style={{ border: badgeCount ? '2px solid #f59e0b' : '1px solid #d4d4d8', color: badgeCount ? '#b45309' : '#52525b' }}>
+        {badgeCount ? <BellRing className="h-5 w-5" /> : <Bell className="h-5 w-5" />}
+        {badgeCount > 0 && (
           <span className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
-            {unread > 99 ? '99+' : unread}
+            {badgeCount > 99 ? '99+' : badgeCount}
           </span>
         )}
       </button>
@@ -94,7 +116,9 @@ export default function NotificationCenter() {
             <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
               <div>
                 <p className="font-bold text-zinc-900">通知中心</p>
-                <p className="text-xs text-zinc-500">{unread ? `${unread} 則未讀通知` : '目前沒有未讀通知'}</p>
+                <p className="text-xs text-zinc-500">
+                  {unread ? `${unread} 則未讀通知` : '目前沒有未讀通知'}{activeFollowUps ? ` · ${activeFollowUps} 項追蹤中` : ''}
+                </p>
               </div>
               <div className="flex items-center gap-1">
                 {unread > 0 && <button type="button" onClick={markAllRead} className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-emerald-700 active:bg-emerald-50"><CheckCheck className="h-4 w-4" />全部已讀</button>}
@@ -107,20 +131,58 @@ export default function NotificationCenter() {
               ) : notifications.length === 0 ? (
                 <div className="p-10 text-center text-zinc-400"><Bell className="mx-auto mb-2 h-8 w-8" /><p className="text-sm">尚無通知紀錄</p></div>
               ) : notifications.map(notification => (
-                <button key={notification.id} type="button" onClick={() => openNotification(notification)}
-                  className="flex w-full items-start gap-3 border-b border-zinc-100 px-4 py-3 text-left active:bg-zinc-50"
+                <div key={notification.id} className="border-b border-zinc-100"
                   style={{ background: notification.read_at ? 'white' : '#fffbeb' }}>
-                  <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: notification.read_at ? '#d4d4d8' : '#f59e0b' }} />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-bold text-amber-700">{CATEGORY_LABEL[notification.category] ?? '帳務通知'}</span>
-                      <span className="text-[10px] text-zinc-400">{relativeTime(notification.created_at)}</span>
+                  <button type="button" onClick={() => openNotification(notification)}
+                    className="flex w-full items-start gap-3 px-4 py-3 text-left active:bg-zinc-50">
+                    <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: notification.read_at ? '#d4d4d8' : '#f59e0b' }} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold text-amber-700">{CATEGORY_LABEL[notification.category] ?? '帳務通知'}</span>
+                        <span className="text-[10px] text-zinc-400">{relativeTime(notification.created_at)}</span>
+                      </span>
+                      <span className="mt-0.5 block text-sm font-bold text-zinc-900">{notification.title}</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-zinc-600">{notification.body}</span>
                     </span>
-                    <span className="mt-0.5 block text-sm font-bold text-zinc-900">{notification.title}</span>
-                    <span className="mt-0.5 block text-xs leading-5 text-zinc-600">{notification.body}</span>
-                  </span>
-                  <ChevronRight className="mt-5 h-4 w-4 shrink-0 text-zinc-300" />
-                </button>
+                    <ChevronRight className="mt-5 h-4 w-4 shrink-0 text-zinc-300" />
+                  </button>
+                  {notification.follow_up && (
+                    <div className="flex flex-wrap items-center gap-2 px-4 pb-3 pl-9">
+                      {notification.follow_up.status === 'pending' && (
+                        <>
+                          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800">待處理</span>
+                          <button type="button" onClick={() => void updateFollowUp(notification.id, 'claim')}
+                            disabled={followUpPendingId === notification.id}
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">
+                            {followUpPendingId === notification.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserRoundCheck className="h-3.5 w-3.5" />}
+                            我來處理
+                          </button>
+                        </>
+                      )}
+                      {notification.follow_up.status === 'in_progress' && (
+                        <>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-800">
+                            <UserRoundCheck className="h-3.5 w-3.5" />
+                            {notification.follow_up.claimed_by_me ? '你' : notification.follow_up.claimant_name}處理中
+                          </span>
+                          {notification.follow_up.claimed_by_me && (
+                            <button type="button" onClick={() => void updateFollowUp(notification.id, 'release')}
+                              disabled={followUpPendingId === notification.id}
+                              className="inline-flex min-h-9 items-center gap-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-bold text-zinc-600 disabled:opacity-50">
+                              {followUpPendingId === notification.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Undo2 className="h-3.5 w-3.5" />}
+                              取消接手
+                            </button>
+                          )}
+                        </>
+                      )}
+                      {notification.follow_up.status === 'resolved' && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
+                          <CircleCheck className="h-3.5 w-3.5" />已完成
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </section>

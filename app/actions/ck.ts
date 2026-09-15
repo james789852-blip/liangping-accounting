@@ -25,6 +25,7 @@ import {
   notifyReviewersOfSubmission,
   notifyStoreUsersOfReview,
 } from '@/lib/push-notifications'
+import { resolveCompletedHQNotificationFollowUps } from '@/lib/hq-notification-followups'
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
 
@@ -368,6 +369,7 @@ export async function saveCKDailyRecord(ckStoreId: string, date: string, data: {
         submissionEventId,
         wasReturned: previousStatus === 'disputed',
       })
+      await resolveCompletedHQNotificationFollowUps()
     })
   }
 
@@ -862,6 +864,10 @@ export async function confirmCKReimbursementHandoff(ckStoreId: string, date: str
     userId: ctx.userId,
     description: `${ctx.userName ?? ctx.userEmail ?? '未知'} 已點交央廚 ${date} 補款`,
     metadata: { business_date: date, handoff_confirmed: true },
+  })
+
+  after(async () => {
+    await resolveCompletedHQNotificationFollowUps()
   })
 
   revalidatePath('/manager/ck')

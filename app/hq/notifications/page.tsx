@@ -31,7 +31,7 @@ export default async function PushNotificationsPage() {
 
   const admin = createAdminClient()
   const [{ data: notifications }, { data: profiles }, { data: devices }, scheduleSettings] = await Promise.all([
-    admin.from('app_notifications').select('id, user_id, category, title, body, created_at, read_at, clicked_at').order('created_at', { ascending: false }).limit(100),
+    admin.from('app_notifications').select('id, user_id, category, title, body, source_key, created_at, read_at, clicked_at').order('created_at', { ascending: false }).limit(100),
     admin.from('user_profiles').select('user_id, name, active'),
     admin.from('push_subscriptions').select('id, user_id, device_name, user_agent, last_seen_at, last_success_at, failure_count, created_at').order('last_seen_at', { ascending: false }),
     getPushScheduleSettings(),
@@ -40,7 +40,16 @@ export default async function PushNotificationsPage() {
   const { data: jobs } = notificationIds.length
     ? await admin.from('push_delivery_jobs').select('notification_id, status, attempt_count, last_error, delivered_at, device_name').in('notification_id', notificationIds)
     : { data: [] }
+  const followUpSourceKeys = [...new Set((notifications ?? [])
+    .filter(item => item.category === 'hq_escalation')
+    .map(item => String(item.source_key)))]
+  const { data: followUps } = followUpSourceKeys.length
+    ? await admin.from('hq_notification_followups')
+      .select('source_key, status, claimed_by, claimed_at, resolved_at')
+      .in('source_key', followUpSourceKeys)
+    : { data: [] }
   const nameByUser = new Map((profiles ?? []).map(item => [String(item.user_id), String(item.name)]))
+  const followUpBySource = new Map((followUps ?? []).map(item => [String(item.source_key), item]))
   const jobsByNotification = new Map<string, typeof jobs>()
   for (const job of jobs ?? []) {
     const list = jobsByNotification.get(String(job.notification_id)) ?? []
@@ -94,6 +103,7 @@ export default async function PushNotificationsPage() {
               const pending = notificationJobs.filter(job => job.status === 'pending').length
               const failed = notificationJobs.filter(job => job.status === 'failed').length
               const error = notificationJobs.find(job => job.last_error)?.last_error
+              const followUp = followUpBySource.get(String(notification.source_key))
               return (
                 <div key={notification.id} className="px-4 py-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -107,6 +117,13 @@ export default async function PushNotificationsPage() {
                       <p className="mt-1 text-[10px] font-semibold text-zinc-400">
                         {notification.clicked_at ? `已開啟 ${fmtDate(notification.clicked_at)}` : notification.read_at ? `已讀 ${fmtDate(notification.read_at)}` : '尚未讀取'}
                       </p>
+                      {followUp?.status === 'pending' && <p className="mt-1 text-xs font-bold text-amber-700">追蹤狀態：待處理</p>}
+                      {followUp?.status === 'in_progress' && (
+                        <p className="mt-1 text-xs font-bold text-blue-700">
+                          追蹤狀態：{nameByUser.get(String(followUp.claimed_by)) || '總公司人員'}處理中 · {fmtDate(followUp.claimed_at)}
+                        </p>
+                      )}
+                      {followUp?.status === 'resolved' && <p className="mt-1 text-xs font-bold text-emerald-700">追蹤狀態：已完成 · {fmtDate(followUp.resolved_at)}</p>}
                       {error && <p className="mt-1 text-xs text-rose-700">失敗原因：{String(error)}</p>}
                     </div>
                     <div className="flex items-center gap-2 text-xs font-semibold">

@@ -111,6 +111,13 @@ export async function sendAccountingSubmissionReminders(
       url: '/hq/accounting',
       sourceKey: `hq-accounting-final-${businessDate}`,
       storeId: pending.length === 1 ? pending[0].id : undefined,
+      followUp: {
+        kind: 'accounting_missing',
+        payload: {
+          business_date: businessDate,
+          targets: pending.map(store => ({ kind: store.kind, store_id: store.id })),
+        },
+      },
     })
     targetDevices += escalation.total
     delivered += escalation.delivered
@@ -181,6 +188,16 @@ export async function sendCKReimbursementHandoffReminders(scheduledTime: string)
       url: '/hq/accounting?tab=ck',
       sourceKey: `hq-ck-handoff-${pending.map(record => `${record.id}:${record.hq_reimbursement_sent_at}`).sort().join(',')}`,
       storeId: pending.length === 1 ? String(pending[0].ck_store_id) : undefined,
+      followUp: {
+        kind: 'ck_handoff',
+        payload: {
+          targets: pending.map(record => ({
+            kind: 'ck',
+            record_id: String(record.id),
+            reimbursement_sent_at: String(record.hq_reimbursement_sent_at),
+          })),
+        },
+      },
     })
     targetDevices += escalation.total
     delivered += escalation.delivered
@@ -267,6 +284,16 @@ export async function sendReturnedAccountingReminders(delayMinutes: number): Pro
       url: '/hq/accounting',
       sourceKey: `hq-returned-${identity}`,
       storeId: escalated.length === 1 ? escalated[0].storeId : undefined,
+      followUp: {
+        kind: 'returned_accounting',
+        payload: {
+          targets: escalated.map(record => ({
+            kind: record.kind,
+            record_id: record.id,
+            disputed_at: record.disputedAt,
+          })),
+        },
+      },
     })
     targetDevices += escalation.total
     delivered += escalation.delivered
