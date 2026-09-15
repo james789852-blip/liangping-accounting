@@ -22,7 +22,7 @@ test('店面與央廚未送出帳目會依總公司設定時間各提醒一次',
   assert.match(reminders, /holidayStoreIds\.has\(id\)/)
   assert.match(reminders, /status === 'submitted' \|\| status === 'verified'/)
   assert.match(reminders, /sentReminderKeys\(`accounting-\$\{stage\}`, businessDate\)/)
-  assert.match(notifications, /title: isFinal \? '第二次提醒：帳目尚未送出' : '今晚帳目尚未送出'/)
+  assert.match(notifications, /帳目\$\{wasReturned \? '退回待重送' : '尚未送出'\}（第\$\{isFinal \? '2' : '1'\}次提醒）/)
   assert.match(cronRoute, /sendAccountingSubmissionReminders\('first', schedule\.accountingFirstTime\)/)
   assert.match(cronRoute, /sendAccountingSubmissionReminders\('final', schedule\.accountingFinalTime\)/)
   assert.ok(vercelConfig.crons.some(cron => cron.path.endsWith('/scheduled') && cron.schedule === '*/5 * * * *'))
@@ -84,7 +84,7 @@ test('一般送審三分鐘內合併，退回重送仍立即通知', () => {
   assert.match(reliabilityMigration, /create table if not exists push_submission_digest_items/)
   assert.match(notifications, /if \(!input\.wasReturned\)/)
   assert.match(notifications, /Date\.now\(\) - 3 \* 60000/)
-  assert.match(notifications, /間單位、共 \$\{active\.length\} 筆帳目待審/)
+  assert.match(notifications, /buildPendingReviewNotification\(hydratedItems\)/)
   assert.ok(vercelConfig.crons.some(cron => cron.path.endsWith('/submission-digest') && cron.schedule === '* * * * *'))
 })
 

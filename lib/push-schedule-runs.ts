@@ -11,6 +11,12 @@ export type ScheduledPushResult = {
 
 export type PushScheduleKey = 'accounting-first' | 'accounting-final' | 'ck-handoff'
 
+const pushScheduleLabels: Record<PushScheduleKey, string> = {
+  'accounting-first': '帳目未送出第一次提醒',
+  'accounting-final': '帳目未送出第二次提醒',
+  'ck-handoff': '央廚補款點交提醒',
+}
+
 function businessDateAt(now: Date) {
   const taipei = new Date(now.getTime() + 8 * 3600000)
   if (taipei.getUTCHours() < 5) taipei.setUTCDate(taipei.getUTCDate() - 1)
@@ -118,7 +124,7 @@ export async function runScheduledPush(input: {
     }).eq('id', runRow.id)
     await notifyPushSystemAdministrators({
       title: '帳務推播排程執行失敗',
-      body: `${input.key}（${businessDate} ${input.scheduledTime}）執行失敗，系統將於下次排程自動補送。`,
+      body: `${businessDate} ${input.scheduledTime}｜「${pushScheduleLabels[input.key]}」執行失敗，系統將於下次排程自動補送，請至推播管理查看。`,
       sourceKey: `push-schedule-failed-${runKey}-${runRow.attempt_count}`,
     })
     throw error

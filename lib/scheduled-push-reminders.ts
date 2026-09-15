@@ -11,6 +11,7 @@ import {
   notifyStoreUsersOfAccountingReminder,
 } from '@/lib/push-notifications'
 import { formatReminderDelay } from '@/lib/push-schedule'
+import { hqAccountingUrl } from '@/lib/push-copy'
 
 type AccountingReminderStage = 'first' | 'final'
 
@@ -104,11 +105,14 @@ export async function sendAccountingSubmissionReminders(
 
   if (stage === 'final' && pending.length > 0) {
     const storeNames = pending.slice(0, 5).map(store => store.name).join('、')
-    const more = pending.length > 5 ? `等 ${pending.length} 間` : ''
+    const more = pending.length > 5 ? `等 ${pending.length} 間單位` : ''
+    const single = pending.length === 1 ? pending[0] : null
     const escalation = await notifyReviewersOfEscalation({
-      title: `${scheduledTime} 仍有帳目未送出`,
-      body: `${storeNames}${more}尚未送出帳目，請追蹤處理。`,
-      url: '/hq/accounting',
+      title: single ? `${single.name}帳目仍未送出` : `${pending.length} 間單位帳目仍未送出`,
+      body: `${businessDate}｜截至 ${scheduledTime}，${storeNames}${more}尚未送出帳目，請接手追蹤。`,
+      url: single
+        ? hqAccountingUrl(single.kind, single.id, businessDate)
+        : `/hq/accounting?date=${encodeURIComponent(businessDate)}`,
       sourceKey: `hq-accounting-final-${businessDate}`,
       storeId: pending.length === 1 ? pending[0].id : undefined,
       followUp: {
@@ -136,13 +140,14 @@ export async function sendCKReimbursementHandoffReminders(scheduledTime: string)
       .eq('hq_paid', true)
       .eq('ck_reimbursement_confirmed', false)
       .not('hq_reimbursement_sent_at', 'is', null),
-    admin.from('stores').select('id').eq('type', '央廚').eq('active', true),
+    admin.from('stores').select('id, name').eq('type', '央廚').eq('active', true),
   ])
   if (error || storeError) throw new Error(`讀取待點交補款失敗：${(error || storeError)!.message}`)
 
   const stage = 'ck-handoff-reminder'
   const alreadySent = await sentReminderKeys(stage)
   const activeCKStoreIds = new Set((activeCKStores ?? []).map(store => String(store.id)))
+  const ckStoreNames = new Map((activeCKStores ?? []).map(store => [String(store.id), String(store.name)]))
   const pending = (records ?? []).filter(record => activeCKStoreIds.has(String(record.ck_store_id)))
   let skippedAsAlreadySent = 0
   let targetDevices = 0
@@ -182,10 +187,18 @@ export async function sendCKReimbursementHandoffReminders(scheduledTime: string)
   }
 
   if (pending.length > 0) {
+    const single = pending.length === 1 ? pending[0] : null
+    const names = [...new Set(pending.map(record => ckStoreNames.get(String(record.ck_store_id)) ?? '央廚'))]
+    const shownNames = names.slice(0, 5).join('、')
+    const more = names.length > 5 ? `等 ${names.length} 間央廚` : ''
     const escalation = await notifyReviewersOfEscalation({
-      title: '央廚補款仍未點交',
-      body: `目前有 ${pending.length} 筆央廚補款在 ${scheduledTime} 後仍未點交，請追蹤處理。`,
-      url: '/hq/accounting?tab=ck',
+      title: single
+        ? `${ckStoreNames.get(String(single.ck_store_id)) ?? '央廚'}補款仍未點交`
+        : `${pending.length} 筆央廚補款仍未點交`,
+      body: `${shownNames}${more}共有 ${pending.length} 筆補款，截至 ${scheduledTime} 仍未完成點交，請接手追蹤。`,
+      url: single
+        ? hqAccountingUrl('ck', String(single.ck_store_id), String(single.business_date))
+        : '/hq/accounting?tab=ck',
       sourceKey: `hq-ck-handoff-${pending.map(record => `${record.id}:${record.hq_reimbursement_sent_at}`).sort().join(',')}`,
       storeId: pending.length === 1 ? String(pending[0].ck_store_id) : undefined,
       followUp: {
@@ -278,10 +291,16 @@ export async function sendReturnedAccountingReminders(delayMinutes: number): Pro
   if (escalated.length > 0) {
     const identity = escalated.map(record => `${record.kind}:${record.id}:${record.disputedAt}`).sort().join(',')
     const names = [...new Set(escalated.map(record => activeStores.get(record.storeId)))].slice(0, 5).join('、')
+    const single = escalated.length === 1 ? escalated[0] : null
+    const singleName = single ? activeStores.get(single.storeId) ?? (single.kind === 'ck' ? '央廚' : '店家') : ''
     const escalation = await notifyReviewersOfEscalation({
-      title: '退回帳目仍待修改',
-      body: `${names}共有 ${escalated.length} 筆帳目退回超過 ${delayLabel}，請追蹤處理。`,
-      url: '/hq/accounting',
+      title: single ? `${singleName}退回帳目仍待修改` : `${escalated.length} 筆退回帳目仍待修改`,
+      body: single
+        ? `${single.businessDate}｜${singleName}帳目退回已超過 ${delayLabel}，請接手追蹤。`
+        : `${names}共有 ${escalated.length} 筆帳目退回超過 ${delayLabel}，請接手追蹤。`,
+      url: single
+        ? hqAccountingUrl(single.kind, single.storeId, single.businessDate)
+        : '/hq/accounting',
       sourceKey: `hq-returned-${identity}`,
       storeId: escalated.length === 1 ? escalated[0].storeId : undefined,
       followUp: {

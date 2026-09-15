@@ -6,6 +6,12 @@ import { canManageUsers, canReviewClosings, type PermissionProfile } from '@/lib
 import { getBusinessDate } from '@/lib/business-date'
 import { formatReminderDelay } from '@/lib/push-schedule'
 import { createHQNotificationFollowUp, type HQFollowUpKind, type HQFollowUpPayload } from '@/lib/hq-notification-followups'
+import {
+  buildPendingReviewNotification,
+  hqAccountingUrl,
+  managerAccountingUrl,
+  type PendingReviewNotificationItem,
+} from '@/lib/push-copy'
 
 type PushPayload = {
   title: string
@@ -256,7 +262,45 @@ async function storeName(storeId: string) {
   return String(data?.name || '店家')
 }
 
-async function reviewerUserIds(excludeUserId?: string, _category: PushCategory = 'review_submission') {
+async function userName(userId: string | null | undefined, fallback = '帳務人員') {
+  if (!userId) return fallback
+  const admin = createAdminClient()
+  const { data } = await admin.from('user_profiles').select('name').eq('user_id', userId).maybeSingle()
+  return String(data?.name || fallback)
+}
+
+async function hydratePendingReviewItems(items: Array<{
+  accounting_kind: 'store' | 'ck'
+  store_id: string
+  record_id: string
+  business_date: string
+  sender_id: string | null
+}>): Promise<PendingReviewNotificationItem[]> {
+  const admin = createAdminClient()
+  const storeIds = [...new Set(items.map(item => item.store_id))]
+  const senderIds = [...new Set(items.map(item => item.sender_id).filter((id): id is string => Boolean(id)))]
+  const [storeResult, senderResult] = await Promise.all([
+    admin.from('stores').select('id, name').in('id', storeIds),
+    senderIds.length
+      ? admin.from('user_profiles').select('user_id, name').in('user_id', senderIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (storeResult.error) console.error('[push] failed to load unit names:', storeResult.error)
+  if (senderResult.error) console.error('[push] failed to load sender names:', senderResult.error)
+  const namesByStore = new Map((storeResult.data ?? []).map(store => [String(store.id), String(store.name)]))
+  const namesBySender = new Map((senderResult.data ?? []).map(profile => [String(profile.user_id), String(profile.name)]))
+
+  return items.map(item => ({
+    accountingKind: item.accounting_kind,
+    storeId: item.store_id,
+    storeName: namesByStore.get(item.store_id) ?? (item.accounting_kind === 'ck' ? '央廚' : '店家'),
+    recordId: item.record_id,
+    businessDate: item.business_date,
+    senderName: item.sender_id ? namesBySender.get(item.sender_id) ?? '帳務人員' : '帳務人員',
+  }))
+}
+
+async function reviewerUserIds(excludeUserId?: string) {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('user_profiles')
@@ -275,8 +319,6 @@ async function reviewerUserIds(excludeUserId?: string, _category: PushCategory =
 async function storeUserIds(
   storeId: string,
   excludeUserId?: string,
-  _includeDisabled = false,
-  _category: PushCategory = 'review_result',
 ) {
   const admin = createAdminClient()
   const { data, error } = await admin
@@ -317,9 +359,10 @@ export async function notifyReviewersOfSubmission(input: {
     return { total: 0, delivered: 0, queued: !error }
   }
 
-  const [name, userIds] = await Promise.all([
+  const [name, senderName, userIds] = await Promise.all([
     storeName(input.storeId),
-    reviewerUserIds(input.senderId, 'review_submission'),
+    userName(input.senderId),
+    reviewerUserIds(input.senderId),
   ])
   const isCK = input.kind === 'ck'
   const admin = createAdminClient()
@@ -334,12 +377,10 @@ export async function notifyReviewersOfSubmission(input: {
     (ckResult.count ?? 0) > 0 ? `${ckResult.count} 筆央廚帳目` : '',
   ].filter(Boolean)
   await sendToUserIds(userIds, {
-    title: input.wasReturned ? '退回帳目已重新送出' : '有帳目等待審核',
-    body: `${name} ${input.businessDate} ${isCK ? '央廚' : '店面'}帳目${input.wasReturned ? '已修正並重新送出' : '已送出'}，等待審核。${parts.length ? `該營業日目前共有${parts.join('、')}待審。` : ''}`,
-    url: isCK
-      ? `/hq/accounting?tab=ck&ckStoreId=${encodeURIComponent(input.storeId)}&date=${input.businessDate}`
-      : `/hq/accounting?tab=store&storeId=${encodeURIComponent(input.storeId)}&date=${input.businessDate}`,
-    tag: 'pending-review-summary',
+    title: `${name}退回帳目已重新送審`,
+    body: `${input.businessDate}｜${senderName}已修正並重新送出${isCK ? '央廚' : '店面'}帳目，點此直接進入審核。${parts.length ? `目前共有${parts.join('、')}待審。` : ''}`,
+    url: hqAccountingUrl(input.kind, input.storeId, input.businessDate),
+    tag: `${input.kind}-pending-review-${input.recordId}`,
   }, {
     category: 'review_submission',
     storeId: input.storeId,
@@ -366,9 +407,9 @@ export async function notifyReviewerOfPendingWork(userId: string) {
 
   const businessDate = getBusinessDate()
   const [storeResult, ckResult] = await Promise.all([
-    admin.from('daily_closings').select('id', { count: 'exact', head: true })
+    admin.from('daily_closings').select('id, store_id, business_date, submitted_by')
       .eq('status', 'submitted').eq('business_date', businessDate),
-    admin.from('ck_daily_records').select('id', { count: 'exact', head: true })
+    admin.from('ck_daily_records').select('id, ck_store_id, business_date, submitted_by')
       .eq('status', 'submitted').eq('business_date', businessDate),
   ])
   if (storeResult.error || ckResult.error) {
@@ -376,22 +417,30 @@ export async function notifyReviewerOfPendingWork(userId: string) {
     return
   }
 
-  const storeCount = storeResult.count ?? 0
-  const ckCount = ckResult.count ?? 0
-  if (storeCount + ckCount === 0) return
-  const parts = [
-    storeCount > 0 ? `${storeCount} 筆店面帳目` : '',
-    ckCount > 0 ? `${ckCount} 筆央廚帳目` : '',
-  ].filter(Boolean)
+  const pendingItems = [
+    ...(storeResult.data ?? []).map(record => ({
+      accounting_kind: 'store' as const,
+      store_id: String(record.store_id),
+      record_id: String(record.id),
+      business_date: String(record.business_date),
+      sender_id: record.submitted_by ? String(record.submitted_by) : null,
+    })),
+    ...(ckResult.data ?? []).map(record => ({
+      accounting_kind: 'ck' as const,
+      store_id: String(record.ck_store_id),
+      record_id: String(record.id),
+      business_date: String(record.business_date),
+      sender_id: record.submitted_by ? String(record.submitted_by) : null,
+    })),
+  ]
+  if (pendingItems.length === 0) return
+  const hydratedItems = await hydratePendingReviewItems(pendingItems)
+  const payload = buildPendingReviewNotification(hydratedItems)
+  const identity = pendingItems.map(item => `${item.accounting_kind}:${item.record_id}`).sort().join(',')
 
-  await sendToUserIds([userId], {
-    title: '今日有帳目等待審核',
-    body: `${businessDate} 目前共有${parts.join('、')}待審。`,
-    url: '/hq/accounting',
-    tag: 'pending-review-summary',
-  }, {
+  await sendToUserIds([userId], payload, {
     category: 'review_submission',
-    sourceKey: `pending-review-login-${userId}-${Date.now()}`,
+    sourceKey: `pending-review-login-${userId}-${identity}`,
   })
 }
 
@@ -405,20 +454,18 @@ export async function notifyStoreUsersOfReview(input: {
   reviewEventId: string
 }) {
   const admin = createAdminClient()
-  const [{ data: store }, userIds] = await Promise.all([
+  const [{ data: store }, reviewerName, userIds] = await Promise.all([
     admin.from('stores').select('name, push_notifications_enabled, push_notification_preferences').eq('id', input.storeId).maybeSingle(),
-    storeUserIds(input.storeId, input.reviewerId, false, 'review_result'),
+    userName(input.reviewerId, '總公司審核人員'),
+    storeUserIds(input.storeId, input.reviewerId),
   ])
   const pushEnabled = store?.push_notifications_enabled !== false && preferenceEnabled(store?.push_notification_preferences, 'review_result')
   const name = String(store?.name || '店家')
   const verified = input.decision === 'verified'
-  const isCK = input.kind === 'ck'
   await sendToUserIds(userIds, {
-    title: verified ? '帳目審核通過' : '帳目已退回修改',
-    body: `${name} ${input.businessDate} 帳目${verified ? '已審核通過。' : '已被退回，請開啟系統查看原因。'}`,
-    url: isCK
-      ? `/manager/ck?date=${input.businessDate}`
-      : `/manager/history/${encodeURIComponent(input.recordId)}`,
+    title: `${name}帳目${verified ? '審核通過' : '已退回修改'}`,
+    body: `${input.businessDate}｜${reviewerName}${verified ? '已確認帳目內容相符。' : '已退回帳目，請開啟查看原因並修正重送。'}`,
+    url: managerAccountingUrl(input.kind, input.recordId, input.businessDate),
     tag: `${input.kind}-review-${input.recordId}`,
   }, {
     category: 'review_result',
@@ -483,18 +530,13 @@ export async function sendPendingSubmissionDigest() {
   if (inactiveIds.length) await admin.from('push_submission_digest_items').update({ status: 'skipped', processed_at: new Date().toISOString() }).in('id', inactiveIds)
   if (active.length === 0) return { eligible: 0, targetDevices: 0, delivered: 0 }
 
-  const userIds = await reviewerUserIds(undefined, 'review_submission')
-  const uniqueStores = new Set(active.map(item => item.store_id)).size
-  const storeCount = active.filter(item => item.accounting_kind === 'store').length
-  const ckCount = active.length - storeCount
-  const parts = [storeCount ? `店面 ${storeCount} 筆` : '', ckCount ? `央廚 ${ckCount} 筆` : ''].filter(Boolean)
+  const [userIds, hydratedItems] = await Promise.all([
+    reviewerUserIds(),
+    hydratePendingReviewItems(active),
+  ])
+  const payload = buildPendingReviewNotification(hydratedItems)
   const identity = active.map(item => item.id).sort()
-  const result = await sendToUserIds(userIds, {
-    title: '有帳目等待審核',
-    body: `${uniqueStores} 間單位、共 ${active.length} 筆帳目待審（${parts.join('、')}）。`,
-    url: '/hq/accounting',
-    tag: 'pending-review-summary',
-  }, {
+  const result = await sendToUserIds(userIds, payload, {
     category: 'review_submission',
     sourceKey: `submission-digest-${identity[0]}-${identity.at(-1)}`,
   })
@@ -535,7 +577,7 @@ export async function notifyStoreUsersOfAccountingReminder(input: {
   const admin = createAdminClient()
   const [{ data: store }, userIds] = await Promise.all([
     admin.from('stores').select('name, push_notifications_enabled, push_notification_preferences').eq('id', input.storeId).maybeSingle(),
-    storeUserIds(input.storeId, undefined, false, 'accounting_reminder'),
+    storeUserIds(input.storeId),
   ])
   const pushEnabled = store?.push_notifications_enabled !== false && preferenceEnabled(store?.push_notification_preferences, 'accounting_reminder')
 
@@ -543,8 +585,8 @@ export async function notifyStoreUsersOfAccountingReminder(input: {
   const isFinal = input.stage === 'final'
   const wasReturned = input.status === 'disputed'
   return sendToUserIds(userIds, {
-    title: isFinal ? '第二次提醒：帳目尚未送出' : '今晚帳目尚未送出',
-    body: `${name} ${input.businessDate} 帳目${wasReturned ? '退回後仍未重新送出' : '尚未送出'}，請${isFinal ? '立即' : '盡快'}完成並送出審核。`,
+    title: `${name}帳目${wasReturned ? '退回待重送' : '尚未送出'}（第${isFinal ? '2' : '1'}次提醒）`,
+    body: `${input.businessDate}｜${wasReturned ? '退回後仍未修改重送' : '今日帳目尚未送出'}，請${isFinal ? '立即' : '盡快'}完成。點此進入帳目。`,
     url: input.kind === 'ck'
       ? `/manager/ck?date=${input.businessDate}`
       : `/manager/closing?date=${input.businessDate}`,
@@ -565,17 +607,17 @@ export async function notifyCKUsersOfReimbursementHandoff(input: {
   const admin = createAdminClient()
   const [{ data: store }, userIds] = await Promise.all([
     admin.from('stores').select('name, push_notifications_enabled, push_notification_preferences').eq('id', input.storeId).maybeSingle(),
-    storeUserIds(input.storeId, undefined, false, 'reimbursement_handoff'),
+    storeUserIds(input.storeId),
   ])
   const pushEnabled = store?.push_notifications_enabled !== false && preferenceEnabled(store?.push_notification_preferences, 'reimbursement_handoff')
 
   const name = String(store?.name || '央廚')
   const isReminder = input.stage === 'reminder'
   return sendToUserIds(userIds, {
-    title: isReminder ? '補款尚未點交' : '總公司補款等待點交',
+    title: `${name}補款${isReminder ? '尚未點交' : '已送達待點交'}`,
     body: isReminder
-      ? `${name} ${input.businessDate} 的補款尚未完成點交，請盡快確認。`
-      : `${name} ${input.businessDate} 的總公司補款信封照片已送達，請確認收到後完成點交。`,
+      ? `${input.businessDate}｜總公司補款仍未完成點交，請盡快開啟帳目確認。`
+      : `${input.businessDate}｜總公司已上傳補款信封照片，請確認收到並完成點交。`,
     url: `/manager/ck?date=${input.businessDate}`,
     tag: `ck-reimbursement-${input.stage}-${input.recordId}`,
   }, {
@@ -596,16 +638,14 @@ export async function notifyStoreUsersOfReturnedReminder(input: {
   const admin = createAdminClient()
   const [{ data: store }, userIds] = await Promise.all([
     admin.from('stores').select('name, push_notifications_enabled, push_notification_preferences').eq('id', input.storeId).maybeSingle(),
-    storeUserIds(input.storeId, undefined, false, 'accounting_reminder'),
+    storeUserIds(input.storeId),
   ])
   const pushEnabled = store?.push_notifications_enabled !== false && preferenceEnabled(store?.push_notification_preferences, 'accounting_reminder')
   const name = String(store?.name || (input.kind === 'ck' ? '央廚' : '店家'))
   return sendToUserIds(userIds, {
-    title: '退回帳目仍待修改',
-    body: `${name} ${input.businessDate} 帳目退回已超過 ${formatReminderDelay(input.delayMinutes)}，請修改後重新送出。`,
-    url: input.kind === 'ck'
-      ? `/manager/ck?date=${input.businessDate}`
-      : `/manager/history/${encodeURIComponent(input.recordId)}`,
+    title: `${name}退回帳目仍待修改`,
+    body: `${input.businessDate}｜帳目退回已超過 ${formatReminderDelay(input.delayMinutes)}，請開啟查看原因、修改後重新送出。`,
+    url: managerAccountingUrl(input.kind, input.recordId, input.businessDate),
     tag: `${input.kind}-returned-reminder-${input.recordId}`,
   }, {
     category: 'accounting_reminder',
@@ -635,7 +675,7 @@ export async function notifyReviewersOfEscalation(input: {
     storeId: input.storeId,
     payload: input.followUp.payload,
   })
-  const userIds = await reviewerUserIds(undefined, 'hq_escalation')
+  const userIds = await reviewerUserIds()
   return sendToUserIds(userIds, {
     title: input.title,
     body: input.body,
@@ -652,7 +692,7 @@ export async function sendTestPushToStore(storeId: string) {
   const admin = createAdminClient()
   const [{ data: store }, userIds] = await Promise.all([
     admin.from('stores').select('name').eq('id', storeId).maybeSingle(),
-    storeUserIds(storeId, undefined, true, 'system'),
+    storeUserIds(storeId),
   ])
   if (!store) return { error: '找不到店家' as const }
   return sendToUserIds(userIds, {
