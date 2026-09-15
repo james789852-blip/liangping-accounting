@@ -100,9 +100,6 @@ export default async function PushNotificationsPage() {
     if (assigned.some(unit => unit?.type === '央廚')) healthGroups[1].profiles.push(account)
     else if (assigned.some(unit => unit?.type !== '央廚')) healthGroups[0].profiles.push(account)
   }
-  const unboundProfiles = healthGroups.flatMap(group => group.profiles
-    .filter(account => !(devicesByUser.get(String(account.user_id))?.length))
-    .map(account => ({ ...account, healthGroup: group.label })))
   const staleDevices = (devices ?? []).filter(device => isPushDeviceStale(device.last_seen_at))
   const failingDevices = (devices ?? []).filter(device => Number(device.failure_count) > 0)
   const latestRunByKey = new Map<string, NonNullable<typeof scheduleRuns>[number]>()
@@ -141,18 +138,26 @@ export default async function PushNotificationsPage() {
           <div className="grid gap-3 sm:grid-cols-3">
             {healthGroups.map(group => {
               const bound = group.profiles.filter(account => (devicesByUser.get(String(account.user_id))?.length ?? 0) > 0).length
+              const unbound = group.profiles.filter(account => !(devicesByUser.get(String(account.user_id))?.length))
               const rate = group.profiles.length ? Math.round(bound / group.profiles.length * 100) : 100
               return <div key={group.key} className="rounded-xl bg-blue-50 p-3">
                 <p className="text-xs font-bold text-blue-700">{group.label}綁定完成率</p>
                 <p className="mt-1 text-2xl font-black text-zinc-900">{rate}%</p>
                 <p className="text-xs text-zinc-500">{bound} / {group.profiles.length} 人已綁定</p>
+                <div className="mt-3 border-t border-blue-100 pt-2">
+                  <p className={`text-xs font-bold ${unbound.length ? 'text-rose-700' : 'text-emerald-700'}`}>
+                    {unbound.length ? `尚未綁定 · ${unbound.length} 人` : '全員已綁定'}
+                  </p>
+                  {unbound.length > 0 && (
+                    <div className="mt-1 max-h-28 space-y-1 overflow-auto text-xs leading-5 text-rose-700">
+                      {unbound.map(account => <p key={account.user_id}>{account.name}</p>)}
+                    </div>
+                  )}
+                </div>
               </div>
             })}
           </div>
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            <HealthIssue title="尚未綁定裝置" count={unboundProfiles.length} tone="rose">
-              {unboundProfiles.map(account => <p key={`${account.healthGroup}-${account.user_id}`}>{account.name} · {account.healthGroup}</p>)}
-            </HealthIssue>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
             <HealthIssue title="超過 7 天未連線" count={staleDevices.length} tone="amber">
               {staleDevices.map(device => <p key={device.id}>{nameByUser.get(String(device.user_id)) || '未知帳號'} · {device.device_name || '瀏覽器裝置'}（{fmtDate(device.last_seen_at)}）</p>)}
             </HealthIssue>

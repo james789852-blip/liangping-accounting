@@ -90,7 +90,9 @@ test('一般送審三分鐘內合併，退回重送仍立即通知', () => {
 
 test('推播管理頁顯示裝置未綁定、久未連線、失敗與各單位完成率', () => {
   assert.match(pushAdminPage, /裝置綁定健檢/)
-  assert.match(pushAdminPage, /尚未綁定裝置/)
+  assert.match(pushAdminPage, /尚未綁定 · \$\{unbound\.length\} 人/)
+  assert.match(pushAdminPage, /unbound\.map\(account => <p key=\{account\.user_id\}>\{account\.name\}<\/p>\)/)
+  assert.doesNotMatch(pushAdminPage, /healthGroup: group\.label/)
   assert.match(pushAdminPage, /超過 7 天未連線/)
   assert.match(pushAdminPage, /連續推播失敗/)
   assert.match(pushAdminPage, /綁定完成率/)
