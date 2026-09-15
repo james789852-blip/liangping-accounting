@@ -1,6 +1,41 @@
-const CACHE = 'lp-v6'
+const CACHE = 'lp-v7'
 const OFFLINE_URL = '/offline.html'
 const PRECACHE_URLS = [OFFLINE_URL, '/icon-192.png', '/icon-512.png']
+
+const RETRY_DELAY_MS = 350
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function getNavigationResponse(request) {
+  // iOS standalone mode occasionally drops a navigation while switching
+  // between authenticated pages. A fresh, uncached retry prevents that brief
+  // transport failure from becoming WebKit's unrecoverable black error page.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await fetch(new Request(request, { cache: 'no-store' }))
+    } catch {
+      if (attempt === 0) await wait(RETRY_DELAY_MS)
+    }
+  }
+
+  const offlinePage = await caches.match(OFFLINE_URL)
+  if (offlinePage) return offlinePage
+
+  // Always resolve with a valid Response, even if the initial worker install
+  // was interrupted before offline.html reached the cache.
+  return new Response(
+    '<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>目前無法連線</title><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;text-align:center"><h1>目前無法連線</h1><p>請確認網路後重新嘗試，尚未送出的帳目不會因此被覆蓋。</p><button onclick="location.reload()" style="padding:12px 24px">重新連線</button></body></html>',
+    {
+      status: 503,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    }
+  )
+}
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -24,9 +59,7 @@ self.addEventListener('fetch', e => {
 
   // 帳目與登入頁維持 network-only；斷線時只顯示不含敏感資料的備援頁。
   if (e.request.mode === 'navigate') {
-    e.respondWith(
-      fetch(e.request).catch(() => caches.match(OFFLINE_URL))
-    )
+    e.respondWith(getNavigationResponse(e.request))
     return
   }
 

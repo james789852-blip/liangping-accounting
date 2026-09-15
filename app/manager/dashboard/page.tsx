@@ -11,6 +11,7 @@ import RecentClosingsList from '@/components/manager/recent-closings'
 import CKReimbursementHandoffCard from '@/components/manager/ck-reimbursement-handoff-card'
 import ReturnedAccountingAlert, { type ReturnedAccountingItem } from '@/components/manager/returned-accounting-alert'
 import { autoCompleteExpiredCKReimbursementHandoffs } from '@/lib/ck-reimbursement-handoff'
+import ReliableNavigationLink from '@/components/reliable-navigation-link'
 
 export const dynamic = 'force-dynamic'
 
@@ -361,7 +362,7 @@ export default async function ManagerDashboard() {
         <ReturnedAccountingAlert items={returnedClosings} entityLabel="店面帳目" />
 
         {/* ── 大 CTA 卡片 ── */}
-        <Link href={actionHref}>
+        <ReliableNavigationLink href={actionHref} forceDocument={actionHref.startsWith('/manager/closing')}>
           <div className="rounded-3xl p-5 sm:p-8 text-white mb-5 relative overflow-hidden cursor-pointer transition-all hover:-translate-y-0.5"
             style={{
               background: ctaGradient,
@@ -403,7 +404,7 @@ export default async function ManagerDashboard() {
               </button>
             </div>
           </div>
-        </Link>
+        </ReliableNavigationLink>
 
         {/* ── 補做過往帳目入口（測試階段） ── */}
         <div className="bg-white rounded-2xl p-4 mb-3" style={{ border: '1px solid #FDE68A', background: '#FFFBEB' }}>

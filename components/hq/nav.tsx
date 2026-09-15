@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
@@ -18,6 +17,7 @@ import StoreSwitcher from '@/components/manager/store-switcher'
 import { getPendingReviewCount } from '@/app/actions/pending-review'
 import { clearStoreSelectionOnLogout } from '@/app/actions/store-select'
 import { detachPushSubscriptionFromCurrentUser } from '@/lib/push-client'
+import ReliableNavigationLink from '@/components/reliable-navigation-link'
 
 /** 待審核數 — 每 30 秒 poll，切頁時也 refresh */
 function usePendingReviewCount() {
@@ -278,7 +278,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         {/* 切換按鈕 */}
         {(isManagerPath ? canAccessHQ : hasStores) && (
           <div className="px-4 pb-3">
-            <Link
+            <ReliableNavigationLink
               href={isManagerPath ? hqHomeHref : '/manager/dashboard'}
               className="flex items-center justify-center gap-2 w-full py-2 rounded-[10px] text-xs font-semibold transition-all hover:opacity-80"
               style={isManagerPath
@@ -287,7 +287,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               }>
               <ArrowRightLeft className="h-3.5 w-3.5" />
               {isManagerPath ? '切換到總公司端' : '切換到店長端'}
-            </Link>
+            </ReliableNavigationLink>
           </div>
         )}
 
@@ -323,7 +323,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                 const resolvedHref = resolveHref(href)
                 const showBadge = showPendingBadge && href === '/hq/accounting' && pendingCount > 0
                 return (
-                  <Link key={href} href={resolvedHref}
+                  <ReliableNavigationLink key={href} href={resolvedHref} forceDocument={href === '/manager/closing'}
                     className={cn('flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-all duration-150 mb-0.5', !active && 'hover:bg-slate-50')}
                     style={active ? { backgroundColor: activeBg, color: activeColor, fontWeight: 600 } : { color: '#52525b' }}>
                     <Icon className="h-[18px] w-[18px] shrink-0" />
@@ -335,7 +335,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                         {pendingCount}
                       </span>
                     )}
-                  </Link>
+                  </ReliableNavigationLink>
                 )
               })}
             </div>
@@ -360,7 +360,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         <div className="hq-mobile-header-title flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
           {isManagerPath && canAccessHQ ? (
             <>
-              <Link href={hqHomeHref} className="text-xs font-medium shrink-0 transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>總公司</Link>
+              <ReliableNavigationLink href={hqHomeHref} className="text-xs font-medium shrink-0 transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>總公司</ReliableNavigationLink>
               <span className="shrink-0" style={{ color: '#e4e4e7' }}>/</span>
               {allStores.length > 1 ? (
                 <StoreSwitcher stores={allStores} currentStoreId={currentStoreId}
@@ -387,18 +387,18 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
             <ExternalLink className="h-3 w-3" />HR
           </a>
           {!isManagerPath && hasStores && (
-            <Link href="/manager/dashboard"
+            <ReliableNavigationLink href="/manager/dashboard"
               className="text-xs font-bold text-white rounded-lg px-2 py-1.5 whitespace-nowrap"
               style={{ background: 'linear-gradient(135deg,#f97316,#f59e0b)' }}>
               店長端
-            </Link>
+            </ReliableNavigationLink>
           )}
           {isManagerPath && hasStores && (
-            <Link href={hqHomeHref}
+            <ReliableNavigationLink href={hqHomeHref}
               className="text-xs font-bold text-white rounded-lg px-2 py-1.5 whitespace-nowrap"
               style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)' }}>
               總公司
-            </Link>
+            </ReliableNavigationLink>
           )}
           <button onClick={handleLogout} className="hq-mobile-logout h-8 w-8 flex items-center justify-center rounded-lg transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>
             <LogOut className="h-4 w-4" />
@@ -413,13 +413,13 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
             const active = pathname.startsWith(href)
             const resolvedHref = resolveHref(href)
             return (
-              <Link key={href} href={resolvedHref}
+              <ReliableNavigationLink key={href} href={resolvedHref} forceDocument={href === '/manager/closing'}
                 className="mobile-bottom-nav-item flex flex-col items-center gap-1 flex-1 py-1">
                 <Icon className="h-[22px] w-[22px]" style={{ color: active ? mobileActiveColor : '#a1a1aa' }} />
                 <span className="text-[11px] font-medium" style={{ color: active ? mobileActiveColor : '#a1a1aa' }}>
                   {label}
                 </span>
-              </Link>
+              </ReliableNavigationLink>
             )
           })}
           {!isManagerPath && (
@@ -457,12 +457,12 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                     const active = isActive(href)
                     const resolvedHref = resolveHref(href)
                     return (
-                      <Link key={href} href={resolvedHref}
+                      <ReliableNavigationLink key={href} href={resolvedHref} forceDocument={href === '/manager/closing'}
                         className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium"
                         style={active ? { backgroundColor: activeBg, color: activeColor, fontWeight: 600 } : { color: '#52525b' }}>
                         <Icon className="h-5 w-5 shrink-0" />
                         {label}
-                      </Link>
+                      </ReliableNavigationLink>
                     )
                   })}
                 </div>

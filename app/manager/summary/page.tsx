@@ -11,6 +11,7 @@ import {
 import Link from 'next/link'
 import HandwriteOrdersList from '@/components/manager/handwrite-orders-list'
 import { getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
+import ReliableNavigationLink from '@/components/reliable-navigation-link'
 
 export const dynamic = 'force-dynamic'
 
@@ -100,12 +101,12 @@ export default async function SummaryPage({
           </div>
           <h1 className="text-xl font-bold mb-2" style={{ color: '#18181b' }}>此日期尚未結帳</h1>
           <p className="text-sm mb-6" style={{ color: '#a1a1aa' }}>請先完成 {today} 的結帳再查看結算結果</p>
-          <Link href={closingHref}
+          <ReliableNavigationLink href={closingHref} forceDocument
             className="inline-flex items-center gap-2 px-5 py-3 text-white rounded-xl text-sm font-semibold"
             style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 14px rgba(245,158,11,0.3)' }}>
             前往結帳頁面
             <ChevronRight className="h-4 w-4" />
-          </Link>
+          </ReliableNavigationLink>
         </div>
       </div>
     )
@@ -128,12 +129,12 @@ export default async function SummaryPage({
           </div>
           <h1 className="text-xl font-bold mb-2" style={{ color: '#18181b' }}>{title}</h1>
           <p className="text-sm mb-6" style={{ color: '#a1a1aa' }}>{desc}</p>
-          <Link href={closingHref}
+          <ReliableNavigationLink href={closingHref} forceDocument
             className="inline-flex items-center gap-2 px-5 py-3 text-white rounded-xl text-sm font-semibold"
             style={{ background: 'linear-gradient(135deg,#F59E0B,#F97316)', boxShadow: '0 4px 14px rgba(245,158,11,0.3)' }}>
             前往結帳頁面
             <ChevronRight className="h-4 w-4" />
-          </Link>
+          </ReliableNavigationLink>
         </div>
       </div>
     )

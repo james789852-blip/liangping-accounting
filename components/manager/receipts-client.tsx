@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { FileText, Plus, Trash2, ChevronDown, ChevronUp, Edit2, Check, X, Receipt, ArrowLeft } from 'lucide-react'
 import { deleteReceipt, updateReceipt } from '@/app/actions/receipts'
 import ReceiptUpload from './receipt-upload'
-import Link from 'next/link'
 import SafePhotoImage from '@/components/shared/safe-photo-image'
 import { isReceiptDateLocked } from '@/lib/receipt-guards'
 import { isNegativeItem, normalizeItemAmount } from '@/lib/negative-items'
@@ -551,9 +550,9 @@ export default function ReceiptsClient({ storeId, storeName, today, receipts: in
       <div className="bg-white px-6 py-5" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         <div className="flex items-center justify-between max-w-xl mx-auto">
           <div>
-            <Link href="/manager/closing" className="inline-flex items-center gap-1 text-xs font-medium mb-3" style={{ color: '#a1a1aa' }}>
+            <a href="/manager/closing" data-full-page-navigation="true" className="inline-flex items-center gap-1 text-xs font-medium mb-3" style={{ color: '#a1a1aa' }}>
               <ArrowLeft className="h-3.5 w-3.5" />今日結帳
-            </Link>
+            </a>
             <div className="flex items-center gap-1.5 text-xs font-semibold mb-1" style={{ color: '#a1a1aa' }}>
               <Receipt className="h-3.5 w-3.5" />
               發票收據

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, memo, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { Store, CKPrice } from '@/lib/types'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { toast } from 'sonner'
@@ -3955,10 +3954,10 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               注意：目前正在做 <b className="text-base">{today}</b> 的帳目，不是今天 <b>{realToday ?? '今日'}</b>
             </span>
             {realToday && (
-              <Link href={`/manager/closing?date=${encodeURIComponent(realToday)}`} className="font-bold shrink-0 px-3 py-1.5 rounded-full"
+              <a href={`/manager/closing?date=${encodeURIComponent(realToday)}`} data-full-page-navigation="true" className="font-bold shrink-0 px-3 py-1.5 rounded-full"
                 style={{ color: '#fff', background: '#EA580C' }}>
                 切回今日
-              </Link>
+              </a>
             )}
           </div>
         )}
@@ -3966,9 +3965,9 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
           <div className="px-5 py-2 text-xs font-medium flex items-center justify-between gap-2"
             style={{ background: '#FFFBEB', color: '#92400E', borderBottom: '1px solid #FDE68A' }}>
             <span>有未完成的補做草稿：{latestBackfillDraftDate}。今日結帳不會自動切過去。</span>
-            <Link href={`/manager/closing?date=${encodeURIComponent(latestBackfillDraftDate)}`} className="font-semibold underline shrink-0" style={{ color: '#78350F' }}>
+            <a href={`/manager/closing?date=${encodeURIComponent(latestBackfillDraftDate)}`} data-full-page-navigation="true" className="font-semibold underline shrink-0" style={{ color: '#78350F' }}>
               前往補做
-            </Link>
+            </a>
           </div>
         )}
         {!isBackfill && (
@@ -4010,7 +4009,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                 {isBackfill ? '補做帳目' : '今日帳目'}
               </span>
               <input type="date" value={today} max={realToday ?? today}
-                onChange={e => { const v = e.target.value; if (v) router.push(`/manager/closing?date=${v}`) }}
+                onChange={e => { const v = e.target.value; if (v) window.location.assign(`/manager/closing?date=${v}`) }}
                 className="text-xs px-1.5 py-0.5 rounded outline-none border shrink-0"
                 style={{ border: '1px solid #e4e4e7', color: '#52525b', background: 'white' }}
                 title="切換日期（可補做過往帳目）" />

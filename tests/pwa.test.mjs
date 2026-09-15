@@ -30,7 +30,10 @@ test('Service Worker 不快取帳目頁面，斷線導覽改顯示安全備援�
   const offlineSource = fs.readFileSync(new URL('../public/offline.html', import.meta.url), 'utf8')
 
   assert.match(workerSource, /e\.request\.mode === 'navigate'/)
-  assert.match(workerSource, /fetch\(e\.request\)\.catch\(\(\) => caches\.match\(OFFLINE_URL\)\)/)
+  assert.match(workerSource, /getNavigationResponse\(e\.request\)/)
+  assert.match(workerSource, /attempt < 2/)
+  assert.match(workerSource, /cache: 'no-store'/)
+  assert.match(workerSource, /new Response\(/)
   assert.match(workerSource, /PRECACHE_URLS/)
   assert.match(offlineSource, /離線時無法送出帳目或照片/)
   assert.match(offlineSource, /重新連線/)

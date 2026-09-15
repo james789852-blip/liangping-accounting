@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
@@ -9,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
 import { clearStoreSelectionOnLogout } from '@/app/actions/store-select'
 import { detachPushSubscriptionFromCurrentUser } from '@/lib/push-client'
+import ReliableNavigationLink from '@/components/reliable-navigation-link'
 
 const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
 
@@ -153,7 +153,7 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
             const active = pathname.startsWith(href)
             const resolvedHref = resolveHref(href)
             return (
-              <Link key={href} href={resolvedHref}
+              <ReliableNavigationLink key={href} href={resolvedHref} forceDocument={href === '/manager/closing'}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-all duration-150',
                   active ? 'font-semibold' : 'hover:bg-slate-50'
@@ -161,18 +161,18 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
                 style={active ? { backgroundColor: '#FFFBEB', color: '#92400E' } : { color: '#52525b' }}>
                 <Icon className="h-[18px] w-[18px] shrink-0" />
                 {label}
-              </Link>
+              </ReliableNavigationLink>
             )
           })}
 
           <div style={{ borderTop: '1px solid #f4f4f5', margin: '12px 0 4px' }} />
           {canAccessHQ && (
-            <Link href={hqHref}
+            <ReliableNavigationLink href={hqHref}
               className="flex w-full items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-semibold transition-colors hover:bg-slate-50"
               style={{ color: '#0369a1' }}>
               <Building2 className="h-[18px] w-[18px]" />
               回總公司
-            </Link>
+            </ReliableNavigationLink>
           )}
           <button onClick={handleLogout}
             className="flex w-full items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-colors hover:bg-slate-50"
@@ -218,11 +218,11 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
           HR
         </a>
         {canAccessHQ && (
-          <Link href={hqHref} className="ml-1 h-8 px-2 flex items-center justify-center gap-1 rounded-lg text-xs font-semibold shrink-0"
+          <ReliableNavigationLink href={hqHref} className="ml-1 h-8 px-2 flex items-center justify-center gap-1 rounded-lg text-xs font-semibold shrink-0"
             style={{ background: '#eff6ff', color: '#0369a1', border: '1px solid #bfdbfe' }}>
             <Building2 className="h-3 w-3" />
             總公司
-          </Link>
+          </ReliableNavigationLink>
         )}
         <button onClick={handleLogout} className="h-8 w-8 flex items-center justify-center rounded-lg transition-colors hover:bg-slate-50" style={{ color: '#a1a1aa' }}>
           <LogOut className="h-4 w-4" />
@@ -236,12 +236,12 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
             const active = pathname.startsWith(href)
             const resolvedHref = resolveHref(href)
             return (
-              <Link key={href} href={resolvedHref} className="mobile-bottom-nav-item flex flex-col items-center gap-1 flex-1 py-1">
+              <ReliableNavigationLink key={href} href={resolvedHref} forceDocument={href === '/manager/closing'} className="mobile-bottom-nav-item flex flex-col items-center gap-1 flex-1 py-1">
                 <Icon className="h-[22px] w-[22px]" style={{ color: active ? '#D97706' : '#a1a1aa' }} />
                 <span className="text-[11px] font-medium" style={{ color: active ? '#D97706' : '#a1a1aa' }}>
                   {label}
                 </span>
-              </Link>
+              </ReliableNavigationLink>
             )
           })}
         </div>
