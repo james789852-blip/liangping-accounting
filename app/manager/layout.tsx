@@ -29,7 +29,7 @@ export default function ManagerLayout({ children }: { children: React.ReactNode 
       <Suspense fallback={<NavigationSkeleton variant="manager" />}>
         <ManagerNavigation />
       </Suspense>
-      <main className="app-content-shell min-w-0 flex-1 overflow-y-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
+      <main className="app-content-shell min-h-0 min-w-0 flex-1 overflow-y-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
         {children}
       </main>
     </div>

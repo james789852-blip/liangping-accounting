@@ -28,11 +28,13 @@ export default function NavigationSkeleton({ variant }: { variant: 'manager' | '
       </header>
       <nav
         aria-hidden="true"
-        className="fixed inset-x-0 bottom-0 z-30 flex h-16 animate-pulse items-center justify-around border-t border-slate-200 bg-white px-4 lg:hidden"
+        className="mobile-bottom-nav animate-pulse border-t border-slate-200 lg:hidden"
       >
-        {[0, 1, 2, 3].map((item) => (
-          <div key={item} className="h-8 w-10 rounded-lg bg-slate-100" />
-        ))}
+        <div className="mobile-bottom-nav-content items-center justify-around px-4">
+          {[0, 1, 2, 3].map((item) => (
+            <div key={item} className="h-8 w-10 rounded-lg bg-slate-100" />
+          ))}
+        </div>
       </nav>
     </>
   )

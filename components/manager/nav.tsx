@@ -230,14 +230,13 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
       </header>
 
       {/* ── 手機底部 Tab */}
-      <nav className="mobile-bottom-nav lg:hidden"
-        style={{ borderTop: '1px solid #f4f4f5', paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        <div className="flex px-2 pt-2 pb-2">
+      <nav className="mobile-bottom-nav lg:hidden" style={{ borderTop: '1px solid #f4f4f5' }}>
+        <div className="mobile-bottom-nav-content px-2 pt-2 pb-2">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href)
             const resolvedHref = resolveHref(href)
             return (
-              <Link key={href} href={resolvedHref} className="flex flex-col items-center gap-1 flex-1 py-1">
+              <Link key={href} href={resolvedHref} className="mobile-bottom-nav-item flex flex-col items-center gap-1 flex-1 py-1">
                 <Icon className="h-[22px] w-[22px]" style={{ color: active ? '#D97706' : '#a1a1aa' }} />
                 <span className="text-[11px] font-medium" style={{ color: active ? '#D97706' : '#a1a1aa' }}>
                   {label}

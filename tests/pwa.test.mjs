@@ -36,7 +36,7 @@ test('Service Worker 不快取帳目頁面，斷線導覽改顯示安全備援�
   assert.match(offlineSource, /重新連線/)
 })
 
-test('手機底部選單使用純色固定圖層且不鎖住整頁操作', () => {
+test('手機底部選單固定於 visual viewport 並由單一內容容器捲動', () => {
   const globalSource = fs.readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8')
   const hqLayoutSource = fs.readFileSync(new URL('../app/hq/layout.tsx', import.meta.url), 'utf8')
   const managerLayoutSource = fs.readFileSync(new URL('../app/manager/layout.tsx', import.meta.url), 'utf8')
@@ -53,9 +53,23 @@ test('手機底部選單使用純色固定圖層且不鎖住整頁操作', () =>
   assert.doesNotMatch(hqNavSource, /mobile-bottom-nav[^\n]*backdrop-blur/)
   assert.doesNotMatch(managerNavSource, /mobile-bottom-nav[^\n]*backdrop-blur/)
   assert.match(globalSource, /\.mobile-bottom-nav[\s\S]*position: fixed/)
+  assert.match(globalSource, /\.mobile-bottom-nav[\s\S]*height: calc\(64px \+ env\(safe-area-inset-bottom, 0px\)\)/)
+  assert.match(globalSource, /\.mobile-bottom-nav-content \{[\s\S]*height: 64px/)
   assert.match(globalSource, /\.mobile-bottom-nav[\s\S]*background: #fff/)
+  assert.match(globalSource, /@media \(max-width: 1023px\)[\s\S]*\.app-layout-root \{[\s\S]*height: 100dvh[\s\S]*overflow: hidden/)
+  assert.match(globalSource, /@media \(max-width: 1023px\)[\s\S]*\.app-content-shell \{[\s\S]*overflow-y: auto[\s\S]*safe-area-inset-bottom/)
+  assert.match(hqLayoutSource, /app-content-shell min-h-0/)
+  assert.match(managerLayoutSource, /app-content-shell min-h-0/)
+  assert.match(hqNavSource, /mobile-bottom-nav-content/)
+  assert.match(managerNavSource, /mobile-bottom-nav-content/)
   assert.doesNotMatch(globalSource, /\.mobile-bottom-nav[\s\S]*translate3d\(0, 0, 0\)/)
   assert.match(rootLayoutSource, /viewportFit: 'cover'/)
+})
+
+test('總公司帳目上方不再顯示照片捷徑，避免手機功能列溢出', () => {
+  const accountingSource = fs.readFileSync(new URL('../components/hq/accounting-client.tsx', import.meta.url), 'utf8')
+
+  assert.doesNotMatch(accountingSource, /accounting\/documents\?from=/)
 })
 
 test('手機版浮動操作元件會避開底部選單與 iPhone 安全區', () => {

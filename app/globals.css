@@ -243,16 +243,53 @@
   }
 }
 
+/*
+ * 手機版只讓 main 成為捲動容器，頁面殼固定在 visual viewport。
+ * iOS/PWA 若讓 body 與內層同時捲動，position:fixed 底欄偶爾會依舊的
+ * layout viewport 合成到內容中途；單一捲動容器可避免底欄跳位。
+ */
+@media (max-width: 1023px) {
+  .app-layout-root {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .app-content-shell {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 /* 純色固定圖層避免 iOS/PWA 捲動時重新合成 backdrop-filter 而漂移。 */
 .mobile-bottom-nav {
-  position: fixed;
-  inset-inline: 0;
-  bottom: 0;
+  position: fixed !important;
+  top: auto !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
   z-index: 40;
   width: 100%;
   max-width: 100vw;
+  height: calc(64px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  overflow: hidden;
+  contain: layout paint;
+  isolation: isolate;
   background: #fff;
   box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.04);
+}
+.mobile-bottom-nav-content {
+  display: flex;
+  height: 64px;
+}
+.mobile-bottom-nav-item {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 /* 隱藏所有 <input type="number"> 的上下調整箭頭（spinner） */
