@@ -22,6 +22,10 @@ function fmtDate(value?: string | null) {
   })
 }
 
+function isExpiredPushEndpoint(error?: string | null) {
+  return /^(404|410)\b/.test(String(error || '').trim())
+}
+
 const CATEGORY_LABEL: Record<string, string> = {
   review_submission: '待審核', review_result: '審核結果', accounting_reminder: '帳目提醒',
   reimbursement_handoff: '補款點交', hq_escalation: '總公司追蹤', system: '系統測試',
@@ -271,8 +275,9 @@ export default async function PushNotificationsPage() {
               const notificationJobs = jobsByNotification.get(String(notification.id)) ?? []
               const delivered = notificationJobs.filter(job => job.status === 'delivered').length
               const pending = notificationJobs.filter(job => job.status === 'pending').length
-              const failed = notificationJobs.filter(job => job.status === 'failed').length
-              const error = notificationJobs.find(job => job.last_error)?.last_error
+              const expired = notificationJobs.filter(job => job.status === 'failed' && isExpiredPushEndpoint(job.last_error)).length
+              const failed = notificationJobs.filter(job => job.status === 'failed' && !isExpiredPushEndpoint(job.last_error)).length
+              const error = notificationJobs.find(job => job.last_error && !isExpiredPushEndpoint(job.last_error))?.last_error
               const followUp = followUpBySource.get(String(notification.source_key))
               return (
                 <div key={notification.id} className="px-4 py-3">
@@ -294,11 +299,13 @@ export default async function PushNotificationsPage() {
                         </p>
                       )}
                       {followUp?.status === 'resolved' && <p className="mt-1 text-xs font-bold text-emerald-700">追蹤狀態：已完成 · {fmtDate(followUp.resolved_at)}</p>}
+                      {expired > 0 && <p className="mt-1 text-xs text-amber-700">舊裝置推播端點已失效，系統已自動解除；使用者下次開啟系統時會重新綁定。</p>}
                       {error && <p className="mt-1 text-xs text-rose-700">失敗原因：{String(error)}</p>}
                     </div>
                     <div className="flex items-center gap-2 text-xs font-semibold">
                       {delivered > 0 && <span className="flex items-center gap-1 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />成功 {delivered}</span>}
                       {pending > 0 && <span className="flex items-center gap-1 text-amber-700"><Clock3 className="h-3.5 w-3.5" />重試 {pending}</span>}
+                      {expired > 0 && <span className="flex items-center gap-1 text-amber-700"><TriangleAlert className="h-3.5 w-3.5" />舊裝置已清理 {expired}</span>}
                       {failed > 0 && <span className="flex items-center gap-1 text-rose-700"><XCircle className="h-3.5 w-3.5" />失敗 {failed}</span>}
                       {notificationJobs.length === 0 && <span className="flex items-center gap-1 text-zinc-500"><TriangleAlert className="h-3.5 w-3.5" />無綁定裝置</span>}
                     </div>

@@ -39,7 +39,11 @@ function deviceName(userAgent?: string) {
   return '瀏覽器裝置'
 }
 
-export async function savePushSubscription(subscription: BrowserPushSubscription, userAgent?: string) {
+export async function savePushSubscription(
+  subscription: BrowserPushSubscription,
+  userAgent?: string,
+  options?: { expectExisting?: boolean },
+) {
   const user = await getVerifiedUser()
   if (!user) return { error: '請先登入後再開啟推播' }
   if (!isValidSubscription(subscription)) return { error: '推播訂閱資料格式錯誤' }
@@ -50,6 +54,13 @@ export async function savePushSubscription(subscription: BrowserPushSubscription
     .select('id, user_id')
     .eq('endpoint', subscription.endpoint)
     .maybeSingle()
+
+  // 瀏覽器仍保留 subscription、伺服器卻已沒有紀錄時，通常代表推播服務
+  // 曾回覆 404/410，舊端點已由投遞程序清除。不要把同一個失效端點存回來，
+  // 改由前端解除舊 subscription 並向瀏覽器取得全新的端點。
+  if (options?.expectExisting && !existing) {
+    return { refreshRequired: true as const, reassigned: false as const }
+  }
   const { error } = await admin.from('push_subscriptions').upsert({
     user_id: user.id,
     endpoint: subscription.endpoint,
@@ -84,7 +95,7 @@ export async function savePushSubscription(subscription: BrowserPushSubscription
       await notifyReviewerOfPendingWork(user.id)
     })
   }
-  return { success: true as const, reassigned }
+  return { success: true as const, refreshRequired: false as const, reassigned }
 }
 
 export async function removePushSubscription(endpoint: string) {

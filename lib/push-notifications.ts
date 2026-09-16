@@ -152,12 +152,15 @@ async function deliverPushJobs(input: { notificationIds?: string[]; limit?: numb
       const expired = statusCode === 404 || statusCode === 410
       const shouldRetry = !expired && attemptCount < 3
       const retryMinutes = attemptCount === 1 ? 5 : 15
+      const lastError = expired
+        ? `${statusCode} 推播裝置端點已失效，系統已自動解除舊綁定`
+        : `${statusCode ? `${statusCode} ` : ''}${deliveryErrorMessage(error)}`.trim()
       await admin.from('push_delivery_jobs').update({
         status: shouldRetry ? 'pending' : 'failed',
         attempt_count: attemptCount,
         next_attempt_at: shouldRetry ? new Date(Date.now() + retryMinutes * 60000).toISOString() : attemptedAt,
         last_attempt_at: attemptedAt,
-        last_error: `${statusCode ? `${statusCode} ` : ''}${deliveryErrorMessage(error)}`.trim(),
+        last_error: lastError,
         updated_at: attemptedAt,
       }).eq('id', job.id)
       if (expired) await admin.from('push_subscriptions').delete().eq('id', subscription.id)

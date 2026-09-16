@@ -9,6 +9,18 @@ function urlBase64ToUint8Array(value: string) {
   return Uint8Array.from([...raw].map(character => character.charCodeAt(0)))
 }
 
+function serializeSubscription(subscription: PushSubscription) {
+  const serialized = subscription.toJSON()
+  if (!serialized.endpoint || !serialized.keys?.p256dh || !serialized.keys?.auth) {
+    throw new Error('瀏覽器沒有回傳完整的推播訂閱資料')
+  }
+  return {
+    endpoint: serialized.endpoint,
+    expirationTime: serialized.expirationTime ?? null,
+    keys: { p256dh: serialized.keys.p256dh, auth: serialized.keys.auth },
+  }
+}
+
 export async function syncPushSubscriptionToCurrentUser(publicKey: string) {
   if (!publicKey || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     return { synced: false as const, reassigned: false }
@@ -18,7 +30,8 @@ export async function syncPushSubscriptionToCurrentUser(publicKey: string) {
   }
 
   const registration = await navigator.serviceWorker.register('/sw.js')
-  let subscription = await registration.pushManager.getSubscription()
+  const existingSubscription = await registration.pushManager.getSubscription()
+  let subscription = existingSubscription
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
@@ -26,17 +39,29 @@ export async function syncPushSubscriptionToCurrentUser(publicKey: string) {
     })
   }
 
-  const serialized = subscription.toJSON()
-  if (!serialized.endpoint || !serialized.keys?.p256dh || !serialized.keys?.auth) {
-    throw new Error('瀏覽器沒有回傳完整的推播訂閱資料')
+  let result = await savePushSubscription(
+    serializeSubscription(subscription),
+    navigator.userAgent,
+    { expectExisting: Boolean(existingSubscription) },
+  )
+  if ('error' in result) throw new Error(result.error)
+
+  // 伺服器在收到 404/410 後會刪除失效端點。若瀏覽器仍握有該端點，
+  // 主動解除並重新訂閱，避免下次同步又把同一個壞端點存回資料庫。
+  if (result.refreshRequired) {
+    await subscription.unsubscribe()
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    })
+    result = await savePushSubscription(
+      serializeSubscription(subscription),
+      navigator.userAgent,
+      { expectExisting: false },
+    )
+    if ('error' in result) throw new Error(result.error)
   }
 
-  const result = await savePushSubscription({
-    endpoint: serialized.endpoint,
-    expirationTime: serialized.expirationTime ?? null,
-    keys: { p256dh: serialized.keys.p256dh, auth: serialized.keys.auth },
-  }, navigator.userAgent)
-  if ('error' in result) throw new Error(result.error)
   return { synced: true as const, reassigned: result.reassigned }
 }
 

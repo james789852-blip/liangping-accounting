@@ -101,9 +101,16 @@ test('同一裝置切換到總公司帳號時會重新綁定並補發待審摘�
   assert.match(pwaShell, /result\.reassigned\) router\.refresh\(\)/)
 })
 
-test('失效的裝置訂閱會自動移除', () => {
+test('失效的裝置訂閱會自動移除並在下次開啟時重新訂閱', () => {
   assert.match(pushModule, /statusCode === 404 \|\| statusCode === 410/)
   assert.match(pushModule, /from\('push_subscriptions'\)\.delete\(\)\.eq\('id', subscription\.id\)/)
+  assert.match(pushAction, /options\?\.expectExisting && !existing/)
+  assert.match(pushAction, /refreshRequired: true/)
+  assert.match(pushClient, /if \(result\.refreshRequired\)/)
+  assert.match(pushClient, /await subscription\.unsubscribe\(\)/)
+  assert.match(pushClient, /expectExisting: false/)
+  assert.match(pushAdminPage, /舊裝置推播端點已失效，系統已自動解除/)
+  assert.match(pushAdminPage, /舊裝置已清理/)
 })
 
 test('總公司可分別控制店家與帳號推播', () => {
