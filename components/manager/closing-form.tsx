@@ -1409,6 +1409,12 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const notePhotoInputRef = useRef<HTMLInputElement>(null)
 
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
+  const [pendingHandwriteDeleteId, setPendingHandwriteDeleteId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!pendingHandwriteDeleteId) return
+    const timer = window.setTimeout(() => setPendingHandwriteDeleteId(null), 8000)
+    return () => window.clearTimeout(timer)
+  }, [pendingHandwriteDeleteId])
   // 初始化時先讀取本機草稿，再允許寫回。否則首次 render 的空陣列會先覆蓋
   // 使用者剛輸入的手寫菜單金額，造成重新整理後資料消失。
   const [handwriteOrdersHydrated, setHandwriteOrdersHydrated] = useState(false)
@@ -3258,13 +3264,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     scheduleBackgroundSave()
   }
   function removeHandwriteOrder(id: string) {
+    const removedOrder = handwriteOrders.find(order => order.id === id)
     setHandwriteOrders(prev => prev.filter(o => o.id !== id))
+    setPendingHandwriteDeleteId(null)
     scheduleBackgroundSave()
+    toast.success(removedOrder ? `已刪除單號 ${removedOrder.order_number}` : '已刪除此筆單號')
   }
   function clearHandwriteOrders() {
     if (handwriteOrders.length === 0) return
     if (!window.confirm(`確定刪除今天全部 ${handwriteOrders.length} 筆手寫單號嗎？此操作會保留其他結帳資料。`)) return
     setHandwriteOrders([])
+    setPendingHandwriteDeleteId(null)
     scheduleBackgroundSave()
     toast.success('今天的手寫單號已全部刪除')
   }
@@ -5541,7 +5551,7 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                     </button>}
                     <span className="w-20 text-right text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>金額</span>
                     {!isLocked && <span className="w-8" />}
-                    {!isLocked && <span className="w-5" />}
+                    {!isLocked && <span className="w-9" />}
                   </div>
                   <div style={{ maxHeight: handwriteOrders.length > 8 ? 400 : 'none', overflowY: handwriteOrders.length > 8 ? 'auto' : 'visible' }}>
                   {handwriteOrders.map((o, idx) => (
@@ -5572,12 +5582,36 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           </button>
                         )}
                         {!isLocked && (
-                          <button type="button" onClick={() => removeHandwriteOrder(o.id)} className="shrink-0" style={{ color: '#d4d4d8' }}
-                            onMouseEnter={e => (e.currentTarget.style.color = '#be123c')} onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
-                            <X className="h-3.5 w-3.5" />
+                          <button type="button" onClick={() => setPendingHandwriteDeleteId(o.id)}
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                            aria-label={`準備刪除單號 ${o.order_number}`} title="刪除此筆（需再次確認）"
+                            style={pendingHandwriteDeleteId === o.id
+                              ? { color: '#be123c', background: '#ffe4e6', border: '1px solid #fda4af' }
+                              : { color: '#71717a', background: 'white', border: '1px solid #e4e4e7' }}>
+                            <Trash2 className="h-4 w-4" />
                           </button>
                         )}
                       </div>
+                      {pendingHandwriteDeleteId === o.id && !isLocked && (
+                        <div className="mx-3 mb-2 flex flex-col gap-2 rounded-xl px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                          style={{ background: '#fff1f2', border: '1px solid #fecdd3' }}>
+                          <span className="text-xs font-semibold" style={{ color: '#9f1239' }}>
+                            確定刪除單號 {o.order_number}？刪除後金額也會一併移除。
+                          </span>
+                          <span className="flex shrink-0 gap-2">
+                            <button type="button" onClick={() => setPendingHandwriteDeleteId(null)}
+                              className="h-9 rounded-lg px-3 text-xs font-semibold"
+                              style={{ color: '#52525b', background: 'white', border: '1px solid #e4e4e7' }}>
+                              取消
+                            </button>
+                            <button type="button" onClick={() => removeHandwriteOrder(o.id)}
+                              className="flex h-9 items-center gap-1 rounded-lg px-3 text-xs font-semibold text-white"
+                              style={{ background: '#e11d48' }}>
+                              <Trash2 className="h-3.5 w-3.5" />確認刪除
+                            </button>
+                          </span>
+                        </div>
+                      )}
                       {o.voided && (
                         <div className="px-3 pb-2">
                           {isLocked
