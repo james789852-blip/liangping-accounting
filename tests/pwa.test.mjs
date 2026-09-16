@@ -89,6 +89,7 @@ test('手機版通知鈴鐺嵌入頂端標題旁，不再浮在內容上', () =>
   assert.doesNotMatch(notificationSource, /top-\[calc\(4\.25rem/)
   assert.match(hqNavSource, /總公司後台[\s\S]*<NotificationCenter \/>/)
   assert.match(managerNavSource, /<NotificationCenter \/>/)
+  assert.match(hqNavSource, /hq-mobile-header-title[^"]*overflow-visible/)
   assert.match(globalSource, /\.closing-form-bottom-bar \{[\s\S]*bottom: 0;[\s\S]*padding-bottom: calc\(0\.75rem \+ env\(safe-area-inset-bottom, 0px\)\)/)
   assert.match(globalSource, /\.manager-sticky-action-bar \{[\s\S]*bottom: 0;/)
 })

@@ -340,7 +340,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           <Menu className="h-6 w-6" />
         </button>
         {/* 中間標題區，flex-1 + min-w-0 確保可截斷 */}
-        <div className="hq-mobile-header-title flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
+        <div className="hq-mobile-header-title flex items-center gap-1.5 flex-1 min-w-0 overflow-visible">
           {isManagerPath && canAccessHQ ? (
             <>
               <ReliableNavigationLink href={hqHomeHref} className="text-xs font-medium shrink-0 transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>總公司</ReliableNavigationLink>
