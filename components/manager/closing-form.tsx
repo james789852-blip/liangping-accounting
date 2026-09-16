@@ -8,7 +8,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import ClosingHelp from './closing-help'
-import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn, PiggyBank } from 'lucide-react'
+import { Save, Send, Calculator, Package, Banknote, BarChart3, Loader2, Trash2, Plus, Wallet, X, AlertCircle, CheckCircle2, RefreshCw, Camera, Pencil, UploadCloud, FileText, ZoomIn, PiggyBank, ChevronDown } from 'lucide-react'
 import { saveCashCounts, submitClosing, savePettyCounts } from '@/app/actions/closings'
 import { refreshReserveHistoryContext } from '@/app/actions/reserve-history'
 import { uploadClientPhoto } from '@/lib/client-photo-upload'
@@ -5488,36 +5488,49 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                   </div>
                   <p className="text-[10px]" style={{ color: '#a1a1aa' }}>已存在的單號不重複建立 · 單次最多 {MAX_HANDWRITE_BATCH} 筆</p>
                   {handwriteOrders.length > 0 && (
-                    <div className="mt-3 pt-3" style={{ borderTop: '1px solid #e4e4e7' }}>
-                      <p className="text-xs font-semibold mb-2" style={{ color: '#52525b' }}>批次更換已建立的單號</p>
-                      <div className="flex flex-wrap gap-2 items-center">
-                        <input type="number" min="1" inputMode="numeric" placeholder="原起始"
-                          aria-label="原單號起始"
-                          style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
-                          value={replaceRangeStart || ''} onChange={e => setReplaceRangeStart(parseInt(e.target.value) || 0)} />
-                        <span style={{ color: '#a1a1aa' }}>—</span>
-                        <input type="number" min="1" inputMode="numeric" placeholder="原結束"
-                          aria-label="原單號結束"
-                          style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
-                          value={replaceRangeEnd || ''} onChange={e => setReplaceRangeEnd(parseInt(e.target.value) || 0)} />
-                        <span className="font-semibold" style={{ color: '#a1a1aa' }}>→</span>
-                        <input type="number" min="1" inputMode="numeric" placeholder="新起始"
-                          aria-label="新單號起始"
-                          style={{ padding: '8px 10px', border: '1.5px solid #F59E0B', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
-                          value={replaceRangeNewStart || ''} onChange={e => setReplaceRangeNewStart(parseInt(e.target.value) || 0)} />
-                        <span style={{ color: '#a1a1aa' }}>—</span>
-                        <input type="number" min="1" inputMode="numeric" placeholder="新結束"
-                          aria-label="新單號結束"
-                          style={{ padding: '8px 10px', border: '1.5px solid #F59E0B', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
-                          value={replaceRangeNewEnd || ''} onChange={e => setReplaceRangeNewEnd(parseInt(e.target.value) || 0)} />
-                        <button type="button" onClick={replaceHandwriteOrderRange}
-                          className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold shrink-0"
-                          style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
-                          <Pencil className="h-3.5 w-3.5" /> 更換
-                        </button>
+                    <details className="group mt-3 border-t border-zinc-200 pt-3">
+                      <summary
+                        className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-xs font-semibold [&::-webkit-details-marker]:hidden"
+                        style={{ color: '#52525b', border: '1px solid #e4e4e7' }}
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <Pencil className="h-3.5 w-3.5 shrink-0" />
+                          <span>批次更換單號</span>
+                          <span className="hidden font-normal sm:inline" style={{ color: '#a1a1aa' }}>有需要再展開</span>
+                        </span>
+                        <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" style={{ color: '#a1a1aa' }} />
+                      </summary>
+                      <div className="mt-2 rounded-xl bg-white p-3" style={{ border: '1px solid #e4e4e7' }}>
+                        <p className="text-xs font-semibold mb-2" style={{ color: '#52525b' }}>批次更換已建立的單號</p>
+                        <div className="flex flex-wrap gap-2 items-center">
+                          <input type="number" min="1" inputMode="numeric" placeholder="原起始"
+                            aria-label="原單號起始"
+                            style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
+                            value={replaceRangeStart || ''} onChange={e => setReplaceRangeStart(parseInt(e.target.value) || 0)} />
+                          <span style={{ color: '#a1a1aa' }}>—</span>
+                          <input type="number" min="1" inputMode="numeric" placeholder="原結束"
+                            aria-label="原單號結束"
+                            style={{ padding: '8px 10px', border: '1.5px solid #e4e4e7', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
+                            value={replaceRangeEnd || ''} onChange={e => setReplaceRangeEnd(parseInt(e.target.value) || 0)} />
+                          <span className="font-semibold" style={{ color: '#a1a1aa' }}>→</span>
+                          <input type="number" min="1" inputMode="numeric" placeholder="新起始"
+                            aria-label="新單號起始"
+                            style={{ padding: '8px 10px', border: '1.5px solid #F59E0B', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
+                            value={replaceRangeNewStart || ''} onChange={e => setReplaceRangeNewStart(parseInt(e.target.value) || 0)} />
+                          <span style={{ color: '#a1a1aa' }}>—</span>
+                          <input type="number" min="1" inputMode="numeric" placeholder="新結束"
+                            aria-label="新單號結束"
+                            style={{ padding: '8px 10px', border: '1.5px solid #F59E0B', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', width: '88px', textAlign: 'center' }}
+                            value={replaceRangeNewEnd || ''} onChange={e => setReplaceRangeNewEnd(parseInt(e.target.value) || 0)} />
+                          <button type="button" onClick={replaceHandwriteOrderRange}
+                            className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold shrink-0"
+                            style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
+                            <Pencil className="h-3.5 w-3.5" /> 更換
+                          </button>
+                        </div>
+                        <p className="text-[10px] mt-1.5" style={{ color: '#a1a1aa' }}>例如：1000–1005 → 2000–2005；金額與作廢狀態會保留</p>
                       </div>
-                      <p className="text-[10px] mt-1.5" style={{ color: '#a1a1aa' }}>例如：1000–1005 → 2000–2005；金額與作廢狀態會保留</p>
-                    </div>
+                    </details>
                   )}
                 </div>
               )}

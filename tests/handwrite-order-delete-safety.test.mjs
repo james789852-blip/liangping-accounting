@@ -43,3 +43,11 @@ test('手機手寫單號標題、金額與操作欄使用相同網格保持對�
   assert.match(source, />狀態<\/span>/)
   assert.match(source, /grid grid-cols-\[minmax\(0,1fr\)_auto\] items-center gap-3/)
 })
+
+test('批次更換單號預設收合，需要時才展開', () => {
+  assert.match(source, /<details className="group mt-3 border-t border-zinc-200 pt-3">/)
+  assert.match(source, /<summary[\s\S]*?批次更換單號[\s\S]*?<ChevronDown/)
+  assert.match(source, /group-open:rotate-180/)
+  assert.doesNotMatch(source, /<details[^>]*\sopen(?:=|>)/)
+  assert.match(source, /<details[\s\S]*?aria-label="原單號起始"[\s\S]*?onClick=\{replaceHandwriteOrderRange\}[\s\S]*?<\/details>/)
+})
