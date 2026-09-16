@@ -205,10 +205,11 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
           <Menu className="h-6 w-6" />
         </button>
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
-          <div className="min-w-0">
+          <div className="min-w-0 shrink">
             <p className="text-sm font-bold text-slate-900 truncate leading-tight">{displayIdentity}</p>
             <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{storeName || '店長端'}</p>
           </div>
+          <div data-mobile-notification-slot className="flex h-10 w-10 shrink-0 items-center justify-center" />
         </div>
         {time && (
           <div className="manager-mobile-clock mx-2 text-right shrink-0">

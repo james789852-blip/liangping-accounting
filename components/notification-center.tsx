@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { usePathname, useRouter } from 'next/navigation'
 import { Bell, BellRing, CheckCheck, ChevronRight, CircleCheck, Loader2, Undo2, UserRoundCheck, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -38,6 +39,7 @@ export default function NotificationCenter() {
   const [unread, setUnread] = useState(0)
   const [loaded, setLoaded] = useState(false)
   const [followUpPendingId, setFollowUpPendingId] = useState<string | null>(null)
+  const [mobileTriggerHost, setMobileTriggerHost] = useState<HTMLElement | null>(null)
   const isPortal = pathname.startsWith('/manager/') || pathname.startsWith('/hq/')
   const activeFollowUps = notifications.filter(notification => notification.follow_up && notification.follow_up.status !== 'resolved').length
   const badgeCount = activeFollowUps || unread
@@ -61,6 +63,26 @@ export default function NotificationCenter() {
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [isPortal, pathname, refresh])
+
+  useEffect(() => {
+    if (!isPortal) {
+      setMobileTriggerHost(null)
+      return
+    }
+
+    const locateHost = () => {
+      const host = document.querySelector<HTMLElement>('[data-mobile-notification-slot]')
+      setMobileTriggerHost(host)
+      return !!host
+    }
+
+    if (locateHost()) return
+    const observer = new MutationObserver(() => {
+      if (locateHost()) observer.disconnect()
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [isPortal, pathname])
 
   if (!isPortal) return null
 
@@ -97,8 +119,21 @@ export default function NotificationCenter() {
 
   return (
     <>
+      {mobileTriggerHost && createPortal(
+        <button type="button" onClick={() => setOpen(value => !value)} aria-label={`通知中心${unread ? `，${unread} 則未讀` : ''}${activeFollowUps ? `，${activeFollowUps} 項待處理` : ''}`}
+          className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white shadow-sm lg:hidden"
+          style={{ border: badgeCount ? '2px solid #f59e0b' : '1px solid #d4d4d8', color: badgeCount ? '#b45309' : '#52525b' }}>
+          {badgeCount ? <BellRing className="h-5 w-5" /> : <Bell className="h-5 w-5" />}
+          {badgeCount > 0 && (
+            <span className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
+              {badgeCount > 99 ? '99+' : badgeCount}
+            </span>
+          )}
+        </button>,
+        mobileTriggerHost,
+      )}
       <button type="button" onClick={() => setOpen(value => !value)} aria-label={`通知中心${unread ? `，${unread} 則未讀` : ''}${activeFollowUps ? `，${activeFollowUps} 項待處理` : ''}`}
-        className="fixed right-3 top-[calc(4.25rem+env(safe-area-inset-top))] z-[65] flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-xl lg:bottom-6 lg:right-6 lg:top-auto lg:h-12 lg:w-12"
+        className="fixed bottom-6 right-6 z-[65] hidden h-12 w-12 items-center justify-center rounded-full bg-white shadow-xl lg:flex"
         style={{ border: badgeCount ? '2px solid #f59e0b' : '1px solid #d4d4d8', color: badgeCount ? '#b45309' : '#52525b' }}>
         {badgeCount ? <BellRing className="h-5 w-5" /> : <Bell className="h-5 w-5" />}
         {badgeCount > 0 && (

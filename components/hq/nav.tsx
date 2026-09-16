@@ -357,6 +357,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           ) : (
             <span className="font-bold text-sm text-slate-900 truncate">總公司後台</span>
           )}
+          <div data-mobile-notification-slot className="flex h-10 w-10 shrink-0 items-center justify-center" />
         </div>
         {/* 右側操作區，shrink-0 不壓縮 */}
         <div className="hq-mobile-actions flex items-center gap-2 shrink-0">
