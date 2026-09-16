@@ -5,7 +5,6 @@ import { usePathname, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { BellRing, Download, PlusSquare, Share, Wifi, WifiOff, X } from 'lucide-react'
 import { syncPushSubscriptionToCurrentUser } from '@/lib/push-client'
-import NotificationCenter from '@/components/notification-center'
 
 const INSTALL_DISMISS_KEY = 'lp-pwa-install-dismissed-at'
 const INSTALL_DISMISS_MS = 14 * 24 * 60 * 60 * 1000
@@ -269,7 +268,6 @@ export function PWAShell() {
       <NetworkStatus />
       <InstallPrompt />
       <PushPrompt />
-      <NotificationCenter />
     </>
   )
 }

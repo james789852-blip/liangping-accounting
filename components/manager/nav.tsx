@@ -9,6 +9,7 @@ import StoreSwitcher from '@/components/manager/store-switcher'
 import { clearStoreSelectionOnLogout } from '@/app/actions/store-select'
 import { detachPushSubscriptionFromCurrentUser } from '@/lib/push-client'
 import ReliableNavigationLink from '@/components/reliable-navigation-link'
+import NotificationCenter from '@/components/notification-center'
 
 const HR_SYSTEM_URL = 'https://eric0w0chn-hue.github.io/hr-system/'
 
@@ -209,7 +210,7 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
             <p className="text-sm font-bold text-slate-900 truncate leading-tight">{displayIdentity}</p>
             <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{storeName || '店長端'}</p>
           </div>
-          <div data-mobile-notification-slot className="flex h-10 w-10 shrink-0 items-center justify-center" />
+          <NotificationCenter />
         </div>
         {time && (
           <div className="manager-mobile-clock mx-2 text-right shrink-0">
