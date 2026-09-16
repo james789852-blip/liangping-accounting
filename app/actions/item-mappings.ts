@@ -557,7 +557,7 @@ export async function saveItemMapping(
   const admin = createAdminClient()
 
   // 檢查是否已存在（避免 unique constraint 錯誤）
-  let query = admin.from('item_column_mappings').select('id, item_name, excel_column, store_id, vendor_group').eq('item_name', itemName)
+  let query = admin.from('item_column_mappings').select('*').eq('item_name', itemName)
   if (storeId) query = query.eq('store_id', storeId)
   else query = query.is('store_id', null)
   const { data: candidates } = await query
@@ -579,18 +579,24 @@ export async function saveItemMapping(
       if ('error' in reactivated) return { error: `重新啟用失敗：${reactivated.error}` }
     }
     if (isVendorOnlyPlaceholder || needsReactivation) {
-      const { error } = await admin.from('item_column_mappings').update({
+      const { data: savedMapping, error } = await admin.from('item_column_mappings').update({
         excel_column: excelColumn,
         item_category: itemCategory,
         updated_at: new Date().toISOString(),
-      }).eq('id', existing.id)
+      }).eq('id', existing.id).select('*').single()
       if (error) return { error: `重新啟用失敗：${error.message}` }
       const ensured = await ensureSystemItemAndEnable(itemName, itemCategory, requestedGroup, storeId)
       if (isMiscVendorGroup(vendorGroup)) deferSyncMisc(storeId ?? null)
       revalidate()
-      return { success: true as const, reactivated: needsReactivation, convertedPlaceholder: isVendorOnlyPlaceholder, newVg: ensured.newlyCreatedVg }
+      return {
+        success: true as const,
+        reactivated: needsReactivation,
+        convertedPlaceholder: isVendorOnlyPlaceholder,
+        newVg: ensured.newlyCreatedVg,
+        mapping: savedMapping,
+      }
     }
-    return { success: true as const, alreadyExists: true as const }
+    return { success: true as const, alreadyExists: true as const, mapping: existing }
   }
 
   // 分類同名 mapping 可能只是內部佔位，也可能是使用者明確新增的正式品項
@@ -637,13 +643,13 @@ export async function saveItemMapping(
     vgSort = Math.max(0, ...(allVg ?? []).map((v: any) => v.vg_sort_order ?? 0)) + 10
   }
 
-  const { error: insertErr } = await admin.from('item_column_mappings').insert({
+  const { data: savedMapping, error: insertErr } = await admin.from('item_column_mappings').insert({
     item_name: itemName, excel_column: excelColumn, item_category: itemCategory,
     vendor_group: requestedGroup,
     store_id: storeId ?? null, sort_order: newSort, vg_sort_order: vgSort,
     doc_type_override: vendorOnlyDocType,
     updated_at: new Date().toISOString(),
-  })
+  }).select('*').single()
   if (insertErr) return { error: `新增失敗：${insertErr.message}` }
 
   // 2. 確保 system_items + store_items 也有這品項
@@ -655,7 +661,7 @@ export async function saveItemMapping(
   }
 
   revalidate()
-  return { success: true as const, newVg: ensured.newlyCreatedVg }
+  return { success: true as const, newVg: ensured.newlyCreatedVg, mapping: savedMapping }
 }
 
 /** 確保品項在 system_items 存在，且該店的 store_items 啟用 */

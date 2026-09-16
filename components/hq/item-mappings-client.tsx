@@ -260,6 +260,19 @@ export default function ItemMappingsClient({
   )), [directGroupNames, excludedVendorGroupNames, groupOrder])
   const vendorChildGroupSet = useMemo(() => new Set(vendorChildGroups), [vendorChildGroups])
 
+  function mergeSavedMappings(savedMappings: Mapping[]) {
+    if (savedMappings.length === 0) return
+    setMappings(prev => {
+      const next = [...prev]
+      for (const saved of savedMappings) {
+        const index = next.findIndex(mapping => mapping.id === saved.id)
+        if (index === -1) next.push(saved)
+        else next[index] = { ...next[index], ...saved }
+      }
+      return next
+    })
+  }
+
   function startEdit(m: Mapping) { setEditId(m.id); setEditCol(m.excel_column); setEditCat(m.item_category); setEditVendorGroup(m.vendor_group ?? '') }
 
   function handleUpdate(id: string) {
@@ -323,6 +336,17 @@ export default function ItemMappingsClient({
           await setItemDocOverride(newName.trim(), entry.storeId, newDocType.trim())
         }
       }
+      mergeSavedMappings(results.flatMap(({ result }) => {
+        const mapping = result?.mapping as Mapping | null | undefined
+        if (!mapping) return []
+        return [{
+          ...mapping,
+          doc_type_override: newDocType.trim() || mapping.doc_type_override,
+          disabled_at: null,
+          archived: false,
+          is_explicit_item: result?.convertedPlaceholder ? true : mapping.is_explicit_item,
+        }]
+      }))
       // Optimistic：若 auto-create 了新 vg，立即加入 vgsState
       for (const { result } of results) {
         const newVg = result?.newVg as { id: string; name: string; sort_order: number } | null | undefined
@@ -341,7 +365,6 @@ export default function ItemMappingsClient({
       if (summary) toast.success(summary)
 
       setShowAdd(false); setNewName(''); setNewCol(''); setNewCat('食材'); setNewVendorGroup(''); setNewDocType(''); setBatchStoreIds([])
-      router.refresh()
     })
   }
 
@@ -956,6 +979,18 @@ export default function ItemMappingsClient({
                           const docResult = await setItemDocOverride(name, storeParam ?? null, inlineAddDocType.trim())
                           if (docResult && 'error' in docResult) { toast.error('單據類型儲存失敗：' + docResult.error); return }
                         }
+                        const savedMapping = (r as { mapping?: Mapping; convertedPlaceholder?: boolean })?.mapping
+                        if (savedMapping) {
+                          mergeSavedMappings([{
+                            ...savedMapping,
+                            doc_type_override: inlineAddDocType.trim() || savedMapping.doc_type_override,
+                            disabled_at: null,
+                            archived: false,
+                            is_explicit_item: (r as { convertedPlaceholder?: boolean })?.convertedPlaceholder
+                              ? true
+                              : savedMapping.is_explicit_item,
+                          }])
+                        }
                         // Optimistic：若 auto-create 新 vg → 加入 vgsState
                         const newVg = (r as any)?.newVg
                         if (newVg) setVgsState(prev => prev.some(v => v.id === newVg.id) ? prev : [...prev, { ...newVg, doc_type: null }])
@@ -964,7 +999,6 @@ export default function ItemMappingsClient({
                         setInlineAddName('')
                         setInlineAddCat('食材')
                         setInlineAddDocType('')
-                        router.refresh()
                       })
                     }}
                     className="text-xs font-semibold px-3 py-2 rounded-lg text-white"
