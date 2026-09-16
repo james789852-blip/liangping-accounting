@@ -11,6 +11,7 @@ import { disputeClosing } from '@/app/actions/closings'
 import { toast } from 'sonner'
 import { supabasePreviewUrl } from '@/lib/photo-image-url'
 import { syncSingleReceiptItemAmount } from '@/lib/receipt-amount-consistency'
+import { formatReserveDisplayLabel } from '@/lib/reserve-display'
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-TW') }
 
@@ -30,7 +31,7 @@ interface Receipt {
   total_amount: number; tax_amount?: number; notes?: string; photo_url: string; receipt_items: ReceiptItem[]
   expectedDocumentTypes?: string[]; expectedItemDocumentTypes?: (string | null)[]; configuredVendorGroups?: string[]
 }
-interface ReserveItem { reason: string; amount: number }
+interface ReserveItem { reason: string; description?: string; amount: number }
 interface Closing {
   id: string; business_date: string; status: string
   total_revenue: number; variance: number; note: string; dispute_note: string
@@ -114,9 +115,9 @@ function SubLabel({ children }: { children: React.ReactNode }) {
 
 function InfoRow({ label, value, muted, accent }: { label: string; value: string; muted?: boolean; accent?: string }) {
   return (
-    <div className="flex justify-between text-xs">
-      <span style={{ color: muted ? '#a1a1aa' : '#52525b' }}>{label}</span>
-      <span className="tabular-nums font-medium" style={{ color: accent ?? '#18181b' }}>{value}</span>
+    <div className="flex justify-between gap-3 text-xs">
+      <span className="min-w-0 break-words" style={{ color: muted ? '#a1a1aa' : '#52525b' }}>{label}</span>
+      <span className="shrink-0 tabular-nums font-medium" style={{ color: accent ?? '#18181b' }}>{value}</span>
     </div>
   )
 }
@@ -484,7 +485,7 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                     {remittanceAdjustments.filter((a: any) => Number(a?.amount) !== 0).map((a: any, i: number) => (
                       <InfoRow key={i} label={a.label || '匯款調整'} value={`${a.amount >= 0 ? '+' : '−'}$${fmt(Math.abs(Number(a.amount) || 0))}`} />
                     ))}
-                    {reserves.map((item, i) => <InfoRow key={i} label={`預留：${item.reason}`} value={`−$${fmt(item.amount)}`} />)}
+                    {reserves.map((item, i) => <InfoRow key={i} label={formatReserveDisplayLabel(item, '預留：')} value={`−$${fmt(item.amount)}`} />)}
                     {preReservedExpenseDetails.map((item, i) => (
                       <InfoRow key={`pre-reserved-${i}`} label={`${item.description}（前幾日預留款加回）`} value={`＋$${fmt(item.amount)}`} accent="#047857" />
                     ))}
@@ -548,6 +549,9 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                   <p className="text-sm font-bold" style={{ color: '#065f46' }}>照片核對完成，最後確認結算</p>
                   <InfoRow label="應匯入" value={`$${fmt(closing.should_include_delivery)}`} />
                   <InfoRow label="實匯入" value={`$${fmt(closing.actual_remit)}`} />
+                  {reserves.map((item, i) => (
+                    <InfoRow key={`final-reserve-${i}`} label={formatReserveDisplayLabel(item, '預留：')} value={`−$${fmt(item.amount)}`} accent="#c2410c" />
+                  ))}
                   {preReservedExpenseDetails.map((item, i) => (
                     <InfoRow key={`final-pre-reserved-${i}`} label={`${item.description}（前幾日預留款加回）`} value={`＋$${fmt(item.amount)}`} accent="#047857" />
                   ))}
@@ -699,9 +703,9 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                       </div>
                     ))}
                     {reserves.map((r, i) => (
-                      <div key={`reserve-${i}`} className="flex justify-between text-xs pt-1" style={{ color: '#ea580c' }}>
-                        <span>🐷 預留 {r.reason}</span>
-                        <span className="tabular-nums">−{fmt(Number(r.amount) || 0)}</span>
+                      <div key={`reserve-${i}`} className="flex justify-between gap-3 text-xs pt-1" style={{ color: '#ea580c' }}>
+                        <span className="min-w-0 break-words">🐷 {formatReserveDisplayLabel(r)}</span>
+                        <span className="shrink-0 tabular-nums">−{fmt(Number(r.amount) || 0)}</span>
                       </div>
                     ))}
                     {preReservedExpenseDetails.map((item, i) => (

@@ -8,6 +8,7 @@ import { verifyClosing, disputeClosing, deleteClosing } from '@/app/actions/clos
 import SafePhotoImage from './safe-photo-image'
 import { getPreReservedExpenseDetails, getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
 import { syncSingleReceiptItemAmount } from '@/lib/receipt-amount-consistency'
+import { formatReserveDisplayLabel } from '@/lib/reserve-display'
 
 interface Store { id: string; name: string; type?: string }
 interface RemittanceAdjustment {
@@ -20,7 +21,7 @@ interface Closing {
   expected_remit: number; variance: number
   actual_remit?: number; should_include_delivery?: number
   remittance_adjustments?: RemittanceAdjustment[]
-  reserve_items?: { reason?: string; amount?: number }[]
+  reserve_items?: { reason?: string; description?: string; amount?: number }[]
   cash_counts?: { large_expenses?: unknown }[]
   ck_delivery_photo_url?: string; channel_photo_urls?: Record<string, string>
   envelope_photo_url?: string; void_invoice_photo_urls?: string[]; note_photo_url?: string
@@ -434,14 +435,14 @@ function ClosingCard({
                 { label: '應匯總公司', val: closing.expected_remit, color: '#047857', bold: true },
                 { label: '實際包進信封（現金清點）', val: closing.actual_remit ?? closing.expected_remit, color: '#18181b', bold: true },
                 ...(closing.remittance_adjustments ?? []).filter(adj => Number(adj.amount) !== 0).map(adj => ({ label: `　${adj.label || '匯款調整'}`, val: Number(adj.amount), color: Number(adj.amount) >= 0 ? '#047857' : '#2563eb' })),
-                ...(closing.reserve_items ?? []).map(item => ({ label: `　預留${item.reason || '款項'}`, val: -(Number(item.amount) || 0), color: '#c2410c' })),
+                ...(closing.reserve_items ?? []).map(item => ({ label: `　${formatReserveDisplayLabel(item)}`, val: -(Number(item.amount) || 0), color: '#c2410c' })),
                 ...preReservedExpenseDetails.map(item => ({ label: `　${item.description}（前幾日預留款加回）`, val: item.amount, color: '#15803d' })),
                 ...(hasRemittanceChange ? [{ label: '實際應包回公司（調整／預留後）', val: remitToHQ, color: '#047857', bold: true }] : []),
               ].map(({ label, val, color, bold }, idx, arr) => (
-                <div key={idx} className="flex items-center justify-between px-3 py-2 text-xs"
+                <div key={idx} className="flex items-center justify-between gap-3 px-3 py-2 text-xs"
                   style={{ borderBottom: idx !== arr.length - 1 ? '1px solid #f4f4f5' : 'none', background: (bold && (label === '應包進信封' || label === '應匯總公司')) ? '#f8fafc' : 'white' }}>
-                  <span style={{ color: '#52525b', fontWeight: bold ? 700 : 400 }}>{label}</span>
-                  <span className="tabular-nums" style={{ color, fontWeight: bold ? 700 : 500 }}>
+                  <span className="min-w-0 break-words" style={{ color: '#52525b', fontWeight: bold ? 700 : 400 }}>{label}</span>
+                  <span className="shrink-0 tabular-nums" style={{ color, fontWeight: bold ? 700 : 500 }}>
                     {val < 0 ? `−$${fmt(-val)}` : `$${fmt(val)}`}
                   </span>
                 </div>

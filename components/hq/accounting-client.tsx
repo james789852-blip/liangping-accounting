@@ -18,6 +18,7 @@ import HolidaysEditor from './holidays-editor'
 import BatchHolidaysDialog from './batch-holidays-dialog'
 import HQAlertsCard from './hq-alerts-card'
 import { getPreReservedExpenseDetails, getPreReservedExpenseTotal } from '@/lib/pre-reserved-expenses'
+import { formatReserveDisplayLabel } from '@/lib/reserve-display'
 
 interface Store { id: string; name: string }
 interface ClosingRow {
@@ -35,7 +36,7 @@ interface ClosingRow {
   actual_remit?: number
   should_include_delivery?: number
   remittance_adjustments?: { label?: string; amount?: number }[] | null
-  reserve_items?: { reason?: string; amount?: number }[] | null
+  reserve_items?: { reason?: string; description?: string; amount?: number }[] | null
   cash_counts?: { large_expenses?: unknown }[] | null
 }
 interface CKRow {
@@ -977,9 +978,9 @@ function QuickClosingSummary({ closing }: { closing: ClosingRow }) {
             </div>
           ))}
           {reserves.map((item, index) => (
-            <div key={index} className="flex items-center justify-between text-xs" style={{ color: '#c2410c' }}>
-              <span>預留{item.reason || '款項'}</span>
-              <span className="tabular-nums font-semibold">−${fmt(Number(item.amount) || 0)}</span>
+            <div key={index} className="flex items-center justify-between gap-3 text-xs" style={{ color: '#c2410c' }}>
+              <span className="min-w-0 break-words">{formatReserveDisplayLabel(item)}</span>
+              <span className="shrink-0 tabular-nums font-semibold">−${fmt(Number(item.amount) || 0)}</span>
             </div>
           ))}
           {preReservedExpenseDetails.map((item, index) => (
