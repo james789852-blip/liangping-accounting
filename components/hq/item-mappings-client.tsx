@@ -25,14 +25,14 @@ interface Mapping {
 }
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
-  '食材': { bg: '#f4f4f5', color: '#3f3f46' },
-  '耗材': { bg: '#f4f4f5', color: '#3f3f46' },
+  '食材': { bg: '#f0f5f0', color: '#516456' },
+  '耗材': { bg: '#f0f5f0', color: '#516456' },
   '雜項': { bg: '#f4f4f5', color: '#71717a' },
 }
 
-const VG_STYLE = { bg: '#f4f4f5', color: '#3f3f46' }
+const VG_STYLE = { bg: '#fff3df', color: '#88420f' }
 const VG_STYLE_UNCAT = { bg: '#f4f4f5', color: '#71717a' }
-const VG_STYLE_DOC = { bg: '#f4f4f5', color: '#3f3f46' }
+const VG_STYLE_DOC = { bg: '#fff3df', color: '#88420f' }
 const DOC_TYPES = new Set(['發票', '收據', '估價單', '公司開'])
 
 const SELECT_STYLE: React.CSSProperties = {
@@ -907,7 +907,7 @@ export default function ItemMappingsClient({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <span className="rounded-lg px-2.5 py-1 text-sm font-bold" style={{ background: '#f4f4f5', color: '#27272a' }}>廠商</span>
+                <span className="rounded-lg px-2.5 py-1 text-sm font-bold" style={{ background: '#fff3df', color: '#88420f' }}>廠商</span>
                 <span className="text-xs font-semibold" style={{ color: '#71717a' }}>{vendorChildGroups.length} 個廠商分類</span>
               </div>
               <p className="mt-1.5 text-[11px] leading-5" style={{ color: '#78716c' }}>
@@ -916,7 +916,7 @@ export default function ItemMappingsClient({
             </div>
             <button type="button" onClick={() => { setNewVgMode('vendor'); setNewVgName(''); setShowAddVg(true) }}
               className="flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold"
-              style={{ background: 'white', border: '1px solid #d4d4d8', color: '#3f3f46' }}>
+              style={{ background: '#fffaf2', border: '1px solid #edc58e', color: '#88420f' }}>
               <Plus className="h-4 w-4" />新增廠商
             </button>
           </div>
@@ -1025,7 +1025,7 @@ export default function ItemMappingsClient({
                     className="flex min-h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold"
                     style={inlineAddVg === vg
                       ? { background: '#F59E0B', color: 'white', border: '1px solid #F59E0B', cursor: 'pointer' }
-                      : { background: 'white', color: '#92400E', border: '1px solid #f59e0b', cursor: 'pointer' }}
+                      : { background: '#fff8ed', color: '#88420f', border: '1px solid #e9b76f', cursor: 'pointer' }}
                     title={`新增品項到「${vg}」`}>
                     <Plus className="h-3 w-3" /> 加品項
                   </button>
@@ -1453,7 +1453,7 @@ function ItemRowContent({
               </div>
               <div className="item-mapping-row-actions flex shrink-0 items-center gap-2">
                 <button onClick={() => startEdit(m)} className="flex min-h-10 items-center justify-center gap-1 rounded-lg px-3 text-xs font-semibold"
-                  style={{ color: '#3f3f46', background: 'white', border: '1px solid #d4d4d8' }}
+                  style={{ color: '#88420f', background: '#fffaf3', border: '1px solid #e4b978' }}
                   title="編輯品項所有設定" aria-label="編輯品項所有設定">
                   <Edit2 className="h-4 w-4" /> 編輯
                 </button>
@@ -1736,14 +1736,14 @@ function VgActions({
       </span>
       {categoryStyle && (
         <span className="rounded-md px-2 py-1 text-[11px] font-semibold"
-          style={{ background: '#f4f4f5', color: '#52525b', border: '1px solid #e4e4e7' }}>
+          style={{ background: categoryStyle.bg, color: categoryStyle.color, border: '1px solid #dbe5dc' }}>
           分類：{currentCategory}
         </span>
       )}
       <button type="button" onClick={startEditing}
         className="flex min-h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold"
         title="編輯分類所有設定" aria-label={`編輯「${vgName}」分類設定`}
-        style={{ background: 'white', border: '1px solid #d4d4d8', color: '#3f3f46' }}>
+        style={{ background: '#fffaf2', border: '1px solid #edc58e', color: '#88420f' }}>
         <Edit2 className="h-3.5 w-3.5" />編輯
       </button>
       <button type="button" onClick={handleDelete} disabled={saving}

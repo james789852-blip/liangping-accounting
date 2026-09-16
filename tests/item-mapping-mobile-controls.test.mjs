@@ -38,6 +38,15 @@ test('品項管理使用低彩度分區，並固定分類工具排列', () => {
   assert.doesNotMatch(source, /borderLeft: '3px solid #FDE68A'/)
 })
 
+test('新版配色只用柔和橘色與灰綠強調，單據與次要操作維持中性', () => {
+  assert.match(source, /'食材': \{ bg: '#f0f5f0', color: '#516456' \}/)
+  assert.match(source, /const VG_STYLE = \{ bg: '#fff3df', color: '#88420f' \}/)
+  assert.match(source, /background: '#fffaf3', border: '1px solid #e4b978'/)
+  assert.match(source, /background: '#fff8ed', color: '#88420f', border: '1px solid #e9b76f'/)
+  assert.match(globalCss, /border-left: 3px solid #edb45f/)
+  assert.doesNotMatch(source.slice(source.indexOf('const CAT_STYLE'), source.indexOf('const DOC_TYPES')), /#DBEAFE|#d1fae5|#FEF3C7/)
+})
+
 test('每個分類在加品項旁提供排序與選取功能', () => {
   assert.match(source, /setSortModeVg\(current => current === vg \? null : vg\)/)
   assert.match(source, /setSelectModeVg\(closing \? null : vg\)/)
