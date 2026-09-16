@@ -210,7 +210,6 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
             <p className="text-sm font-bold text-slate-900 truncate leading-tight">{displayIdentity}</p>
             <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{storeName || '店長端'}</p>
           </div>
-          <NotificationCenter />
         </div>
         {time && (
           <div className="manager-mobile-clock mx-2 text-right shrink-0">
@@ -235,6 +234,9 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
             總公司
           </ReliableNavigationLink>
         )}
+        <div className="ml-1 shrink-0">
+          <NotificationCenter />
+        </div>
       </header>
 
       {/* ── 手機左側功能選單 */}

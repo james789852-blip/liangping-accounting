@@ -358,9 +358,8 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           ) : (
             <span className="font-bold text-sm text-slate-900 truncate">總公司後台</span>
           )}
-          <NotificationCenter />
         </div>
-        {/* 右側操作區，shrink-0 不壓縮 */}
+        {/* 右側操作區，鈴鐺固定在最右側並保留未讀角標空間 */}
         <div className="hq-mobile-actions flex items-center gap-2 shrink-0">
           <a
             href={HR_SYSTEM_URL}
@@ -384,6 +383,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               總公司
             </ReliableNavigationLink>
           )}
+          <NotificationCenter />
         </div>
       </header>
 

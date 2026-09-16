@@ -99,7 +99,7 @@ test('narrow mobile header stays inside the viewport and pinch zoom remains avai
   assert.match(hqNav, /hq-mobile-header/)
   assert.match(hqNav, /hq-mobile-actions/)
   assert.match(managerNav, /<NotificationCenter \/>/)
-  assert.match(hqNav, /總公司後台[\s\S]*<NotificationCenter \/>/)
+  assert.match(hqNav, /hq-mobile-actions[\s\S]*<NotificationCenter \/>/)
   assert.match(hqNav, /hq-mobile-header-title[^"]*overflow-visible/)
   assert.doesNotMatch(hqNav, /hq-mobile-header-title[^"]*overflow-hidden/)
   assert.match(globalCss, /@media \(max-width: 420px\)[\s\S]*\.manager-mobile-clock[\s\S]*display: none/)

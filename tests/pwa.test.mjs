@@ -75,7 +75,7 @@ test('總公司帳目上方不再顯示照片捷徑，避免手機功能列溢�
   assert.doesNotMatch(accountingSource, /accounting\/documents\?from=/)
 })
 
-test('手機版通知鈴鐺嵌入頂端標題旁，不再浮在內容上', () => {
+test('手機版通知鈴鐺固定在頂端操作列最右側，不再浮在內容上', () => {
   const mappingSource = fs.readFileSync(new URL('../components/hq/item-mappings-client.tsx', import.meta.url), 'utf8')
   const notificationSource = fs.readFileSync(new URL('../components/notification-center.tsx', import.meta.url), 'utf8')
   const hqNavSource = fs.readFileSync(new URL('../components/hq/nav.tsx', import.meta.url), 'utf8')
@@ -87,8 +87,8 @@ test('手機版通知鈴鐺嵌入頂端標題旁，不再浮在內容上', () =>
   assert.match(notificationSource, /relative flex h-10 w-10[\s\S]*lg:hidden/)
   assert.match(notificationSource, /fixed bottom-6 right-6[\s\S]*hidden h-12 w-12[\s\S]*lg:flex/)
   assert.doesNotMatch(notificationSource, /top-\[calc\(4\.25rem/)
-  assert.match(hqNavSource, /總公司後台[\s\S]*<NotificationCenter \/>/)
-  assert.match(managerNavSource, /<NotificationCenter \/>/)
+  assert.match(hqNavSource, /hq-mobile-actions[\s\S]*<NotificationCenter \/>/)
+  assert.match(managerNavSource, /href=\{HR_SYSTEM_URL\}[\s\S]*<NotificationCenter \/>/)
   assert.match(hqNavSource, /hq-mobile-header-title[^"]*overflow-visible/)
   assert.match(globalSource, /\.closing-form-bottom-bar \{[\s\S]*bottom: 0;[\s\S]*padding-bottom: calc\(0\.75rem \+ env\(safe-area-inset-bottom, 0px\)\)/)
   assert.match(globalSource, /\.manager-sticky-action-bar \{[\s\S]*bottom: 0;/)
