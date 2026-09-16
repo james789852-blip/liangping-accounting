@@ -212,6 +212,17 @@
   min-width: 0;
   max-width: 100%;
 }
+.app-content-shell :where(.flex) > :where(div, p, span, label) {
+  min-width: 0;
+}
+.app-content-shell :where(input, select, textarea, button) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+.app-content-shell :where(h1, h2, h3, h4, p, label) {
+  overflow-wrap: anywhere;
+}
 
 /* 手機底部導覽移除後，頁面動作列可直接貼齊 visual viewport 底部。 */
 .closing-form-bottom-bar {
@@ -262,6 +273,19 @@
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
     padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  /* 手機內容以完整可讀為優先；列表原本的省略號改為自然換行。 */
+  .app-content-shell .truncate {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* 金額與計數維持完整單行，避免數字被拆開後難以核對。 */
+  .app-content-shell .tabular-nums {
+    overflow-wrap: normal;
+    word-break: normal;
+    white-space: nowrap;
   }
 }
 

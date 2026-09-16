@@ -993,10 +993,10 @@ function PlatformRow({ channelKey, name, hint, value, onChange, disabled, photo,
 
 function SummaryBlock({ label, value, warm }: { label: string; value: string; warm?: boolean }) {
   return (
-    <div className="flex justify-between items-center mt-4 rounded-2xl px-4 py-3"
+    <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl px-4 py-3"
       style={{ background: warm ? 'linear-gradient(135deg,#ffedd5,#fffbeb)' : 'linear-gradient(135deg,#FFFBEB,#f5f3ff)' }}>
-      <span className="text-sm font-medium" style={{ color: warm ? '#7c2d12' : '#312e81' }}>{label}</span>
-      <span className="text-2xl font-extrabold tabular-nums" style={{ color: warm ? '#c2410c' : '#92400E' }}>{value}</span>
+      <span className="min-w-0 break-words text-sm font-medium leading-snug" style={{ color: warm ? '#7c2d12' : '#312e81' }}>{label}</span>
+      <span className="shrink-0 text-right text-xl font-extrabold tabular-nums sm:text-2xl" style={{ color: warm ? '#c2410c' : '#92400E' }}>{value}</span>
     </div>
   )
 }
@@ -1410,11 +1410,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
 
   const [handwriteOrders, setHandwriteOrders] = useState<HandwriteOrder[]>(() => initHandwriteOrders(existingClosing))
   const [pendingHandwriteDeleteId, setPendingHandwriteDeleteId] = useState<string | null>(null)
+  const [pendingHandwriteVoidId, setPendingHandwriteVoidId] = useState<string | null>(null)
   useEffect(() => {
     if (!pendingHandwriteDeleteId) return
     const timer = window.setTimeout(() => setPendingHandwriteDeleteId(null), 8000)
     return () => window.clearTimeout(timer)
   }, [pendingHandwriteDeleteId])
+  useEffect(() => {
+    if (!pendingHandwriteVoidId) return
+    const timer = window.setTimeout(() => setPendingHandwriteVoidId(null), 8000)
+    return () => window.clearTimeout(timer)
+  }, [pendingHandwriteVoidId])
   // 初始化時先讀取本機草稿，再允許寫回。否則首次 render 的空陣列會先覆蓋
   // 使用者剛輸入的手寫菜單金額，造成重新整理後資料消失。
   const [handwriteOrdersHydrated, setHandwriteOrdersHydrated] = useState(false)
@@ -3265,9 +3271,14 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
     setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, amount } : o))
     scheduleBackgroundSave()
   }
-  function toggleVoidOrder(id: string) {
+  function confirmToggleVoidOrder(id: string) {
+    const targetOrder = handwriteOrders.find(order => order.id === id)
     setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, voided: !o.voided } : o))
+    setPendingHandwriteVoidId(null)
     scheduleBackgroundSave()
+    toast.success(targetOrder?.voided
+      ? `已恢復單號 ${targetOrder.order_number}`
+      : `已將單號 ${targetOrder?.order_number ?? ''} 標記為作廢`)
   }
   function updateVoidReason(id: string, reason: string) {
     setHandwriteOrders(prev => prev.map(o => o.id === id ? { ...o, void_reason: reason } : o))
@@ -5512,24 +5523,30 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
               )}
               {handwriteOrders.length > 0 && (
                 <div className="rounded-xl overflow-hidden mb-3" style={{ border: '1px solid #f4f4f5' }}>
-                  <div className="flex items-center gap-2 px-3 py-1.5 sticky top-0 z-10" style={{ background: '#f8fafc', borderBottom: '1px solid #f4f4f5' }}>
-                    <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>
-                      單號 <span className="ml-1 normal-case" style={{ color: '#71717a' }}>（{handwriteOrders.length} 筆）</span>
-                    </span>
-                    {!isLocked && <button type="button" onClick={clearHandwriteOrders}
-                      className="mr-2 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold"
-                      style={{ color: '#be123c', background: '#fff1f2', border: '1px solid #fecdd3' }}>
-                      <Trash2 className="h-3 w-3" /> 全部刪除
-                    </button>}
-                    <span className="w-20 text-right text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a1a1aa' }}>金額</span>
-                    {!isLocked && <span className="w-8" />}
-                    {!isLocked && <span className="w-9" />}
+                  <div className="sticky top-0 z-10" style={{ background: '#f8fafc', borderBottom: '1px solid #f4f4f5' }}>
+                    <div className="flex min-h-12 items-center justify-between gap-3 px-3 py-2">
+                      <span className="whitespace-nowrap text-xs font-bold" style={{ color: '#52525b' }}>
+                        單號 <span className="font-semibold" style={{ color: '#71717a' }}>（{handwriteOrders.length} 筆）</span>
+                      </span>
+                      {!isLocked && <button type="button" onClick={clearHandwriteOrders}
+                        className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold"
+                        style={{ color: '#be123c', background: '#fff1f2', border: '1px solid #fecdd3' }}>
+                        <Trash2 className="h-3.5 w-3.5" /> 全部刪除
+                      </button>}
+                    </div>
+                    <div className={`grid items-center gap-2 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wide ${isLocked ? 'grid-cols-[minmax(0,1fr)_6rem]' : 'grid-cols-[minmax(0,1fr)_6rem_3.25rem_2.5rem]'}`}
+                      style={{ color: '#a1a1aa' }}>
+                      <span>單號</span>
+                      <span className="text-right">金額</span>
+                      {!isLocked && <span className="text-center">狀態</span>}
+                      {!isLocked && <span className="sr-only">刪除</span>}
+                    </div>
                   </div>
                   <div style={{ maxHeight: handwriteOrders.length > 8 ? 400 : 'none', overflowY: handwriteOrders.length > 8 ? 'auto' : 'visible' }}>
                   {handwriteOrders.map((o, idx) => (
                     <div key={o.id} style={{ background: o.voided ? '#fff8f8' : 'white', borderBottom: idx !== handwriteOrders.length - 1 ? '1px solid #f4f4f5' : 'none' }}>
-                      <div className="flex items-center gap-2 px-3 py-1">
-                        <span className="flex-1 text-sm min-w-0 truncate"
+                      <div className={`grid min-h-14 items-center gap-2 px-3 py-1.5 ${isLocked ? 'grid-cols-[minmax(0,1fr)_6rem]' : 'grid-cols-[minmax(0,1fr)_6rem_3.25rem_2.5rem]'}`}>
+                        <span className="min-w-0 truncate text-sm tabular-nums"
                           style={{ fontFamily: 'monospace', color: o.voided ? '#a1a1aa' : '#52525b', textDecoration: o.voided ? 'line-through' : 'none' }}>
                           {o.order_number}
                         </span>
@@ -5539,7 +5556,8 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                             : <span className="w-20 text-right text-sm tabular-nums font-semibold" style={{ color: o.amount === 0 ? '#d4d4d8' : '#18181b' }}>${fmt(o.amount)}</span>
                         ) : (
                           <input type="number" min="0" inputMode="numeric"
-                            style={{ width: '80px', padding: '6px 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '13px', textAlign: 'right', outline: 'none', background: o.voided ? '#f4f4f5' : 'white', opacity: o.voided ? 0.4 : 1, fontVariantNumeric: 'tabular-nums' }}
+                            className="h-10 w-full min-w-0"
+                            style={{ padding: '6px 10px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '14px', textAlign: 'right', outline: 'none', background: o.voided ? '#f4f4f5' : 'white', opacity: o.voided ? 0.4 : 1, fontVariantNumeric: 'tabular-nums' }}
                             value={o.voided ? '' : (o.amount || '')} placeholder="0" disabled={o.voided}
                             ref={el => { if (el) amtRefsMap.current.set(o.id, el); else amtRefsMap.current.delete(o.id) }}
                             onChange={e => updateHandwriteOrderAmount(o.id, parseInt(e.target.value) || 0)}
@@ -5547,15 +5565,17 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           />
                         )}
                         {!isLocked && (
-                          <button type="button" onClick={() => toggleVoidOrder(o.id)}
-                            className="shrink-0 h-7 w-8 text-[10px] rounded-lg font-semibold"
-                            style={{ background: o.voided ? '#ffe4e6' : 'white', color: o.voided ? '#be123c' : '#a1a1aa', border: `1px solid ${o.voided ? '#fda4af' : '#e4e4e7'}` }}>
-                            廢
+                          <button type="button" onClick={() => { setPendingHandwriteVoidId(o.id); setPendingHandwriteDeleteId(null) }}
+                            className="h-10 w-full rounded-lg text-[11px] font-semibold"
+                            aria-label={`準備${o.voided ? '恢復' : '作廢'}單號 ${o.order_number}`}
+                            title={`${o.voided ? '恢復此單號' : '標記作廢'}（需再次確認）`}
+                            style={{ background: o.voided ? '#ffe4e6' : 'white', color: o.voided ? '#be123c' : '#71717a', border: `1px solid ${o.voided ? '#fda4af' : '#e4e4e7'}` }}>
+                            {o.voided ? '恢復' : '作廢'}
                           </button>
                         )}
                         {!isLocked && (
-                          <button type="button" onClick={() => setPendingHandwriteDeleteId(o.id)}
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                          <button type="button" onClick={() => { setPendingHandwriteDeleteId(o.id); setPendingHandwriteVoidId(null) }}
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
                             aria-label={`準備刪除單號 ${o.order_number}`} title="刪除此筆（需再次確認）"
                             style={pendingHandwriteDeleteId === o.id
                               ? { color: '#be123c', background: '#ffe4e6', border: '1px solid #fda4af' }
@@ -5564,6 +5584,28 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
                           </button>
                         )}
                       </div>
+                      {pendingHandwriteVoidId === o.id && !isLocked && (
+                        <div className="mx-3 mb-2 flex flex-col gap-2 rounded-xl px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                          style={{ background: o.voided ? '#f0fdf4' : '#fff7ed', border: `1px solid ${o.voided ? '#bbf7d0' : '#fed7aa'}` }}>
+                          <span className="text-xs font-semibold" style={{ color: o.voided ? '#166534' : '#9a3412' }}>
+                            {o.voided
+                              ? `確定恢復單號 ${o.order_number}？原本金額會重新計入合計。`
+                              : `確定將單號 ${o.order_number} 標記為作廢？此筆金額將不計入合計。`}
+                          </span>
+                          <span className="flex shrink-0 gap-2">
+                            <button type="button" onClick={() => setPendingHandwriteVoidId(null)}
+                              className="h-9 rounded-lg px-3 text-xs font-semibold"
+                              style={{ color: '#52525b', background: 'white', border: '1px solid #e4e4e7' }}>
+                              取消
+                            </button>
+                            <button type="button" onClick={() => confirmToggleVoidOrder(o.id)}
+                              className="h-9 rounded-lg px-3 text-xs font-semibold text-white"
+                              style={{ background: o.voided ? '#16a34a' : '#ea580c' }}>
+                              {o.voided ? '確認恢復' : '確認作廢'}
+                            </button>
+                          </span>
+                        </div>
+                      )}
                       {pendingHandwriteDeleteId === o.id && !isLocked && (
                         <div className="mx-3 mb-2 flex flex-col gap-2 rounded-xl px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
                           style={{ background: '#fff1f2', border: '1px solid #fecdd3' }}>

@@ -45,6 +45,11 @@ test('manager and HQ shells share a mobile overflow safety boundary', () => {
   assert.match(hqLayout, /app-layout-root/)
   assert.match(hqLayout, /app-content-shell/)
   assert.match(globalCss, /\.app-content-shell :where\(\.grid\) > \* \{[\s\S]*min-width: 0/)
+  assert.match(globalCss, /\.app-content-shell :where\(\.flex\) > :where\(div, p, span, label\) \{[\s\S]*min-width: 0;/)
+  assert.match(globalCss, /\.app-content-shell :where\(input, select, textarea, button\) \{[\s\S]*min-width: 0;[\s\S]*max-width: 100%/)
+  assert.match(globalCss, /\.app-content-shell :where\(h1, h2, h3, h4, p, label\) \{[\s\S]*overflow-wrap: anywhere;/)
+  assert.match(globalCss, /@media \(max-width: 1023px\)[\s\S]*\.app-content-shell \.truncate \{[\s\S]*white-space: normal;[\s\S]*overflow-wrap: anywhere;/)
+  assert.match(globalCss, /@media \(max-width: 1023px\)[\s\S]*\.app-content-shell \.tabular-nums \{[\s\S]*white-space: nowrap;/)
 })
 
 test('HQ mobile photo review escapes the page scroller and keeps pagination reachable', () => {
