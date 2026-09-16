@@ -213,20 +213,21 @@
   max-width: 100%;
 }
 
-/* 店長結帳表單的固定底部動作列：手機要避開底部 tab + 安全區，桌機固定底部 */
+/* 手機底部導覽移除後，頁面動作列可直接貼齊 visual viewport 底部。 */
 .closing-form-bottom-bar {
-  bottom: calc(64px + env(safe-area-inset-bottom));
+  bottom: 0;
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
   box-shadow: 0 -4px 16px rgba(0,0,0,0.06);
   border-top: 1px solid #f4f4f5;
 }
 .manager-sticky-action-bar {
-  bottom: calc(64px + env(safe-area-inset-bottom));
+  bottom: 0;
 }
 .pwa-install-prompt {
-  bottom: calc(80px + env(safe-area-inset-bottom));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 .pwa-push-prompt {
-  bottom: calc(80px + env(safe-area-inset-bottom));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 @media (min-width: 1024px) {
   .closing-form-bottom-bar {
@@ -245,8 +246,8 @@
 
 /*
  * 手機版只讓 main 成為捲動容器，頁面殼固定在 visual viewport。
- * iOS/PWA 若讓 body 與內層同時捲動，position:fixed 底欄偶爾會依舊的
- * layout viewport 合成到內容中途；單一捲動容器可避免底欄跳位。
+ * iOS/PWA 若讓 body 與內層同時捲動，固定元件偶爾會依舊的 layout
+ * viewport 合成到內容中途；單一捲動容器可避免元件跳位。
  */
 @media (max-width: 1023px) {
   .app-layout-root {
@@ -260,36 +261,8 @@
     overflow-y: auto;
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
-    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
-}
-
-/* 純色固定圖層避免 iOS/PWA 捲動時重新合成 backdrop-filter 而漂移。 */
-.mobile-bottom-nav {
-  position: fixed !important;
-  top: auto !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  left: 0 !important;
-  z-index: 40;
-  width: 100%;
-  max-width: 100vw;
-  height: calc(64px + env(safe-area-inset-bottom, 0px));
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  overflow: hidden;
-  contain: layout paint;
-  isolation: isolate;
-  background: #fff;
-  box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.04);
-}
-.mobile-bottom-nav-content {
-  display: flex;
-  height: 64px;
-}
-.mobile-bottom-nav-item {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
 }
 
 /* 總公司逐張核對直接佔滿手機 visual viewport，不再與主頁捲動層搶手勢。 */

@@ -98,7 +98,7 @@ export default function NotificationCenter() {
   return (
     <>
       <button type="button" onClick={() => setOpen(value => !value)} aria-label={`通知中心${unread ? `，${unread} 則未讀` : ''}${activeFollowUps ? `，${activeFollowUps} 項待處理` : ''}`}
-        className={`fixed right-4 z-[65] flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-xl lg:bottom-6 lg:right-6 ${pathname.startsWith('/manager/closing') ? 'bottom-[calc(9.75rem+env(safe-area-inset-bottom))]' : 'bottom-[calc(5.25rem+env(safe-area-inset-bottom))]'}`}
+        className={`fixed right-4 z-[65] flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-xl lg:bottom-6 lg:right-6 ${pathname.startsWith('/manager/closing') ? 'bottom-[calc(5.75rem+env(safe-area-inset-bottom))]' : 'bottom-[calc(1rem+env(safe-area-inset-bottom))]'}`}
         style={{ border: badgeCount ? '2px solid #f59e0b' : '1px solid #d4d4d8', color: badgeCount ? '#b45309' : '#52525b' }}>
         {badgeCount ? <BellRing className="h-5 w-5" /> : <Bell className="h-5 w-5" />}
         {badgeCount > 0 && (

@@ -26,16 +26,6 @@ export default function NavigationSkeleton({ variant }: { variant: 'manager' | '
         <div className="h-7 w-28 rounded-lg bg-slate-100" />
         <div className="h-8 w-8 rounded-full bg-slate-100" />
       </header>
-      <nav
-        aria-hidden="true"
-        className="mobile-bottom-nav animate-pulse border-t border-slate-200 lg:hidden"
-      >
-        <div className="mobile-bottom-nav-content items-center justify-around px-4">
-          {[0, 1, 2, 3].map((item) => (
-            <div key={item} className="h-8 w-10 rounded-lg bg-slate-100" />
-          ))}
-        </div>
-      </nav>
     </>
   )
 }

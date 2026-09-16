@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink, BarChart3, Settings, Building2, ArrowRightLeft, FileText } from 'lucide-react'
+import { LayoutDashboard, History, LogOut, ChefHat, ClipboardList, ExternalLink, BarChart3, Settings, Building2, ArrowRightLeft, FileText, Menu, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import StoreSwitcher from '@/components/manager/store-switcher'
 import { clearStoreSelectionOnLogout } from '@/app/actions/store-select'
@@ -77,6 +77,7 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
   const displayIdentity = homeStoreName && role ? `${homeStoreName}${displayRole}` : (role || homeStoreName || '結帳系統')
   const pathname = usePathname()
   const router = useRouter()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const { date, time } = useTaipeiNow()
   const todayParam = date ? date.replace(/\//g, '-') : ''
   const resolveHref = (href: string) => {
@@ -92,6 +93,17 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
     router.push('/login')
     router.refresh()
   }
+
+  useEffect(() => { setMobileMenuOpen(false) }, [pathname])
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileMenuOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [mobileMenuOpen])
 
   return (
     <>
@@ -187,18 +199,15 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
       {/* ── 手機頂部 */}
       <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white flex items-center px-4"
         style={{ height: '56px', borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        <button type="button" onClick={() => setMobileMenuOpen(true)}
+          className="mr-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors hover:bg-slate-50"
+          style={{ color: '#52525b' }} aria-label="開啟功能選單" aria-expanded={mobileMenuOpen}>
+          <Menu className="h-6 w-6" />
+        </button>
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
-          <img src="/icon-192.png" alt="logo" className="h-8 w-8 rounded-[8px] object-cover shrink-0" />
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900 truncate leading-tight">{displayIdentity}</p>
-            {stores.length > 1 && currentStoreId && (
-              <StoreSwitcher
-                stores={stores}
-                currentStoreId={currentStoreId}
-                className="mt-1 max-w-[145px] rounded-md border-2 bg-orange-50 px-2 py-1 text-[11px] font-bold text-orange-800 outline-none"
-                style={{ borderColor: '#fb923c' }}
-              />
-            )}
+            <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{storeName || '店長端'}</p>
           </div>
         </div>
         {time && (
@@ -224,28 +233,79 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
             總公司
           </ReliableNavigationLink>
         )}
-        <button onClick={handleLogout} className="h-8 w-8 flex items-center justify-center rounded-lg transition-colors hover:bg-slate-50" style={{ color: '#a1a1aa' }}>
-          <LogOut className="h-4 w-4" />
-        </button>
       </header>
 
-      {/* ── 手機底部 Tab */}
-      <nav className="mobile-bottom-nav lg:hidden" style={{ borderTop: '1px solid #f4f4f5' }}>
-        <div className="mobile-bottom-nav-content px-2 pt-2 pb-2">
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-            const active = pathname.startsWith(href)
-            const resolvedHref = resolveHref(href)
-            return (
-              <ReliableNavigationLink key={href} href={resolvedHref} className="mobile-bottom-nav-item flex flex-col items-center gap-1 flex-1 py-1">
-                <Icon className="h-[22px] w-[22px]" style={{ color: active ? '#D97706' : '#a1a1aa' }} />
-                <span className="text-[11px] font-medium" style={{ color: active ? '#D97706' : '#a1a1aa' }}>
-                  {label}
-                </span>
-              </ReliableNavigationLink>
-            )
-          })}
+      {/* ── 手機左側功能選單 */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[80] lg:hidden" onClick={() => setMobileMenuOpen(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <aside role="dialog" aria-modal="true" aria-label="功能選單"
+            className="absolute inset-y-0 left-0 flex w-[min(86vw,340px)] flex-col bg-white shadow-2xl"
+            onClick={event => event.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-zinc-100 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))]">
+              <div className="flex min-w-0 items-center gap-3">
+                <img src="/icon-192.png" alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover" />
+                <div className="min-w-0">
+                  <p className="truncate text-base font-bold text-slate-900">{displayIdentity}</p>
+                  <p className="truncate text-xs" style={{ color: '#71717a' }}>{storeName || '店長端'}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setMobileMenuOpen(false)}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100"
+                aria-label="關閉功能選單">
+                <X className="h-5 w-5" style={{ color: '#52525b' }} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3">
+              {stores.length > 1 && currentStoreId && (
+                <div className="mb-3 rounded-xl p-3" style={{ background: '#fff7ed', border: '1px solid #fdba74' }}>
+                  <p className="mb-2 text-xs font-bold" style={{ color: '#c2410c' }}>切換目前操作店家</p>
+                  <StoreSwitcher stores={stores} currentStoreId={currentStoreId}
+                    className="w-full rounded-lg border-2 bg-white px-3 py-2.5 text-sm font-bold outline-none"
+                    style={{ borderColor: '#fb923c', color: '#9a3412' }} />
+                </div>
+              )}
+
+              <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#a1a1aa' }}>功能</p>
+              <nav className="space-y-1">
+                {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+                  const active = pathname.startsWith(href)
+                  const resolvedHref = resolveHref(href)
+                  return (
+                    <ReliableNavigationLink key={href} href={resolvedHref}
+                      className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium"
+                      style={active ? { backgroundColor: '#FFFBEB', color: '#92400E', fontWeight: 600 } : { color: '#52525b' }}>
+                      <Icon className="h-5 w-5 shrink-0" />
+                      <span>{label}</span>
+                    </ReliableNavigationLink>
+                  )
+                })}
+              </nav>
+
+              <div className="my-3 border-t border-zinc-100" />
+              <a href={HR_SYSTEM_URL} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium" style={{ color: '#0369a1' }}>
+                <ExternalLink className="h-5 w-5 shrink-0" />
+                輔助管理系統
+              </a>
+              {canAccessHQ && (
+                <ReliableNavigationLink href={hqHref}
+                  className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold" style={{ color: '#0369a1' }}>
+                  <Building2 className="h-5 w-5 shrink-0" />
+                  回總公司
+                </ReliableNavigationLink>
+              )}
+              <button onClick={handleLogout}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium" style={{ color: '#52525b' }}>
+                <LogOut className="h-5 w-5 shrink-0" />
+                登出
+              </button>
+            </div>
+            <div className="pb-[env(safe-area-inset-bottom)]" />
+          </aside>
         </div>
-      </nav>
+      )}
     </>
   )
 }

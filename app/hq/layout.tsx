@@ -27,7 +27,7 @@ export default function HQLayout({ children }: { children: React.ReactNode }) {
       <Suspense fallback={<NavigationSkeleton variant="hq" />}>
         <HQNavigation />
       </Suspense>
-      <main className="app-content-shell min-h-0 min-w-0 flex-1 overflow-y-auto pt-14 pb-20 lg:pt-0 lg:pb-0">
+      <main className="app-content-shell min-h-0 min-w-0 flex-1 overflow-y-auto pt-14 lg:pt-0">
         {children}
       </main>
     </div>

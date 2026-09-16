@@ -94,22 +94,6 @@ const managerSections = [
   },
 ]
 
-const mobileHQTabs = [
-  { href: '/hq/accounting',     label: '帳目',   icon: BookOpen },
-  { href: '/hq/dashboard',      label: '統計', icon: LayoutDashboard },
-  { href: '/manager/meeting-report', label: '會議', icon: FileText },
-  { href: '/hq/item-mappings',  label: '品項',   icon: Package },
-  { href: '/hq/stores',         label: '店家',   icon: Store },
-]
-const mobileManagerTabs = [
-  { href: '/manager/closing',    label: '今日結帳', icon: ClipboardList },
-  { href: '/manager/dashboard',  label: '今日狀態', icon: LayoutDashboard },
-  { href: '/manager/analytics',  label: '營運統計', icon: FileBarChart2 },
-  { href: '/manager/meeting-report', label: '店務會議', icon: FileText },
-  { href: '/manager/settings',   label: '廠商設定', icon: Settings },
-  { href: '/manager/history',    label: '歷史紀錄', icon: History },
-]
-
 interface Props {
   userName: string
   role: string
@@ -173,7 +157,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
 
   const hasStores = allStores.length > 0
   const initial = userName ? userName.slice(0, 1) : '?'
-  const [mobileSheetOpen, setMobileSheetOpen] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const canSeeUsers = !!permissions.canManageUsers
   const canSeeStores = !!permissions.canManageStoreSettings || !!permissions.canManageCKSettings
@@ -215,27 +199,21 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           return true
         }),
       })).filter(sec => sec.items.length > 0)
-  const filteredMobileHQTabs = mobileHQTabs.filter(tab => {
-    if (tab.href === '/hq/accounting') return canSeeReviews
-    if (tab.href === '/hq/dashboard') return canSeeReviews || canSeeExports
-    if (tab.href === '/manager/meeting-report') return hasStores
-    if (tab.href === '/hq/item-mappings') return canSeeItems
-    if (tab.href === '/hq/stores') return canSeeStores
-    return true
-  }).concat([
-    ...(canSeeReceipts ? [{ href: canSeeStoreReceipts ? '/hq/receipt-settings' : '/hq/receipt-settings?type=ck', label: '收據', icon: Settings }] : []),
-    ...(canSeeCKPrices ? [{ href: '/hq/ck-prices', label: '單價', icon: Package }] : []),
-  ])
-  const mobileTabs = isManagerPath
-    ? mobileManagerTabs
-    : filteredMobileHQTabs
   const activeSections = isManagerPath ? managerSections : filteredHqSections
   const activeColor = isManagerPath ? '#b45309' : '#92400E'
   const activeBg = isManagerPath ? '#fef3c7' : '#FFFBEB'
-  const mobileActiveColor = isManagerPath ? '#d97706' : '#D97706'
 
   // 關閉抽屜當路由變化
-  useEffect(() => { setMobileSheetOpen(false) }, [pathname])
+  useEffect(() => { setMobileMenuOpen(false) }, [pathname])
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileMenuOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [mobileMenuOpen])
 
   useEffect(() => {
     setTodayParam(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' }))
@@ -355,7 +333,11 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
       {/* ── 手機頂部 */}
       <header className="hq-mobile-header lg:hidden fixed top-0 left-0 right-0 z-40 bg-white flex items-center px-4 gap-2"
         style={{ height: '56px', borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-        <img src="/icon-192.png" alt="logo" className="h-8 w-8 rounded-[8px] object-cover shrink-0" />
+        <button type="button" onClick={() => setMobileMenuOpen(true)}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors hover:bg-slate-50"
+          style={{ color: '#52525b' }} aria-label="開啟功能選單" aria-expanded={mobileMenuOpen}>
+          <Menu className="h-6 w-6" />
+        </button>
         {/* 中間標題區，flex-1 + min-w-0 確保可截斷 */}
         <div className="hq-mobile-header-title flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
           {isManagerPath && canAccessHQ ? (
@@ -400,54 +382,42 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
               總公司
             </ReliableNavigationLink>
           )}
-          <button onClick={handleLogout} className="hq-mobile-logout h-8 w-8 flex items-center justify-center rounded-lg transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>
-            <LogOut className="h-4 w-4" />
-          </button>
         </div>
       </header>
 
-      {/* ── 手機底部 Tab */}
-      <nav className="mobile-bottom-nav lg:hidden" style={{ borderTop: '1px solid #f4f4f5' }}>
-        <div className="mobile-bottom-nav-content px-1 pt-2 pb-2">
-          {mobileTabs.map(({ href, label, icon: Icon }) => {
-            const active = pathname.startsWith(href)
-            const resolvedHref = resolveHref(href)
-            return (
-              <ReliableNavigationLink key={href} href={resolvedHref}
-                className="mobile-bottom-nav-item flex flex-col items-center gap-1 flex-1 py-1">
-                <Icon className="h-[22px] w-[22px]" style={{ color: active ? mobileActiveColor : '#a1a1aa' }} />
-                <span className="text-[11px] font-medium" style={{ color: active ? mobileActiveColor : '#a1a1aa' }}>
-                  {label}
-                </span>
-              </ReliableNavigationLink>
-            )
-          })}
-          {!isManagerPath && (
-            <button type="button" onClick={() => setMobileSheetOpen(true)}
-              className="mobile-bottom-nav-item flex flex-col items-center gap-1 flex-1 py-1">
-              <Menu className="h-[22px] w-[22px]" style={{ color: '#a1a1aa' }} />
-              <span className="text-[11px] font-medium" style={{ color: '#a1a1aa' }}>更多</span>
-            </button>
-          )}
-        </div>
-      </nav>
-
-      {/* ── 手機更多選單（bottom sheet） */}
-      {mobileSheetOpen && (
-        <div className="lg:hidden fixed inset-0 z-50" onClick={() => setMobileSheetOpen(false)}>
+      {/* ── 手機左側功能選單 */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[80] lg:hidden" onClick={() => setMobileMenuOpen(false)}>
           <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.4)' }} />
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl pb-[env(safe-area-inset-bottom)]"
+          <aside role="dialog" aria-modal="true" aria-label="功能選單"
+            className="absolute inset-y-0 left-0 flex w-[min(86vw,360px)] flex-col bg-white shadow-2xl"
             onClick={e => e.stopPropagation()}
-            style={{ boxShadow: '0 -8px 32px rgba(0,0,0,0.15)', maxHeight: '85vh', overflowY: 'auto' }}>
-            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #f4f4f5' }}>
-              <p className="text-base font-bold" style={{ color: '#18181b' }}>選單</p>
-              <button type="button" onClick={() => setMobileSheetOpen(false)}
-                className="h-8 w-8 flex items-center justify-center rounded-full"
-                style={{ background: '#f4f4f5' }}>
-                <X className="h-4 w-4" style={{ color: '#52525b' }} />
+          >
+            <div className="flex items-center justify-between border-b border-zinc-100 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))]">
+              <div className="flex min-w-0 items-center gap-3">
+                <img src="/icon-192.png" alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover" />
+                <div className="min-w-0">
+                  <p className="truncate text-base font-bold" style={{ color: '#18181b' }}>{isManagerPath ? '店長端' : '總公司後台'}</p>
+                  <p className="truncate text-xs" style={{ color: '#71717a' }}>{userName}{role ? ` · ${role}` : ''}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setMobileMenuOpen(false)}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+                style={{ background: '#f4f4f5' }} aria-label="關閉功能選單">
+                <X className="h-5 w-5" style={{ color: '#52525b' }} />
               </button>
             </div>
-            <div className="px-3 py-3 space-y-1">
+
+            <div className="flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-3">
+              {hasStores && allStores.length > 1 && (
+                <div className="mb-3 rounded-xl p-3" style={{ background: '#fff7ed', border: '1px solid #fdba74' }}>
+                  <p className="mb-2 text-xs font-bold" style={{ color: '#c2410c' }}>切換目前操作店家</p>
+                  <StoreSwitcher stores={allStores} currentStoreId={currentStoreId}
+                    className="w-full rounded-lg border-2 bg-white px-3 py-2.5 text-sm font-bold outline-none"
+                    style={{ borderColor: '#fb923c', color: '#9a3412' }} />
+                </div>
+              )}
+
               {activeSections.map(section => (
                 <div key={section.label}>
                   <p className="text-[11px] font-semibold uppercase px-3 pt-2 pb-1" style={{ color: '#a1a1aa', letterSpacing: '0.05em' }}>
@@ -468,6 +438,13 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                 </div>
               ))}
               <div style={{ borderTop: '1px solid #f4f4f5', margin: '8px 0 4px' }} />
+              {(isManagerPath ? canAccessHQ : hasStores) && (
+                <ReliableNavigationLink href={isManagerPath ? hqHomeHref : '/manager/dashboard'}
+                  className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold" style={{ color: '#b45309' }}>
+                  <ArrowRightLeft className="h-5 w-5 shrink-0" />
+                  {isManagerPath ? '切換到總公司端' : '切換到店長端'}
+                </ReliableNavigationLink>
+              )}
               <a href={HR_SYSTEM_URL} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium"
                 style={{ color: '#0369a1' }}>
@@ -481,7 +458,8 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                 登出
               </button>
             </div>
-          </div>
+            <div className="pb-[env(safe-area-inset-bottom)]" />
+          </aside>
         </div>
       )}
     </>
