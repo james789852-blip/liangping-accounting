@@ -1161,7 +1161,7 @@ function ItemRowContent({
   const catSt = CAT_STYLE[m.item_category] ?? CAT_STYLE['雜項']
   const style: React.CSSProperties = { borderBottom: isLast ? 'none' : '1px solid #f4f4f5' }
   return (
-    <div style={style} className="flex flex-wrap items-center gap-1.5 md:gap-2 px-2 md:px-3 py-2 md:py-2.5">
+    <div style={style} className={`flex flex-wrap gap-1.5 md:gap-2 px-2 md:px-3 py-2 md:py-2.5 ${sortMode ? 'items-start' : 'items-center'}`}>
       {/* 選取模式：checkbox */}
       {selectMode && (
         <input type="checkbox" checked={isSelected} onChange={onToggleSelect}
@@ -1183,89 +1183,95 @@ function ItemRowContent({
           </button>
         </div>
       )}
-      <span className={`min-w-0 flex-1 text-sm font-semibold flex flex-wrap items-center gap-1.5 ${(sortMode || selectMode) ? 'basis-0' : 'basis-full sm:basis-auto'}`} style={{ color: '#18181b' }}>
-        <InlineItemNameEditor mappingId={m.id} currentName={displayName(m)} fullName={m.item_name} excelColumn={m.excel_column} />
-        {false && (
-          <button onClick={() => setShowStores(v => !v)}
-            className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-1"
-            style={{ background: '#dcfce7', color: '#166534', border: '1px solid #86efac', cursor: 'pointer' }}
-            title="管理哪些店有專屬 override">
-            {storesUsingIds.length} 家店使用
-            <span style={{ fontSize: 8 }}>{showStores ? '▲' : '▼'}</span>
-          </button>
-        )}
-        {!isStorePage && showStores && (
-          <StoresOverridePanel item={m} allStores={allStores} storesUsingIds={storesUsingIds} />
-        )}
-      </span>
-      {editId !== m.id && (
-        <div className="w-full sm:w-auto">
-          <ItemDocOverrideSelector
-            itemName={m.item_name}
-            storeId={m.store_id ?? null}
-            currentOverride={m.doc_type_override ?? null}
-            className="w-full sm:w-auto"
-          />
-        </div>
-      )}
-      {editId === m.id ? (
-        <div className="w-full sm:w-auto flex flex-wrap items-center gap-2 pt-1 sm:pt-0">
-          <input list="excel-col-list" className="w-full sm:w-auto min-w-0 flex-1 sm:flex-none min-h-11 sm:min-h-0" style={{ ...SELECT_STYLE, height: undefined }}
-            value={editCol} onChange={e => setEditCol(e.target.value)}
-            placeholder="Excel 欄位" />
-          <select className="w-full sm:w-auto min-h-11 sm:min-h-0" style={{ ...SELECT_STYLE, height: undefined }} value={editCat} onChange={e => setEditCat(e.target.value)}>
-            <option>食材</option><option>耗材</option><option>雜項</option>
-          </select>
-          <input placeholder="分類（廠商或發票）" value={editVendorGroup} onChange={e => setEditVendorGroup(e.target.value)}
-            className="w-full sm:w-[110px] min-h-11 sm:min-h-0"
-            style={{ height: undefined, padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit' }} />
-          <button onClick={() => handleUpdate(m.id)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg" style={{ color: '#047857' }} aria-label="儲存修改">
-            <Check className="h-4 w-4" />
-          </button>
-          <button onClick={() => setEditId(null)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg" style={{ color: '#a1a1aa' }} aria-label="取消修改">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ) : (
-        <>
-          <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
-            style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
-          <RefundToggle mappingId={m.id} isRefund={!!m.is_refund} />
-          {m.store_type !== '央廚' && (
-            <SignModeControl
-              mappingId={m.id}
-              signMode={m.sign_mode ?? (m.is_negative ? 'negative' : 'positive')}
-              systemFixedNegative={isNegativeItem(m.item_name)}
-            />
+      <div className={sortMode ? 'min-w-0 flex-1 space-y-2' : 'contents'}>
+        <div className={sortMode ? 'flex min-w-0 items-center gap-2' : 'contents'}>
+          <span className={`min-w-0 flex-1 text-sm font-semibold flex flex-wrap items-center gap-1.5 ${sortMode ? 'sm:whitespace-nowrap' : selectMode ? 'basis-0' : 'basis-full sm:basis-auto'}`} style={{ color: '#18181b' }}>
+            <InlineItemNameEditor mappingId={m.id} currentName={displayName(m)} fullName={m.item_name} excelColumn={m.excel_column} />
+            {false && (
+              <button onClick={() => setShowStores(v => !v)}
+                className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-1"
+                style={{ background: '#dcfce7', color: '#166534', border: '1px solid #86efac', cursor: 'pointer' }}
+                title="管理哪些店有專屬 override">
+                {storesUsingIds.length} 家店使用
+                <span style={{ fontSize: 8 }}>{showStores ? '▲' : '▼'}</span>
+              </button>
+            )}
+            {!isStorePage && showStores && (
+              <StoresOverridePanel item={m} allStores={allStores} storesUsingIds={storesUsingIds} />
+            )}
+          </span>
+          {editId !== m.id && (
+            <div className={sortMode ? 'shrink-0' : 'w-full sm:w-auto'}>
+              <ItemDocOverrideSelector
+                itemName={m.item_name}
+                storeId={m.store_id ?? null}
+                currentOverride={m.doc_type_override ?? null}
+                className={sortMode ? 'w-auto' : 'w-full sm:w-auto'}
+              />
+            </div>
           )}
-          {m.store_type === '央廚' && isNegativeItem(m.item_name) && (
-            <span className="text-xs px-2 py-1 rounded-full shrink-0 font-semibold"
-              style={{ color: '#be123c', background: '#fff1f2', border: '1.5px solid #fda4af' }}>
-              固定負數
-            </span>
+        </div>
+        <div className={sortMode ? 'flex min-w-0 flex-wrap items-center gap-1.5 md:gap-2' : 'contents'}>
+          {editId === m.id ? (
+            <div className="w-full sm:w-auto flex flex-wrap items-center gap-2 pt-1 sm:pt-0">
+              <input list="excel-col-list" className="w-full sm:w-auto min-w-0 flex-1 sm:flex-none min-h-11 sm:min-h-0" style={{ ...SELECT_STYLE, height: undefined }}
+                value={editCol} onChange={e => setEditCol(e.target.value)}
+                placeholder="Excel 欄位" />
+              <select className="w-full sm:w-auto min-h-11 sm:min-h-0" style={{ ...SELECT_STYLE, height: undefined }} value={editCat} onChange={e => setEditCat(e.target.value)}>
+                <option>食材</option><option>耗材</option><option>雜項</option>
+              </select>
+              <input placeholder="分類（廠商或發票）" value={editVendorGroup} onChange={e => setEditVendorGroup(e.target.value)}
+                className="w-full sm:w-[110px] min-h-11 sm:min-h-0"
+                style={{ height: undefined, padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit' }} />
+              <button onClick={() => handleUpdate(m.id)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg" style={{ color: '#047857' }} aria-label="儲存修改">
+                <Check className="h-4 w-4" />
+              </button>
+              <button onClick={() => setEditId(null)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg" style={{ color: '#a1a1aa' }} aria-label="取消修改">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
+                style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
+              <RefundToggle mappingId={m.id} isRefund={!!m.is_refund} />
+              {m.store_type !== '央廚' && (
+                <SignModeControl
+                  mappingId={m.id}
+                  signMode={m.sign_mode ?? (m.is_negative ? 'negative' : 'positive')}
+                  systemFixedNegative={isNegativeItem(m.item_name)}
+                />
+              )}
+              {m.store_type === '央廚' && isNegativeItem(m.item_name) && (
+                <span className="text-xs px-2 py-1 rounded-full shrink-0 font-semibold"
+                  style={{ color: '#be123c', background: '#fff1f2', border: '1.5px solid #fda4af' }}>
+                  固定負數
+                </span>
+              )}
+              <TaxAddonToggle
+                mappingId={m.id}
+                enabled={!!m.is_tax_addon}
+                scope={m.tax_scope ?? 'category'}
+                targetItem={m.tax_target_item ?? null}
+                itemOptions={itemOptions}
+              />
+              <span className="hidden md:inline text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
+              <button onClick={() => startEdit(m)} className="min-h-10 min-w-10 flex items-center justify-center rounded-lg" style={{ color: '#d4d4d8' }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#F59E0B')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
+                <Edit2 className="h-4 w-4" />
+              </button>
+              <button onClick={() => handleDelete(m.id)} className="min-h-10 min-w-10 flex items-center justify-center rounded-lg" style={{ color: '#d4d4d8' }}
+                title="安全停用（保留歷史帳目與本月報表）"
+                aria-label="安全停用品項"
+                onMouseEnter={e => (e.currentTarget.style.color = '#be123c')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
+                <PowerOff className="h-4 w-4" />
+              </button>
+            </>
           )}
-          <TaxAddonToggle
-            mappingId={m.id}
-            enabled={!!m.is_tax_addon}
-            scope={m.tax_scope ?? 'category'}
-            targetItem={m.tax_target_item ?? null}
-            itemOptions={itemOptions}
-          />
-          <span className="hidden md:inline text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
-          <button onClick={() => startEdit(m)} className="min-h-10 min-w-10 flex items-center justify-center rounded-lg" style={{ color: '#d4d4d8' }}
-            onMouseEnter={e => (e.currentTarget.style.color = '#F59E0B')}
-            onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
-            <Edit2 className="h-4 w-4" />
-          </button>
-          <button onClick={() => handleDelete(m.id)} className="min-h-10 min-w-10 flex items-center justify-center rounded-lg" style={{ color: '#d4d4d8' }}
-            title="安全停用（保留歷史帳目與本月報表）"
-            aria-label="安全停用品項"
-            onMouseEnter={e => (e.currentTarget.style.color = '#be123c')}
-            onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
-            <PowerOff className="h-4 w-4" />
-          </button>
-        </>
-      )}
+        </div>
+      </div>
     </div>
   )
 }

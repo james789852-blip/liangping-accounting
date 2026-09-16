@@ -14,6 +14,13 @@ test('品項管理以分類內上下箭頭排序，不再使用拖曳元件', ()
   assert.match(source, /aria-label=\{`\$\{displayName\(m\)\}下移`\}/)
 })
 
+test('排序模式將單據類型與其他控制項分成上下兩列，避免品項名稱被壓縮', () => {
+  assert.match(source, /sortMode \? 'min-w-0 flex-1 space-y-2' : 'contents'/)
+  assert.match(source, /sortMode \? 'flex min-w-0 items-center gap-2' : 'contents'/)
+  assert.match(source, /sortMode \? 'flex min-w-0 flex-wrap items-center gap-1\.5 md:gap-2' : 'contents'/)
+  assert.match(source, /sortMode \? 'sm:whitespace-nowrap'/)
+})
+
 test('每個分類在加品項旁提供排序與選取功能', () => {
   assert.match(source, /setSortModeVg\(current => current === vg \? null : vg\)/)
   assert.match(source, /setSelectModeVg\(closing \? null : vg\)/)
