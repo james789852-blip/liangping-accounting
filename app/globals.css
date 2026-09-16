@@ -500,3 +500,106 @@ input[type="number"] {
     padding: 0;
   }
 }
+
+/* 品項管理：低彩度且固定層級，桌機與手機共用相同閱讀順序。 */
+.item-mapping-group {
+  padding: 16px;
+  border: 1px solid #e4e4e7;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(24, 24, 27, 0.035);
+}
+.item-mapping-group-header {
+  display: grid;
+  grid-template-columns: minmax(150px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 12px;
+}
+.item-mapping-group-settings {
+  justify-content: flex-start;
+}
+.item-mapping-group-tools {
+  justify-self: end;
+}
+.item-mapping-group-settings:has(.item-mapping-group-editor) {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.item-mapping-list {
+  box-shadow: none;
+}
+.item-mapping-row-content:not(:has(.item-mapping-editor)) {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.8fr) minmax(360px, 2fr);
+  align-items: center;
+  gap: 12px 18px;
+}
+.item-mapping-row--sorting .item-mapping-row-content:not(:has(.item-mapping-editor)) {
+  display: block;
+}
+.item-mapping-row--sorting .item-mapping-row-details {
+  margin-top: 8px;
+}
+.item-mapping-row-details {
+  justify-content: space-between;
+}
+.item-mapping-row-actions button {
+  min-width: 74px;
+}
+
+@media (max-width: 767px) {
+  .item-mapping-group {
+    padding: 12px;
+    border-radius: 18px;
+  }
+  .item-mapping-group-header {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .item-mapping-group-title,
+  .item-mapping-group-settings,
+  .item-mapping-group-tools {
+    width: 100%;
+  }
+  .item-mapping-group-settings {
+    padding-bottom: 10px;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .item-mapping-group-tools {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-self: stretch;
+    gap: 8px;
+  }
+  .item-mapping-group-tools > button {
+    width: 100%;
+    min-height: 40px;
+    justify-content: center;
+    border-radius: 10px;
+  }
+  .item-mapping-row {
+    align-items: flex-start;
+  }
+  .item-mapping-row-content:not(:has(.item-mapping-editor)) {
+    display: block;
+  }
+  .item-mapping-row-heading {
+    align-items: flex-start;
+  }
+  .item-mapping-row-details {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .item-mapping-row-meta {
+    min-height: 28px;
+  }
+  .item-mapping-row-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .item-mapping-row-actions button {
+    width: 100%;
+  }
+}

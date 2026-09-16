@@ -25,14 +25,14 @@ interface Mapping {
 }
 
 const CAT_STYLE: Record<string, { bg: string; color: string }> = {
-  '食材': { bg: '#d1fae5', color: '#047857' },
-  '耗材': { bg: '#FFFBEB', color: '#92400E' },
+  '食材': { bg: '#f4f4f5', color: '#3f3f46' },
+  '耗材': { bg: '#f4f4f5', color: '#3f3f46' },
   '雜項': { bg: '#f4f4f5', color: '#71717a' },
 }
 
-const VG_STYLE = { bg: '#FEF3C7', color: '#92400E' }
+const VG_STYLE = { bg: '#f4f4f5', color: '#3f3f46' }
 const VG_STYLE_UNCAT = { bg: '#f4f4f5', color: '#71717a' }
-const VG_STYLE_DOC = { bg: '#DBEAFE', color: '#1E40AF' }
+const VG_STYLE_DOC = { bg: '#f4f4f5', color: '#3f3f46' }
 const DOC_TYPES = new Set(['發票', '收據', '估價單', '公司開'])
 
 const SELECT_STYLE: React.CSSProperties = {
@@ -903,12 +903,12 @@ export default function ItemMappingsClient({
           </div>
         ) : null}
 
-        <div className="rounded-2xl p-4" style={{ background: '#FFFBEB', border: '1.5px solid #FDE68A' }}>
+        <div className="rounded-2xl bg-white p-4" style={{ border: '1px solid #e4e4e7' }}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <span className="rounded-lg px-2.5 py-1 text-sm font-bold" style={{ background: '#F59E0B', color: 'white' }}>廠商</span>
-                <span className="text-xs font-semibold" style={{ color: '#92400E' }}>{vendorChildGroups.length} 個廠商分類</span>
+                <span className="rounded-lg px-2.5 py-1 text-sm font-bold" style={{ background: '#f4f4f5', color: '#27272a' }}>廠商</span>
+                <span className="text-xs font-semibold" style={{ color: '#71717a' }}>{vendorChildGroups.length} 個廠商分類</span>
               </div>
               <p className="mt-1.5 text-[11px] leading-5" style={{ color: '#78716c' }}>
                 菜商、雜貨、免洗等都整理在此層，收據管理會同步顯示在「廠商」底下。
@@ -916,14 +916,14 @@ export default function ItemMappingsClient({
             </div>
             <button type="button" onClick={() => { setNewVgMode('vendor'); setNewVgName(''); setShowAddVg(true) }}
               className="flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold"
-              style={{ background: 'white', border: '1.5px solid #F59E0B', color: '#92400E' }}>
+              style={{ background: 'white', border: '1px solid #d4d4d8', color: '#3f3f46' }}>
               <Plus className="h-4 w-4" />新增廠商
             </button>
           </div>
           {vendorChildGroups.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
               {vendorChildGroups.map(name => (
-                <span key={name} className="rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: 'white', border: '1px solid #FDE68A', color: '#92400E' }}>
+                <span key={name} className="rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: '#f4f4f5', border: '1px solid #e4e4e7', color: '#52525b' }}>
                   {name}
                 </span>
               ))}
@@ -943,24 +943,24 @@ export default function ItemMappingsClient({
           // 每店獨立：雜項是舊空值／未分類的統一保留分類，不提供改名或刪除。
           const hasVgRecord = !isMiscVendorGroup(vg)
           return (
-            <div key={vg} style={isSortingVg || isSelectingVg
-              ? (isVendorChild ? { borderLeft: '3px solid #FDE68A', paddingLeft: 8 } : undefined)
+            <div key={vg} className="item-mapping-group" style={isSortingVg || isSelectingVg
+              ? undefined
               : {
                   contentVisibility: 'auto',
-                  containIntrinsicSize: `auto ${Math.max(96, items.length * 58 + 56)}px`,
-                  ...(isVendorChild ? { borderLeft: '3px solid #FDE68A', paddingLeft: 8 } : {}),
+                  containIntrinsicSize: `auto ${Math.max(120, items.length * 72 + 88)}px`,
                 }}>
-              <div className="flex flex-wrap items-center gap-2 mb-2 px-1">
+              <div className="item-mapping-group-header">
+                <div className="item-mapping-group-title flex min-w-0 items-center gap-2">
                 {isSortingVg && hasVgRecord && (
                   <div className="flex items-center gap-1">
                     <button onClick={() => moveVendorGroup(vg, 'up')} disabled={isVgFirst || isPending}
                       className="flex min-h-9 min-w-9 items-center justify-center rounded-lg"
-                      style={{ background: '#fef3c7', border: '1px solid #fbbf24', cursor: isVgFirst ? 'default' : 'pointer', color: isVgFirst ? '#d4d4d8' : '#92400e', opacity: isPending ? 0.5 : 1 }} title="分類上移" aria-label={`${vg}分類上移`}>
+                      style={{ background: '#fafafa', border: '1px solid #d4d4d8', cursor: isVgFirst ? 'default' : 'pointer', color: isVgFirst ? '#d4d4d8' : '#52525b', opacity: isPending ? 0.5 : 1 }} title="分類上移" aria-label={`${vg}分類上移`}>
                       <ChevronUp className="h-4 w-4" />
                     </button>
                     <button onClick={() => moveVendorGroup(vg, 'down')} disabled={isVgLast || isPending}
                       className="flex min-h-9 min-w-9 items-center justify-center rounded-lg"
-                      style={{ background: '#fef3c7', border: '1px solid #fbbf24', cursor: isVgLast ? 'default' : 'pointer', color: isVgLast ? '#d4d4d8' : '#92400e', opacity: isPending ? 0.5 : 1 }} title="分類下移" aria-label={`${vg}分類下移`}>
+                      style={{ background: '#fafafa', border: '1px solid #d4d4d8', cursor: isVgLast ? 'default' : 'pointer', color: isVgLast ? '#d4d4d8' : '#52525b', opacity: isPending ? 0.5 : 1 }} title="分類下移" aria-label={`${vg}分類下移`}>
                       <ChevronDown className="h-4 w-4" />
                     </button>
                   </div>
@@ -973,20 +973,23 @@ export default function ItemMappingsClient({
                   {isVendorChild ? `廠商 / ${vg}` : vg}
                 </span>
                 <span className="text-xs" style={{ color: '#a1a1aa' }}>{items.length} 項</span>
+                </div>
                 {/* 分類設定一律先按編輯，避免瀏覽時誤觸下拉選單。 */}
                 {hasVgRecord && (
-                  <VgActions
-                    vgName={vg}
-                    storeId={activeStoreId || null}
-                    itemCount={items.length}
-                    currentMode={isVendorChild ? 'vendor' : 'direct'}
-                    allowModeChange={!DOC_TYPES.has(vg)}
-                    currentDoc={isMiscVendorGroup(vg) ? null : (groupDocMap.get(vg) ?? null)}
-                    currentCategory={isVendorChild ? (groupCategoryMap.get(vg) ?? '雜項') : null}
-                    onDone={() => router.refresh()}
-                  />
+                  <div className="item-mapping-group-settings flex min-w-0 flex-wrap items-center gap-1.5">
+                    <VgActions
+                      vgName={vg}
+                      storeId={activeStoreId || null}
+                      itemCount={items.length}
+                      currentMode={isVendorChild ? 'vendor' : 'direct'}
+                      allowModeChange={!DOC_TYPES.has(vg)}
+                      currentDoc={isMiscVendorGroup(vg) ? null : (groupDocMap.get(vg) ?? null)}
+                      currentCategory={isVendorChild ? (groupCategoryMap.get(vg) ?? '雜項') : null}
+                      onDone={() => router.refresh()}
+                    />
+                  </div>
                 )}
-                <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+                <div className="item-mapping-group-tools flex flex-wrap items-center justify-end gap-1.5">
                   <button type="button" onClick={() => {
                     setSortModeVg(current => current === vg ? null : vg)
                     setSelectModeVg(null)
@@ -995,7 +998,7 @@ export default function ItemMappingsClient({
                     className="flex min-h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold"
                     style={isSortingVg
                       ? { background: '#F59E0B', color: 'white', border: '1px solid #F59E0B' }
-                      : { background: 'white', color: '#52525b', border: '1px solid #e4e4e7' }}
+                      : { background: '#fafafa', color: '#52525b', border: '1px solid #d4d4d8' }}
                     title={isSortingVg ? `完成「${vg}」排序` : `排序「${vg}」內的品項`}>
                     {isSortingVg ? <Check className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
                     {isSortingVg ? '完成' : '排序'}
@@ -1009,7 +1012,7 @@ export default function ItemMappingsClient({
                     className="flex min-h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold"
                     style={isSelectingVg
                       ? { background: '#dc2626', color: 'white', border: '1px solid #dc2626' }
-                      : { background: 'white', color: '#52525b', border: '1px solid #e4e4e7' }}
+                      : { background: '#fafafa', color: '#52525b', border: '1px solid #d4d4d8' }}
                     title={isSelectingVg ? `取消選取「${vg}」品項` : `選取「${vg}」內的品項`}>
                     {isSelectingVg ? <X className="h-3 w-3" /> : <Check className="h-3 w-3" />}
                     {isSelectingVg ? '取消' : '選取'}
@@ -1022,32 +1025,32 @@ export default function ItemMappingsClient({
                     className="flex min-h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold"
                     style={inlineAddVg === vg
                       ? { background: '#F59E0B', color: 'white', border: '1px solid #F59E0B', cursor: 'pointer' }
-                      : { background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', cursor: 'pointer' }}
+                      : { background: 'white', color: '#92400E', border: '1px solid #f59e0b', cursor: 'pointer' }}
                     title={`新增品項到「${vg}」`}>
                     <Plus className="h-3 w-3" /> 加品項
                   </button>
                 </div>
               </div>
               {inlineAddVg === vg && (
-                <div className="grid grid-cols-1 md:grid-cols-[1fr_130px_150px_auto_auto] items-end gap-2 mb-2 px-2 py-2 rounded-lg" style={{ background: '#FFFBEB', border: '1.5px solid #FDE68A' }}>
+                <div className="grid grid-cols-1 items-end gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 md:grid-cols-[1fr_130px_150px_auto_auto]">
                   <div>
-                    <label className="block text-[11px] font-semibold mb-1" style={{ color: '#92400E' }}>品項名稱</label>
+                    <label className="mb-1 block text-[11px] font-semibold text-zinc-600">品項名稱</label>
                     <input autoFocus value={inlineAddName} onChange={e => setInlineAddName(e.target.value)}
                       placeholder="例：辣椒"
                       onKeyDown={e => { if (e.key === 'Escape') { setInlineAddVg(null); setInlineAddName('') } }}
-                      style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid #F59E0B', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+                      style={{ width: '100%', height: 36, padding: '0 9px', border: '1px solid #d4d4d8', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-semibold mb-1" style={{ color: '#92400E' }}>類別</label>
+                    <label className="mb-1 block text-[11px] font-semibold text-zinc-600">類別</label>
                     <select value={inlineAddCat} onChange={e => setInlineAddCat(e.target.value)}
-                      style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid #F59E0B', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: 'white', outline: 'none' }}>
+                      style={{ width: '100%', height: 36, padding: '0 8px', border: '1px solid #d4d4d8', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: 'white', outline: 'none' }}>
                       <option>食材</option><option>耗材</option><option>雜項</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-semibold mb-1" style={{ color: '#92400E' }}>單據類型</label>
+                    <label className="mb-1 block text-[11px] font-semibold text-zinc-600">單據類型</label>
                     <select value={inlineAddDocType} onChange={e => setInlineAddDocType(e.target.value)}
-                      style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid #F59E0B', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: 'white', outline: 'none' }}>
+                      style={{ width: '100%', height: 36, padding: '0 8px', border: '1px solid #d4d4d8', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: 'white', outline: 'none' }}>
                       <option value="">不指定</option>
                       {docTypeOptions.map(doc => <option key={doc} value={doc}>{doc}</option>)}
                     </select>
@@ -1098,7 +1101,7 @@ export default function ItemMappingsClient({
                   </button>
                 </div>
               )}
-              <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <div className="item-mapping-list overflow-hidden rounded-xl bg-white" style={{ border: '1px solid #e4e4e7' }}>
                 {(() => {
                   // 「退稅」vg 特別處理：依品項名稱的「稅金/稅」前綴推導原廠商，拆子區塊
                   const isRefund = vg === '退稅'
@@ -1267,7 +1270,7 @@ function ItemRowContent({
   const catSt = CAT_STYLE[m.item_category] ?? CAT_STYLE['雜項']
   const style: React.CSSProperties = { borderBottom: isLast ? 'none' : '1px solid #f4f4f5' }
   return (
-    <div style={style} className={`flex flex-wrap gap-1.5 md:gap-2 px-2 md:px-3 py-2 md:py-2.5 ${sortMode ? 'items-start' : 'items-center'}`}>
+    <div style={style} className={`item-mapping-row flex gap-2 px-3 py-3 md:px-4 ${sortMode ? 'item-mapping-row--sorting items-start' : 'items-center'}`}>
       {/* 選取模式：checkbox */}
       {selectMode && (
         <input type="checkbox" checked={isSelected} onChange={onToggleSelect}
@@ -1277,21 +1280,21 @@ function ItemRowContent({
         <div className="flex shrink-0 items-center gap-1">
           <button type="button" onClick={onMoveUp} disabled={!canMoveUp || sortingPending}
             className="flex min-h-10 min-w-10 items-center justify-center rounded-lg"
-            style={{ background: '#fffbeb', border: '1px solid #fbbf24', color: canMoveUp ? '#92400e' : '#d4d4d8', opacity: sortingPending ? 0.5 : 1 }}
+            style={{ background: '#fafafa', border: '1px solid #d4d4d8', color: canMoveUp ? '#52525b' : '#d4d4d8', opacity: sortingPending ? 0.5 : 1 }}
             title="品項上移" aria-label={`${displayName(m)}上移`}>
             <ChevronUp className="h-4 w-4" />
           </button>
           <button type="button" onClick={onMoveDown} disabled={!canMoveDown || sortingPending}
             className="flex min-h-10 min-w-10 items-center justify-center rounded-lg"
-            style={{ background: '#fffbeb', border: '1px solid #fbbf24', color: canMoveDown ? '#92400e' : '#d4d4d8', opacity: sortingPending ? 0.5 : 1 }}
+            style={{ background: '#fafafa', border: '1px solid #d4d4d8', color: canMoveDown ? '#52525b' : '#d4d4d8', opacity: sortingPending ? 0.5 : 1 }}
             title="品項下移" aria-label={`${displayName(m)}下移`}>
             <ChevronDown className="h-4 w-4" />
           </button>
         </div>
       )}
-      <div className={sortMode ? 'min-w-0 flex-1 space-y-2' : 'contents'}>
-        <div className={sortMode ? 'flex min-w-0 items-center gap-2' : 'contents'}>
-          <span className={`min-w-0 flex-1 text-sm font-semibold flex flex-wrap items-center gap-1.5 ${sortMode ? 'sm:whitespace-nowrap' : selectMode ? 'basis-0' : 'basis-full sm:basis-auto'}`} style={{ color: '#18181b' }}>
+      <div className="item-mapping-row-content min-w-0 flex-1 space-y-2">
+        <div className="item-mapping-row-heading flex min-w-0 items-center gap-2">
+          <span className="item-mapping-name flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm font-semibold" style={{ color: '#18181b' }}>
             {displayName(m)}
             {false && (
               <button onClick={() => setShowStores(v => !v)}
@@ -1307,55 +1310,51 @@ function ItemRowContent({
             )}
           </span>
           {editId !== m.id && (
-            <span className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold"
-              style={{
-                background: docColor(m.doc_type_override ?? '').bg,
-                color: docColor(m.doc_type_override ?? '').fg,
-                border: `1px solid ${docColor(m.doc_type_override ?? '').bd}`,
-              }}>
+            <span className="item-mapping-tag shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold"
+              style={{ background: '#f4f4f5', color: '#52525b', border: '1px solid #e4e4e7' }}>
               {m.doc_type_override || '單據預設'}
             </span>
           )}
         </div>
-        <div className={sortMode ? 'flex min-w-0 flex-wrap items-center gap-1.5 md:gap-2' : 'contents'}>
+        <div className="item-mapping-row-details flex min-w-0 items-center gap-2">
           {editId === m.id ? (
-            <div className="w-full rounded-2xl p-4 shadow-sm sm:p-5" style={{ background: '#fffbeb', border: '1px solid #fcd34d' }}>
-              <div className="mb-4 flex flex-col gap-1 border-b pb-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: '#fde68a' }}>
+            <div className="item-mapping-editor w-full rounded-2xl border border-zinc-200 bg-zinc-50 p-4 sm:p-5">
+              <div className="mb-4 flex flex-col gap-1 border-b border-zinc-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <div className="text-sm font-bold" style={{ color: '#78350f' }}>編輯品項設定</div>
-                  <div className="mt-0.5 text-xs" style={{ color: '#a16207' }}>所有欄位只會在按下儲存後套用</div>
+                  <div className="text-sm font-bold text-zinc-900">編輯品項設定</div>
+                  <div className="mt-0.5 text-xs text-zinc-500">所有欄位只會在按下儲存後套用</div>
                 </div>
-                <span className="mt-1 self-start rounded-full px-2.5 py-1 text-[11px] font-semibold sm:mt-0" style={{ color: '#92400e', background: '#fef3c7' }}>
+                <span className="mt-1 self-start rounded-full bg-zinc-200 px-2.5 py-1 text-[11px] font-semibold text-zinc-700 sm:mt-0">
                   {displayName(m)}
                 </span>
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <label className="flex min-w-0 flex-col gap-2">
-                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>品項名稱</span>
+                  <span className="block text-xs font-bold text-zinc-700">品項名稱</span>
                   <input value={editName} onChange={e => setEditName(e.target.value)} className="h-12 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
                 </label>
                 <label className="flex min-w-0 flex-col gap-2">
-                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>Excel 對應名稱</span>
+                  <span className="block text-xs font-bold text-zinc-700">Excel 對應名稱</span>
                   <input list="excel-col-list" value={editCol} onChange={e => setEditCol(e.target.value)} className="h-12 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
                 </label>
                 <label className="flex min-w-0 flex-col gap-2">
-                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>品項類別</span>
+                  <span className="block text-xs font-bold text-zinc-700">品項類別</span>
                   <select className="h-12 w-full" style={{ ...SELECT_ADD_STYLE, height: undefined }} value={editCat} onChange={e => setEditCat(e.target.value)}>
                     <option>食材</option><option>耗材</option><option>雜項</option>
                   </select>
                 </label>
                 <label className="flex min-w-0 flex-col gap-2">
-                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>廠商／分類</span>
+                  <span className="block text-xs font-bold text-zinc-700">廠商／分類</span>
                   <input value={editVendorGroup} onChange={e => setEditVendorGroup(e.target.value)} className="h-12 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
                 </label>
               </div>
 
-              <div className="mb-2 mt-5 text-xs font-bold" style={{ color: '#92400e' }}>帳務設定</div>
+              <div className="mb-2 mt-5 text-xs font-bold text-zinc-700">帳務設定</div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <label className="flex min-h-[124px] min-w-0 flex-col rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.72)', border: '1px solid #fde68a' }}>
-                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>單據類型</span>
-                  <div className="mt-1 text-[10px]" style={{ color: '#a16207' }}>選擇這個品項使用的單據</div>
+                <label className="flex min-h-[124px] min-w-0 flex-col rounded-xl border border-zinc-200 bg-white p-3">
+                  <span className="block text-xs font-bold text-zinc-700">單據類型</span>
+                  <div className="mt-1 text-[10px] text-zinc-500">選擇這個品項使用的單據</div>
                   <select value={editDocType} onChange={event => {
                     if (event.target.value === '__custom__') {
                       const custom = prompt('輸入自訂單據類型名稱（例：巷日開）:')?.trim()
@@ -1372,9 +1371,9 @@ function ItemRowContent({
                     <option value="__custom__">➕ 新增自訂…</option>
                   </select>
                 </label>
-                <div className="flex min-h-[124px] min-w-0 flex-col rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.72)', border: '1px solid #fde68a' }}>
-                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>退稅設定</span>
-                  <div className="mt-1 text-[10px]" style={{ color: '#a16207' }}>是否納入退稅金額</div>
+                <div className="flex min-h-[124px] min-w-0 flex-col rounded-xl border border-zinc-200 bg-white p-3">
+                  <span className="block text-xs font-bold text-zinc-700">退稅設定</span>
+                  <div className="mt-1 text-[10px] text-zinc-500">是否納入退稅金額</div>
                   <button type="button" onClick={() => setEditRefund(!editRefund)}
                     className="mt-auto h-11 w-full rounded-lg px-3 text-xs font-semibold"
                     style={editRefund
@@ -1384,9 +1383,9 @@ function ItemRowContent({
                   </button>
                 </div>
                 {m.store_type !== '央廚' && (
-                  <label className="flex min-h-[124px] min-w-0 flex-col rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.72)', border: '1px solid #fde68a' }}>
-                    <span className="block text-xs font-bold" style={{ color: '#92400e' }}>金額正負</span>
-                    <div className="mt-1 text-[10px]" style={{ color: '#a16207' }}>只影響之後帳目，歷史帳目不變</div>
+                  <label className="flex min-h-[124px] min-w-0 flex-col rounded-xl border border-zinc-200 bg-white p-3">
+                    <span className="block text-xs font-bold text-zinc-700">金額正負</span>
+                    <div className="mt-1 text-[10px] text-zinc-500">只影響之後帳目，歷史帳目不變</div>
                     <select value={editSignMode} onChange={event => setEditSignMode(event.target.value as ItemMappingSignMode)}
                       disabled={isNegativeItem(m.item_name)} className="mt-auto h-11 w-full rounded-lg px-3 text-xs font-semibold"
                       style={{ border: '1px solid #e4e4e7', background: 'white', color: '#52525b' }}>
@@ -1396,9 +1395,9 @@ function ItemRowContent({
                     </select>
                   </label>
                 )}
-                <div className="flex min-h-[124px] min-w-0 flex-col rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.72)', border: '1px solid #fde68a' }}>
-                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>稅外加設定</span>
-                  <div className="mt-1 text-[10px]" style={{ color: '#a16207' }}>設定稅金的計算範圍</div>
+                <div className="flex min-h-[124px] min-w-0 flex-col rounded-xl border border-zinc-200 bg-white p-3">
+                  <span className="block text-xs font-bold text-zinc-700">稅外加設定</span>
+                  <div className="mt-1 text-[10px] text-zinc-500">設定稅金的計算範圍</div>
                   <div className="mt-auto grid grid-cols-1 gap-2 2xl:grid-cols-2">
                     <button type="button" onClick={() => setEditTaxAddon(!editTaxAddon)}
                       className={`h-11 w-full rounded-lg px-3 text-xs font-semibold ${editTaxAddon ? '' : '2xl:col-span-2'}`}
@@ -1428,7 +1427,7 @@ function ItemRowContent({
                 </div>
               </div>
 
-              <div className="mt-5 flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end" style={{ borderColor: '#fde68a' }}>
+              <div className="mt-5 flex flex-col-reverse gap-2 border-t border-zinc-200 pt-4 sm:flex-row sm:justify-end">
                 <button onClick={() => setEditId(null)} className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl px-5 text-sm font-semibold sm:w-auto sm:min-w-[112px]"
                   style={{ color: '#52525b', background: 'white', border: '1px solid #e4e4e7' }}>
                   <X className="h-4 w-4" /> 取消
@@ -1442,24 +1441,28 @@ function ItemRowContent({
             </div>
           ) : (
             <>
-              <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
-                style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
-              {m.is_refund && <span className="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" style={{ background: '#dcfce7', color: '#166534' }}>退稅</span>}
-              <span className="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" style={{ background: '#f4f4f5', color: '#52525b' }}>
-                {isNegativeItem(m.item_name) || m.sign_mode === 'negative' ? '固定負數' : m.sign_mode === 'flexible' ? '每筆正負' : '固定正數'}
-              </span>
-              {m.is_tax_addon && <span className="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" style={{ background: '#fff7ed', color: '#c2410c' }}>稅外加</span>}
-              <span className="hidden md:inline text-sm tabular-nums" style={{ color: '#71717a' }}>Excel：{m.excel_column}</span>
-              <button onClick={() => startEdit(m)} className="flex min-h-10 shrink-0 items-center justify-center gap-1 rounded-lg px-2 text-xs font-semibold"
-                style={{ color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a' }}
-                title="編輯品項所有設定" aria-label="編輯品項所有設定">
-                <Edit2 className="h-4 w-4" /> 編輯
-              </button>
-              <button onClick={() => handleDelete(m.id)} className="flex min-h-10 shrink-0 items-center justify-center gap-1 rounded-lg px-2 text-xs font-semibold"
-                style={{ color: '#be123c', background: '#fff1f2', border: '1px solid #fecaca' }}
-                title="刪除品項（安全保留歷史帳目與報表）" aria-label="刪除品項">
-                <Trash2 className="h-4 w-4" /> 刪除
-              </button>
+              <div className="item-mapping-row-meta flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                <span className="item-mapping-tag shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold"
+                  style={{ background: catSt.bg, color: catSt.color, border: '1px solid #e4e4e7' }}>{m.item_category}</span>
+                {m.is_refund && <span className="item-mapping-tag shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold" style={{ background: '#f4f4f5', color: '#52525b', border: '1px solid #e4e4e7' }}>退稅</span>}
+                <span className="item-mapping-tag shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold" style={{ background: '#f4f4f5', color: '#52525b', border: '1px solid #e4e4e7' }}>
+                  {isNegativeItem(m.item_name) || m.sign_mode === 'negative' ? '固定負數' : m.sign_mode === 'flexible' ? '每筆正負' : '固定正數'}
+                </span>
+                {m.is_tax_addon && <span className="item-mapping-tag shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold" style={{ background: '#f4f4f5', color: '#52525b', border: '1px solid #e4e4e7' }}>稅外加</span>}
+                <span className="hidden text-xs tabular-nums text-zinc-500 md:inline">Excel：{m.excel_column}</span>
+              </div>
+              <div className="item-mapping-row-actions flex shrink-0 items-center gap-2">
+                <button onClick={() => startEdit(m)} className="flex min-h-10 items-center justify-center gap-1 rounded-lg px-3 text-xs font-semibold"
+                  style={{ color: '#3f3f46', background: 'white', border: '1px solid #d4d4d8' }}
+                  title="編輯品項所有設定" aria-label="編輯品項所有設定">
+                  <Edit2 className="h-4 w-4" /> 編輯
+                </button>
+                <button onClick={() => handleDelete(m.id)} className="flex min-h-10 items-center justify-center gap-1 rounded-lg px-3 text-xs font-semibold"
+                  style={{ color: '#be123c', background: 'white', border: '1px solid #e4e4e7' }}
+                  title="刪除品項（安全保留歷史帳目與報表）" aria-label="刪除品項">
+                  <Trash2 className="h-4 w-4" /> 刪除
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -1657,26 +1660,26 @@ function VgActions({
   if (editing) {
     const docOptions = Array.from(new Set([...BUILTIN_DOC_TYPES, ...(doc && !BUILTIN_DOC_TYPES.includes(doc) ? [doc] : [])]))
     return (
-      <div className="order-last mt-2 w-full basis-full rounded-2xl p-4 shadow-sm sm:p-5" style={{ background: '#fffbeb', border: '1px solid #fcd34d' }}>
-        <div className="mb-4 flex flex-col gap-1 border-b pb-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: '#fde68a' }}>
+      <div className="item-mapping-group-editor order-last mt-2 w-full basis-full rounded-2xl border border-zinc-200 bg-zinc-50 p-4 sm:p-5">
+        <div className="mb-4 flex flex-col gap-1 border-b border-zinc-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="text-sm font-bold" style={{ color: '#78350f' }}>編輯分類設定</div>
-            <div className="mt-0.5 text-xs" style={{ color: '#a16207' }}>名稱、分類方式與帳務設定會在儲存後一起套用</div>
+            <div className="text-sm font-bold text-zinc-900">編輯分類設定</div>
+            <div className="mt-0.5 text-xs text-zinc-500">名稱、分類方式與帳務設定會在儲存後一起套用</div>
           </div>
-          <span className="mt-1 self-start rounded-full px-2.5 py-1 text-[11px] font-semibold sm:mt-0" style={{ color: '#92400e', background: '#fef3c7' }}>
+          <span className="mt-1 self-start rounded-full bg-zinc-200 px-2.5 py-1 text-[11px] font-semibold text-zinc-700 sm:mt-0">
             {vgName}・{itemCount} 項
           </span>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <label className="flex min-w-0 flex-col gap-2">
-            <span className="text-xs font-bold" style={{ color: '#92400e' }}>分類名稱</span>
+            <span className="text-xs font-bold text-zinc-700">分類名稱</span>
             <input value={newName} onChange={event => setNewName(event.target.value)}
               onKeyDown={event => { if (event.key === 'Escape') cancelEditing() }}
               autoFocus className="h-12 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
           </label>
           <label className="flex min-w-0 flex-col gap-2">
-            <span className="text-xs font-bold" style={{ color: '#92400e' }}>分類方式</span>
+            <span className="text-xs font-bold text-zinc-700">分類方式</span>
             <select value={mode} onChange={event => {
               const nextMode = event.target.value as 'vendor' | 'direct'
               setMode(nextMode)
@@ -1689,7 +1692,7 @@ function VgActions({
             </select>
           </label>
           <label className="flex min-w-0 flex-col gap-2">
-            <span className="text-xs font-bold" style={{ color: '#92400e' }}>單據類型</span>
+            <span className="text-xs font-bold text-zinc-700">單據類型</span>
             <select value={doc} onChange={event => changeDoc(event.target.value)} disabled={!storeId}
               className="h-12 w-full" style={{ ...SELECT_ADD_STYLE, height: undefined }}>
               <option value="">不指定</option>
@@ -1698,7 +1701,7 @@ function VgActions({
             </select>
           </label>
           <label className="flex min-w-0 flex-col gap-2">
-            <span className="text-xs font-bold" style={{ color: '#92400e' }}>報表金額分類</span>
+            <span className="text-xs font-bold text-zinc-700">報表金額分類</span>
             <select value={category} onChange={event => setCategory(event.target.value)}
               disabled={!storeId || mode !== 'vendor'}
               className="h-12 w-full" style={{ ...SELECT_ADD_STYLE, height: undefined, opacity: (!storeId || mode !== 'vendor') ? 0.65 : 1 }}>
@@ -1708,7 +1711,7 @@ function VgActions({
           </label>
         </div>
 
-        <div className="mt-5 flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end" style={{ borderColor: '#fde68a' }}>
+        <div className="mt-5 flex flex-col-reverse gap-2 border-t border-zinc-200 pt-4 sm:flex-row sm:justify-end">
           <button type="button" onClick={cancelEditing} disabled={saving}
             className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl px-5 text-sm font-semibold sm:w-auto sm:min-w-[112px]"
             style={{ color: '#52525b', background: 'white', border: '1px solid #e4e4e7' }}>
@@ -1728,25 +1731,25 @@ function VgActions({
   return (
     <>
       <span className="rounded-md px-2 py-1 text-[11px] font-semibold"
-        style={{ background: currentDoc ? docColor(currentDoc).bg : 'white', color: docColor(currentDoc ?? '').fg, border: `1px solid ${docColor(currentDoc ?? '').bd}` }}>
+        style={{ background: '#f4f4f5', color: '#52525b', border: '1px solid #e4e4e7' }}>
         單據：{currentDoc || '未指定'}
       </span>
       {categoryStyle && (
         <span className="rounded-md px-2 py-1 text-[11px] font-semibold"
-          style={{ background: categoryStyle.bg, color: categoryStyle.color, border: `1px solid ${categoryStyle.color}33` }}>
+          style={{ background: '#f4f4f5', color: '#52525b', border: '1px solid #e4e4e7' }}>
           分類：{currentCategory}
         </span>
       )}
       <button type="button" onClick={startEditing}
         className="flex min-h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold"
         title="編輯分類所有設定" aria-label={`編輯「${vgName}」分類設定`}
-        style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e' }}>
+        style={{ background: 'white', border: '1px solid #d4d4d8', color: '#3f3f46' }}>
         <Edit2 className="h-3.5 w-3.5" />編輯
       </button>
       <button type="button" onClick={handleDelete} disabled={saving}
         className="flex min-h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold"
         title="安全停用整個群組"
-        style={{ background: '#fff1f2', border: '1px solid #fecdd3', color: '#be123c' }}>
+        style={{ background: 'white', border: '1px solid #e4e4e7', color: '#be123c' }}>
         <Trash2 className="h-3.5 w-3.5" />刪除
       </button>
     </>

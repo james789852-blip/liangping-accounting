@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const source = fs.readFileSync(new URL('../components/hq/item-mappings-client.tsx', import.meta.url), 'utf8')
 const actions = fs.readFileSync(new URL('../app/actions/item-mappings.ts', import.meta.url), 'utf8')
+const globalCss = fs.readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8')
 
 test('品項管理以分類內上下箭頭排序，不再使用拖曳元件', () => {
   assert.doesNotMatch(source, /@dnd-kit/)
@@ -14,11 +15,27 @@ test('品項管理以分類內上下箭頭排序，不再使用拖曳元件', ()
   assert.match(source, /aria-label=\{`\$\{displayName\(m\)\}下移`\}/)
 })
 
-test('排序模式將單據類型與其他控制項分成上下兩列，避免品項名稱被壓縮', () => {
-  assert.match(source, /sortMode \? 'min-w-0 flex-1 space-y-2' : 'contents'/)
-  assert.match(source, /sortMode \? 'flex min-w-0 items-center gap-2' : 'contents'/)
-  assert.match(source, /sortMode \? 'flex min-w-0 flex-wrap items-center gap-1\.5 md:gap-2' : 'contents'/)
-  assert.match(source, /sortMode \? 'sm:whitespace-nowrap'/)
+test('品項列在桌機固定欄位、手機上下分區，避免名稱被壓縮', () => {
+  assert.match(source, /item-mapping-row-content/)
+  assert.match(source, /item-mapping-row--sorting/)
+  assert.match(source, /item-mapping-row-heading/)
+  assert.match(source, /item-mapping-row-details/)
+  assert.match(source, /item-mapping-row-meta/)
+  assert.match(source, /item-mapping-row-actions/)
+  assert.match(globalCss, /\.item-mapping-row-content:not\(:has\(\.item-mapping-editor\)\)[\s\S]*?grid-template-columns: minmax\(170px, 0\.8fr\) minmax\(360px, 2fr\)/)
+  assert.match(globalCss, /\.item-mapping-row--sorting \.item-mapping-row-content:not\(:has\(\.item-mapping-editor\)\)[\s\S]*?display: block/)
+  assert.match(globalCss, /@media \(max-width: 767px\)[\s\S]*?\.item-mapping-row-details[\s\S]*?flex-direction: column/)
+  assert.match(globalCss, /@media \(max-width: 767px\)[\s\S]*?\.item-mapping-row-actions[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
+})
+
+test('品項管理使用低彩度分區，並固定分類工具排列', () => {
+  assert.match(source, /item-mapping-group-header/)
+  assert.match(source, /item-mapping-group-settings/)
+  assert.match(source, /item-mapping-group-tools/)
+  assert.match(globalCss, /\.item-mapping-group \{[\s\S]*?border: 1px solid #e4e4e7;[\s\S]*?background: #fff;/)
+  assert.match(globalCss, /\.item-mapping-group-header \{[\s\S]*?grid-template-columns:/)
+  assert.match(globalCss, /@media \(max-width: 767px\)[\s\S]*?\.item-mapping-group-tools[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/)
+  assert.doesNotMatch(source, /borderLeft: '3px solid #FDE68A'/)
 })
 
 test('每個分類在加品項旁提供排序與選取功能', () => {
@@ -62,7 +79,7 @@ test('品項編輯區使用對齊網格與獨立帳務設定卡片', () => {
   assert.match(source, /grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4/)
   assert.match(source, /grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4/)
   assert.match(source, /min-h-\[124px\][\s\S]*?>單據類型<[\s\S]*?>退稅設定<[\s\S]*?>金額正負<[\s\S]*?>稅外加設定</)
-  assert.match(source, /flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end/)
+  assert.match(source, /flex flex-col-reverse gap-2 border-t border-zinc-200 pt-4 sm:flex-row sm:justify-end/)
 })
 
 test('分類設定保持唯讀，統一按編輯後才可修改', () => {
