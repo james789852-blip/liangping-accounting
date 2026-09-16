@@ -473,21 +473,12 @@ input[type="number"] {
   }
 }
 @media (max-width: 420px) {
-  .manager-mobile-clock {
-    display: none;
-  }
   .hq-mobile-header {
     gap: 6px !important;
     padding-inline: 10px !important;
   }
   .hq-mobile-header-title {
     gap: 4px !important;
-  }
-  .hq-mobile-actions {
-    gap: 4px !important;
-  }
-  .hq-mobile-actions > a {
-    padding-inline: 6px !important;
   }
   .hq-mobile-logout {
     width: 30px !important;

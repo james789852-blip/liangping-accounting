@@ -157,6 +157,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
   }
 
   const hasStores = allStores.length > 0
+  const currentStoreName = allStores.find(store => store.id === currentStoreId)?.name ?? allStores[0]?.name
   const initial = userName ? userName.slice(0, 1) : '?'
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -339,50 +340,18 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
           style={{ color: '#52525b' }} aria-label="開啟功能選單" aria-expanded={mobileMenuOpen}>
           <Menu className="h-6 w-6" />
         </button>
-        {/* 中間標題區，flex-1 + min-w-0 確保可截斷 */}
-        <div className="hq-mobile-header-title flex items-center gap-1.5 flex-1 min-w-0 overflow-visible">
+        {/* 手機標題僅顯示目前端別，操作入口集中到抽屜選單 */}
+        <div className="hq-mobile-header-title flex flex-1 min-w-0 items-center overflow-hidden">
           {isManagerPath && canAccessHQ ? (
-            <>
-              <ReliableNavigationLink href={hqHomeHref} className="text-xs font-medium shrink-0 transition-opacity hover:opacity-60" style={{ color: '#a1a1aa' }}>總公司</ReliableNavigationLink>
-              <span className="shrink-0" style={{ color: '#e4e4e7' }}>/</span>
-              {allStores.length > 1 ? (
-                <StoreSwitcher stores={allStores} currentStoreId={currentStoreId}
-                  className="text-xs font-bold text-orange-800 rounded-lg px-2 py-1 focus:outline-none min-w-0 max-w-[135px] border-2 bg-orange-50"
-                  style={{ borderColor: '#fb923c' }} />
-              ) : hasStores ? (
-                <span className="font-bold text-sm text-slate-900 truncate">{allStores[0]?.name}</span>
-              ) : (
-                <span className="font-bold text-sm text-slate-900 truncate">店長端</span>
-              )}
-            </>
+            <span className="truncate text-sm font-bold text-slate-900">
+              店長端{currentStoreName ? ` · ${currentStoreName}` : ''}
+            </span>
           ) : (
             <span className="font-bold text-sm text-slate-900 truncate">總公司後台</span>
           )}
         </div>
-        {/* 右側操作區，鈴鐺固定在最右側並保留未讀角標空間 */}
-        <div className="hq-mobile-actions flex items-center gap-2 shrink-0">
-          <a
-            href={HR_SYSTEM_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs font-semibold rounded-lg px-2 py-1.5 whitespace-nowrap flex items-center gap-1"
-            style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}>
-            <ExternalLink className="h-3 w-3" />HR
-          </a>
-          {!isManagerPath && hasStores && (
-            <ReliableNavigationLink href="/manager/dashboard"
-              className="text-xs font-bold text-white rounded-lg px-2 py-1.5 whitespace-nowrap"
-              style={{ background: 'linear-gradient(135deg,#f97316,#f59e0b)' }}>
-              店長端
-            </ReliableNavigationLink>
-          )}
-          {isManagerPath && hasStores && (
-            <ReliableNavigationLink href={hqHomeHref}
-              className="text-xs font-bold text-white rounded-lg px-2 py-1.5 whitespace-nowrap"
-              style={{ background: 'linear-gradient(135deg,#F59E0B,#D97706)' }}>
-              總公司
-            </ReliableNavigationLink>
-          )}
+        {/* 鈴鐺固定在最右側，與內容及未讀角標保持安全距離 */}
+        <div className="mobile-header-notification shrink-0 pr-1">
           <NotificationCenter />
         </div>
       </header>
@@ -411,6 +380,22 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
             </div>
 
             <div className="flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-3">
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#a1a1aa' }}>快速入口</p>
+              <div className={`mb-3 grid gap-2 ${(isManagerPath ? canAccessHQ : hasStores) ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                <a href={HR_SYSTEM_URL} target="_blank" rel="noopener noreferrer"
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 text-sm font-semibold text-sky-700">
+                  <ExternalLink className="h-4 w-4 shrink-0" />
+                  HR 系統
+                </a>
+                {(isManagerPath ? canAccessHQ : hasStores) && (
+                  <ReliableNavigationLink href={isManagerPath ? hqHomeHref : '/manager/dashboard'}
+                    className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-800">
+                    <ArrowRightLeft className="h-4 w-4 shrink-0" />
+                    {isManagerPath ? '總公司端' : '店長端'}
+                  </ReliableNavigationLink>
+                )}
+              </div>
+
               {hasStores && allStores.length > 1 && (
                 <div className="mb-3 rounded-xl p-3" style={{ background: '#fff7ed', border: '1px solid #fdba74' }}>
                   <p className="mb-2 text-xs font-bold" style={{ color: '#c2410c' }}>切換目前操作店家</p>
@@ -440,19 +425,6 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
                 </div>
               ))}
               <div style={{ borderTop: '1px solid #f4f4f5', margin: '8px 0 4px' }} />
-              {(isManagerPath ? canAccessHQ : hasStores) && (
-                <ReliableNavigationLink href={isManagerPath ? hqHomeHref : '/manager/dashboard'}
-                  className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold" style={{ color: '#b45309' }}>
-                  <ArrowRightLeft className="h-5 w-5 shrink-0" />
-                  {isManagerPath ? '切換到總公司端' : '切換到店長端'}
-                </ReliableNavigationLink>
-              )}
-              <a href={HR_SYSTEM_URL} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium"
-                style={{ color: '#0369a1' }}>
-                <ExternalLink className="h-5 w-5 shrink-0" />
-                輔助管理系統
-              </a>
               <button onClick={handleLogout}
                 className="flex w-full items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium"
                 style={{ color: '#52525b' }}>

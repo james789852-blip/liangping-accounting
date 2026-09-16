@@ -211,30 +211,7 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
             <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{storeName || '店長端'}</p>
           </div>
         </div>
-        {time && (
-          <div className="manager-mobile-clock mx-2 text-right shrink-0">
-            <p className="text-[10px] leading-tight" style={{ color: '#a1a1aa' }}>{date}</p>
-            <p className="text-sm font-bold tabular-nums leading-tight" style={{ color: '#18181b' }}>{time}</p>
-          </div>
-        )}
-        <a
-          href={HR_SYSTEM_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="h-8 px-2 flex items-center justify-center gap-1 rounded-lg text-xs font-semibold shrink-0"
-          style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}
-        >
-          <ExternalLink className="h-3 w-3" />
-          HR
-        </a>
-        {canAccessHQ && (
-          <ReliableNavigationLink href={hqHref} className="ml-1 h-8 px-2 flex items-center justify-center gap-1 rounded-lg text-xs font-semibold shrink-0"
-            style={{ background: '#eff6ff', color: '#0369a1', border: '1px solid #bfdbfe' }}>
-            <Building2 className="h-3 w-3" />
-            總公司
-          </ReliableNavigationLink>
-        )}
-        <div className="ml-1 shrink-0">
+        <div className="mobile-header-notification ml-1 shrink-0 pr-1">
           <NotificationCenter />
         </div>
       </header>
@@ -262,6 +239,22 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
             </div>
 
             <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3">
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#a1a1aa' }}>快速入口</p>
+              <div className={`mb-3 grid gap-2 ${canAccessHQ ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                <a href={HR_SYSTEM_URL} target="_blank" rel="noopener noreferrer"
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 text-sm font-semibold text-sky-700">
+                  <ExternalLink className="h-4 w-4 shrink-0" />
+                  HR 系統
+                </a>
+                {canAccessHQ && (
+                  <ReliableNavigationLink href={hqHref}
+                    className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-800">
+                    <Building2 className="h-4 w-4 shrink-0" />
+                    總公司端
+                  </ReliableNavigationLink>
+                )}
+              </div>
+
               {stores.length > 1 && currentStoreId && (
                 <div className="mb-3 rounded-xl p-3" style={{ background: '#fff7ed', border: '1px solid #fdba74' }}>
                   <p className="mb-2 text-xs font-bold" style={{ color: '#c2410c' }}>切換目前操作店家</p>
@@ -288,18 +281,6 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
               </nav>
 
               <div className="my-3 border-t border-zinc-100" />
-              <a href={HR_SYSTEM_URL} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium" style={{ color: '#0369a1' }}>
-                <ExternalLink className="h-5 w-5 shrink-0" />
-                輔助管理系統
-              </a>
-              {canAccessHQ && (
-                <ReliableNavigationLink href={hqHref}
-                  className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold" style={{ color: '#0369a1' }}>
-                  <Building2 className="h-5 w-5 shrink-0" />
-                  回總公司
-                </ReliableNavigationLink>
-              )}
               <button onClick={handleLogout}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium" style={{ color: '#52525b' }}>
                 <LogOut className="h-5 w-5 shrink-0" />
