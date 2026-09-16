@@ -69,7 +69,8 @@ test('manager closing keeps more mobile space for the active step', () => {
   assert.doesNotMatch(closingForm, /注意：目前正在做/)
   assert.match(closingForm, /toast\.warning\(`目前正在處理 \$\{today\} 的補做帳目，不是今日帳目。`/)
   assert.match(closingForm, /duration: 6000/)
-  assert.match(notificationCenter, /bottom-\[calc\(5\.75rem\+env\(safe-area-inset-bottom\)\)\]/)
+  assert.match(notificationCenter, /top-\[calc\(4\.25rem\+env\(safe-area-inset-top\)\)\]/)
+  assert.match(notificationCenter, /lg:bottom-6[\s\S]*lg:top-auto/)
 })
 
 test('daily closing summary stacks complete metadata on narrow screens', () => {
