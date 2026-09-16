@@ -1187,7 +1187,7 @@ function CategoryPicker({ categories, value, onChange }: {
   )
 }
 
-export default function ClosingForm({ store, ckPrices, existingClosing, userId, userName, initialLastEditorName = null, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], actualVendors = [], prevDayReserves: initialPrevDayReserves, preReservedExpenseHints: initialPreReservedExpenseHints = [], isBackfill = false, realToday, calendarToday, isEarlyMorningBusinessDate = false, latestBackfillDraftDate }: Props) {
+export default function ClosingForm({ store, ckPrices, existingClosing, userId, userName, initialLastEditorName = null, today, todayReceipts = [], receiptCategories = [], mappingColumns = [], actualVendors = [], prevDayReserves: initialPrevDayReserves, preReservedExpenseHints: initialPreReservedExpenseHints = [], isBackfill = false, realToday, latestBackfillDraftDate }: Props) {
   const [data, setData] = useState<FormData>(() => initFormData(store, ckPrices, existingClosing, todayReceipts))
   const [expenses, setExpenses] = useState<Expense[]>(() => initExpenses(existingClosing, ckPrices, todayReceipts))
   const [largeCashExpenses, setLargeCashExpenses] = useState<LargeCashExpense[]>(() => initLargeCashExpenses(existingClosing))
@@ -1974,6 +1974,16 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
   const [replaceRangeNewStart, setReplaceRangeNewStart] = useState(0)
   const [replaceRangeNewEnd, setReplaceRangeNewEnd] = useState(0)
   const router = useRouter()
+  useEffect(() => {
+    if (!isBackfill) return
+    toast.warning(`目前正在處理 ${today} 的補做帳目，不是今日帳目。`, {
+      id: `backfill-date-${store.id}-${today}`,
+      duration: 6000,
+      action: realToday
+        ? { label: '切回今日', onClick: () => router.push(`/manager/closing?date=${realToday}`) }
+        : undefined,
+    })
+  }, [isBackfill, realToday, router, store.id, today])
   const newOrderNumRef = useRef<HTMLInputElement>(null)
   const newOrderAmtRef = useRef<HTMLInputElement>(null)
   const amtRefsMap = useRef<Map<string, HTMLInputElement>>(new Map())
@@ -3957,21 +3967,6 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             </p>
           </div>
         )}
-        {/* 補做帳目提示橫幅 */}
-        {isBackfill && (
-          <div className="px-5 py-3 text-sm font-bold flex items-center justify-between gap-3"
-            style={{ background: '#FFF7ED', color: '#9A3412', borderBottom: '2px solid #FDBA74' }}>
-            <span className="leading-snug">
-              注意：目前正在做 <b className="text-base">{today}</b> 的帳目，不是今天 <b>{realToday ?? '今日'}</b>
-            </span>
-            {realToday && (
-              <Link href={`/manager/closing?date=${encodeURIComponent(realToday)}`} prefetch={false} className="font-bold shrink-0 px-3 py-1.5 rounded-full"
-                style={{ color: '#fff', background: '#EA580C' }}>
-                切回今日
-              </Link>
-            )}
-          </div>
-        )}
         {!isBackfill && latestBackfillDraftDate && (
           <div className="px-5 py-2 text-xs font-medium flex items-center justify-between gap-2"
             style={{ background: '#FFFBEB', color: '#92400E', borderBottom: '1px solid #FDE68A' }}>
@@ -3981,62 +3976,39 @@ export default function ClosingForm({ store, ckPrices, existingClosing, userId, 
             </Link>
           </div>
         )}
-        {!isBackfill && (
-          <div className="px-5 py-2.5 flex items-center justify-between gap-3"
-            style={{
-              background: isEarlyMorningBusinessDate ? '#FFFBEB' : '#F8FAFC',
-              color: isEarlyMorningBusinessDate ? '#92400E' : '#334155',
-              borderBottom: '1px solid #f4f4f5',
-            }}>
-            <div className="flex items-start gap-2 min-w-0">
-              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: isEarlyMorningBusinessDate ? '#F59E0B' : '#64748B' }} />
-              <div className="min-w-0">
-                <p className="text-sm font-black leading-snug">
-                  目前正在做：<span className="tabular-nums">{today}</span> 帳目
-                </p>
-                {isEarlyMorningBusinessDate && (
-                  <p className="text-xs mt-0.5 leading-snug" style={{ color: '#b45309' }}>
-                    現在已是 {calendarToday ?? '隔日'} 凌晨，05:00 前系統仍視為前一日帳目。
-                  </p>
-                )}
-              </div>
-            </div>
-            <span className="text-[11px] font-bold px-2 py-1 rounded-full shrink-0"
-              style={{
-                background: isEarlyMorningBusinessDate ? '#FED7AA' : '#E2E8F0',
-                color: isEarlyMorningBusinessDate ? '#9A3412' : '#475569',
-              }}>
-              {isEarlyMorningBusinessDate ? '凌晨跨日' : '日期確認'}
-            </span>
-          </div>
-        )}
-        <div className="px-5 py-3 flex items-center justify-between gap-3" style={{ borderBottom: '1px solid #f4f4f5' }}>
-          <div className="min-w-0">
+        <div className="px-4 py-3 sm:px-5" style={{ borderBottom: '1px solid #f4f4f5' }}>
+          <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-semibold" style={{ color: '#a1a1aa' }}>每日結帳</p>
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-bold truncate" style={{ color: '#18181b' }}>{store.name} · {today}</p>
-              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0"
-                style={{ background: isBackfill ? '#FED7AA' : '#DCFCE7', color: isBackfill ? '#9A3412' : '#047857' }}>
-                {isBackfill ? '補做帳目' : '今日帳目'}
-              </span>
-              <input type="date" value={today} max={realToday ?? today}
-                onChange={e => { const v = e.target.value; if (v) router.push(`/manager/closing?date=${v}`) }}
-                className="text-xs px-1.5 py-0.5 rounded outline-none border shrink-0"
-                style={{ border: '1px solid #e4e4e7', color: '#52525b', background: 'white' }}
-                title="切換日期（可補做過往帳目）" />
-            </div>
-            {lastEditor && (
-              <p className="text-[11px] mt-1 font-medium" style={{ color: '#71717a' }}>
-                最後修改：{lastEditor.userName}{lastEditor.updatedAt ? ` · ${formatTaipeiEditTime(lastEditor.updatedAt)}` : ''}
-              </p>
-            )}
-          </div>
-          <div className="flex flex-col items-end gap-1.5 shrink-0">
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: st.bg, color: st.color }}>
+            <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: st.bg, color: st.color }}>
               {st.label}
             </span>
+          </div>
+
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
+            <p className="min-w-0 break-words text-base font-bold leading-snug" style={{ color: '#18181b' }}>{store.name}</p>
+            <span className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold"
+              style={{ background: isBackfill ? '#FED7AA' : '#DCFCE7', color: isBackfill ? '#9A3412' : '#047857' }}>
+              {isBackfill ? '補做帳目' : '今日帳目'}
+            </span>
+          </div>
+
+          <label className="mt-2 flex min-w-0 items-center gap-2 sm:max-w-sm">
+            <span className="shrink-0 text-[11px] font-semibold" style={{ color: '#71717a' }}>帳務日期</span>
+            <input type="date" value={today} max={realToday ?? today}
+              onChange={e => { const v = e.target.value; if (v) router.push(`/manager/closing?date=${v}`) }}
+              className="h-10 min-w-0 flex-1 rounded-lg border px-3 text-sm outline-none"
+              style={{ border: '1px solid #e4e4e7', color: '#52525b', background: 'white' }}
+              title="切換日期（可補做過往帳目）" />
+          </label>
+
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            {lastEditor ? (
+              <p className="min-w-0 break-words text-[11px] font-medium leading-snug" style={{ color: '#71717a' }}>
+                最後修改：{lastEditor.userName}{lastEditor.updatedAt ? ` · ${formatTaipeiEditTime(lastEditor.updatedAt)}` : ''}
+              </p>
+            ) : <span />}
             {!isLocked && !submitDone && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              <span className="self-start whitespace-normal rounded-full px-2.5 py-1 text-[10px] font-bold sm:self-auto"
                 style={{
                   background: activeEditors.length > 0 || presenceStatus === 'unavailable' ? '#FEF3C7' : presenceStatus === 'connected' ? '#DCFCE7' : '#E2E8F0',
                   color: activeEditors.length > 0 || presenceStatus === 'unavailable' ? '#92400E' : presenceStatus === 'connected' ? '#047857' : '#475569',

@@ -60,8 +60,21 @@ test('HQ mobile photo review escapes the page scroller and keeps pagination reac
 test('manager closing keeps more mobile space for the active step', () => {
   assert.match(closingForm, /closing-form-header bg-white z-50 lg:sticky lg:top-0/)
   assert.doesNotMatch(closingForm, /bg-white sticky top-0 z-50/)
-  assert.match(closingForm, /\{!isBackfill && \(/)
+  assert.doesNotMatch(closingForm, /目前正在做：/)
+  assert.doesNotMatch(closingForm, /注意：目前正在做/)
+  assert.match(closingForm, /toast\.warning\(`目前正在處理 \$\{today\} 的補做帳目，不是今日帳目。`/)
+  assert.match(closingForm, /duration: 6000/)
   assert.match(notificationCenter, /bottom-\[calc\(9\.75rem\+env\(safe-area-inset-bottom\)\)\]/)
+})
+
+test('daily closing summary stacks complete metadata on narrow screens', () => {
+  assert.match(closingForm, /px-4 py-3 sm:px-5/)
+  assert.match(closingForm, /min-w-0 break-words text-base font-bold leading-snug/)
+  assert.match(closingForm, />帳務日期</)
+  assert.match(closingForm, /h-10 min-w-0 flex-1 rounded-lg border px-3 text-sm/)
+  assert.match(closingForm, /mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between/)
+  assert.match(closingForm, /min-w-0 break-words text-\[11px\] font-medium leading-snug/)
+  assert.doesNotMatch(closingForm, /\{store\.name\} · \{today\}/)
 })
 
 test('high-density forms use shrinkable grid tracks and wide reports provide local scrolling', () => {
