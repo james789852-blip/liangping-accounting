@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect, useMemo, useRef } from 'react'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import {
-  archiveItemMapping, createStoreVendorGroup, deleteItemMapping, reactivateItemMapping, updateItemMapping, saveItemMapping, reorderItemMappings, setItemDocOverride, reorderStoreVendorGroups, setStoreVendorGroupMode,
+  archiveItemMapping, createStoreVendorGroup, deleteItemMapping, reactivateItemMapping, renameItem, updateItemMapping, saveItemMapping, reorderItemMappings, setItemDocOverride, reorderStoreVendorGroups, setStoreVendorGroupMode, setItemRefundFlag, setItemSignMode, setItemTaxAddonFlag, setItemTaxAddonScope,
 } from '@/app/actions/item-mappings'
 import { setManagerStore } from '@/app/actions/store-select'
 import { useRouter } from 'next/navigation'
@@ -70,9 +70,16 @@ export default function ItemMappingsClient({
   const [mappings, setMappings] = useState(initial)
   const [activeStoreId, setActiveStoreId] = useState(initStoreId)
   const [editId, setEditId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
   const [editCol, setEditCol] = useState('')
   const [editCat, setEditCat] = useState('')
   const [editVendorGroup, setEditVendorGroup] = useState('')
+  const [editDocType, setEditDocType] = useState('')
+  const [editRefund, setEditRefund] = useState(false)
+  const [editSignMode, setEditSignMode] = useState<ItemMappingSignMode>('positive')
+  const [editTaxAddon, setEditTaxAddon] = useState(false)
+  const [editTaxScope, setEditTaxScope] = useState<'category' | 'item'>('category')
+  const [editTaxTarget, setEditTaxTarget] = useState('')
   const [newName, setNewName] = useState('')
   const [newCol, setNewCol] = useState('')
   const [newCat, setNewCat] = useState('食材')
@@ -110,9 +117,16 @@ export default function ItemMappingsClient({
 
   function resetStoreScopedUi() {
     setEditId(null)
+    setEditName('')
     setEditCol('')
     setEditCat('')
     setEditVendorGroup('')
+    setEditDocType('')
+    setEditRefund(false)
+    setEditSignMode('positive')
+    setEditTaxAddon(false)
+    setEditTaxScope('category')
+    setEditTaxTarget('')
     setNewName('')
     setNewCol('')
     setNewCat('食材')
@@ -273,24 +287,106 @@ export default function ItemMappingsClient({
     })
   }
 
-  function startEdit(m: Mapping) { setEditId(m.id); setEditCol(m.excel_column); setEditCat(m.item_category); setEditVendorGroup(m.vendor_group ?? '') }
+  function startEdit(m: Mapping) {
+    setEditId(m.id)
+    setEditName(m.item_name)
+    setEditCol(m.excel_column)
+    setEditCat(m.item_category)
+    setEditVendorGroup(m.vendor_group ?? '')
+    setEditDocType(m.doc_type_override ?? '')
+    setEditRefund(!!m.is_refund)
+    setEditSignMode(isNegativeItem(m.item_name) ? 'negative' : (m.sign_mode ?? (m.is_negative ? 'negative' : 'positive')))
+    setEditTaxAddon(!!m.is_tax_addon)
+    setEditTaxScope(m.tax_scope ?? 'category')
+    setEditTaxTarget(m.tax_target_item ?? '')
+  }
 
   function handleUpdate(id: string) {
-    // optimistic：UI 立刻關閉編輯態並更新顯示
-    setMappings(prev => prev.map(m => m.id === id ? { ...m, excel_column: editCol, item_category: editCat, vendor_group: editVendorGroup || null } : m))
-    setEditId(null)
-    updateItemMapping(id, editCol, editCat, editVendorGroup || null).catch(e => {
-      toast.error('儲存失敗：' + (e instanceof Error ? e.message : String(e)))
+    const current = mappings.find(mapping => mapping.id === id)
+    const nextName = editName.trim()
+    if (!current || !nextName) {
+      toast.error('品項名稱不可空白')
+      return
+    }
+    const nameChanged = nextName !== current.item_name
+    const nextVendorGroup = editVendorGroup.trim() || null
+    const vendorGroupChanged = nextVendorGroup !== (current.vendor_group ?? null)
+    const syncHistorical = nameChanged
+      ? confirm(
+          `要把既有帳目中的品項名稱一起改掉嗎？\n\n` +
+          `舊名稱：${current.item_name}\n` +
+          `新名稱：${nextName}\n\n` +
+          `按「確定」：同步更新既有帳目。\n` +
+          `按「取消」：只修改品項管理名稱，既有帳目保留舊名稱。`
+        )
+      : false
+
+    startTransition(async () => {
+      // 同時改分類與名稱時，先用舊名稱同步 store_items 的分類關聯。
+      if (vendorGroupChanged) {
+        const mappingResult = await updateItemMapping(id, editCol, editCat, nextVendorGroup)
+        if (mappingResult && 'error' in mappingResult) { toast.error('儲存失敗：' + mappingResult.error); return }
+      }
+      if (nameChanged) {
+        const renameResult = await renameItem(id, nextName, syncHistorical, false)
+        if (renameResult && 'error' in renameResult) { toast.error('名稱修改失敗：' + renameResult.error); return }
+      }
+      if (!vendorGroupChanged) {
+        const mappingResult = await updateItemMapping(id, editCol, editCat)
+        if (mappingResult && 'error' in mappingResult) { toast.error('儲存失敗：' + mappingResult.error); return }
+      }
+      if (editDocType !== (current.doc_type_override ?? '')) {
+        const result = await setItemDocOverride(nextName, current.store_id ?? null, editDocType || null)
+        if (result && 'error' in result) { toast.error('單據類型儲存失敗：' + result.error); return }
+      }
+      if (editRefund !== !!current.is_refund) {
+        const result = await setItemRefundFlag(id, editRefund)
+        if (result && 'error' in result) { toast.error('退稅設定儲存失敗：' + result.error); return }
+      }
+      const nextSignMode = isNegativeItem(current.item_name) ? 'negative' : editSignMode
+      const currentSignMode = current.sign_mode ?? (current.is_negative ? 'negative' : 'positive')
+      if (current.store_type !== '央廚' && nextSignMode !== currentSignMode) {
+        const result = await setItemSignMode(id, nextSignMode)
+        if (result && 'error' in result) { toast.error('正負數設定儲存失敗：' + result.error); return }
+      }
+      if (editTaxAddon !== !!current.is_tax_addon) {
+        const result = await setItemTaxAddonFlag(id, editTaxAddon)
+        if (result && 'error' in result) { toast.error('稅外加設定儲存失敗：' + result.error); return }
+      }
+      if (editTaxAddon && (editTaxScope !== (current.tax_scope ?? 'category') || editTaxTarget !== (current.tax_target_item ?? ''))) {
+        const taxTarget = editTaxScope === 'item' ? editTaxTarget : null
+        if (editTaxScope === 'item' && !taxTarget) { toast.error('請選擇稅外加對應品項'); return }
+        const result = await setItemTaxAddonScope(id, editTaxScope, taxTarget)
+        if (result && 'error' in result) { toast.error('稅外加範圍儲存失敗：' + result.error); return }
+      }
+      setMappings(prev => prev.map(mapping => mapping.id === id ? {
+        ...mapping,
+        item_name: nextName,
+        excel_column: editCol,
+        item_category: editCat,
+        vendor_group: nextVendorGroup,
+        doc_type_override: editDocType || null,
+        is_refund: editRefund,
+        sign_mode: nextSignMode,
+        is_negative: nextSignMode === 'negative',
+        is_tax_addon: editTaxAddon,
+        tax_scope: editTaxScope,
+        tax_target_item: editTaxScope === 'item' ? editTaxTarget : null,
+      } : mapping))
+      setEditId(null)
+      toast.success(syncHistorical ? '已儲存，並同步既有帳目名稱' : '品項資料已儲存')
     })
   }
 
   function handleDelete(id: string) {
-    if (!confirm('確定要安全停用這個品項嗎？\n\n• 新帳目會立刻停止顯示\n• 本月與過去月份的 Excel／試算表欄位和金額會保留\n• 從下個月起才不再建立這個欄位\n• 之後可以重新啟用')) return
+    if (!confirm('確定要刪除這個品項嗎？\n\n• 品項會立即從管理清單移除\n• 過去帳目的內容與金額會完整保留\n• 本月與歷史 Excel／試算表不受影響\n• 之後重新新增同名品項時仍可再次啟用')) return
     startTransition(async () => {
-      const result = await deleteItemMapping(id)
-      if (result && 'error' in result) { toast.error(result.error); return }
-      setMappings(prev => prev.map(m => m.id === id ? { ...m, disabled_at: new Date().toISOString() } : m))
-      toast.success('已安全停用；歷史帳目與本月報表不受影響')
+      const disableResult = await deleteItemMapping(id)
+      if (disableResult && 'error' in disableResult) { toast.error(disableResult.error); return }
+      const archiveResult = await archiveItemMapping(id)
+      if (archiveResult && 'error' in archiveResult) { toast.error(archiveResult.error); return }
+      setMappings(prev => prev.map(mapping => mapping.id === id ? { ...mapping, disabled_at: new Date().toISOString(), archived: true } : mapping))
+      toast.success('品項已刪除；歷史帳目與報表完整保留')
     })
   }
 
@@ -1065,12 +1161,26 @@ export default function ItemMappingsClient({
                         allStores={stores}
                         itemOptions={taxItemOptionsByGroup.get(vg) ?? []}
                         editId={editId}
+                        editName={editName}
                         editCol={editCol}
                         editCat={editCat}
                         editVendorGroup={editVendorGroup}
+                        editDocType={editDocType}
+                        editRefund={editRefund}
+                        editSignMode={editSignMode}
+                        editTaxAddon={editTaxAddon}
+                        editTaxScope={editTaxScope}
+                        editTaxTarget={editTaxTarget}
+                        setEditName={setEditName}
                         setEditCol={setEditCol}
                         setEditCat={setEditCat}
                         setEditVendorGroup={setEditVendorGroup}
+                        setEditDocType={setEditDocType}
+                        setEditRefund={setEditRefund}
+                        setEditSignMode={setEditSignMode}
+                        setEditTaxAddon={setEditTaxAddon}
+                        setEditTaxScope={setEditTaxScope}
+                        setEditTaxTarget={setEditTaxTarget}
                         startEdit={startEdit}
                         handleUpdate={handleUpdate}
                         setEditId={setEditId}
@@ -1142,8 +1252,12 @@ type ItemRowProps = {
   selectMode: boolean; isSelected: boolean; onToggleSelect: () => void
   storesUsingIds: string[]; allStores: { id: string; name: string }[]
   itemOptions: string[]
-  editId: string | null; editCol: string; editCat: string; editVendorGroup: string
-  setEditCol: (v: string) => void; setEditCat: (v: string) => void; setEditVendorGroup: (v: string) => void
+  editId: string | null; editName: string; editCol: string; editCat: string; editVendorGroup: string
+  editDocType: string; editRefund: boolean; editSignMode: ItemMappingSignMode
+  editTaxAddon: boolean; editTaxScope: 'category' | 'item'; editTaxTarget: string
+  setEditName: (v: string) => void; setEditCol: (v: string) => void; setEditCat: (v: string) => void; setEditVendorGroup: (v: string) => void
+  setEditDocType: (v: string) => void; setEditRefund: (v: boolean) => void; setEditSignMode: (v: ItemMappingSignMode) => void
+  setEditTaxAddon: (v: boolean) => void; setEditTaxScope: (v: 'category' | 'item') => void; setEditTaxTarget: (v: string) => void
   startEdit: (m: Mapping) => void; handleUpdate: (id: string) => void; setEditId: (v: string | null) => void
   handleDelete: (id: string) => void; displayName: (m: Mapping) => string
 }
@@ -1154,8 +1268,10 @@ function ItemMappingRow(props: ItemRowProps) {
 
 function ItemRowContent({
   m, isLast, isStorePage, sortMode, onMoveUp, onMoveDown, canMoveUp, canMoveDown, sortingPending,
-  selectMode, isSelected, onToggleSelect, storesUsingIds, allStores, itemOptions, editId, editCol, editCat, editVendorGroup,
-  setEditCol, setEditCat, setEditVendorGroup, startEdit, handleUpdate, setEditId, handleDelete, displayName,
+  selectMode, isSelected, onToggleSelect, storesUsingIds, allStores, itemOptions, editId, editName, editCol, editCat, editVendorGroup,
+  editDocType, editRefund, editSignMode, editTaxAddon, editTaxScope, editTaxTarget,
+  setEditName, setEditCol, setEditCat, setEditVendorGroup, setEditDocType, setEditRefund, setEditSignMode,
+  setEditTaxAddon, setEditTaxScope, setEditTaxTarget, startEdit, handleUpdate, setEditId, handleDelete, displayName,
 }: ItemRowProps) {
   const [showStores, setShowStores] = useState(false)
   const catSt = CAT_STYLE[m.item_category] ?? CAT_STYLE['雜項']
@@ -1186,7 +1302,7 @@ function ItemRowContent({
       <div className={sortMode ? 'min-w-0 flex-1 space-y-2' : 'contents'}>
         <div className={sortMode ? 'flex min-w-0 items-center gap-2' : 'contents'}>
           <span className={`min-w-0 flex-1 text-sm font-semibold flex flex-wrap items-center gap-1.5 ${sortMode ? 'sm:whitespace-nowrap' : selectMode ? 'basis-0' : 'basis-full sm:basis-auto'}`} style={{ color: '#18181b' }}>
-            <InlineItemNameEditor mappingId={m.id} currentName={displayName(m)} fullName={m.item_name} excelColumn={m.excel_column} />
+            {displayName(m)}
             {false && (
               <button onClick={() => setShowStores(v => !v)}
                 className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-1"
@@ -1201,153 +1317,148 @@ function ItemRowContent({
             )}
           </span>
           {editId !== m.id && (
-            <div className={sortMode ? 'shrink-0' : 'w-full sm:w-auto'}>
-              <ItemDocOverrideSelector
-                itemName={m.item_name}
-                storeId={m.store_id ?? null}
-                currentOverride={m.doc_type_override ?? null}
-                className={sortMode ? 'w-auto' : 'w-full sm:w-auto'}
-              />
-            </div>
+            <span className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold"
+              style={{
+                background: docColor(m.doc_type_override ?? '').bg,
+                color: docColor(m.doc_type_override ?? '').fg,
+                border: `1px solid ${docColor(m.doc_type_override ?? '').bd}`,
+              }}>
+              {m.doc_type_override || '單據預設'}
+            </span>
           )}
         </div>
         <div className={sortMode ? 'flex min-w-0 flex-wrap items-center gap-1.5 md:gap-2' : 'contents'}>
           {editId === m.id ? (
-            <div className="w-full sm:w-auto flex flex-wrap items-center gap-2 pt-1 sm:pt-0">
-              <input list="excel-col-list" className="w-full sm:w-auto min-w-0 flex-1 sm:flex-none min-h-11 sm:min-h-0" style={{ ...SELECT_STYLE, height: undefined }}
-                value={editCol} onChange={e => setEditCol(e.target.value)}
-                placeholder="Excel 欄位" />
-              <select className="w-full sm:w-auto min-h-11 sm:min-h-0" style={{ ...SELECT_STYLE, height: undefined }} value={editCat} onChange={e => setEditCat(e.target.value)}>
-                <option>食材</option><option>耗材</option><option>雜項</option>
-              </select>
-              <input placeholder="分類（廠商或發票）" value={editVendorGroup} onChange={e => setEditVendorGroup(e.target.value)}
-                className="w-full sm:w-[110px] min-h-11 sm:min-h-0"
-                style={{ height: undefined, padding: '0 8px', border: '1.5px solid #e4e4e7', borderRadius: '8px', fontSize: '12px', background: 'white', outline: 'none', fontFamily: 'inherit' }} />
-              <button onClick={() => handleUpdate(m.id)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg" style={{ color: '#047857' }} aria-label="儲存修改">
-                <Check className="h-4 w-4" />
-              </button>
-              <button onClick={() => setEditId(null)} className="min-h-11 min-w-11 flex items-center justify-center rounded-lg" style={{ color: '#a1a1aa' }} aria-label="取消修改">
-                <X className="h-4 w-4" />
-              </button>
+            <div className="w-full rounded-xl p-3" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <label className="min-w-0">
+                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>品項名稱</span>
+                  <input value={editName} onChange={e => setEditName(e.target.value)} className="min-h-11 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
+                </label>
+                <label className="min-w-0">
+                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>Excel 對應名稱</span>
+                  <input list="excel-col-list" value={editCol} onChange={e => setEditCol(e.target.value)} className="min-h-11 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
+                </label>
+                <label className="min-w-0">
+                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>品項類別</span>
+                  <select className="min-h-11 w-full" style={{ ...SELECT_ADD_STYLE, height: undefined }} value={editCat} onChange={e => setEditCat(e.target.value)}>
+                    <option>食材</option><option>耗材</option><option>雜項</option>
+                  </select>
+                </label>
+                <label className="min-w-0">
+                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>廠商／分類</span>
+                  <input value={editVendorGroup} onChange={e => setEditVendorGroup(e.target.value)} className="min-h-11 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
+                </label>
+              </div>
+              <div className="mt-3 flex flex-wrap items-end gap-3">
+                <label>
+                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>單據類型</span>
+                  <select value={editDocType} onChange={event => {
+                    if (event.target.value === '__custom__') {
+                      const custom = prompt('輸入自訂單據類型名稱（例：巷日開）:')?.trim()
+                      if (custom) setEditDocType(custom)
+                      return
+                    }
+                    setEditDocType(event.target.value)
+                  }} className="min-h-10 min-w-[120px] rounded-lg px-2 text-xs font-semibold"
+                    style={{ border: `1px solid ${docColor(editDocType).bd}`, background: docColor(editDocType).bg, color: docColor(editDocType).fg }}>
+                    <option value="">單據預設</option>
+                    {Array.from(new Set([...BUILTIN_DOC_TYPES, ...(editDocType && !BUILTIN_DOC_TYPES.includes(editDocType) ? [editDocType] : [])])).map(doc => (
+                      <option key={doc} value={doc}>{doc}</option>
+                    ))}
+                    <option value="__custom__">➕ 新增自訂…</option>
+                  </select>
+                </label>
+                <label>
+                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>退稅設定</span>
+                  <button type="button" onClick={() => setEditRefund(!editRefund)}
+                    className="min-h-10 rounded-lg px-3 text-xs font-semibold"
+                    style={editRefund
+                      ? { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' }
+                      : { background: 'white', color: '#71717a', border: '1px solid #e4e4e7' }}>
+                    {editRefund ? '✓ 納入退稅' : '不納入退稅'}
+                  </button>
+                </label>
+                {m.store_type !== '央廚' && (
+                  <label>
+                    <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>金額正負</span>
+                    <select value={editSignMode} onChange={event => setEditSignMode(event.target.value as ItemMappingSignMode)}
+                      disabled={isNegativeItem(m.item_name)} className="min-h-10 rounded-lg px-2 text-xs font-semibold"
+                      style={{ border: '1px solid #e4e4e7', background: 'white', color: '#52525b' }}>
+                      <option value="positive">固定正數</option>
+                      <option value="negative">固定負數</option>
+                      <option value="flexible">每筆正負</option>
+                    </select>
+                    <span className="mt-1 block text-[10px]" style={{ color: '#71717a' }}>只影響之後帳目，歷史帳目不變</span>
+                  </label>
+                )}
+                <label>
+                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>稅外加設定</span>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <button type="button" onClick={() => setEditTaxAddon(!editTaxAddon)}
+                      className="min-h-10 rounded-lg px-3 text-xs font-semibold"
+                      style={editTaxAddon
+                        ? { background: '#fff7ed', color: '#c2410c', border: '1px solid #fb923c' }
+                        : { background: 'white', color: '#71717a', border: '1px solid #e4e4e7' }}>
+                      {editTaxAddon ? '✓ 稅外加' : '非稅外加'}
+                    </button>
+                    {editTaxAddon && (
+                      <select value={editTaxScope} onChange={event => {
+                        const scope = event.target.value as 'category' | 'item'
+                        setEditTaxScope(scope)
+                        if (scope === 'item' && !editTaxTarget) setEditTaxTarget(itemOptions[0] ?? '')
+                      }} className="min-h-10 rounded-lg px-2 text-xs" style={{ border: '1px solid #fed7aa', background: '#fff7ed', color: '#9a3412' }}>
+                        <option value="category">整個分類</option>
+                        <option value="item">指定品項</option>
+                      </select>
+                    )}
+                    {editTaxAddon && editTaxScope === 'item' && (
+                      <select value={editTaxTarget} onChange={event => setEditTaxTarget(event.target.value)}
+                        className="min-h-10 rounded-lg px-2 text-xs" style={{ border: '1px solid #fed7aa', background: '#fff7ed', color: '#9a3412' }}>
+                        <option value="">選擇品項</option>
+                        {itemOptions.filter(item => item !== m.item_name).map(item => <option key={item} value={item}>{item}</option>)}
+                      </select>
+                    )}
+                  </span>
+                </label>
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button onClick={() => setEditId(null)} className="flex min-h-11 items-center justify-center gap-1 rounded-lg px-4 text-sm font-semibold"
+                  style={{ color: '#52525b', background: 'white', border: '1px solid #e4e4e7' }}>
+                  <X className="h-4 w-4" /> 取消
+                </button>
+                <button onClick={() => handleUpdate(m.id)} disabled={!editName.trim() || sortingPending}
+                  className="flex min-h-11 items-center justify-center gap-1 rounded-lg px-4 text-sm font-semibold text-white"
+                  style={{ background: '#f59e0b', opacity: (!editName.trim() || sortingPending) ? 0.5 : 1 }}>
+                  <Check className="h-4 w-4" /> 儲存
+                </button>
+              </div>
             </div>
           ) : (
             <>
               <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0"
                 style={{ background: catSt.bg, color: catSt.color }}>{m.item_category}</span>
-              <RefundToggle mappingId={m.id} isRefund={!!m.is_refund} />
-              {m.store_type !== '央廚' && (
-                <SignModeControl
-                  mappingId={m.id}
-                  signMode={m.sign_mode ?? (m.is_negative ? 'negative' : 'positive')}
-                  systemFixedNegative={isNegativeItem(m.item_name)}
-                />
-              )}
-              {m.store_type === '央廚' && isNegativeItem(m.item_name) && (
-                <span className="text-xs px-2 py-1 rounded-full shrink-0 font-semibold"
-                  style={{ color: '#be123c', background: '#fff1f2', border: '1.5px solid #fda4af' }}>
-                  固定負數
-                </span>
-              )}
-              <TaxAddonToggle
-                mappingId={m.id}
-                enabled={!!m.is_tax_addon}
-                scope={m.tax_scope ?? 'category'}
-                targetItem={m.tax_target_item ?? null}
-                itemOptions={itemOptions}
-              />
-              <span className="hidden md:inline text-sm tabular-nums" style={{ color: '#71717a' }}>{m.excel_column}</span>
-              <button onClick={() => startEdit(m)} className="min-h-10 min-w-10 flex items-center justify-center rounded-lg" style={{ color: '#d4d4d8' }}
-                onMouseEnter={e => (e.currentTarget.style.color = '#F59E0B')}
-                onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
-                <Edit2 className="h-4 w-4" />
+              {m.is_refund && <span className="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" style={{ background: '#dcfce7', color: '#166534' }}>退稅</span>}
+              <span className="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" style={{ background: '#f4f4f5', color: '#52525b' }}>
+                {isNegativeItem(m.item_name) || m.sign_mode === 'negative' ? '固定負數' : m.sign_mode === 'flexible' ? '每筆正負' : '固定正數'}
+              </span>
+              {m.is_tax_addon && <span className="shrink-0 rounded-full px-2 py-1 text-xs font-semibold" style={{ background: '#fff7ed', color: '#c2410c' }}>稅外加</span>}
+              <span className="hidden md:inline text-sm tabular-nums" style={{ color: '#71717a' }}>Excel：{m.excel_column}</span>
+              <button onClick={() => startEdit(m)} className="flex min-h-10 shrink-0 items-center justify-center gap-1 rounded-lg px-2 text-xs font-semibold"
+                style={{ color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a' }}
+                title="編輯品項所有設定" aria-label="編輯品項所有設定">
+                <Edit2 className="h-4 w-4" /> 編輯
               </button>
-              <button onClick={() => handleDelete(m.id)} className="min-h-10 min-w-10 flex items-center justify-center rounded-lg" style={{ color: '#d4d4d8' }}
-                title="安全停用（保留歷史帳目與本月報表）"
-                aria-label="安全停用品項"
-                onMouseEnter={e => (e.currentTarget.style.color = '#be123c')}
-                onMouseLeave={e => (e.currentTarget.style.color = '#d4d4d8')}>
-                <PowerOff className="h-4 w-4" />
+              <button onClick={() => handleDelete(m.id)} className="flex min-h-10 shrink-0 items-center justify-center gap-1 rounded-lg px-2 text-xs font-semibold"
+                style={{ color: '#be123c', background: '#fff1f2', border: '1px solid #fecaca' }}
+                title="刪除品項（安全保留歷史帳目與報表）" aria-label="刪除品項">
+                <Trash2 className="h-4 w-4" /> 刪除
               </button>
             </>
           )}
         </div>
       </div>
     </div>
-  )
-}
-
-/** 點名稱直接編輯 — Enter 儲存、Esc 取消 */
-function InlineItemNameEditor({ mappingId, currentName, fullName, excelColumn }: { mappingId: string; currentName: string; fullName: string; excelColumn: string }) {
-  const [editing, setEditing] = useState(false)
-  const [value, setValue] = useState(fullName)
-  const [saving, setSaving] = useState(false)
-  const router = useRouter()
-  useEffect(() => { setValue(fullName) }, [fullName])
-
-  async function save() {
-    const trimmedValue = value.trim()
-    const nameChanged = trimmedValue !== fullName
-    const excelDiffersFromName = excelColumn !== trimmedValue
-    if (!nameChanged && !excelDiffersFromName) { setEditing(false); return }
-    const syncHistorical = nameChanged
-      ? confirm(
-          `要把既有帳目中的品項名稱一起改掉嗎？\n\n` +
-          `舊名稱：${fullName}\n` +
-          `新名稱：${trimmedValue}\n\n` +
-          `按「確定」：同步覆蓋既有收據/叫貨明細，讓舊帳目也對到新名稱。\n` +
-          `按「取消」：只改品項管理名稱，舊帳目保留舊名稱。`
-        )
-      : false
-    const syncExcelColumn = excelDiffersFromName
-      ? confirm(
-          `Excel 對應欄位目前是「${excelColumn}」，也要一起改成「${trimmedValue}」嗎？\n\n` +
-          `按「確定」：品項名稱與 Excel 欄位一起改。\n` +
-          `按「取消」：Excel 欄位維持「${excelColumn}」。`
-        )
-      : true
-    if (!nameChanged && !syncExcelColumn) { setEditing(false); return }
-    setSaving(true)
-    try {
-      const { renameItem } = await import('@/app/actions/item-mappings')
-      const r = await renameItem(mappingId, trimmedValue, syncHistorical, syncExcelColumn)
-      if (r && 'error' in r) { toast.error(r.error); return }
-      toast.success(syncHistorical ? '已改名，並同步既有帳目' : '已儲存')
-      setEditing(false)
-      router.refresh()
-    } finally { setSaving(false) }
-  }
-  if (editing) {
-    return (
-      <span className="inline-flex min-w-0 max-w-full items-center gap-1">
-        <input autoFocus value={value} onChange={e => setValue(e.target.value)}
-          onKeyDown={e => {
-            // 不用 Enter 儲存，避免 IME 選字時誤觸；只保留 Esc 取消
-            if (e.key === 'Escape') { setValue(fullName); setEditing(false) }
-          }}
-          disabled={saving}
-          style={{ width: 'clamp(120px, 30vw, 280px)', minWidth: 0, padding: '2px 6px', border: '1.5px solid #F59E0B', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', color: '#18181b' }} />
-        <button onClick={save} disabled={saving || !value.trim()}
-          className="rounded transition-opacity hover:opacity-70"
-          style={{ background: '#22c55e', color: 'white', border: 'none', padding: '3px 6px', cursor: 'pointer', fontSize: 12, fontWeight: 700, opacity: (saving || !value.trim()) ? 0.5 : 1 }}
-          title="確認">
-          ✓
-        </button>
-        <button onClick={() => { setValue(fullName); setEditing(false) }} disabled={saving}
-          className="rounded transition-opacity hover:opacity-70"
-          style={{ background: '#e4e4e7', color: '#71717a', border: 'none', padding: '3px 6px', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}
-          title="取消">
-          ✕
-        </button>
-      </span>
-    )
-  }
-  return (
-    <button onClick={() => setEditing(true)}
-      className="hover:bg-amber-50 rounded px-1 -mx-1 transition-colors"
-      style={{ background: 'none', border: 'none', padding: '0 4px', cursor: 'text', color: '#18181b', fontWeight: 600, fontSize: 14, fontFamily: 'inherit', textAlign: 'left' }}
-      title="點擊改名稱">
-      {currentName}
-    </button>
   )
 }
 
@@ -1423,197 +1534,6 @@ function StoresOverridePanel({ item, allStores, storesUsingIds }: {
         </div>
       )}
     </div>
-  )
-}
-
-/** 「屬於退稅」勾選框 — 勾了此品項納入「梁平退稅」總額，跟 vg 解耦 */
-function RefundToggle({ mappingId, isRefund }: { mappingId: string; isRefund: boolean }) {
-  const [checked, setChecked] = useState(isRefund)
-  useEffect(() => { setChecked(isRefund) }, [isRefund])
-  async function toggle() {
-    const next = !checked
-    setChecked(next)  // optimistic
-    const { setItemRefundFlag } = await import('@/app/actions/item-mappings')
-    const r = await setItemRefundFlag(mappingId, next)
-    if (r && 'error' in r) {
-      setChecked(!next)
-      toast.error('儲存失敗：' + r.error)
-    }
-  }
-  return (
-    <button onClick={toggle}
-      className="text-xs px-2 py-0.5 rounded-full shrink-0 font-semibold transition-colors"
-      style={checked
-        ? { background: '#dcfce7', color: '#166534', border: '1.5px solid #86efac' }
-        : { background: 'white', color: '#a1a1aa', border: '1.5px solid #e4e4e7' }}
-      title={checked ? '已納入梁平退稅總額（點擊取消）' : '未納入梁平退稅（點擊勾選）'}>
-      {checked ? '✓ 退稅' : '退稅'}
-    </button>
-  )
-}
-
-/** 店面端金額模式：固定正數、固定負數，或每筆由店長切換。 */
-function SignModeControl({ mappingId, signMode, systemFixedNegative }: {
-  mappingId: string
-  signMode: ItemMappingSignMode
-  systemFixedNegative: boolean
-}) {
-  const [mode, setMode] = useState<ItemMappingSignMode>(systemFixedNegative ? 'negative' : signMode)
-  const [pending, startTransition] = useTransition()
-  useEffect(() => { setMode(systemFixedNegative ? 'negative' : signMode) }, [signMode, systemFixedNegative])
-
-  function changeMode(next: ItemMappingSignMode) {
-    if (systemFixedNegative) return
-    const previous = mode
-    setMode(next)
-    startTransition(async () => {
-      const { setItemSignMode } = await import('@/app/actions/item-mappings')
-      const result = await setItemSignMode(mappingId, next)
-      if (result && 'error' in result) {
-        setMode(previous)
-        toast.error('儲存失敗：' + result.error)
-        return
-      }
-      const label = next === 'negative' ? '固定負數' : next === 'flexible' ? '每筆正負' : '固定正數'
-      toast.success(`已設為${label}；歷史帳目不變`)
-    })
-  }
-
-  return (
-    <select
-      value={mode}
-      onChange={event => changeMode(event.target.value as ItemMappingSignMode)}
-      disabled={pending || systemFixedNegative}
-      className="text-xs px-2 py-1 rounded-full shrink-0 font-semibold"
-      style={{
-        color: mode === 'negative' ? '#be123c' : mode === 'flexible' ? '#7c3aed' : '#52525b',
-        background: mode === 'negative' ? '#fff1f2' : mode === 'flexible' ? '#f5f3ff' : 'white',
-        border: `1.5px solid ${mode === 'negative' ? '#fda4af' : mode === 'flexible' ? '#c4b5fd' : '#e4e4e7'}`,
-        opacity: pending ? 0.6 : 1,
-      }}
-      title={systemFixedNegative ? '此品項原本就是系統固定負數，不受新設定影響' : '只影響之後新增或修改的帳目'}>
-      <option value="positive">固定正數</option>
-      <option value="negative">固定負數</option>
-      <option value="flexible">每筆正負</option>
-    </select>
-  )
-}
-
-/** 標記為稅外加自動品項；啟用後不再出現在店長端品項下拉。 */
-function TaxAddonToggle({
-  mappingId,
-  enabled,
-  scope: initialScope,
-  targetItem: initialTargetItem,
-  itemOptions,
-}: {
-  mappingId: string
-  enabled: boolean
-  scope: 'category' | 'item'
-  targetItem: string | null
-  itemOptions: string[]
-}) {
-  const [checked, setChecked] = useState(enabled)
-  const [scope, setScope] = useState<'category' | 'item'>(initialScope)
-  const [targetItem, setTargetItem] = useState(initialTargetItem ?? '')
-  const [pending, startTransition] = useTransition()
-  const router = useRouter()
-  useEffect(() => setChecked(enabled), [enabled])
-  useEffect(() => {
-    setScope(initialScope)
-    setTargetItem(initialTargetItem ?? '')
-  }, [initialScope, initialTargetItem])
-
-  function toggle() {
-    const next = !checked
-    setChecked(next)
-    startTransition(async () => {
-      const { setItemTaxAddonFlag } = await import('@/app/actions/item-mappings')
-      const result = await setItemTaxAddonFlag(mappingId, next)
-      if (result.error) {
-        setChecked(!next)
-        toast.error(result.error)
-      } else {
-        toast.success(next
-          ? '已設為稅外加品項：名稱含「-稅金」時依原品項套用，否則依整個分類套用'
-          : '已取消稅外加品項')
-        router.refresh()
-      }
-    })
-  }
-
-  function updateScope(nextScope: 'category' | 'item') {
-    const nextTarget = nextScope === 'item' ? (targetItem || itemOptions[0] || '') : ''
-    if (nextScope === 'item' && !nextTarget) {
-      toast.error('此分類沒有可指定的原始品項')
-      return
-    }
-    setScope(nextScope)
-    setTargetItem(nextTarget)
-    startTransition(async () => {
-      const { setItemTaxAddonScope } = await import('@/app/actions/item-mappings')
-      const result = await setItemTaxAddonScope(mappingId, nextScope, nextTarget || null)
-      if (result.error) {
-        toast.error(result.error)
-        return
-      }
-      toast.success(nextScope === 'item' ? `稅金只套用「${nextTarget}」` : '稅金套用整個分類')
-      router.refresh()
-    })
-  }
-
-  function updateTarget(nextTarget: string) {
-    if (!nextTarget) return
-    setTargetItem(nextTarget)
-    startTransition(async () => {
-      const { setItemTaxAddonScope } = await import('@/app/actions/item-mappings')
-      const result = await setItemTaxAddonScope(mappingId, 'item', nextTarget)
-      if (result.error) {
-        toast.error(result.error)
-        return
-      }
-      toast.success(`稅金只套用「${nextTarget}」`)
-      router.refresh()
-    })
-  }
-
-  return (
-    <span className="inline-flex flex-wrap items-center gap-1.5 shrink-0">
-      <button type="button" onClick={toggle} disabled={pending}
-        className="text-xs px-2 py-1 rounded-full shrink-0 font-semibold"
-        style={{
-          background: checked ? '#fff7ed' : 'white',
-          color: checked ? '#c2410c' : '#a1a1aa',
-          border: `1.5px solid ${checked ? '#fb923c' : '#e4e4e7'}`,
-          opacity: pending ? 0.6 : 1,
-        }}
-        title={checked ? '此品項由店長端稅外加欄位自動寫入' : '啟用後可選擇套用整個分類或指定品項'}>
-        {checked ? '✓ 稅外加' : '稅外加'}
-      </button>
-      {checked && (
-        <select
-          value={scope}
-          onChange={e => updateScope(e.target.value as 'category' | 'item')}
-          disabled={pending}
-          className="text-[11px] rounded-md px-1.5 py-1"
-          style={{ border: '1px solid #fed7aa', color: '#9a3412', background: '#fff7ed', maxWidth: 112 }}
-          title="選擇稅金套用範圍">
-          <option value="category">整個分類</option>
-          <option value="item">指定品項</option>
-        </select>
-      )}
-      {checked && scope === 'item' && (
-        <select
-          value={targetItem}
-          onChange={e => updateTarget(e.target.value)}
-          disabled={pending || itemOptions.length === 0}
-          className="text-[11px] rounded-md px-1.5 py-1"
-          style={{ border: '1px solid #fed7aa', color: '#9a3412', background: '#fff7ed', maxWidth: 120 }}
-          title="指定稅金對應的原始品項">
-          {itemOptions.map(item => <option key={item} value={item}>{item}</option>)}
-        </select>
-      )}
-    </span>
   )
 }
 
@@ -1734,50 +1654,6 @@ function docColor(doc: string): { bg: string; fg: string; bd: string } {
       return { bg: 'transparent', fg: '#a1a1aa', bd: '#E4E4E7' }         // 空
   }
 }
-/** 品項層級 doc_type override（覆蓋 vg 預設） */
-function ItemDocOverrideSelector({ itemName, storeId, currentOverride, extraOptions = [], className = '' }: {
-  itemName: string; storeId: string | null; currentOverride: string | null; extraOptions?: string[]; className?: string
-}) {
-  const [doc, setDoc] = useState(currentOverride ?? '')
-  const [saving, setSaving] = useState(false)
-  // refresh 後（server 傳回新 currentOverride）同步 local state，避免顯示回舊值
-  useEffect(() => { setDoc(currentOverride ?? '') }, [currentOverride])
-  // 合併：built-in + 目前 value + 自訂 extraOptions（去重）
-  const allOptions = Array.from(new Set([...BUILTIN_DOC_TYPES, ...extraOptions, ...(doc && !BUILTIN_DOC_TYPES.includes(doc) ? [doc] : [])]))
-  async function save(next: string) {
-    setDoc(next)
-    setSaving(true)
-    try {
-      const { setItemDocOverride } = await import('@/app/actions/item-mappings')
-      const r = await setItemDocOverride(itemName, storeId, next || null)
-      if ('error' in r) toast.error(String(r.error))
-    } finally { setSaving(false) }
-  }
-  async function handleChange(v: string) {
-    if (v === '__custom__') {
-      const name = prompt('輸入自訂單據類型名稱（例：巷日開）:')?.trim()
-      if (!name) return
-      await save(name)
-    } else {
-      await save(v)
-    }
-  }
-  return (
-    <select value={doc} onChange={e => handleChange(e.target.value)} disabled={saving} className={className}
-      title={`「${itemName}」的單據 override（覆蓋廠商群組預設）`}
-      style={{
-        height: 22, padding: '0 4px', fontSize: 10, borderRadius: 4,
-        border: `1px solid ${docColor(doc).bd}`,
-        background: docColor(doc).bg, color: docColor(doc).fg,
-        fontFamily: 'inherit', outline: 'none', fontWeight: doc ? 600 : 400, flexShrink: 0,
-      }}>
-      <option value="">單據 (預設)</option>
-      {allOptions.map(o => <option key={o} value={o}>{o}</option>)}
-      <option value="__custom__">➕ 新增自訂…</option>
-    </select>
-  )
-}
-
 /** 把目前店的品項對應手動複製到另一店（單次操作，不自動連動） */
 function CopyToStoreButton({ fromStoreId, stores }: { fromStoreId: string; stores: { id: string; name: string }[] }) {
   const [open, setOpen] = useState(false)

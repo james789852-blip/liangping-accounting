@@ -45,3 +45,19 @@ test('新增品項 action 回傳完整 mapping，供畫面就地更新', () => {
   assert.match(actions, /\.insert\(\{[\s\S]*?doc_type_override: vendorOnlyDocType,[\s\S]*?\}\)\.select\('\*'\)\.single\(\)/)
   assert.match(actions, /mapping: savedMapping/)
 })
+
+test('品項名稱與所有設定只能從編輯區修改，列表本身保持唯讀', () => {
+  assert.doesNotMatch(source, /function InlineItemNameEditor/)
+  assert.match(source, />品項名稱</)
+  assert.match(source, />Excel 對應名稱</)
+  assert.match(source, />單據類型</)
+  assert.match(source, /title="編輯品項所有設定"/)
+  assert.match(source, /editId === m\.id[\s\S]*?value=\{editDocType\}[\s\S]*?setEditRefund[\s\S]*?value=\{editSignMode\}[\s\S]*?setEditTaxAddon/)
+  assert.match(source, /await setItemDocOverride[\s\S]*?await setItemRefundFlag[\s\S]*?await setItemSignMode[\s\S]*?await setItemTaxAddonFlag/)
+})
+
+test('單筆刪除會一次完成安全停用與封存，列表立即移除', () => {
+  assert.match(source, /const disableResult = await deleteItemMapping\(id\)[\s\S]*?const archiveResult = await archiveItemMapping\(id\)/)
+  assert.match(source, /archived: true/)
+  assert.match(source, /aria-label="刪除品項"/)
+})

@@ -856,11 +856,12 @@ export async function updateItemMapping(id: string, excelColumn: string, itemCat
   const oldVg = mapping?.vendor_group ?? null
   const newVg = vendorGroup !== undefined ? normalizeVendorGroupName(vendorGroup) : oldVg
 
-  await admin.from('item_column_mappings').update({
+  const { error: updateError } = await admin.from('item_column_mappings').update({
     excel_column: excelColumn, item_category: itemCategory,
     vendor_group: vendorGroup !== undefined ? newVg : undefined,
     updated_at: new Date().toISOString(),
   }).eq('id', id)
+  if (updateError) return { error: `儲存失敗：${updateError.message}` }
 
   // 同步 store_items.custom_vendor_group_id（xlsx 匯出讀這個）
   if (mapping?.store_id && mapping.item_name && vendorGroup !== undefined) {
@@ -995,12 +996,13 @@ export async function renameItem(mappingId: string, newName: string, syncReceipt
   }
 
   // 更新 mapping
-  await admin.from('item_column_mappings').update({
+  const { error: renameError } = await admin.from('item_column_mappings').update({
     item_name: trimmedName,
     // 若 excel_column 跟舊名字一樣，或使用者明確選擇同步，就一起更新。
     excel_column: nextExcelColumn,
     updated_at: new Date().toISOString(),
   }).eq('id', mappingId)
+  if (renameError) return { error: `名稱修改失敗：${renameError.message}` }
 
   // 只有全域 mapping 才同步 system_items；店家專屬改名不可牽動其他店。
   if (!mapping.store_id && trimmedName !== oldName) {

@@ -108,11 +108,12 @@ test('新帳目只讀啟用品項，店面與央廚報表都按月份讀取', ()
   assert.match(ckWorkbook, /getStoreItemsFromMappings\(ckStoreId, \{ reportMonth:/)
 })
 
-test('管理介面清楚標示安全停用並提供重新啟用', () => {
+test('管理介面以一次刪除完成安全停用與封存，並保留重新啟用舊資料能力', () => {
   assert.match(managerUI, /已安全停用品項/)
   assert.match(managerUI, /本月與過去月份報表仍保留原欄位與金額/)
   assert.match(managerUI, /reactivateItemMapping/)
-  assert.match(managerUI, /安全停用（保留歷史帳目與本月報表）/)
+  assert.match(managerUI, /const disableResult = await deleteItemMapping\(id\)[\s\S]*?const archiveResult = await archiveItemMapping\(id\)/)
+  assert.match(managerUI, /刪除品項（安全保留歷史帳目與報表）/)
 })
 
 test('使用既有稽核日誌記錄狀態，不需要刪除 mapping 或變更正式資料庫結構', () => {
