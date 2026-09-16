@@ -56,6 +56,15 @@ test('品項名稱與所有設定只能從編輯區修改，列表本身保持�
   assert.match(source, /await setItemDocOverride[\s\S]*?await setItemRefundFlag[\s\S]*?await setItemSignMode[\s\S]*?await setItemTaxAddonFlag/)
 })
 
+test('品項編輯區使用對齊網格與獨立帳務設定卡片', () => {
+  assert.match(source, />編輯品項設定</)
+  assert.match(source, /所有欄位只會在按下儲存後套用/)
+  assert.match(source, /grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4/)
+  assert.match(source, /grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4/)
+  assert.match(source, /min-h-\[124px\][\s\S]*?>單據類型<[\s\S]*?>退稅設定<[\s\S]*?>金額正負<[\s\S]*?>稅外加設定</)
+  assert.match(source, /flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end/)
+})
+
 test('單筆刪除會一次完成安全停用與封存，列表立即移除', () => {
   assert.match(source, /const disableResult = await deleteItemMapping\(id\)[\s\S]*?const archiveResult = await archiveItemMapping\(id\)/)
   assert.match(source, /archived: true/)

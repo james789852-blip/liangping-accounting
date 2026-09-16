@@ -1329,30 +1329,43 @@ function ItemRowContent({
         </div>
         <div className={sortMode ? 'flex min-w-0 flex-wrap items-center gap-1.5 md:gap-2' : 'contents'}>
           {editId === m.id ? (
-            <div className="w-full rounded-xl p-3" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <label className="min-w-0">
-                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>品項名稱</span>
-                  <input value={editName} onChange={e => setEditName(e.target.value)} className="min-h-11 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
+            <div className="w-full rounded-2xl p-4 shadow-sm sm:p-5" style={{ background: '#fffbeb', border: '1px solid #fcd34d' }}>
+              <div className="mb-4 flex flex-col gap-1 border-b pb-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: '#fde68a' }}>
+                <div>
+                  <div className="text-sm font-bold" style={{ color: '#78350f' }}>編輯品項設定</div>
+                  <div className="mt-0.5 text-xs" style={{ color: '#a16207' }}>所有欄位只會在按下儲存後套用</div>
+                </div>
+                <span className="mt-1 self-start rounded-full px-2.5 py-1 text-[11px] font-semibold sm:mt-0" style={{ color: '#92400e', background: '#fef3c7' }}>
+                  {displayName(m)}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <label className="flex min-w-0 flex-col gap-2">
+                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>品項名稱</span>
+                  <input value={editName} onChange={e => setEditName(e.target.value)} className="h-12 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
                 </label>
-                <label className="min-w-0">
-                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>Excel 對應名稱</span>
-                  <input list="excel-col-list" value={editCol} onChange={e => setEditCol(e.target.value)} className="min-h-11 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
+                <label className="flex min-w-0 flex-col gap-2">
+                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>Excel 對應名稱</span>
+                  <input list="excel-col-list" value={editCol} onChange={e => setEditCol(e.target.value)} className="h-12 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
                 </label>
-                <label className="min-w-0">
-                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>品項類別</span>
-                  <select className="min-h-11 w-full" style={{ ...SELECT_ADD_STYLE, height: undefined }} value={editCat} onChange={e => setEditCat(e.target.value)}>
+                <label className="flex min-w-0 flex-col gap-2">
+                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>品項類別</span>
+                  <select className="h-12 w-full" style={{ ...SELECT_ADD_STYLE, height: undefined }} value={editCat} onChange={e => setEditCat(e.target.value)}>
                     <option>食材</option><option>耗材</option><option>雜項</option>
                   </select>
                 </label>
-                <label className="min-w-0">
-                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>廠商／分類</span>
-                  <input value={editVendorGroup} onChange={e => setEditVendorGroup(e.target.value)} className="min-h-11 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
+                <label className="flex min-w-0 flex-col gap-2">
+                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>廠商／分類</span>
+                  <input value={editVendorGroup} onChange={e => setEditVendorGroup(e.target.value)} className="h-12 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
                 </label>
               </div>
-              <div className="mt-3 flex flex-wrap items-end gap-3">
-                <label>
-                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>單據類型</span>
+
+              <div className="mb-2 mt-5 text-xs font-bold" style={{ color: '#92400e' }}>帳務設定</div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <label className="flex min-h-[124px] min-w-0 flex-col rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.72)', border: '1px solid #fde68a' }}>
+                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>單據類型</span>
+                  <div className="mt-1 text-[10px]" style={{ color: '#a16207' }}>選擇這個品項使用的單據</div>
                   <select value={editDocType} onChange={event => {
                     if (event.target.value === '__custom__') {
                       const custom = prompt('輸入自訂單據類型名稱（例：巷日開）:')?.trim()
@@ -1360,7 +1373,7 @@ function ItemRowContent({
                       return
                     }
                     setEditDocType(event.target.value)
-                  }} className="min-h-10 min-w-[120px] rounded-lg px-2 text-xs font-semibold"
+                  }} className="mt-auto h-11 w-full min-w-0 rounded-lg px-3 text-xs font-semibold"
                     style={{ border: `1px solid ${docColor(editDocType).bd}`, background: docColor(editDocType).bg, color: docColor(editDocType).fg }}>
                     <option value="">單據預設</option>
                     {Array.from(new Set([...BUILTIN_DOC_TYPES, ...(editDocType && !BUILTIN_DOC_TYPES.includes(editDocType) ? [editDocType] : [])])).map(doc => (
@@ -1369,34 +1382,36 @@ function ItemRowContent({
                     <option value="__custom__">➕ 新增自訂…</option>
                   </select>
                 </label>
-                <label>
-                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>退稅設定</span>
+                <div className="flex min-h-[124px] min-w-0 flex-col rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.72)', border: '1px solid #fde68a' }}>
+                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>退稅設定</span>
+                  <div className="mt-1 text-[10px]" style={{ color: '#a16207' }}>是否納入退稅金額</div>
                   <button type="button" onClick={() => setEditRefund(!editRefund)}
-                    className="min-h-10 rounded-lg px-3 text-xs font-semibold"
+                    className="mt-auto h-11 w-full rounded-lg px-3 text-xs font-semibold"
                     style={editRefund
                       ? { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' }
                       : { background: 'white', color: '#71717a', border: '1px solid #e4e4e7' }}>
                     {editRefund ? '✓ 納入退稅' : '不納入退稅'}
                   </button>
-                </label>
+                </div>
                 {m.store_type !== '央廚' && (
-                  <label>
-                    <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>金額正負</span>
+                  <label className="flex min-h-[124px] min-w-0 flex-col rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.72)', border: '1px solid #fde68a' }}>
+                    <span className="block text-xs font-bold" style={{ color: '#92400e' }}>金額正負</span>
+                    <div className="mt-1 text-[10px]" style={{ color: '#a16207' }}>只影響之後帳目，歷史帳目不變</div>
                     <select value={editSignMode} onChange={event => setEditSignMode(event.target.value as ItemMappingSignMode)}
-                      disabled={isNegativeItem(m.item_name)} className="min-h-10 rounded-lg px-2 text-xs font-semibold"
+                      disabled={isNegativeItem(m.item_name)} className="mt-auto h-11 w-full rounded-lg px-3 text-xs font-semibold"
                       style={{ border: '1px solid #e4e4e7', background: 'white', color: '#52525b' }}>
                       <option value="positive">固定正數</option>
                       <option value="negative">固定負數</option>
                       <option value="flexible">每筆正負</option>
                     </select>
-                    <span className="mt-1 block text-[10px]" style={{ color: '#71717a' }}>只影響之後帳目，歷史帳目不變</span>
                   </label>
                 )}
-                <label>
-                  <span className="mb-1 block text-[11px] font-bold" style={{ color: '#92400e' }}>稅外加設定</span>
-                  <span className="flex flex-wrap items-center gap-2">
+                <div className="flex min-h-[124px] min-w-0 flex-col rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.72)', border: '1px solid #fde68a' }}>
+                  <span className="block text-xs font-bold" style={{ color: '#92400e' }}>稅外加設定</span>
+                  <div className="mt-1 text-[10px]" style={{ color: '#a16207' }}>設定稅金的計算範圍</div>
+                  <div className="mt-auto grid grid-cols-1 gap-2 2xl:grid-cols-2">
                     <button type="button" onClick={() => setEditTaxAddon(!editTaxAddon)}
-                      className="min-h-10 rounded-lg px-3 text-xs font-semibold"
+                      className={`h-11 w-full rounded-lg px-3 text-xs font-semibold ${editTaxAddon ? '' : '2xl:col-span-2'}`}
                       style={editTaxAddon
                         ? { background: '#fff7ed', color: '#c2410c', border: '1px solid #fb923c' }
                         : { background: 'white', color: '#71717a', border: '1px solid #e4e4e7' }}>
@@ -1407,28 +1422,29 @@ function ItemRowContent({
                         const scope = event.target.value as 'category' | 'item'
                         setEditTaxScope(scope)
                         if (scope === 'item' && !editTaxTarget) setEditTaxTarget(itemOptions[0] ?? '')
-                      }} className="min-h-10 rounded-lg px-2 text-xs" style={{ border: '1px solid #fed7aa', background: '#fff7ed', color: '#9a3412' }}>
+                      }} className="h-11 w-full min-w-0 rounded-lg px-2 text-xs" style={{ border: '1px solid #fed7aa', background: '#fff7ed', color: '#9a3412' }}>
                         <option value="category">整個分類</option>
                         <option value="item">指定品項</option>
                       </select>
                     )}
                     {editTaxAddon && editTaxScope === 'item' && (
                       <select value={editTaxTarget} onChange={event => setEditTaxTarget(event.target.value)}
-                        className="min-h-10 rounded-lg px-2 text-xs" style={{ border: '1px solid #fed7aa', background: '#fff7ed', color: '#9a3412' }}>
+                        className="h-11 w-full min-w-0 rounded-lg px-2 text-xs 2xl:col-span-2" style={{ border: '1px solid #fed7aa', background: '#fff7ed', color: '#9a3412' }}>
                         <option value="">選擇品項</option>
                         {itemOptions.filter(item => item !== m.item_name).map(item => <option key={item} value={item}>{item}</option>)}
                       </select>
                     )}
-                  </span>
-                </label>
+                  </div>
+                </div>
               </div>
-              <div className="mt-4 flex justify-end gap-2">
-                <button onClick={() => setEditId(null)} className="flex min-h-11 items-center justify-center gap-1 rounded-lg px-4 text-sm font-semibold"
+
+              <div className="mt-5 flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end" style={{ borderColor: '#fde68a' }}>
+                <button onClick={() => setEditId(null)} className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl px-5 text-sm font-semibold sm:w-auto sm:min-w-[112px]"
                   style={{ color: '#52525b', background: 'white', border: '1px solid #e4e4e7' }}>
                   <X className="h-4 w-4" /> 取消
                 </button>
                 <button onClick={() => handleUpdate(m.id)} disabled={!editName.trim() || sortingPending}
-                  className="flex min-h-11 items-center justify-center gap-1 rounded-lg px-4 text-sm font-semibold text-white"
+                  className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl px-5 text-sm font-semibold text-white shadow-sm sm:w-auto sm:min-w-[128px]"
                   style={{ background: '#f59e0b', opacity: (!editName.trim() || sortingPending) ? 0.5 : 1 }}>
                   <Check className="h-4 w-4" /> 儲存
                 </button>
