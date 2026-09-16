@@ -973,19 +973,7 @@ export default function ItemMappingsClient({
                   {isVendorChild ? `廠商 / ${vg}` : vg}
                 </span>
                 <span className="text-xs" style={{ color: '#a1a1aa' }}>{items.length} 項</span>
-                {/* 雜項常混合多種單據，只保留品項列自己的單據設定。 */}
-                {!isMiscVendorGroup(vg) && (
-                  <VgDocTypeSelector storeId={activeStoreId} vgName={vg} currentDoc={groupDocMap.get(vg) ?? null} />
-                )}
-                {isVendorChild && (
-                  <VgItemCategorySelector
-                    storeId={activeStoreId}
-                    vgName={vg}
-                    currentCategory={groupCategoryMap.get(vg) ?? '雜項'}
-                    onDone={() => router.refresh()}
-                  />
-                )}
-                {/* Rename / 刪除 */}
+                {/* 分類設定一律先按編輯，避免瀏覽時誤觸下拉選單。 */}
                 {hasVgRecord && (
                   <VgActions
                     vgName={vg}
@@ -993,6 +981,8 @@ export default function ItemMappingsClient({
                     itemCount={items.length}
                     currentMode={isVendorChild ? 'vendor' : 'direct'}
                     allowModeChange={!DOC_TYPES.has(vg)}
+                    currentDoc={isMiscVendorGroup(vg) ? null : (groupDocMap.get(vg) ?? null)}
+                    currentCategory={isVendorChild ? (groupCategoryMap.get(vg) ?? '雜項') : null}
                     onDone={() => router.refresh()}
                   />
                 )}
@@ -1553,13 +1543,15 @@ function StoresOverridePanel({ item, allStores, storesUsingIds }: {
   )
 }
 
-/** vg 修改名稱 / 刪除 */
+/** 分類設定統一由「編輯」進入，避免名稱、單據類型或報表類別被誤觸。 */
 function VgActions({
   vgName,
   storeId,
   itemCount,
   currentMode,
   allowModeChange,
+  currentDoc,
+  currentCategory,
   onDone,
 }: {
   vgName: string
@@ -1567,34 +1559,86 @@ function VgActions({
   itemCount: number
   currentMode: 'vendor' | 'direct'
   allowModeChange: boolean
+  currentDoc: string | null
+  currentCategory: string | null
   onDone: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const [newName, setNewName] = useState(vgName)
   const [mode, setMode] = useState<'vendor' | 'direct'>(currentMode)
+  const [doc, setDoc] = useState(currentDoc ?? '')
+  const [category, setCategory] = useState(currentCategory ?? '雜項')
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (editing) return
+    setNewName(vgName)
+    setMode(currentMode)
+    setDoc(currentDoc ?? '')
+    setCategory(currentCategory ?? '雜項')
+  }, [editing, vgName, currentMode, currentDoc, currentCategory])
+
+  function startEditing() {
+    setNewName(vgName)
+    setMode(currentMode)
+    setDoc(currentDoc ?? '')
+    setCategory(currentCategory ?? '雜項')
+    setEditing(true)
+  }
+
+  function cancelEditing() {
+    setNewName(vgName)
+    setMode(currentMode)
+    setDoc(currentDoc ?? '')
+    setCategory(currentCategory ?? '雜項')
+    setEditing(false)
+  }
+
+  function changeDoc(value: string) {
+    if (value === '__custom__') {
+      const custom = prompt('輸入自訂單據類型名稱（例：巷日開）:')?.trim()
+      if (custom) setDoc(custom)
+      return
+    }
+    setDoc(value)
+  }
 
   async function handleSave() {
     const targetName = newName.trim()
     if (!targetName) return
-    if (targetName === vgName && (mode === currentMode || !storeId || !allowModeChange)) {
+    const nameChanged = targetName !== vgName
+    const modeChanged = !!storeId && allowModeChange && mode !== currentMode
+    const docChanged = !!storeId && doc !== (currentDoc ?? '')
+    const categoryChanged = !!storeId && mode === 'vendor' && (currentCategory === null || category !== currentCategory)
+    if (!nameChanged && !modeChanged && !docChanged && !categoryChanged) {
       setEditing(false)
       return
     }
     setSaving(true)
     try {
-      if (targetName !== vgName) {
+      if (nameChanged) {
         const { renameVendorGroup } = await import('@/app/actions/item-mappings')
         const renameResult = await renameVendorGroup(vgName, targetName, storeId ?? undefined)
         if ('error' in renameResult) { toast.error(String(renameResult.error)); return }
       }
-      if (storeId && allowModeChange && mode !== currentMode) {
+      if (modeChanged && storeId) {
         const modeResult = await setStoreVendorGroupMode(storeId, targetName, mode)
         if ('error' in modeResult) { toast.error(String(modeResult.error)); return }
       }
-      toast.success(mode !== currentMode ? '分類方式已更新，品項完整保留' : '已改名')
+      if (docChanged && storeId) {
+        const { setStoreVendorGroupDocType } = await import('@/app/actions/item-mappings')
+        const docResult = await setStoreVendorGroupDocType(storeId, targetName, doc || null)
+        if ('error' in docResult) { toast.error(String(docResult.error)); return }
+      }
+      if (categoryChanged && storeId) {
+        const { setStoreVendorGroupItemCategory } = await import('@/app/actions/item-mappings')
+        const categoryResult = await setStoreVendorGroupItemCategory(storeId, targetName, category)
+        if ('error' in categoryResult) { toast.error(String(categoryResult.error)); return }
+      }
+      toast.success('分類設定已儲存，歷史帳目不變')
+      setEditing(false)
       onDone()
-    } finally { setSaving(false); setEditing(false) }
+    } finally { setSaving(false) }
   }
 
   async function handleDelete() {
@@ -1611,45 +1655,99 @@ function VgActions({
   }
 
   if (editing) {
+    const docOptions = Array.from(new Set([...BUILTIN_DOC_TYPES, ...(doc && !BUILTIN_DOC_TYPES.includes(doc) ? [doc] : [])]))
     return (
-      <div className="flex flex-wrap items-center gap-1">
-        <input value={newName} onChange={e => setNewName(e.target.value)}
-          onKeyDown={e => {
-            // 中文 IME 組字期間 Enter 是選字用，不能觸發提交
-            if (e.key === 'Escape') setEditing(false)
-          }}
-          autoFocus
-          style={{ height: 22, padding: '0 6px', fontSize: 11, borderRadius: 4, border: '1.5px solid #F59E0B', outline: 'none' }} />
-        {storeId && allowModeChange && (
-          <select value={mode} onChange={event => setMode(event.target.value as 'vendor' | 'direct')}
-            aria-label="分類方式"
-            style={{ height: 24, padding: '0 5px', fontSize: 11, borderRadius: 4, border: '1.5px solid #F59E0B', background: 'white' }}>
-            <option value="vendor">廠商子類別</option>
-            <option value="direct">獨立收據類別</option>
-          </select>
-        )}
-        <button onClick={handleSave} disabled={saving}
-          style={{ background: 'none', border: 'none', color: '#047857', cursor: 'pointer', padding: 2 }}>
-          <Check className="h-3 w-3" />
-        </button>
-        <button onClick={() => setEditing(false)}
-          style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: 2 }}>
-          <X className="h-3 w-3" />
-        </button>
+      <div className="order-last mt-2 w-full basis-full rounded-2xl p-4 shadow-sm sm:p-5" style={{ background: '#fffbeb', border: '1px solid #fcd34d' }}>
+        <div className="mb-4 flex flex-col gap-1 border-b pb-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: '#fde68a' }}>
+          <div>
+            <div className="text-sm font-bold" style={{ color: '#78350f' }}>編輯分類設定</div>
+            <div className="mt-0.5 text-xs" style={{ color: '#a16207' }}>名稱、分類方式與帳務設定會在儲存後一起套用</div>
+          </div>
+          <span className="mt-1 self-start rounded-full px-2.5 py-1 text-[11px] font-semibold sm:mt-0" style={{ color: '#92400e', background: '#fef3c7' }}>
+            {vgName}・{itemCount} 項
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <label className="flex min-w-0 flex-col gap-2">
+            <span className="text-xs font-bold" style={{ color: '#92400e' }}>分類名稱</span>
+            <input value={newName} onChange={event => setNewName(event.target.value)}
+              onKeyDown={event => { if (event.key === 'Escape') cancelEditing() }}
+              autoFocus className="h-12 w-full min-w-0" style={{ ...INPUT_STYLE, height: undefined }} />
+          </label>
+          <label className="flex min-w-0 flex-col gap-2">
+            <span className="text-xs font-bold" style={{ color: '#92400e' }}>分類方式</span>
+            <select value={mode} onChange={event => {
+              const nextMode = event.target.value as 'vendor' | 'direct'
+              setMode(nextMode)
+              if (nextMode === 'direct') setCategory('雜項')
+            }}
+              disabled={!storeId || !allowModeChange} aria-label="分類方式"
+              className="h-12 w-full" style={{ ...SELECT_ADD_STYLE, height: undefined, opacity: (!storeId || !allowModeChange) ? 0.65 : 1 }}>
+              <option value="vendor">廠商子類別</option>
+              <option value="direct">獨立收據類別</option>
+            </select>
+          </label>
+          <label className="flex min-w-0 flex-col gap-2">
+            <span className="text-xs font-bold" style={{ color: '#92400e' }}>單據類型</span>
+            <select value={doc} onChange={event => changeDoc(event.target.value)} disabled={!storeId}
+              className="h-12 w-full" style={{ ...SELECT_ADD_STYLE, height: undefined }}>
+              <option value="">不指定</option>
+              {docOptions.map(option => <option key={option} value={option}>{option}</option>)}
+              <option value="__custom__">➕ 新增自訂…</option>
+            </select>
+          </label>
+          <label className="flex min-w-0 flex-col gap-2">
+            <span className="text-xs font-bold" style={{ color: '#92400e' }}>報表金額分類</span>
+            <select value={category} onChange={event => setCategory(event.target.value)}
+              disabled={!storeId || mode !== 'vendor'}
+              className="h-12 w-full" style={{ ...SELECT_ADD_STYLE, height: undefined, opacity: (!storeId || mode !== 'vendor') ? 0.65 : 1 }}>
+              {mode !== 'vendor' && <option value="雜項">依各品項設定</option>}
+              {mode === 'vendor' && <><option value="食材">食材</option><option value="耗材">耗材</option><option value="雜項">雜項</option></>}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end" style={{ borderColor: '#fde68a' }}>
+          <button type="button" onClick={cancelEditing} disabled={saving}
+            className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl px-5 text-sm font-semibold sm:w-auto sm:min-w-[112px]"
+            style={{ color: '#52525b', background: 'white', border: '1px solid #e4e4e7' }}>
+            <X className="h-4 w-4" />取消
+          </button>
+          <button type="button" onClick={handleSave} disabled={saving || !newName.trim()}
+            className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl px-5 text-sm font-semibold text-white shadow-sm sm:w-auto sm:min-w-[128px]"
+            style={{ background: '#f59e0b', opacity: (saving || !newName.trim()) ? 0.5 : 1 }}>
+            <Check className="h-4 w-4" />{saving ? '儲存中…' : '儲存'}
+          </button>
+        </div>
       </div>
     )
   }
+
+  const categoryStyle = currentCategory ? (CAT_STYLE[currentCategory] ?? CAT_STYLE['雜項']) : null
   return (
     <>
-      <button onClick={() => { setNewName(vgName); setMode(currentMode); setEditing(true) }}
-        title="編輯名稱與分類方式"
-        style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: 2 }}>
-        <Edit2 className="h-3 w-3" />
+      <span className="rounded-md px-2 py-1 text-[11px] font-semibold"
+        style={{ background: currentDoc ? docColor(currentDoc).bg : 'white', color: docColor(currentDoc ?? '').fg, border: `1px solid ${docColor(currentDoc ?? '').bd}` }}>
+        單據：{currentDoc || '未指定'}
+      </span>
+      {categoryStyle && (
+        <span className="rounded-md px-2 py-1 text-[11px] font-semibold"
+          style={{ background: categoryStyle.bg, color: categoryStyle.color, border: `1px solid ${categoryStyle.color}33` }}>
+          分類：{currentCategory}
+        </span>
+      )}
+      <button type="button" onClick={startEditing}
+        className="flex min-h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold"
+        title="編輯分類所有設定" aria-label={`編輯「${vgName}」分類設定`}
+        style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e' }}>
+        <Edit2 className="h-3.5 w-3.5" />編輯
       </button>
-      <button onClick={handleDelete} disabled={saving}
+      <button type="button" onClick={handleDelete} disabled={saving}
+        className="flex min-h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold"
         title="安全停用整個群組"
-        style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 2 }}>
-        <Trash2 className="h-3 w-3" />
+        style={{ background: '#fff1f2', border: '1px solid #fecdd3', color: '#be123c' }}>
+        <Trash2 className="h-3.5 w-3.5" />刪除
       </button>
     </>
   )
@@ -1728,101 +1826,5 @@ function CopyToStoreButton({ fromStoreId, stores }: { fromStoreId: string; store
         </div>
       )}
     </div>
-  )
-}
-
-/** 廠商即使沒有明細品項，也能指定整筆金額要歸入食材／耗材／雜項。 */
-function VgItemCategorySelector({
-  storeId,
-  vgName,
-  currentCategory,
-  onDone,
-}: {
-  storeId: string
-  vgName: string
-  currentCategory: string
-  onDone?: () => void
-}) {
-  const [category, setCategory] = useState(currentCategory || '雜項')
-  const [saving, setSaving] = useState(false)
-  useEffect(() => { setCategory(currentCategory || '雜項') }, [currentCategory])
-
-  async function save(next: string) {
-    setCategory(next)
-    setSaving(true)
-    try {
-      const { setStoreVendorGroupItemCategory } = await import('@/app/actions/item-mappings')
-      const result = await setStoreVendorGroupItemCategory(storeId, vgName, next)
-      if ('error' in result) {
-        toast.error(String(result.error))
-        return
-      }
-      toast.success(`「${vgName}」已歸類為${next}`)
-      onDone?.()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <select value={category} onChange={event => save(event.target.value)} disabled={saving}
-      title={`「${vgName}」的報表金額分類`}
-      style={{
-        height: 22, padding: '0 4px', fontSize: 11, borderRadius: 4,
-        border: `1px solid ${CAT_STYLE[category]?.color ?? '#d4d4d8'}`,
-        background: CAT_STYLE[category]?.bg ?? 'white',
-        color: CAT_STYLE[category]?.color ?? '#52525b',
-        fontFamily: 'inherit', outline: 'none', fontWeight: 600,
-      }}>
-      <option value="食材">食材</option>
-      <option value="耗材">耗材</option>
-      <option value="雜項">雜項</option>
-    </select>
-  )
-}
-
-/** 廠商群組的單據類型（doc_type）快速編輯：每店獨立寫入該店分類底下的 mapping */
-function VgDocTypeSelector({ storeId, vgName, currentDoc }: { storeId: string; vgName: string; currentDoc: string | null }) {
-  const [doc, setDoc] = useState(currentDoc ?? '')
-  const [saving, setSaving] = useState(false)
-  // refresh 後同步 server 傳回的新值
-  useEffect(() => { setDoc(currentDoc ?? '') }, [currentDoc])
-
-  async function save(next: string) {
-    setDoc(next)
-    setSaving(true)
-    try {
-      const { setStoreVendorGroupDocType } = await import('@/app/actions/item-mappings')
-      const r = await setStoreVendorGroupDocType(storeId, vgName, next || null)
-      if ('error' in r) { toast.error(String((r as any).error)); return }
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const allOptions = Array.from(new Set([...BUILTIN_DOC_TYPES, ...(doc && !BUILTIN_DOC_TYPES.includes(doc) ? [doc] : [])]))
-  async function handleChange(v: string) {
-    if (v === '__custom__') {
-      const name = prompt('輸入自訂單據類型名稱（例：巷日開）:')?.trim()
-      if (!name) return
-      await save(name)
-    } else {
-      await save(v)
-    }
-  }
-  return (
-    <select value={doc} onChange={e => handleChange(e.target.value)} disabled={saving}
-      title={`「${vgName}」在本店的預設單據類型（會顯示在 Excel Row 2）`}
-      style={{
-        height: 22, padding: '0 4px', fontSize: 11, borderRadius: 4,
-        border: `1px solid ${docColor(doc).bd}`,
-        background: doc ? docColor(doc).bg : 'white',
-        color: docColor(doc).fg,
-        fontFamily: 'inherit', outline: 'none', fontWeight: doc ? 600 : 400,
-      }}>
-      <option value="">單據類型…</option>
-      {allOptions.map(o => <option key={o} value={o}>{o}</option>)}
-      <option value="__custom__">➕ 新增自訂…</option>
-    </select>
   )
 }

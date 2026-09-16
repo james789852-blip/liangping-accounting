@@ -65,6 +65,17 @@ test('品項編輯區使用對齊網格與獨立帳務設定卡片', () => {
   assert.match(source, /flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end/)
 })
 
+test('分類設定保持唯讀，統一按編輯後才可修改', () => {
+  assert.doesNotMatch(source, /function VgItemCategorySelector/)
+  assert.doesNotMatch(source, /function VgDocTypeSelector/)
+  assert.match(source, /分類設定一律先按編輯，避免瀏覽時誤觸下拉選單/)
+  assert.match(source, />編輯分類設定</)
+  assert.match(source, /單據：\{currentDoc \|\| '未指定'\}/)
+  assert.match(source, /分類：\{currentCategory\}/)
+  assert.match(source, /title="編輯分類所有設定"/)
+  assert.match(source, /setStoreVendorGroupDocType[\s\S]*?setStoreVendorGroupItemCategory/)
+})
+
 test('單筆刪除會一次完成安全停用與封存，列表立即移除', () => {
   assert.match(source, /const disableResult = await deleteItemMapping\(id\)[\s\S]*?const archiveResult = await archiveItemMapping\(id\)/)
   assert.match(source, /archived: true/)
