@@ -731,6 +731,11 @@ export default function ReviewCard({ closing, receipts, canReview, canDispute, s
                   {closing.order_items.map((o, i) => (
                     <InfoRow key={i} label={`${o.item_name} × ${o.quantity}`} value={`$${fmt(o.total_amount)}`} />
                   ))}
+                  <div className="flex justify-between gap-3 pt-1 text-xs font-semibold"
+                    style={{ borderTop: '1px solid #e4e4e7', color: '#92400e' }}>
+                    <span>央廚配送合計</span>
+                    <span className="shrink-0 tabular-nums">${fmt(closing.total_cost)}</span>
+                  </div>
                 </div>
               </div>
             )}

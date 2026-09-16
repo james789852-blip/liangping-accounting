@@ -156,6 +156,17 @@ test('店面內容相符會自動前往下一張並使用一致的已確認樣�
   assert.match(reviewSource, /border: '2px solid #22c55e'/)
 })
 
+test('總公司審核頁面的央廚配送明細下方會顯示加總金額', () => {
+  const reviewSource = fs.readFileSync(new URL('../components/hq/review-card.tsx', import.meta.url), 'utf8')
+
+  assert.match(reviewSource, />央廚配送合計</)
+  assert.match(reviewSource, /\$\{fmt\(closing\.total_cost\)\}/)
+  assert.ok(
+    reviewSource.indexOf('closing.order_items.map') < reviewSource.indexOf('>央廚配送合計<'),
+    '央廚配送合計應顯示在配送品項明細下方',
+  )
+})
+
 test('總公司核對信封袋時會先顯示逐筆大額支出加回，再顯示最終應包回金額', () => {
   const reviewSource = fs.readFileSync(new URL('../components/hq/review-card.tsx', import.meta.url), 'utf8')
 
