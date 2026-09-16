@@ -464,7 +464,9 @@ export async function notifyStoreUsersOfReview(input: {
   const verified = input.decision === 'verified'
   await sendToUserIds(userIds, {
     title: `${name}帳目${verified ? '審核通過' : '已退回修改'}`,
-    body: `${input.businessDate}｜${reviewerName}${verified ? '已確認帳目內容相符。' : '已退回帳目，請開啟查看原因並修正重送。'}`,
+    body: verified
+      ? `${input.businessDate}｜已確認帳目正確。`
+      : `${input.businessDate}｜${reviewerName}已退回帳目，請開啟查看原因並修正重送。`,
     url: managerAccountingUrl(input.kind, input.recordId, input.businessDate),
     tag: `${input.kind}-review-${input.recordId}`,
   }, {
@@ -616,8 +618,8 @@ export async function notifyCKUsersOfReimbursementHandoff(input: {
   return sendToUserIds(userIds, {
     title: `${name}補款${isReminder ? '尚未點交' : '已送達待點交'}`,
     body: isReminder
-      ? `${input.businessDate}｜總公司補款仍未完成點交，請盡快開啟帳目確認。`
-      : `${input.businessDate}｜總公司已上傳補款信封照片，請確認收到並完成點交。`,
+      ? `${input.businessDate}｜補款仍未完成點交，請盡快開啟帳目確認。`
+      : `${input.businessDate}｜已上傳補款信封照片，請確認收到並完成點交。`,
     url: `/manager/ck?date=${input.businessDate}`,
     tag: `ck-reimbursement-${input.stage}-${input.recordId}`,
   }, {

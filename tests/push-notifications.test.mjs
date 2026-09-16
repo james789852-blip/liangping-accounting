@@ -61,6 +61,9 @@ test('店面與央廚送審及審核結果都會在回應後發送推播', () =>
   assert.match(pushModule, /senderName/)
   assert.match(pushModule, /點此直接進入審核/)
   assert.match(pushModule, /buildPendingReviewNotification\(hydratedItems\)/)
+  assert.match(pushModule, /｜已確認帳目正確。/)
+  assert.doesNotMatch(pushModule, /總公司已確認帳目正確。/)
+  assert.doesNotMatch(pushModule, /已確認帳目內容相符。/)
   assert.doesNotMatch(pushModule, /review_note|dispute_note/)
 })
 
@@ -124,6 +127,13 @@ test('推播選項會依總公司、店面與央廚身分分流', () => {
   assert.match(userEditor, /scopePushPreferencesForUnit\(form\.push_notification_preferences, unitType\)/)
   assert.match(userCreateDialog, /defaultPushPreferencesForUnit\(unitType\)/)
   assert.match(pushModule, /profile\.role !== '老闆' && profile\.is_hq !== true/)
+})
+
+test('央廚補款點交通知不重複顯示總公司', () => {
+  assert.match(pushModule, /｜已上傳補款信封照片，請確認收到並完成點交。/)
+  assert.match(pushModule, /｜補款仍未完成點交，請盡快開啟帳目確認。/)
+  assert.doesNotMatch(pushModule, /總公司已上傳補款信封照片/)
+  assert.doesNotMatch(pushModule, /總公司補款仍未完成點交/)
 })
 
 test('管理頁顯示綁定裝置數並可發送測試通知', () => {
