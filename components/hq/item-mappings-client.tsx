@@ -1,23 +1,15 @@
 'use client'
 
-import { useState, useTransition, useEffect, useMemo, useRef, createContext, useContext } from 'react'
+import { useState, useTransition, useEffect, useMemo, useRef } from 'react'
 import { EXCEL_COLUMNS } from '@/lib/excel-columns'
 import {
   archiveItemMapping, createStoreVendorGroup, deleteItemMapping, reactivateItemMapping, updateItemMapping, saveItemMapping, reorderItemMappings, setItemDocOverride, reorderStoreVendorGroups, setStoreVendorGroupMode,
 } from '@/app/actions/item-mappings'
 import { setManagerStore } from '@/app/actions/store-select'
 import { useRouter } from 'next/navigation'
-import { Trash2, Edit2, Check, X, Plus, Tag, ChevronLeft, ChevronUp, ChevronDown, GripVertical, PowerOff, RotateCcw } from 'lucide-react'
+import { Trash2, Edit2, Check, X, Plus, Tag, ChevronLeft, ChevronUp, ChevronDown, PowerOff, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import HelpBox from './help-box'
-import {
-  DndContext, closestCorners, rectIntersection, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-  SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy, arrayMove,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import {
   isMiscVendorGroup,
   MISC_VENDOR_GROUP,
@@ -88,9 +80,9 @@ export default function ItemMappingsClient({
   const [newDocType, setNewDocType] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [showAddVg, setShowAddVg] = useState(false)
-  const [sortMode, setSortMode] = useState(false)
+  const [sortModeVg, setSortModeVg] = useState<string | null>(null)
   const [batchStoreIds, setBatchStoreIds] = useState<string[]>([])
-  const [selectMode, setSelectMode] = useState(false)
+  const [selectModeVg, setSelectModeVg] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [inlineAddVg, setInlineAddVg] = useState<string | null>(null)
   const [inlineAddName, setInlineAddName] = useState('')
@@ -128,9 +120,9 @@ export default function ItemMappingsClient({
     setNewDocType('')
     setShowAdd(false)
     setShowAddVg(false)
-    setSortMode(false)
+    setSortModeVg(null)
     setBatchStoreIds([])
-    setSelectMode(false)
+    setSelectModeVg(null)
     setSelectedIds(new Set())
     setInlineAddVg(null)
     setInlineAddName('')
@@ -172,62 +164,14 @@ export default function ItemMappingsClient({
     })
   }
 
-  // Drag-and-drop sensors — 桌面觸發距離小 + 手機 delay 縮短
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-
-    // 品項排序
-    const activeItem = displayMappings.find(m => m.id === active.id)
-    if (!activeItem) return
-    const activeVg = normalizeVendorGroupName(activeItem.vendor_group)
-    // 判斷 over 是別的 item 還是 vg group header
-    const overIsVg = String(over.id).startsWith('vg-')
-    const overVg = overIsVg
-      ? String(over.id).slice(3)
-      : normalizeVendorGroupName(displayMappings.find(m => m.id === over.id)?.vendor_group)
-
-    // 跨 vg：把 item 的 vendor_group 改為 overVg
-    if (activeVg !== overVg) {
-      setMappings(prev => prev.map(m => m.id === active.id ? { ...m, vendor_group: overVg } : m))
-      updateItemMapping(active.id as string, activeItem.excel_column, activeItem.item_category, overVg)
-        .then(r => { if (r && 'error' in r) toast.error('改廠商失敗：' + r.error) })
-        .catch(e => toast.error('改廠商失敗：' + (e instanceof Error ? e.message : String(e))))
-      toast.success(`已改到「${overVg}」`)
-      return
-    }
-    if (overIsVg) return
-    const vgItems = (grouped[activeVg] ?? [])
-    const oldIdx = vgItems.findIndex(m => m.id === active.id)
-    const newIdx = vgItems.findIndex(m => m.id === over.id)
-    if (oldIdx < 0 || newIdx < 0) return
-    const reordered = arrayMove(vgItems, oldIdx, newIdx)
-    // 為 reordered 賦新 sort_order → 讓 displayMappings.sort(sortByOrder) 能反映新順序
-    const withOrder = reordered.map((m, i) => ({ ...m, sort_order: (i + 1) * 10 } as any))
-    setMappings(prev => {
-      const otherItems = prev.filter(m => !reordered.some(r => r.id === m.id))
-      return [...otherItems, ...withOrder]
-    })
-    reorderItemMappings(reordered.map(i => i.id))
-      .then(r => { if (r && 'error' in r) toast.error('排序儲存失敗：' + r.error) })
-      .catch(e => toast.error('排序儲存失敗：' + (e instanceof Error ? e.message : String(e))))
-  }
-
   // 各店完全獨立：一次整理目前店家的顯示資料，避免 80+ 列在每次互動時反覆掃描。
-  const { displayMappings, disabledMappings, grouped, groupOrder, groupDocMap, groupCategoryMap, taxItemOptionsByGroup } = useMemo(() => {
+  const { disabledMappings, grouped, groupOrder, groupDocMap, groupCategoryMap, taxItemOptionsByGroup } = useMemo(() => {
     const activeMappings = mappings
       .filter(mapping => mapping.store_id === activeStoreId && !mapping.disabled_at && !mapping.archived)
       .sort((a, b) => (a.sort_order ?? 999999) - (b.sort_order ?? 999999))
     const nextDisabledMappings = mappings
       .filter(mapping => mapping.store_id === activeStoreId && !!mapping.disabled_at && !mapping.archived && !isVendorOnlyMapping(mapping))
       .sort((a, b) => String(b.disabled_at).localeCompare(String(a.disabled_at)))
-    const visibleMappings = activeMappings.filter(mapping => !isVendorOnlyMapping(mapping))
     const allMappingsByGroup = activeMappings.reduce<Record<string, Mapping[]>>((acc, mapping) => {
       const vendorGroup = normalizeVendorGroupName(mapping.vendor_group)
       if (!acc[vendorGroup]) acc[vendorGroup] = []
@@ -288,7 +232,6 @@ export default function ItemMappingsClient({
       return a.localeCompare(b, 'zh-Hant')
     })
     return {
-      displayMappings: visibleMappings,
       disabledMappings: nextDisabledMappings,
       grouped: nextGrouped,
       groupOrder: nextGroupOrder,
@@ -407,20 +350,15 @@ export default function ItemMappingsClient({
     if (!items) return
     const newIdx = direction === 'up' ? idx - 1 : idx + 1
     if (newIdx < 0 || newIdx >= items.length) return
-    // optimistic update — UI 立即反應
-    setMappings(prev => {
-      const next = [...prev]
-      const idxA = next.findIndex(m => m.id === items[idx].id)
-      const idxB = next.findIndex(m => m.id === items[newIdx].id)
-      if (idxA >= 0 && idxB >= 0) {
-        [next[idxA], next[idxB]] = [next[idxB], next[idxA]]
-      }
-      return next
-    })
-    // fire-and-forget server update（不 refresh，避免重 fetch 整頁拖慢）
-    const reorderedIds = [...items]
-    ;[reorderedIds[idx], reorderedIds[newIdx]] = [reorderedIds[newIdx], reorderedIds[idx]]
-    reorderItemMappings(reorderedIds.map(i => i.id))
+    const reordered = [...items]
+    ;[reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]]
+    const orderById = new Map(reordered.map((mapping, orderIdx) => [mapping.id, (orderIdx + 1) * 10]))
+    // optimistic update：直接改 sort_order，畫面排序會立即反映，不必等整頁刷新。
+    setMappings(prev => prev.map(mapping => {
+      const sortOrder = orderById.get(mapping.id)
+      return sortOrder == null ? mapping : { ...mapping, sort_order: sortOrder }
+    }))
+    reorderItemMappings(reordered.map(item => item.id))
       .then(r => {
         if (r && 'error' in r) toast.error('排序儲存失敗：' + r.error)
       })
@@ -506,7 +444,7 @@ export default function ItemMappingsClient({
       if (r && 'error' in r) { toast.error(r.error); return }
       toast.success(`已安全停用 ${(r as any).disabled ?? ids.length} 個品項，歷史帳目不受影響`)
       setSelectedIds(new Set())
-      setSelectMode(false)
+      setSelectModeVg(null)
       router.refresh()
     })
   }
@@ -515,7 +453,7 @@ export default function ItemMappingsClient({
     <div className="flex min-h-[100dvh] flex-col" style={{ background: '#fafafa' }}>
 
       {/* 浮動選取工具列 */}
-      {selectMode && selectedIds.size > 0 && (
+      {selectModeVg && selectedIds.size > 0 && (
         <div className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] lg:bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2.5 rounded-xl shadow-lg"
           style={{ background: 'white', border: '1.5px solid #fecaca', boxShadow: '0 8px 24px rgba(220,38,38,0.15)' }}>
           <span className="text-sm font-semibold" style={{ color: '#18181b' }}>已選 {selectedIds.size} 個品項</span>
@@ -629,22 +567,6 @@ export default function ItemMappingsClient({
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
-              <button onClick={() => { setSortMode(v => !v); setSelectMode(false) }}
-                className="flex w-full items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors sm:w-auto"
-                style={sortMode
-                  ? { background: '#F59E0B', color: 'white', boxShadow: '0 2px 8px rgba(245,158,11,0.3)' }
-                  : { background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}
-                title={sortMode ? '完成排序' : '進入排序模式（避免誤觸）'}>
-                {sortMode ? <><Check className="h-3.5 w-3.5" /> 完成</> : <><ChevronUp className="h-3.5 w-3.5" /> 排序</>}
-              </button>
-              <button onClick={() => { setSelectMode(v => !v); setSortMode(false); if (selectMode) setSelectedIds(new Set()) }}
-                className="flex w-full items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors sm:w-auto"
-                style={selectMode
-                  ? { background: '#dc2626', color: 'white', boxShadow: '0 2px 8px rgba(220,38,38,0.3)' }
-                  : { background: 'white', border: '1.5px solid #e4e4e7', color: '#52525b' }}
-                title={selectMode ? '取消選取' : '進入選取模式（可批次安全停用）'}>
-                {selectMode ? <><X className="h-3.5 w-3.5" /> 取消</> : <><Check className="h-3.5 w-3.5" /> 選取</>}
-              </button>
               <CopyToStoreButton fromStoreId={activeStoreId} stores={stores} />
               <button onClick={() => { setNewVgMode('vendor'); setNewVgCategory('雜項'); setShowAddVg(true) }}
                 className="flex w-full items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold sm:w-auto"
@@ -891,37 +813,18 @@ export default function ItemMappingsClient({
         </div>
 
         {/* Mapping list — 以 vendor_group 為主分類 */}
-        <DndContext sensors={sortMode ? sensors : []}
-          collisionDetection={(args) => {
-            // rectIntersection 找出所有跟拖曳矩形重疊的目標
-            // 再從中選 y 座標最接近的（拖到哪就對到哪）
-            const intersections = rectIntersection(args)
-            if (intersections.length > 0) {
-              const activeRect = args.active.rect.current.translated
-              if (!activeRect) return intersections
-              const activeCenterY = activeRect.top + activeRect.height / 2
-              intersections.sort((a, b) => {
-                const ra = args.droppableRects.get(a.id)
-                const rb = args.droppableRects.get(b.id)
-                if (!ra || !rb) return 0
-                return Math.abs((ra.top + ra.height / 2) - activeCenterY)
-                     - Math.abs((rb.top + rb.height / 2) - activeCenterY)
-              })
-              return [intersections[0]]
-            }
-            return closestCorners(args)
-          }}
-          onDragEnd={handleDragEnd}>
         {groupOrder.map((vg, vgIdx) => {
           const items = grouped[vg]
           const isVendorChild = vendorChildGroupSet.has(vg)
           const vgSt = isMiscVendorGroup(vg) ? VG_STYLE_UNCAT : DOC_TYPES.has(vg) ? VG_STYLE_DOC : VG_STYLE
           const isVgFirst = vgIdx === 0
           const isVgLast = vgIdx === groupOrder.length - 1
+          const isSortingVg = sortModeVg === vg
+          const isSelectingVg = selectModeVg === vg
           // 每店獨立：雜項是舊空值／未分類的統一保留分類，不提供改名或刪除。
           const hasVgRecord = !isMiscVendorGroup(vg)
           return (
-            <div key={vg} style={sortMode
+            <div key={vg} style={isSortingVg || isSelectingVg
               ? (isVendorChild ? { borderLeft: '3px solid #FDE68A', paddingLeft: 8 } : undefined)
               : {
                   contentVisibility: 'auto',
@@ -929,19 +832,21 @@ export default function ItemMappingsClient({
                   ...(isVendorChild ? { borderLeft: '3px solid #FDE68A', paddingLeft: 8 } : {}),
                 }}>
               <div className="flex flex-wrap items-center gap-2 mb-2 px-1">
-                {sortMode && hasVgRecord && (
-                  <div className="flex flex-col" style={{ width: 20, background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, padding: 2 }}>
+                {isSortingVg && hasVgRecord && (
+                  <div className="flex items-center gap-1">
                     <button onClick={() => moveVendorGroup(vg, 'up')} disabled={isVgFirst || isPending}
-                      style={{ background: 'none', border: 'none', cursor: isVgFirst ? 'default' : 'pointer', color: isVgFirst ? '#e4e4e7' : '#92400e', padding: 0, lineHeight: 0.7 }} title="上移">
-                      <ChevronUp className="h-3 w-3" />
+                      className="flex min-h-9 min-w-9 items-center justify-center rounded-lg"
+                      style={{ background: '#fef3c7', border: '1px solid #fbbf24', cursor: isVgFirst ? 'default' : 'pointer', color: isVgFirst ? '#d4d4d8' : '#92400e', opacity: isPending ? 0.5 : 1 }} title="分類上移" aria-label={`${vg}分類上移`}>
+                      <ChevronUp className="h-4 w-4" />
                     </button>
                     <button onClick={() => moveVendorGroup(vg, 'down')} disabled={isVgLast || isPending}
-                      style={{ background: 'none', border: 'none', cursor: isVgLast ? 'default' : 'pointer', color: isVgLast ? '#e4e4e7' : '#92400e', padding: 0, lineHeight: 0.7 }} title="下移">
-                      <ChevronDown className="h-3 w-3" />
+                      className="flex min-h-9 min-w-9 items-center justify-center rounded-lg"
+                      style={{ background: '#fef3c7', border: '1px solid #fbbf24', cursor: isVgLast ? 'default' : 'pointer', color: isVgLast ? '#d4d4d8' : '#92400e', opacity: isPending ? 0.5 : 1 }} title="分類下移" aria-label={`${vg}分類下移`}>
+                      <ChevronDown className="h-4 w-4" />
                     </button>
                   </div>
                 )}
-                {sortMode && isMiscVendorGroup(vg) && (
+                {isSortingVg && isMiscVendorGroup(vg) && (
                   <span className="text-[11px] font-medium" style={{ color: '#a1a1aa' }}>固定最後</span>
                 )}
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
@@ -972,18 +877,47 @@ export default function ItemMappingsClient({
                     onDone={() => router.refresh()}
                   />
                 )}
-                {/* 分類內快速新增品項（inline，就地展開輸入框） */}
-                <button onClick={() => {
-                  if (inlineAddVg === vg) { setInlineAddVg(null); return }
-                  setInlineAddVg(vg); setInlineAddName(''); setInlineAddCat('食材'); setInlineAddDocType(groupDocMap.get(vg) ?? '')
-                }}
-                  className="ml-auto flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
-                  style={inlineAddVg === vg
-                    ? { background: '#F59E0B', color: 'white', border: '1px solid #F59E0B', cursor: 'pointer' }
-                    : { background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', cursor: 'pointer' }}
-                  title={`新增品項到「${vg}」`}>
-                  <Plus className="h-3 w-3" /> 加品項
-                </button>
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+                  <button type="button" onClick={() => {
+                    setSortModeVg(current => current === vg ? null : vg)
+                    setSelectModeVg(null)
+                    setSelectedIds(new Set())
+                  }}
+                    className="flex min-h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold"
+                    style={isSortingVg
+                      ? { background: '#F59E0B', color: 'white', border: '1px solid #F59E0B' }
+                      : { background: 'white', color: '#52525b', border: '1px solid #e4e4e7' }}
+                    title={isSortingVg ? `完成「${vg}」排序` : `排序「${vg}」內的品項`}>
+                    {isSortingVg ? <Check className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+                    {isSortingVg ? '完成' : '排序'}
+                  </button>
+                  <button type="button" onClick={() => {
+                    const closing = selectModeVg === vg
+                    setSelectModeVg(closing ? null : vg)
+                    setSortModeVg(null)
+                    setSelectedIds(new Set())
+                  }}
+                    className="flex min-h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold"
+                    style={isSelectingVg
+                      ? { background: '#dc2626', color: 'white', border: '1px solid #dc2626' }
+                      : { background: 'white', color: '#52525b', border: '1px solid #e4e4e7' }}
+                    title={isSelectingVg ? `取消選取「${vg}」品項` : `選取「${vg}」內的品項`}>
+                    {isSelectingVg ? <X className="h-3 w-3" /> : <Check className="h-3 w-3" />}
+                    {isSelectingVg ? '取消' : '選取'}
+                  </button>
+                  {/* 分類內快速新增品項（inline，就地展開輸入框） */}
+                  <button onClick={() => {
+                    if (inlineAddVg === vg) { setInlineAddVg(null); return }
+                    setInlineAddVg(vg); setInlineAddName(''); setInlineAddCat('食材'); setInlineAddDocType(groupDocMap.get(vg) ?? '')
+                  }}
+                    className="flex min-h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold"
+                    style={inlineAddVg === vg
+                      ? { background: '#F59E0B', color: 'white', border: '1px solid #F59E0B', cursor: 'pointer' }
+                      : { background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', cursor: 'pointer' }}
+                    title={`新增品項到「${vg}」`}>
+                    <Plus className="h-3 w-3" /> 加品項
+                  </button>
+                </div>
               </div>
               {inlineAddVg === vg && (
                 <div className="grid grid-cols-1 md:grid-cols-[1fr_130px_150px_auto_auto] items-end gap-2 mb-2 px-2 py-2 rounded-lg" style={{ background: '#FFFBEB', border: '1.5px solid #FDE68A' }}>
@@ -1026,7 +960,10 @@ export default function ItemMappingsClient({
                         const newVg = (r as any)?.newVg
                         if (newVg) setVgsState(prev => prev.some(v => v.id === newVg.id) ? prev : [...prev, { ...newVg, doc_type: null }])
                         toast.success(`已加「${name}」到「${vg}」`)
+                        setInlineAddVg(null)
                         setInlineAddName('')
+                        setInlineAddCat('食材')
+                        setInlineAddDocType('')
                         router.refresh()
                       })
                     }}
@@ -1042,7 +979,6 @@ export default function ItemMappingsClient({
                 </div>
               )}
               <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #f4f4f5', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                <SortableContext items={items.map(m => m.id)} strategy={verticalListSortingStrategy} disabled={!sortMode}>
                 {(() => {
                   // 「退稅」vg 特別處理：依品項名稱的「稅金/稅」前綴推導原廠商，拆子區塊
                   const isRefund = vg === '退稅'
@@ -1078,8 +1014,13 @@ export default function ItemMappingsClient({
                         m={m}
                         isLast={idx === items.length - 1}
                         isStorePage={isStorePage}
-                        sortMode={sortMode}
-                        selectMode={selectMode}
+                        sortMode={isSortingVg}
+                        selectMode={isSelectingVg}
+                        onMoveUp={() => moveItem(vg, idx, 'up')}
+                        onMoveDown={() => moveItem(vg, idx, 'down')}
+                        canMoveUp={idx > 0}
+                        canMoveDown={idx < items.length - 1}
+                        sortingPending={isPending}
                         isSelected={selectedIds.has(m.id)}
                         onToggleSelect={() => setSelectedIds(prev => {
                           const next = new Set(prev)
@@ -1106,7 +1047,6 @@ export default function ItemMappingsClient({
                   })
                   return rendered
                 })()}
-                </SortableContext>
               </div>
             </div>
           )
@@ -1155,47 +1095,16 @@ export default function ItemMappingsClient({
             ))}
           </section>
         )}
-        </DndContext>
       </div>
     </div>
   )
 }
 
-/** 可拖曳的分類群組 wrapper */
-function SortableVgGroup({ vg, enableDrag, children }: { vg: string; enableDrag: boolean; children: React.ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `vg-${vg}`, disabled: !enableDrag })
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.6 : 1,
-  }
-  return (
-    <div ref={setNodeRef} style={style}>
-      <SortableVgContext.Provider value={{ listeners, attributes }}>
-        {children}
-      </SortableVgContext.Provider>
-    </div>
-  )
-}
-
-const SortableVgContext = createContext<{ listeners: any; attributes: any }>({ listeners: {}, attributes: {} })
-
-/** 分類 header 內的拖曳 handle（讀 SortableVgContext 取得 listeners） */
-function VgDragHandle() {
-  const { listeners, attributes } = useContext(SortableVgContext)
-  return (
-    <button {...attributes} {...listeners}
-      className="shrink-0"
-      style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, cursor: 'grab', color: '#92400e', padding: 4, touchAction: 'none' }}
-      title="拖曳分類排序"
-      aria-label="拖曳分類">
-      <GripVertical className="h-4 w-4" />
-    </button>
-  )
-}
-
 type ItemRowProps = {
   m: Mapping; isLast: boolean; isStorePage: boolean
+  sortMode: boolean
+  onMoveUp: () => void; onMoveDown: () => void
+  canMoveUp: boolean; canMoveDown: boolean; sortingPending: boolean
   selectMode: boolean; isSelected: boolean; onToggleSelect: () => void
   storesUsingIds: string[]; allStores: { id: string; name: string }[]
   itemOptions: string[]
@@ -1205,53 +1114,42 @@ type ItemRowProps = {
   handleDelete: (id: string) => void; displayName: (m: Mapping) => string
 }
 
-/** 一般瀏覽完全不掛 dnd-kit；只有使用者按下「排序」才建立拖曳節點。 */
-function ItemMappingRow({ sortMode, ...props }: ItemRowProps & { sortMode: boolean }) {
-  return sortMode ? <SortableItemRow {...props} /> : <ItemRowContent {...props} />
-}
-
-function SortableItemRow(props: ItemRowProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.m.id })
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    borderBottom: props.isLast ? 'none' : '1px solid #f4f4f5',
-    background: isDragging ? '#fef3c7' : undefined,
-  }
-  const dragHandle = (
-    <button {...attributes} {...listeners}
-      className="shrink-0"
-      style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, cursor: 'grab', color: '#92400e', padding: '4px', touchAction: 'none' }}
-      title="拖曳排序"
-      aria-label="拖曳排序">
-      <GripVertical className="h-4 w-4" />
-    </button>
-  )
-  return <ItemRowContent {...props} rowRef={setNodeRef} rowStyle={style} dragHandle={dragHandle} />
+function ItemMappingRow(props: ItemRowProps) {
+  return <ItemRowContent {...props} />
 }
 
 function ItemRowContent({
-  m, isLast, isStorePage, selectMode, isSelected, onToggleSelect, storesUsingIds, allStores, itemOptions, editId, editCol, editCat, editVendorGroup,
+  m, isLast, isStorePage, sortMode, onMoveUp, onMoveDown, canMoveUp, canMoveDown, sortingPending,
+  selectMode, isSelected, onToggleSelect, storesUsingIds, allStores, itemOptions, editId, editCol, editCat, editVendorGroup,
   setEditCol, setEditCat, setEditVendorGroup, startEdit, handleUpdate, setEditId, handleDelete, displayName,
-  rowRef, rowStyle, dragHandle,
-}: ItemRowProps & {
-  rowRef?: (node: HTMLElement | null) => void
-  rowStyle?: React.CSSProperties
-  dragHandle?: React.ReactNode
-}) {
+}: ItemRowProps) {
   const [showStores, setShowStores] = useState(false)
   const catSt = CAT_STYLE[m.item_category] ?? CAT_STYLE['雜項']
-  const style: React.CSSProperties = rowStyle ?? { borderBottom: isLast ? 'none' : '1px solid #f4f4f5' }
+  const style: React.CSSProperties = { borderBottom: isLast ? 'none' : '1px solid #f4f4f5' }
   return (
-    <div ref={rowRef} style={style} className="flex flex-wrap items-center gap-1.5 md:gap-2 px-2 md:px-3 py-2 md:py-2.5">
+    <div style={style} className="flex flex-wrap items-center gap-1.5 md:gap-2 px-2 md:px-3 py-2 md:py-2.5">
       {/* 選取模式：checkbox */}
       {selectMode && (
         <input type="checkbox" checked={isSelected} onChange={onToggleSelect}
           className="shrink-0 cursor-pointer" style={{ width: 18, height: 18, accentColor: '#dc2626' }} />
       )}
-      {dragHandle}
-      <span className="min-w-0 flex-1 basis-full text-sm font-semibold flex flex-wrap items-center gap-1.5 sm:basis-auto" style={{ color: '#18181b' }}>
+      {sortMode && (
+        <div className="flex shrink-0 items-center gap-1">
+          <button type="button" onClick={onMoveUp} disabled={!canMoveUp || sortingPending}
+            className="flex min-h-10 min-w-10 items-center justify-center rounded-lg"
+            style={{ background: '#fffbeb', border: '1px solid #fbbf24', color: canMoveUp ? '#92400e' : '#d4d4d8', opacity: sortingPending ? 0.5 : 1 }}
+            title="品項上移" aria-label={`${displayName(m)}上移`}>
+            <ChevronUp className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={onMoveDown} disabled={!canMoveDown || sortingPending}
+            className="flex min-h-10 min-w-10 items-center justify-center rounded-lg"
+            style={{ background: '#fffbeb', border: '1px solid #fbbf24', color: canMoveDown ? '#92400e' : '#d4d4d8', opacity: sortingPending ? 0.5 : 1 }}
+            title="品項下移" aria-label={`${displayName(m)}下移`}>
+            <ChevronDown className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+      <span className={`min-w-0 flex-1 text-sm font-semibold flex flex-wrap items-center gap-1.5 ${(sortMode || selectMode) ? 'basis-0' : 'basis-full sm:basis-auto'}`} style={{ color: '#18181b' }}>
         <InlineItemNameEditor mappingId={m.id} currentName={displayName(m)} fullName={m.item_name} excelColumn={m.excel_column} />
         {false && (
           <button onClick={() => setShowStores(v => !v)}
