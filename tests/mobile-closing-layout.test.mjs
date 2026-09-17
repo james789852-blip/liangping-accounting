@@ -17,6 +17,7 @@ const nativeExport = fs.readFileSync(new URL('../components/hq/native-export-cli
 const reviewCard = fs.readFileSync(new URL('../components/hq/review-card.tsx', import.meta.url), 'utf8')
 const ckOverview = fs.readFileSync(new URL('../components/hq/ck-overview.tsx', import.meta.url), 'utf8')
 const notificationCenter = fs.readFileSync(new URL('../components/notification-center.tsx', import.meta.url), 'utf8')
+const accountingClient = fs.readFileSync(new URL('../components/hq/accounting-client.tsx', import.meta.url), 'utf8')
 
 test('closing form constrains its page and content to the mobile viewport', () => {
   assert.match(closingForm, /closing-form-page min-h-full/)
@@ -94,6 +95,15 @@ test('daily closing summary stacks complete metadata on narrow screens', () => {
   assert.match(closingForm, /mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between/)
   assert.match(closingForm, /min-w-0 break-words text-\[11px\] font-medium leading-snug/)
   assert.doesNotMatch(closingForm, /\{store\.name\} · \{today\}/)
+})
+
+test('HQ accounting header keeps its title on one line above mobile date controls', () => {
+  assert.match(accountingClient, /flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center/)
+  assert.match(accountingClient, /whitespace-nowrap text-xs font-semibold uppercase/)
+  assert.match(accountingClient, /whitespace-nowrap text-lg font-bold sm:text-xl/)
+  assert.match(accountingClient, /flex w-full min-w-0 items-center gap-1\.5 sm:w-auto/)
+  assert.match(accountingClient, /min-w-0 flex-1[\s\S]*sm:min-w-\[180px\] sm:flex-none/)
+  assert.match(accountingClient, /hidden whitespace-nowrap text-\[10px\] opacity-70 sm:inline/)
 })
 
 test('high-density forms use shrinkable grid tracks and wide reports provide local scrolling', () => {

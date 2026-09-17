@@ -254,33 +254,33 @@ export default function AccountingClient({
     <div className="min-h-full" style={{ background: '#fafafa' }}>
       {/* Header */}
       <div className="bg-white px-4 sm:px-6 py-4" style={{ borderBottom: '1px solid #f4f4f5', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-        <div className="max-w-4xl mx-auto flex flex-wrap items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold uppercase" style={{ color: '#a1a1aa' }}>總公司</p>
-            <h1 className="text-lg sm:text-xl font-bold" style={{ color: '#18181b' }}>帳目中心</h1>
+        <div className="max-w-4xl mx-auto flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="w-full min-w-0 sm:w-auto sm:flex-1">
+            <p className="whitespace-nowrap text-xs font-semibold uppercase" style={{ color: '#a1a1aa' }}>總公司</p>
+            <h1 className="whitespace-nowrap text-lg font-bold sm:text-xl" style={{ color: '#18181b' }}>帳目中心</h1>
           </div>
-          <div className="flex items-center gap-1.5">
-            <button onClick={() => goDate(prevDay(date))} className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ border: '1px solid #e4e4e7', background: 'white' }} title="前一天">
+          <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto">
+            <button onClick={() => goDate(prevDay(date))} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" style={{ border: '1px solid #e4e4e7', background: 'white' }} title="前一天">
               <ChevronLeft className="h-4 w-4" style={{ color: '#52525b' }} />
             </button>
-            <label className="relative flex items-center gap-2 h-10 px-3 rounded-lg cursor-pointer transition-colors hover:bg-slate-50"
-              style={{ border: '1.5px solid #F59E0B', background: '#FFFBEB', color: '#92400E', minWidth: 180 }}
+            <label className="relative flex h-10 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg px-3 transition-colors hover:bg-slate-50 sm:min-w-[180px] sm:flex-none"
+              style={{ border: '1.5px solid #F59E0B', background: '#FFFBEB', color: '#92400E' }}
               title="點擊選日期">
-              <Calendar className="h-4 w-4" />
-              <span className="text-sm font-bold tabular-nums flex-1">{date}</span>
-              <span className="text-[10px] opacity-70">點此選日期</span>
+              <Calendar className="h-4 w-4 shrink-0" />
+              <span className="tabular-nums flex-1 whitespace-nowrap text-sm font-bold">{date}</span>
+              <span className="hidden whitespace-nowrap text-[10px] opacity-70 sm:inline">點此選日期</span>
               <input type="date" value={date} onChange={e => e.target.value && goDate(e.target.value)}
                 className="absolute inset-0 opacity-0 cursor-pointer"
                 style={{ fontFamily: 'inherit' }} />
             </label>
             <button onClick={() => goDate(nextDay(date))} disabled={isToday}
-              className="h-10 w-10 rounded-lg flex items-center justify-center"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
               style={{ border: '1px solid #e4e4e7', background: 'white', opacity: isToday ? 0.4 : 1, cursor: isToday ? 'default' : 'pointer' }} title="後一天">
               <ChevronRight className="h-4 w-4" style={{ color: '#52525b' }} />
             </button>
             {!isToday && (
               <button onClick={() => goDate(businessDate)}
-                className="text-xs font-semibold px-2.5 h-10 rounded-lg"
+                className="h-10 shrink-0 rounded-lg px-2.5 text-xs font-semibold"
                 style={{ background: 'white', color: '#92400E', border: '1px solid #FDE68A' }}>今日</button>
             )}
             <button onClick={() => setShowBatchExcel(true)}
