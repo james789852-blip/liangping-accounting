@@ -145,6 +145,9 @@ export default function AccountingClient({
 
   useEffect(() => { setSelectedStoreId(initialStoreId) }, [initialStoreId])
   useEffect(() => { setSelectedCkStoreId(initialCkStoreId) }, [initialCkStoreId])
+  // 通知中心會從同一個帳目中心路徑切換店面／央廚，只改變查詢參數。
+  // App Router 會保留這個 Client Component，因此網址更新後必須同步伺服器傳入的分頁。
+  useEffect(() => { setTab(initialTab) }, [initialTab])
 
   // 帳目中心常會長時間停留在手機分頁；降低整頁更新頻率，避免每 15 秒重抓
   // 所有據點資料，並在使用者快速切換視窗時重複刷新。

@@ -46,9 +46,18 @@ test('Service Worker 顯示通知並可前往對應帳目', () => {
   assert.match(serviceWorker, /addEventListener\('push'/)
   assert.match(serviceWorker, /showNotification\(title/)
   assert.match(serviceWorker, /addEventListener\('notificationclick'/)
-  assert.match(serviceWorker, /client\.navigate\(destination\)/)
+  assert.match(serviceWorker, /existingClient\.navigate\(destination\)/)
+  assert.match(serviceWorker, /navigatedClient \? navigatedClient\.focus\(\) : self\.clients\.openWindow\(destination\)/)
+  assert.match(serviceWorker, /catch\(\(\) => self\.clients\.openWindow\(destination\)\)/)
   assert.match(serviceWorker, /notificationId/)
   assert.match(serviceWorker, /\/api\/notifications\/click/)
+})
+
+test('鈴鐺與系統推播共用同一筆安全目標網址且導頁不受已讀更新阻擋', () => {
+  assert.match(pushModule, /url: payload\.url/)
+  assert.match(serviceWorker, /data: \{ url, notificationId:/)
+  assert.match(notificationCenter, /const destination = notification\.url\.startsWith\('\/'\) \? notification\.url : '\/'/)
+  assert.match(notificationCenter, /router\.push\(destination\)[\s\S]*void markNotificationOpened\(notification\.id\)\.catch/)
 })
 
 test('店面與央廚送審及審核結果都會在回應後發送推播', () => {

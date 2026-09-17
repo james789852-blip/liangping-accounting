@@ -55,11 +55,16 @@ self.addEventListener('notificationclick', event => {
           }).catch(() => null)
         : Promise.resolve(null),
       self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
-      const existingClient = windowClients.find(client => client.url.startsWith(self.location.origin))
-      if (existingClient) {
-        return existingClient.focus().then(client => client.navigate(destination))
-      }
-      return self.clients.openWindow(destination)
+        const destinationClient = windowClients.find(client => client.url === destination)
+        if (destinationClient) return destinationClient.focus()
+
+        const existingClient = windowClients.find(client => client.url.startsWith(self.location.origin))
+        if (!existingClient) return self.clients.openWindow(destination)
+
+        // 已開啟系統時先切換到通知目標，再把視窗帶到前景；若裝置不支援導頁則開啟新視窗。
+        return existingClient.navigate(destination)
+          .then(navigatedClient => navigatedClient ? navigatedClient.focus() : self.clients.openWindow(destination))
+          .catch(() => self.clients.openWindow(destination))
       }),
     ])
   )

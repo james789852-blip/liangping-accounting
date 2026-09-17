@@ -65,12 +65,14 @@ export default function NotificationCenter() {
 
   if (!isPortal) return null
 
-  const openNotification = async (notification: AppNotification) => {
+  const openNotification = (notification: AppNotification) => {
+    const destination = notification.url.startsWith('/') ? notification.url : '/'
     setNotifications(current => current.map(item => item.id === notification.id ? { ...item, read_at: item.read_at ?? new Date().toISOString() } : item))
     if (!notification.read_at) setUnread(value => Math.max(0, value - 1))
     setOpen(false)
-    await markNotificationOpened(notification.id)
-    router.push(notification.url.startsWith('/') ? notification.url : '/')
+    // 導頁優先，已讀紀錄改為背景更新；即使網路短暫不穩也不能阻擋使用者前往帳目。
+    router.push(destination)
+    void markNotificationOpened(notification.id).catch(() => {})
   }
 
   const markAllRead = async () => {
