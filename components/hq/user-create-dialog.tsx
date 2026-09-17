@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 import { Loader2, Plus, X } from 'lucide-react'
 import { createUser } from '@/app/actions/users'
@@ -76,6 +77,19 @@ export default function UserCreateDialog({
   const isHQ = unitType === 'hq'
   const isOwner = isHQ && inferSystemRole(form.title, titleOptions[0]) === '老闆'
 
+  useEffect(() => {
+    if (!open) return
+    const pageScroller = document.querySelector<HTMLElement>('.app-content-shell')
+    const previousBodyOverflow = document.body.style.overflow
+    const previousPageOverflow = pageScroller?.style.overflow ?? ''
+    document.body.style.overflow = 'hidden'
+    if (pageScroller) pageScroller.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousBodyOverflow
+      if (pageScroller) pageScroller.style.overflow = previousPageOverflow
+    }
+  }, [open])
+
   function toggleStore(id: string) {
     setSelectedStores(prev => {
       const next = prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
@@ -137,21 +151,28 @@ export default function UserCreateDialog({
         <Plus className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} /> {triggerLabel}
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
-          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }}
+      {open && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[90] flex items-end justify-center p-3 sm:items-center sm:p-4"
+          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', touchAction: 'pan-y' }}
           onClick={e => { if (e.target === e.currentTarget) handleClose() }}>
-          <div className="w-full max-w-md rounded-2xl overflow-hidden"
-            style={{ background: 'white', boxShadow: '0 24px 64px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div className="user-account-dialog-panel flex min-h-0 w-full max-w-md flex-col overflow-hidden rounded-2xl"
+            style={{
+              background: 'white',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.2)',
+              maxHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 1.5rem)',
+              touchAction: 'pan-y',
+            }}>
 
-            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #f4f4f5' }}>
+            <div className="flex shrink-0 items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #f4f4f5' }}>
               <h2 className="text-base font-bold" style={{ color: '#18181b' }}>新增使用者帳號</h2>
               <button onClick={handleClose} className="p-1.5 rounded-lg" style={{ color: '#a1a1aa', background: '#f4f4f5' }}>
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
+            <form onSubmit={handleSubmit}
+              className="user-account-dialog-scroll min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4"
+              style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y', paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -313,7 +334,8 @@ export default function UserCreateDialog({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   )

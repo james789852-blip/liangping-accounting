@@ -42,3 +42,17 @@ test('只有一間授權店家時會自動作為主要歸屬並移入該群組',
   assert.match(usersPage, /resolvePrimaryStoreId\(account, activeStoreIds\)/)
   assert.match(editDialog, /filter\(id => activeStoreIds\.includes\(id\)\)/)
 })
+
+test('手機帳號視窗使用獨立捲動層並鎖定背景頁面', () => {
+  for (const dialog of [createDialog, editDialog]) {
+    assert.match(dialog, /createPortal\(/)
+    assert.match(dialog, /document\.body/)
+    assert.match(dialog, /pageScroller\.style\.overflow = 'hidden'/)
+    assert.match(dialog, /user-account-dialog-panel/)
+    assert.match(dialog, /user-account-dialog-scroll min-h-0 flex-1/)
+    assert.match(dialog, /overflow-y-auto overscroll-contain/)
+    assert.match(dialog, /WebkitOverflowScrolling: 'touch'/)
+    assert.match(dialog, /touchAction: 'pan-y'/)
+    assert.match(dialog, /z-\[90\]/)
+  }
+})
