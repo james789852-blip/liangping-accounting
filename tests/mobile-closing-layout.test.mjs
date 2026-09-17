@@ -15,6 +15,7 @@ const analyticsClient = fs.readFileSync(new URL('../app/manager/analytics/client
 const foodCostPreview = fs.readFileSync(new URL('../components/hq/food-cost-preview-client.tsx', import.meta.url), 'utf8')
 const nativeExport = fs.readFileSync(new URL('../components/hq/native-export-client.tsx', import.meta.url), 'utf8')
 const reviewCard = fs.readFileSync(new URL('../components/hq/review-card.tsx', import.meta.url), 'utf8')
+const ckOverview = fs.readFileSync(new URL('../components/hq/ck-overview.tsx', import.meta.url), 'utf8')
 const notificationCenter = fs.readFileSync(new URL('../components/notification-center.tsx', import.meta.url), 'utf8')
 
 test('closing form constrains its page and content to the mobile viewport', () => {
@@ -60,6 +61,16 @@ test('HQ mobile photo review escapes the page scroller and keeps pagination reac
   assert.match(globalCss, /\.hq-review-dialog-panel \{[\s\S]*height: 100dvh[\s\S]*max-height: 100dvh/)
   assert.match(globalCss, /\.hq-review-dialog-scroll \{[\s\S]*touch-action: pan-y/)
   assert.match(globalCss, /\.hq-review-dialog-footer \{[\s\S]*safe-area-inset-bottom/)
+})
+
+test('HQ central-kitchen review uses the full mobile viewport and keeps its close button inside the safe area', () => {
+  assert.match(ckOverview, /createPortal\(/)
+  assert.match(ckOverview, /document\.body/)
+  assert.match(ckOverview, /hq-review-dialog-panel/)
+  assert.match(ckOverview, /hq-review-dialog-header/)
+  assert.match(ckOverview, /hq-review-dialog-scroll/)
+  assert.match(ckOverview, /aria-label="關閉央廚核對"/)
+  assert.match(ckOverview, /h-11 w-11 shrink-0/)
 })
 
 test('manager closing keeps more mobile space for the active step', () => {

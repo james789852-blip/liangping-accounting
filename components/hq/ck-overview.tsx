@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useTransition } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, Loader2, Banknote, Camera, X, Upload, RotateCcw, Trash2, FileSpreadsheet, Maximize2 } from 'lucide-react'
 import { deleteCKDailyRecord, markCKHQPaid, reviewCKDailyRecord, saveCKHQReimbursementAdjustment, saveCKHQReimbursementPhotoDraft, syncCKMonthToSheets } from '@/app/actions/ck'
@@ -1052,14 +1053,23 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
     })
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: 'rgba(9,9,11,.75)' }}>
-      <div className="bg-white w-full min-h-0 sm:max-w-4xl sm:rounded-3xl overflow-hidden flex flex-col" style={{ maxHeight: '94dvh' }}>
-        <div className="p-4 flex justify-between items-center" style={{ borderBottom: '1px solid #e4e4e7' }}>
-          <div><p className="font-bold">逐步核對 · {d.ckStore.name}</p><p className="text-xs" style={{ color: '#71717a' }}>{index + 1} / {steps.length}　{step.title}</p></div>
-          <button onClick={onClose} className="p-2 rounded-full" style={{ background: '#f4f4f5' }}><X className="h-4 w-4" /></button>
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div className="fixed inset-0 z-[90] flex items-stretch sm:items-center justify-center" style={{ background: 'rgba(9,9,11,.75)' }}>
+      <div className="hq-review-dialog-panel bg-white w-full min-h-0 sm:max-w-4xl sm:rounded-3xl overflow-hidden flex flex-col">
+        <div className="hq-review-dialog-header px-4 py-3 flex shrink-0 justify-between items-center gap-3" style={{ borderBottom: '1px solid #e4e4e7' }}>
+          <div className="min-w-0">
+            <p className="font-bold break-words">逐步核對 · {d.ckStore.name}</p>
+            <p className="text-xs break-words" style={{ color: '#71717a' }}>{index + 1} / {steps.length}　{step.title}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="關閉央廚核對"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+            style={{ background: '#f4f4f5' }}>
+            <X className="h-5 w-5" />
+          </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] grid sm:grid-cols-2 gap-4">
+        <div className="hq-review-dialog-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] grid sm:grid-cols-2 gap-4">
           <div className="min-h-64 rounded-2xl flex flex-col overflow-hidden" style={{ background: 'white', border: '1px solid #d4d4d8' }}>
             {currentPhoto && (
               <div className="flex items-center justify-between gap-3 px-3 py-2" style={{ background: 'white', borderBottom: '1px solid #e4e4e7' }}>
@@ -1167,7 +1177,8 @@ function CKStepReview({ d, date, onClose, onReviewed }: { d: CKStoreData; date: 
             onClick={event => event.stopPropagation()} />
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   )
 }
 
