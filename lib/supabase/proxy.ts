@@ -68,7 +68,9 @@ export async function updateSession(request: NextRequest) {
   if (isProtectedPage && isPageNavigation && !hasValidClaims) {
     // 在 RSC / Suspense 開始 render 前完成導向，避免 client-side navigation
     // 收到串流中的 NEXT_REDIRECT 後產生 React hooks 錯序與黑色錯誤頁。
-    const redirectResponse = NextResponse.redirect(new URL('/login', request.url))
+    const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('next', `${request.nextUrl.pathname}${request.nextUrl.search}`)
+    const redirectResponse = NextResponse.redirect(loginUrl)
     response.cookies.getAll().forEach(cookie => redirectResponse.cookies.set(cookie))
     return redirectResponse
   }

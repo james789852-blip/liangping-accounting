@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { Bell, BellRing, CheckCheck, ChevronRight, CircleCheck, Loader2, Undo2, UserRoundCheck, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -33,7 +33,6 @@ function relativeTime(value: string) {
 
 export default function NotificationCenter() {
   const pathname = usePathname()
-  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [unread, setUnread] = useState(0)
@@ -71,7 +70,7 @@ export default function NotificationCenter() {
     if (!notification.read_at) setUnread(value => Math.max(0, value - 1))
     setOpen(false)
     // 導頁優先，已讀紀錄改為背景更新；即使網路短暫不穩也不能阻擋使用者前往帳目。
-    router.push(destination)
+    window.location.assign(destination)
     void markNotificationOpened(notification.id).catch(() => {})
   }
 

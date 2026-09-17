@@ -17,7 +17,9 @@ test('受保護頁面會先在 Proxy 更新 Supabase session', async () => {
   assert.match(sessionProxy, /request\.cookies\.set/)
   assert.match(sessionProxy, /response\.cookies\.set/)
   assert.match(sessionProxy, /refresh_token_already_used/)
-  assert.match(sessionProxy, /NextResponse\.redirect\(new URL\('\/login'/)
+  assert.match(sessionProxy, /const loginUrl = new URL\('\/login'/)
+  assert.match(sessionProxy, /loginUrl\.searchParams\.set\('next'/)
+  assert.match(sessionProxy, /NextResponse\.redirect\(loginUrl\)/)
   assert.match(sessionProxy, /isProtectedPage && isPageNavigation && !hasValidClaims/)
 })
 

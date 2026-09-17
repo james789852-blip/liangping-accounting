@@ -70,7 +70,15 @@ export default function LoginPage() {
     // 清理店面角色的舊切店狀態不應阻塞登入導向；背景完成即可。
     void resetStoreSelectionForLogin().catch(() => {})
     toast.success('登入成功')
-    const nextPath = hasHQAccess ? getDefaultHQHref(profile) : (hasAssignedStore ? '/manager/dashboard' : '/manager/dashboard')
+    const defaultPath = hasHQAccess ? getDefaultHQHref(profile) : (hasAssignedStore ? '/manager/dashboard' : '/manager/dashboard')
+    const requestedPath = new URL(window.location.href).searchParams.get('next')
+    const requestedDestination = requestedPath?.startsWith('/') && !requestedPath.startsWith('//')
+      ? new URL(requestedPath, window.location.origin)
+      : null
+    const nextPath = requestedDestination?.origin === window.location.origin
+      && (requestedDestination.pathname.startsWith('/hq/') || requestedDestination.pathname.startsWith('/manager/'))
+      ? `${requestedDestination.pathname}${requestedDestination.search}${requestedDestination.hash}`
+      : defaultPath
     // 使用完整導向，確保瀏覽器立即帶上 Supabase 最新 session cookie。
     window.location.assign(nextPath)
   }

@@ -25,6 +25,7 @@ const storesPage = fs.readFileSync(new URL('../app/hq/stores/page.tsx', import.m
 const usersPage = fs.readFileSync(new URL('../app/hq/users/page.tsx', import.meta.url), 'utf8')
 const userCreateDialog = fs.readFileSync(new URL('../components/hq/user-create-dialog.tsx', import.meta.url), 'utf8')
 const pushPreferences = fs.readFileSync(new URL('../lib/push-preferences.ts', import.meta.url), 'utf8')
+const authProxy = fs.readFileSync(new URL('../lib/supabase/proxy.ts', import.meta.url), 'utf8')
 
 test('推播訂閱只能由登入者管理自己的裝置', () => {
   assert.match(pushAction, /const user = await getVerifiedUser\(\)/)
@@ -47,6 +48,10 @@ test('Service Worker 顯示通知並可前往對應帳目', () => {
   assert.match(serviceWorker, /showNotification\(title/)
   assert.match(serviceWorker, /addEventListener\('notificationclick'/)
   assert.match(serviceWorker, /existingClient\.navigate\(destination\)/)
+  assert.match(serviceWorker, /requestClientNavigation\(existingClient, relativeUrl\)/)
+  assert.match(serviceWorker, /client\.postMessage\(\{ type: NOTIFICATION_NAVIGATION_MESSAGE, url: relativeUrl \}/)
+  assert.match(serviceWorker, /client\.focused/)
+  assert.match(serviceWorker, /client\.visibilityState === 'visible'/)
   assert.match(serviceWorker, /navigatedClient \? navigatedClient\.focus\(\) : self\.clients\.openWindow\(destination\)/)
   assert.match(serviceWorker, /catch\(\(\) => self\.clients\.openWindow\(destination\)\)/)
   assert.match(serviceWorker, /notificationId/)
@@ -57,7 +62,17 @@ test('鈴鐺與系統推播共用同一筆安全目標網址且導頁不受已�
   assert.match(pushModule, /url: payload\.url/)
   assert.match(serviceWorker, /data: \{ url, notificationId:/)
   assert.match(notificationCenter, /const destination = notification\.url\.startsWith\('\/'\) \? notification\.url : '\/'/)
-  assert.match(notificationCenter, /router\.push\(destination\)[\s\S]*void markNotificationOpened\(notification\.id\)\.catch/)
+  assert.match(notificationCenter, /window\.location\.assign\(destination\)[\s\S]*void markNotificationOpened\(notification\.id\)\.catch/)
+  assert.match(pwaShell, /navigator\.serviceWorker\.addEventListener\('message', handleMessage\)/)
+  assert.match(pwaShell, /window\.location\.assign\(destination\.href\)/)
+})
+
+test('推播在登入狀態失效時仍會保留原始帳目目的地', () => {
+  assert.match(authProxy, /loginUrl\.searchParams\.set\('next', `\$\{request\.nextUrl\.pathname\}\$\{request\.nextUrl\.search\}`\)/)
+  assert.match(loginPage, /new URL\(window\.location\.href\)\.searchParams\.get\('next'\)/)
+  assert.match(loginPage, /requestedDestination\.pathname\.startsWith\('\/hq\/'\)/)
+  assert.match(loginPage, /requestedDestination\.pathname\.startsWith\('\/manager\/'\)/)
+  assert.match(loginPage, /window\.location\.assign\(nextPath\)/)
 })
 
 test('店面與央廚送審及審核結果都會在回應後發送推播', () => {

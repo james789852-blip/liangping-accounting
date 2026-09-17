@@ -10,6 +10,7 @@ const INSTALL_DISMISS_KEY = 'lp-pwa-install-dismissed-at'
 const INSTALL_DISMISS_MS = 14 * 24 * 60 * 60 * 1000
 const PUSH_DISMISS_KEY = 'lp-push-prompt-dismissed-at'
 const PUSH_DISMISS_MS = 14 * 24 * 60 * 60 * 1000
+const NOTIFICATION_NAVIGATION_MESSAGE = 'lp-notification-navigation'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -262,9 +263,34 @@ function NetworkStatus() {
   )
 }
 
+function NotificationNavigationBridge() {
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type !== NOTIFICATION_NAVIGATION_MESSAGE) return
+      const rawUrl = event.data?.url
+      if (typeof rawUrl !== 'string' || !rawUrl.startsWith('/') || rawUrl.startsWith('//')) return
+
+      const destination = new URL(rawUrl, window.location.origin)
+      if (destination.origin !== window.location.origin) return
+      event.ports[0]?.postMessage({ handled: true })
+      // 使用完整頁面導向，讓伺服器重新依通知中的店家／央廚與日期參數載入資料；
+      // 避免 iOS 從背景喚醒 PWA 時只恢復舊的 App Router 畫面。
+      window.setTimeout(() => window.location.assign(destination.href), 0)
+    }
+
+    navigator.serviceWorker.addEventListener('message', handleMessage)
+    return () => navigator.serviceWorker.removeEventListener('message', handleMessage)
+  }, [])
+
+  return null
+}
+
 export function PWAShell() {
   return (
     <>
+      <NotificationNavigationBridge />
       <NetworkStatus />
       <InstallPrompt />
       <PushPrompt />

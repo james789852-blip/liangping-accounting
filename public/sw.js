@@ -38,9 +38,46 @@ self.addEventListener('push', event => {
   }))
 })
 
+const NOTIFICATION_NAVIGATION_MESSAGE = 'lp-notification-navigation'
+
+function clientPortal(clientUrl) {
+  try {
+    const pathname = new URL(clientUrl).pathname
+    if (pathname.startsWith('/hq/')) return 'hq'
+    if (pathname.startsWith('/manager/')) return 'manager'
+  } catch {
+    // Ignore malformed client URLs and use the normal fallback order.
+  }
+  return 'other'
+}
+
+function requestClientNavigation(client, relativeUrl) {
+  return new Promise(resolve => {
+    const channel = new MessageChannel()
+    let settled = false
+    const finish = handled => {
+      if (settled) return
+      settled = true
+      resolve(handled)
+    }
+    const timer = setTimeout(() => finish(false), 800)
+    channel.port1.onmessage = message => {
+      clearTimeout(timer)
+      finish(message.data?.handled === true)
+    }
+    try {
+      client.postMessage({ type: NOTIFICATION_NAVIGATION_MESSAGE, url: relativeUrl }, [channel.port2])
+    } catch {
+      clearTimeout(timer)
+      finish(false)
+    }
+  })
+}
+
 self.addEventListener('notificationclick', event => {
   event.notification.close()
-  const relativeUrl = event.notification.data?.url || '/'
+  const rawUrl = event.notification.data?.url
+  const relativeUrl = typeof rawUrl === 'string' && rawUrl.startsWith('/') && !rawUrl.startsWith('//') ? rawUrl : '/'
   const destination = new URL(relativeUrl, self.location.origin).href
   const notificationId = event.notification.data?.notificationId
 
@@ -58,13 +95,24 @@ self.addEventListener('notificationclick', event => {
         const destinationClient = windowClients.find(client => client.url === destination)
         if (destinationClient) return destinationClient.focus()
 
-        const existingClient = windowClients.find(client => client.url.startsWith(self.location.origin))
+        const sameOriginClients = windowClients.filter(client => client.url.startsWith(self.location.origin))
+        const destinationPortal = clientPortal(destination)
+        const existingClient = sameOriginClients.find(client => client.focused)
+          || sameOriginClients.find(client => client.visibilityState === 'visible' && clientPortal(client.url) === destinationPortal)
+          || sameOriginClients.find(client => clientPortal(client.url) === destinationPortal)
+          || sameOriginClients.find(client => client.visibilityState === 'visible')
+          || sameOriginClients[0]
         if (!existingClient) return self.clients.openWindow(destination)
 
-        // 已開啟系統時先切換到通知目標，再把視窗帶到前景；若裝置不支援導頁則開啟新視窗。
-        return existingClient.navigate(destination)
-          .then(navigatedClient => navigatedClient ? navigatedClient.focus() : self.clients.openWindow(destination))
-          .catch(() => self.clients.openWindow(destination))
+        // iOS PWA 有時只會喚醒既有視窗，卻忽略 WindowClient.navigate 的查詢參數。
+        // 先請目前可見的系統頁用 location.assign 完整導向；舊版頁面沒有接收器時，
+        // 再退回標準 navigate/openWindow，確保店家、央廚與日期參數不會遺失。
+        return requestClientNavigation(existingClient, relativeUrl).then(handled => {
+          if (handled) return existingClient.focus()
+          return existingClient.navigate(destination)
+            .then(navigatedClient => navigatedClient ? navigatedClient.focus() : self.clients.openWindow(destination))
+            .catch(() => self.clients.openWindow(destination))
+        })
       }),
     ])
   )
