@@ -114,10 +114,11 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
         {/* 品牌 */}
         <div className="flex items-center gap-3 px-5 pt-6 pb-5">
           <img src="/icon-192.png" alt="logo" className="h-9 w-9 rounded-[10px] object-cover shrink-0" />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>結帳系統</p>
             <p className="text-xs mt-0.5 truncate" style={{ color: '#a1a1aa' }}>{displayIdentity}</p>
           </div>
+          <div id="manager-desktop-notification-slot" className="h-10 w-10 shrink-0" />
         </div>
 
         {/* 時鐘 */}
@@ -212,7 +213,7 @@ export default function ManagerNav({ userName, storeName, identityStoreName, rol
           </div>
         </div>
         <div className="mobile-header-notification ml-1 shrink-0 pr-1">
-          <NotificationCenter />
+          <NotificationCenter desktopTargetId="manager-desktop-notification-slot" />
         </div>
       </header>
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { usePathname, useRouter } from 'next/navigation'
 import { Bell, BellRing, CheckCheck, ChevronRight, CircleCheck, Loader2, Undo2, UserRoundCheck, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -30,7 +31,7 @@ function relativeTime(value: string) {
   return new Date(value).toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric' })
 }
 
-export default function NotificationCenter() {
+export default function NotificationCenter({ desktopTargetId }: { desktopTargetId: string }) {
   const pathname = usePathname()
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -38,6 +39,7 @@ export default function NotificationCenter() {
   const [unread, setUnread] = useState(0)
   const [loaded, setLoaded] = useState(false)
   const [followUpPendingId, setFollowUpPendingId] = useState<string | null>(null)
+  const [desktopTarget, setDesktopTarget] = useState<HTMLElement | null>(null)
   const isPortal = pathname.startsWith('/manager/') || pathname.startsWith('/hq/')
   const activeFollowUps = notifications.filter(notification => notification.follow_up && notification.follow_up.status !== 'resolved').length
   const badgeCount = activeFollowUps || unread
@@ -61,6 +63,10 @@ export default function NotificationCenter() {
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [isPortal, pathname, refresh])
+
+  useEffect(() => {
+    setDesktopTarget(document.getElementById(desktopTargetId))
+  }, [desktopTargetId])
 
   if (!isPortal) return null
 
@@ -107,18 +113,21 @@ export default function NotificationCenter() {
           </span>
         )}
       </button>
-      <button type="button" onClick={() => setOpen(value => !value)} aria-label={`通知中心${unread ? `，${unread} 則未讀` : ''}${activeFollowUps ? `，${activeFollowUps} 項待處理` : ''}`}
-        className="fixed bottom-6 right-6 z-[65] hidden h-12 w-12 items-center justify-center rounded-full bg-white shadow-xl lg:flex"
-        style={{ border: badgeCount ? '2px solid #f59e0b' : '1px solid #d4d4d8', color: badgeCount ? '#b45309' : '#52525b' }}>
-        {badgeCount ? <BellRing className="h-5 w-5" /> : <Bell className="h-5 w-5" />}
-        {badgeCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
-            {badgeCount > 99 ? '99+' : badgeCount}
-          </span>
-        )}
-      </button>
+      {desktopTarget && createPortal(
+        <button type="button" onClick={() => setOpen(value => !value)} aria-label={`通知中心${unread ? `，${unread} 則未讀` : ''}${activeFollowUps ? `，${activeFollowUps} 項待處理` : ''}`}
+          className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white shadow-sm"
+          style={{ border: badgeCount ? '2px solid #f59e0b' : '1px solid #d4d4d8', color: badgeCount ? '#b45309' : '#52525b' }}>
+          {badgeCount ? <BellRing className="h-5 w-5" /> : <Bell className="h-5 w-5" />}
+          {badgeCount > 0 && (
+            <span className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
+              {badgeCount > 99 ? '99+' : badgeCount}
+            </span>
+          )}
+        </button>,
+        desktopTarget,
+      )}
 
-      {open && (
+      {open && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[80]" onClick={() => setOpen(false)}>
           <div className="absolute inset-0 bg-black/30" />
           <section className="absolute inset-x-0 bottom-0 max-h-[82dvh] overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:inset-x-auto sm:bottom-20 sm:right-6 sm:w-[420px] sm:rounded-2xl"
@@ -196,7 +205,8 @@ export default function NotificationCenter() {
               ))}
             </div>
           </section>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   )

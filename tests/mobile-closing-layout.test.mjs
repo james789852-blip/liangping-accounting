@@ -80,9 +80,11 @@ test('manager closing keeps more mobile space for the active step', () => {
   assert.doesNotMatch(closingForm, /注意：目前正在做/)
   assert.match(closingForm, /toast\.warning\(`目前正在處理 \$\{today\} 的補做帳目，不是今日帳目。`/)
   assert.match(closingForm, /duration: 6000/)
-  assert.doesNotMatch(notificationCenter, /createPortal\(/)
+  assert.match(notificationCenter, /createPortal\(/)
   assert.match(notificationCenter, /relative flex h-10 w-10/)
-  assert.match(notificationCenter, /hidden h-12 w-12[\s\S]*lg:flex/)
+  assert.match(notificationCenter, /desktopTargetId/)
+  assert.match(notificationCenter, /desktopTarget/)
+  assert.doesNotMatch(notificationCenter, /fixed bottom-6 right-6/)
 })
 
 test('daily closing summary stacks complete metadata on narrow screens', () => {
@@ -109,7 +111,7 @@ test('narrow mobile header stays inside the viewport and pinch zoom remains avai
   assert.match(hqNav, /hq-mobile-header/)
   assert.match(hqNav, /mobile-header-notification/)
   assert.match(managerNav, /mobile-header-notification/)
-  assert.match(managerNav, /<NotificationCenter \/>/)
+  assert.match(managerNav, /<NotificationCenter desktopTargetId="manager-desktop-notification-slot" \/>/)
   assert.match(hqNav, /hq-mobile-header-title[^"]*overflow-hidden/)
   assert.doesNotMatch(hqNav, /hq-mobile-header-title[^"]*overflow-visible/)
   assert.doesNotMatch(managerNav, /manager-mobile-clock/)
