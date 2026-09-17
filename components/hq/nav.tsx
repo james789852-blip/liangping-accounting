@@ -229,11 +229,10 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         {/* 品牌 */}
         <div className="flex items-center gap-3 px-5 pt-6 pb-4">
           <img src="/icon-192.png" alt="logo" className="h-9 w-9 rounded-[10px] object-cover shrink-0" />
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900" style={{ letterSpacing: '-0.01em' }}>結帳系統</p>
             <p className="text-xs mt-0.5" style={{ color: '#a1a1aa' }}>{isManagerPath ? '店長端' : '總公司端'}</p>
           </div>
-          <div id="hq-desktop-notification-slot" className="h-10 w-10 shrink-0" />
         </div>
 
         {/* 時鐘 */}
@@ -353,7 +352,7 @@ export default function HQNav({ userName, role, allStores = [], currentStoreId =
         </div>
         {/* 鈴鐺固定在最右側，與內容及未讀角標保持安全距離 */}
         <div className="mobile-header-notification shrink-0 pr-1">
-          <NotificationCenter desktopTargetId="hq-desktop-notification-slot" />
+          <NotificationCenter />
         </div>
       </header>
 
