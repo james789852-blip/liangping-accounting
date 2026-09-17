@@ -130,6 +130,7 @@ function PushPrompt() {
   const router = useRouter()
   const [visible, setVisible] = useState(false)
   const [enabling, setEnabling] = useState(false)
+  const [repairing, setRepairing] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ''
 
@@ -137,7 +138,9 @@ function PushPrompt() {
     const isAuthenticatedPortal = pathname.startsWith('/manager/') || pathname.startsWith('/hq/')
     if (!publicKey || !isAuthenticatedPortal) return
     if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return
-    if (!isRunningStandalone()) return
+    // iOS 僅允許加入主畫面的 Web App 使用推播；Android／桌機瀏覽器本身
+    // 即支援 Web Push，不可因部分 Android PWA 回報非 standalone 而略過綁定。
+    if (isIOSDevice() && !isRunningStandalone()) return
 
     if (Notification.permission === 'granted') {
       let cancelled = false
@@ -147,9 +150,19 @@ function PushPrompt() {
         syncing = true
         try {
           const result = await syncPushSubscriptionToCurrentUser(publicKey)
-          if (!cancelled && result.reassigned) router.refresh()
+          if (!cancelled) {
+            setRepairing(false)
+            setMessage(null)
+            setVisible(false)
+            if (result.reassigned) router.refresh()
+          }
         } catch (error) {
           console.error('[push] subscription sync failed:', error)
+          if (!cancelled) {
+            setRepairing(true)
+            setMessage('通知權限已開啟，但裝置尚未完成綁定。請按下方按鈕重新綁定。')
+            setVisible(true)
+          }
         } finally {
           syncing = false
         }
@@ -186,13 +199,19 @@ function PushPrompt() {
     setEnabling(true)
     setMessage(null)
     try {
-      const permission = await Notification.requestPermission()
+      const permission = Notification.permission === 'granted'
+        ? 'granted'
+        : await Notification.requestPermission()
       if (permission !== 'granted') {
         setMessage(permission === 'denied' ? '推播已被瀏覽器封鎖，可在手機網站設定中重新允許。' : '尚未允許推播。')
         return
       }
-      await syncPushSubscriptionToCurrentUser(publicKey)
-      setMessage('推播已開啟，之後會收到帳目送出、審核結果、逾期與點交通知。')
+      const result = await syncPushSubscriptionToCurrentUser(publicKey)
+      if (!result.synced) throw new Error('此裝置目前無法建立推播訂閱，請關閉後重新開啟結帳系統再試。')
+      setRepairing(false)
+      setMessage(repairing
+        ? '推播裝置已重新綁定。'
+        : '推播已開啟，之後會收到帳目送出、審核結果、逾期與點交通知。')
       window.setTimeout(() => setVisible(false), 2200)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '推播開啟失敗，請稍後再試。')
@@ -213,13 +232,15 @@ function PushPrompt() {
           <BellRing className="h-6 w-6" />
         </span>
         <div className="min-w-0">
-          <p className="font-bold text-zinc-900">開啟帳務推播</p>
-          <p className="mt-1 text-sm leading-6 text-zinc-600">帳目送出、審核結果、逾期提醒或補款點交時，直接在手機收到通知。</p>
+          <p className="font-bold text-zinc-900">{repairing ? '重新綁定帳務推播' : '開啟帳務推播'}</p>
+          <p className="mt-1 text-sm leading-6 text-zinc-600">{repairing
+            ? '手機通知權限已開啟，但系統尚未登記這台裝置。重新綁定後即可恢復接收通知。'
+            : '帳目送出、審核結果、逾期提醒或補款點交時，直接在手機收到通知。'}</p>
         </div>
       </div>
       {message && <p role="status" className="mt-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm text-zinc-700">{message}</p>}
       <button type="button" onClick={enable} disabled={enabling} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-white active:bg-amber-600 disabled:opacity-60">
-        <BellRing className="h-4 w-4" />{enabling ? '正在開啟…' : '開啟推播'}
+        <BellRing className="h-4 w-4" />{enabling ? '正在處理…' : repairing ? '重新綁定推播' : '開啟推播'}
       </button>
     </aside>
   )

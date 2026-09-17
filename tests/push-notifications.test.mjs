@@ -39,8 +39,16 @@ test('手機須由使用者點擊後才要求推播權限並建立訂閱', () =>
   assert.match(pwaShell, /onClick=\{enable\}/)
   assert.match(pwaShell, /Notification\.requestPermission\(\)/)
   assert.match(pushClient, /pushManager\.subscribe\(/)
-  assert.match(pwaShell, /if \(!isRunningStandalone\(\)\) return/)
+  assert.match(pwaShell, /if \(isIOSDevice\(\) && !isRunningStandalone\(\)\) return/)
   assert.match(pwaShell, /pathname\.startsWith\('\/manager\/'\) \|\| pathname\.startsWith\('\/hq\/'\)/)
+})
+
+test('Android 背景綁定失敗時會顯示可手動修復的推播入口', () => {
+  assert.match(pwaShell, /setRepairing\(true\)/)
+  assert.match(pwaShell, /通知權限已開啟，但裝置尚未完成綁定/)
+  assert.match(pwaShell, /重新綁定帳務推播/)
+  assert.match(pwaShell, /重新綁定推播/)
+  assert.match(pwaShell, /if \(!result\.synced\) throw new Error/)
 })
 
 test('Service Worker 顯示通知並可前往對應帳目', () => {
