@@ -67,7 +67,7 @@ export function buildReserveHistoryContext(rows: HistoricalClosing[]) {
       : closing.cash_counts && typeof closing.cash_counts === 'object'
         ? [closing.cash_counts]
         : []
-    const linkedPayments = cashRows.flatMap(row => Array.isArray(row.large_expenses) ? row.large_expenses : [])
+    const preReservedPayments = cashRows.flatMap(row => Array.isArray(row.large_expenses) ? row.large_expenses : [])
       .flatMap(raw => {
         if (!raw || typeof raw !== 'object') return []
         const item = raw as Record<string, unknown>
@@ -77,7 +77,7 @@ export function buildReserveHistoryContext(rows: HistoricalClosing[]) {
           : typeof item.reserve_reference_id === 'string'
             ? item.reserve_reference_id
             : ''
-        if (!isLinked || !referenceId) return []
+        if (!isLinked) return []
         return [{
           referenceId,
           reason: typeof item.reserveReason === 'string'
@@ -89,12 +89,55 @@ export function buildReserveHistoryContext(rows: HistoricalClosing[]) {
           amount: Math.abs(Number(item.preReservedAmount ?? item.pre_reserved_amount ?? item.amount) || 0),
         }]
       })
+    const linkedPayments = preReservedPayments.filter(payment => payment.referenceId)
+    const legacyLinkedPayments = preReservedPayments.filter(payment => !payment.referenceId)
 
     // 新版資料以預留款識別碼核銷，不受「營業稅」／「7–8 月營業稅」等名稱差異影響。
     for (const payment of linkedPayments) {
       const cycleIndex = activeCycles.findIndex(cycle => cycle.reference_id === payment.referenceId)
       if (cycleIndex >= 0) activeCycles.splice(cycleIndex, 1)
       looseHints.delete(payment.referenceId)
+    }
+
+    // 舊版資料只有 preReserved 標記，尚未儲存預留款識別碼。這類付款以
+    // 「原因／說明＋足額」核銷，避免同日帳單拆成多張收據時，逐張金額
+    // 都小於帳單總額而永久留下幽靈提醒。
+    for (const payment of legacyLinkedPayments) {
+      if (payment.amount <= 0) continue
+      const paymentText = normalize(payment.reason || payment.description)
+      if (!paymentText) continue
+
+      const candidates = activeCycles
+        .map((cycle, index) => {
+          const reasonText = normalize(cycle.reason)
+          const descriptionText = normalize(cycle.description)
+          const textMatches = (reasonText !== '其他' && (
+            paymentText.includes(reasonText) || reasonText.includes(paymentText)
+          )) || (descriptionText && (
+            paymentText.includes(descriptionText) || descriptionText.includes(paymentText)
+          ))
+          return { cycle, index, textMatches }
+        })
+        .filter(({ cycle, textMatches }) => textMatches
+          && cycle.started_date < date
+          && payment.amount >= cycle.total_bill - 1)
+        .sort((a, b) => a.cycle.started_date.localeCompare(b.cycle.started_date))
+      const paidCycle = candidates[0]
+      if (paidCycle) {
+        activeCycles.splice(paidCycle.index, 1)
+        looseHints.delete(paidCycle.cycle.reference_id)
+      }
+
+      for (const [key, hint] of looseHints) {
+        const reasonText = normalize(hint.reason)
+        const descriptionText = normalize(hint.description)
+        const textMatches = (reasonText !== '其他' && (
+          paymentText.includes(reasonText) || reasonText.includes(paymentText)
+        )) || (descriptionText && (
+          paymentText.includes(descriptionText) || descriptionText.includes(paymentText)
+        ))
+        if (textMatches && payment.amount >= hint.amount - 1) looseHints.delete(key)
+      }
     }
 
     // 先結清前幾日已建立的預留週期，再處理今天的新預留。同日新建的

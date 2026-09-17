@@ -137,6 +137,66 @@ test('實際支出用預留款識別碼核銷，名稱不同也不會留下提�
   assert.deepEqual(result, { prevDayReserves: null, preReservedExpenseHints: [] })
 })
 
+test('舊版使用預留款未存識別碼且帳單拆成多張收據時仍能結清', () => {
+  const result = buildReserveHistoryContext([
+    {
+      business_date: '2026-09-11',
+      reserve_items: [],
+      expense_items: [
+        { description: '電費', amount: 35_904 },
+        { description: '電費', amount: 56_099 },
+      ],
+      cash_counts: [{
+        large_expenses: [{
+          description: '電費',
+          amount: 92_003,
+          preReserved: true,
+        }],
+      }],
+    },
+    {
+      business_date: '2026-09-07',
+      reserve_items: [{
+        reason: '電費',
+        amount: 5_190,
+        total_bill: 92_003,
+        source_start_date: '2026-09-04',
+        accumulated_before: 86_813,
+      }],
+      expense_items: [],
+    },
+    {
+      business_date: '2026-09-06',
+      reserve_items: [{
+        reason: '電費',
+        amount: 37_650,
+        total_bill: 92_003,
+        source_start_date: '2026-09-04',
+        accumulated_before: 49_163,
+      }],
+      expense_items: [],
+    },
+    {
+      business_date: '2026-09-05',
+      reserve_items: [{
+        reason: '電費',
+        amount: 39_155,
+        total_bill: 92_003,
+        source_start_date: '2026-09-04',
+        accumulated_before: 10_008,
+      }],
+      expense_items: [],
+    },
+    {
+      business_date: '2026-09-04',
+      reserve_items: [{ reason: '電費', amount: 10_008, total_bill: 92_003 }],
+      expense_items: [],
+    },
+  ])
+
+  assert.deepEqual(result, { prevDayReserves: null, preReservedExpenseHints: [] })
+})
+
 test('未結清提醒不會自動替店長建立預留款', () => {
   const context = {
     business_date: '2026-08-13',
